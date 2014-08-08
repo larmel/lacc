@@ -1,6 +1,9 @@
 #ifndef LCC_H
 #define LCC_H
 
+void init_preprocessing(FILE *);
+int getprepline(char **);
+
 typedef enum token_type
 {
 	/* Keyword */

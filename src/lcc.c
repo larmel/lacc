@@ -2,9 +2,11 @@
 #include <stdlib.h>
 #include "lcc.h"
 
+extern size_t line_number;
 
 int main(int argc, char* argv[])
 {
+	char *line;
 	FILE *input = stdin;
 	struct token t;
 
@@ -15,9 +17,20 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	while (get_token(input, &t)) {
-		printf("token( %s, %d )\n", (char*) t.value, t.type);
+	// preprocess
+	init_preprocessing(input);
+
+	while (getprepline(&line) != -1) {
+		/* ready for tokenization */
+    	printf("%d\t%s", (int)line_number, line);
 	}
 
 	return EXIT_SUCCESS;
+
+	// tokenize
+	// while (get_token(input, &t)) {
+	// 	printf("token( %s, %d )\n", (char*) t.value, t.type);
+	// }
+
+	// return EXIT_SUCCESS;
 }
