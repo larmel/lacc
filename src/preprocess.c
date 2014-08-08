@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <string.h>
 
 static ssize_t preprocess(char **, size_t *, size_t);
 
@@ -31,10 +32,13 @@ static size_t pop()
     return --fd_idx;
 }
 
+static const char *directory;
+
 /* initialization, called once on root file descriptor */
 void
-init_preprocessing(FILE *input)
+init_preprocessing(FILE *input, const char *dir)
 {
+    directory = dir;
     while (fd_idx != -1)
         pop();
 
@@ -79,10 +83,23 @@ getprepline(char **buffer)
     return processed;
 }
 
+static char *
+mkpath(const char *filename)
+{
+    size_t dir_len = strlen(directory);
+    size_t fil_len = strlen(filename);
+    char *path = malloc(dir_len + 1 + fil_len + 1);
+    strcpy(path, directory);
+    strcat(path, "/");
+    strcat(path, filename);
+    return path;
+}
+
 static ssize_t
 preprocess(char **linebuffer, size_t *length, size_t read)
 {
     char c;
+    char *token;
     int i = 0;
     while (i < read && isspace((*linebuffer)[i]))
         i++;
@@ -91,8 +108,36 @@ preprocess(char **linebuffer, size_t *length, size_t read)
     if (i == read) return 0;
 
     if ((*linebuffer)[i] == '#') {
-        /* handle directive */
-        return read;
+
+        /* destructive tokenization of directive */
+        token = strtok(&((*linebuffer)[i+1]), " \t");
+        if (!strcmp("include", token)) {
+            FILE *file;
+            char *filename;
+            token = strtok(NULL, " \t\n");
+            printf("include file: %s\n", token);
+
+            if (strlen(token) > 2 && token[0] == '"' && token[strlen(token)-1] == '"') {
+                token[strlen(token)-1] = '\0';
+                filename = mkpath(token + 1);
+                file = fopen(filename, "r");
+                if (file == NULL) {
+                    fprintf(stderr, "error: could not open file %s on line %d\n", token, (int)line_number);
+                    return -1;
+                }
+                free(filename);
+                push(file);
+                line_number = 0;
+            } else if (strlen(token) > 2 && token[0] == '<' && token[strlen(token)-1] == '>') {
+                return -1;
+            } else {
+                return -1;
+            }
+
+        } else {
+            return -1;
+        }
+        return 0;
     }
 
     return read;

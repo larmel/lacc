@@ -1,7 +1,10 @@
 #ifndef LCC_H
 #define LCC_H
 
-void init_preprocessing(FILE *);
+#include <stdio.h>
+#include <stdlib.h>
+
+void init_preprocessing(FILE *, const char *);
 int getprepline(char **);
 
 typedef enum token_type
