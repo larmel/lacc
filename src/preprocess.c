@@ -32,6 +32,45 @@ static size_t pop()
     return --fd_idx;
 }
 
+/* symbol list */
+static const char ** symbols;
+static const char ** values;
+static size_t sym_idx;
+static size_t sym_cap;
+
+static const char *
+sym_lookup(const char * symbol)
+{
+    int i;
+    for (i = 0; i < sym_idx; ++i) {
+        if (!strcmp(symbol, symbols[i])) return values[i];
+    }
+    return NULL;
+}
+
+static int
+sym_isdefined(const char * symbol)
+{
+    int i;
+    for (i = 0; i < sym_idx; ++i) {
+        if (!strcmp(symbol, symbols[i])) return 1;
+    }
+    return 0;
+}
+
+static int
+sym_define(const char *symbol, const char *value) {
+    if (sym_idx == sym_cap) {
+        sym_cap += 64;
+        symbols = realloc(symbols, sym_cap * sizeof(char*));
+        values = realloc(values, sym_cap * sizeof(char*));
+    }
+    symbols[sym_idx] = strdup(symbol);
+    values[sym_idx] = value == NULL ? "" : strdup(value);
+    return sym_idx++;
+}
+
+/* path of initial file, used for relative include paths */
 static const char *directory;
 
 /* initialization, called once on root file descriptor */
@@ -95,6 +134,9 @@ mkpath(const char *filename)
     return path;
 }
 
+/* Return number of chars in resulting preprocessed line, which is stored
+   in linebuffer (possibly reallocated). Lines that are not part of the
+   translation unit, ex. #define, return 0. Invalid input return -1. */
 static ssize_t
 preprocess(char **linebuffer, size_t *length, size_t read)
 {
@@ -104,6 +146,9 @@ preprocess(char **linebuffer, size_t *length, size_t read)
     while (i < read && isspace((*linebuffer)[i]))
         i++;
 
+    /* flag 1 when in false if block */
+    static int grayzone;
+
     /* ignore whitespace line */
     if (i == read) return 0;
 
@@ -111,34 +156,50 @@ preprocess(char **linebuffer, size_t *length, size_t read)
 
         /* destructive tokenization of directive */
         token = strtok(&((*linebuffer)[i+1]), " \t");
-        if (!strcmp("include", token)) {
+        if (!strcmp("include", token) && !grayzone) {
             FILE *file;
             char *filename;
             token = strtok(NULL, " \t\n");
-            printf("include file: %s\n", token);
 
-            if (strlen(token) > 2 && token[0] == '"' && token[strlen(token)-1] == '"') {
+            if (strlen(token) > 2 && 
+                token[0] == '"' && 
+                token[strlen(token)-1] == '"')
+            {
                 token[strlen(token)-1] = '\0';
                 filename = mkpath(token + 1);
                 file = fopen(filename, "r");
                 if (file == NULL) {
-                    fprintf(stderr, "error: could not open file %s on line %d\n", token, (int)line_number);
+                    fprintf(stderr, 
+                        "error: could not open file %s on line %d\n", 
+                        token, (int)line_number);
                     return -1;
                 }
                 free(filename);
                 push(file);
                 line_number = 0;
-            } else if (strlen(token) > 2 && token[0] == '<' && token[strlen(token)-1] == '>') {
-                return -1;
+            } else if (strlen(token) > 2 && 
+                token[0] == '<' && 
+                token[strlen(token)-1] == '>') {
+                return 0;
             } else {
                 return -1;
             }
 
-        } else {
-            return -1;
+        } else if (!strcmp("define", token) && !grayzone) {
+            char *symbol = strtok(NULL, " \n\t");
+            char *value = strtok(NULL, " \n\t");
+            sym_define(symbol, value);
+
+        } else if (!strcmp("ifndef", token) && !grayzone) {
+            char *symbol = strtok(NULL, " \n\t");
+            grayzone = sym_isdefined(symbol);
+
+        } else if (!strcmp("endif", token)) {
+            grayzone = 0;
         }
+
         return 0;
     }
 
-    return read;
+    return (grayzone) ? 0 : read;
 }
