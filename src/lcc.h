@@ -66,7 +66,4 @@ struct token
 int
 get_token(FILE *input, struct token* t);
 
-void
-print_token(struct token* t);
-
 #endif

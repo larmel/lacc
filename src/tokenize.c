@@ -1,5 +1,6 @@
-#include <stdio.h>
 #include "lcc.h"
+
+#include <stdio.h>
 
 #define MAX_TOKEN_LENGTH 256
 
