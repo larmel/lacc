@@ -45,13 +45,17 @@ typedef enum token_type
 
 	INTEGER,
 	IDENTIFIER,
+	STRING,
 
 	/* single character */
 	OPEN_PAREN = '(',
 	CLOSE_PAREN = ')',
 	SEMICOLON = ';',
 	OPEN_CURLY = '{',
-	CLOSE_CURLY = '}'
+	CLOSE_CURLY = '}',
+	COMMA = ',',
+	DOT = '.',
+	ASSIGN = '=',
 	
 } token_t;
 

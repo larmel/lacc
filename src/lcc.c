@@ -70,5 +70,7 @@ describe(enum token_type t)
 		return "number";
 	if (t == IDENTIFIER)
 		return "identifier";
+	if (t == STRING)
+		return "string";
 	return "misc";
 }

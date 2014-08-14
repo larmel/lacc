@@ -64,6 +64,29 @@ integer(int *state, char c)
     return 0;
 }
 
+static int
+string(int *state, char c)
+{
+    if (*state == 0) {
+        if (c == '"') *state = 1;
+        else *state = -1;
+    }
+    else if (*state == 1) {
+        if (c == '\\') *state = 2;
+        else if (c == '"') *state = 3;
+    }
+    else if (*state == 2) {
+        *state = 1;
+    }
+
+    if (*state == 3) {
+        token->type = STRING;
+        token->value = consumed;
+        return 1;
+    }
+    return 0;
+}
+
 /* automaton accepting keywords, return 1 on accept and 0 otherwise */
 static int
 keyword(int *state, char c) 
@@ -161,6 +184,15 @@ get_token(FILE *input, struct token *t)
         case '}':
             t->type = CLOSE_CURLY; t->value = "}";
             return 1;
+        case ',':
+            t->type = COMMA; t->value = ",";
+            return 1;
+        case '.':
+            t->type = DOT; t->value = ".";
+            return 1;
+        case '=': /* not exactly right ... */
+            t->type = ASSIGN; t->value = "=";
+            return 1;
         default:
             ungetc(c, input);
     }
@@ -173,6 +205,7 @@ get_token(FILE *input, struct token *t)
     int s_keyword = 0;
     int s_identifier = 0;
     int s_integer = 0;
+    int s_string = 0;
 
 
     while ((c = fgetc(input)) != EOF) {
@@ -191,6 +224,12 @@ get_token(FILE *input, struct token *t)
             ungetc(c, input);
             break;
         }
+        if (string(&s_string, c)) {
+            n_matched = 1;
+            consumed[n] = c;
+            n++;
+            break;
+        }
 
         consumed[n] = c;
         n++;
@@ -198,7 +237,7 @@ get_token(FILE *input, struct token *t)
 
     printf("\n");
 
-    if (n_matched == -1) {
+    if (n_matched == -1 && c != EOF) {
         printf("Could not match any token for input %s\n", consumed);
         return 0;
     }
