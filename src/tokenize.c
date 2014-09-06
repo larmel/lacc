@@ -235,8 +235,6 @@ get_token(FILE *input, struct token *t)
         n++;
     }
 
-    printf("\n");
-
     if (n_matched == -1 && c != EOF) {
         printf("Could not match any token for input %s\n", consumed);
         return 0;

@@ -67,7 +67,18 @@ struct token
 	void *value;
 };
 
-int
-get_token(FILE *input, struct token* t);
+int get_token(FILE *input, struct token* t);
+
+
+/* parsing */
+
+typedef struct node {
+	char *text;
+	struct token token;
+	struct node **children;
+	size_t nc;
+} node_t;
+
+struct node * parse(FILE *);
 
 #endif
