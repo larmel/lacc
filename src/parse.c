@@ -9,6 +9,7 @@ static struct node *tree;
 /* Tokenization interface and helper functions */
 static struct token peek_value;
 static int has_value;
+static int eof;
 
 static struct token
 readtoken()
@@ -18,7 +19,7 @@ readtoken()
         return peek_value;
     }
     struct token t;
-    int n = get_token(input, &t);
+    eof = (get_token(input, &t) == 0);
     return t;
 }
 
@@ -47,14 +48,26 @@ consume(enum token_type expected)
 static struct node *
 init_node(char *name, size_t n)
 {
-    struct node *node = malloc(sizeof(struct node));
+    struct node *node = malloc(sizeof(node_t));
     node->text = name;
     node->nc = n;
-    if (n) node->children = malloc(sizeof(struct node*) * n);
+    node->cap = n;
+    if (n) node->children = malloc(sizeof(node_t *) * node->cap);
+    else node->children = NULL;
     /* todo: add to free list */
     return node;
 }
 
+void
+addchild(node_t *node, node_t *child)
+{
+    if (node->nc == node->cap) {
+        node->cap *= 2;
+        node->children = realloc(node->children, sizeof(node_t *) * node->cap);
+    }
+    node->children[node->nc] = child;
+    node->nc++;
+}
 
 static node_t *translation_unit();
 static node_t *declaration();
@@ -82,8 +95,13 @@ parse(FILE *fd)
 static node_t *
 translation_unit()
 {
-    node_t *root = init_node("translation-unit", 1);
-    root->children[0] = declaration();
+    node_t *root = init_node("translation-unit", 16);
+    root->nc = 0;
+    while (1) {
+        peek();
+        if (eof) break;
+        addchild(root, declaration());
+    }
     return root;
 }
 

@@ -82,6 +82,7 @@ typedef struct node {
 	struct token token;
 	struct node **children;
 	size_t nc;
+	size_t cap;
 } node_t;
 
 struct node * parse(FILE *);
