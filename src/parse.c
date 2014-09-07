@@ -68,6 +68,8 @@ static node_t *type_qualifier_list();
 static node_t *parameter_type_list();
 static node_t *parameter_list();
 static node_t *parameter_declaration();
+static node_t *compound_statement();
+static node_t *init_declarator();
 
 /* External interface */
 node_t *
@@ -77,9 +79,6 @@ parse(FILE *fd)
     return translation_unit();
 }
 
-
-/* translation_unit -> function_definition | declaration
- */
 static node_t *
 translation_unit()
 {
@@ -89,16 +88,10 @@ translation_unit()
 }
 
 
-/* Declarations, statements that reserve a storage location
- * Examples:
- * int;
- * > (decl (decl-spec (type-spec "int")) (identifier "a"))
+/* Declarations, statements that reserve a storage location. Virtually the
+ * same as function definitions, so merge them into one and to postvalidation.
  *
- * extern void a;
- * > (decl (decl-spec (storage-class-spec "extern") (decl-spec (type-spec "void"))) (identifier "a"))
- * 
- * 'a' is the declarator, which is a whole other beast. Start
- * with something simple, only caring about the storage stuff.
+ * function-definition -> declaration-specifiers declarator compound-statement
  *
  * declaration -> declaration_specifiers [init_declarator_list] ';'
  *
@@ -122,11 +115,32 @@ translation_unit()
 static node_t *
 declaration()
 {
-    node_t *decl = init_node("declaration", 2);
-    decl->children[0] = declaration_specifiers();
-    decl->children[1] = init_declarator_list();
-    consume(';');
-    return decl;
+    node_t *declspec, *init_decl_list, *node;
+    declspec = declaration_specifiers();
+    init_decl_list = init_declarator_list();
+    switch (peek()) {
+        case ';':
+            consume(';');
+            node = init_node("declaration", 2);
+            break;
+        case '{': {
+            // lift (init_declarator-list (init-declarator (declarator))
+            node_t *init_decl = init_decl_list->children[0];
+            node_t *declarator = init_decl->children[0];
+            if  (init_decl_list->nc != 1 || init_decl->nc != 1) {
+                fprintf(stderr, "Invalid function definition syntax");
+                exit(0);
+            }
+            // todo: free init_decl_list and init_decl
+            init_decl_list = declarator;
+            node = init_node("function-definition", 3);
+            node->children[2] = compound_statement();
+            break;
+        }
+    }
+    node->children[0] = declspec;
+    node->children[1] = init_decl_list;
+    return node;
 }
 
 static node_t *
@@ -164,9 +178,24 @@ declaration_specifiers()
 static node_t *
 init_declarator_list()
 {
-    node_t *declarlist = init_node("init-declarator-list", 1);
-    declarlist->children[0] = declarator();
-    return declarlist;
+    node_t *node = init_node("init-declarator-list", 2);
+    node->children[0] = init_declarator();
+    if (peek() == ',') {
+        consume(',');
+        node->children[1] = init_declarator_list();
+    } else {
+        node->nc = 1;
+    }
+    return node;
+}
+
+static node_t *
+init_declarator()
+{
+    node_t *node = init_node("init_declarator", 1);
+    node->children[0] = declarator();
+    // todo: initialization
+    return node;
 }
 
 
@@ -366,5 +395,15 @@ parameter_declaration()
         default:
             node->nc = 1;
     }
+    return node;
+}
+
+static node_t *
+compound_statement()
+{
+    node_t *node = init_node("compound-statement", 0);
+    consume('{');
+    // todo: declaration list and statements
+    consume('}');
     return node;
 }
