@@ -59,8 +59,15 @@ init_node(char *name, size_t n)
 static node_t *translation_unit();
 static node_t *declaration();
 static node_t *declaration_specifiers();
-static node_t *storage_class_specifier();
 static node_t *init_declarator_list();
+static node_t *declarator();
+static node_t *direct_declarator();
+static node_t *identifier();
+static node_t *pointer();
+static node_t *type_qualifier_list();
+static node_t *parameter_type_list();
+static node_t *parameter_list();
+static node_t *parameter_declaration();
 
 /* External interface */
 node_t *
@@ -157,7 +164,207 @@ declaration_specifiers()
 static node_t *
 init_declarator_list()
 {
-    node_t *declarlist = init_node("init-declarator-list", 0);
-    declarlist->token = readtoken();
+    node_t *declarlist = init_node("init-declarator-list", 1);
+    declarlist->children[0] = declarator();
     return declarlist;
+}
+
+
+/* declarator ->
+ *      | [pointer] direct-declarator
+ *
+ * pointer -> 
+ *      | '*' [type-qualifier-list]
+ *      | '*' [type-qualifier-list] pointer
+ *
+ * direct-declarator ->
+ *      | identifier
+ *      | '(' declarator ')'
+ *      | direct-declarator '[' [constant-expression] ']' // array declarator
+ *      | direct-declarator '(' parameter-type-list ')'   // function declarator
+ *      x direct-declarator '(' [identifier-list] ')'     // old-style function declaration
+ *
+ * parameter-type-list ->
+ *      | parameter-list
+ *      | parameter-list ',' '...'
+ *
+ * parameter-list ->
+ *      | parameter-declaration
+ *      | parameter-list ',' parameter-declaration
+ *
+ * parameter-declaration ->
+ *      | declaration-specifiers declarator
+ *      | declaration-specifiers [abstract-declarator] 
+ *
+ * abstract-declarator ->
+ *      | pointer
+ *      | [pointer] direct-abstract-declarator
+ *
+ * direct-abstract-declarator ->
+ *      | '(' abstract-declarator ')'
+ *      | direct-abstract-declarator '[' [constant-expression] ']' // array declarator
+ *      | direct-abstract-declarator '(' parameter-type-list ')'   // function declarator
+ */
+static node_t *
+declarator()
+{
+    node_t *node = init_node("declarator", 2);
+    if (peek() == '*') {
+        node->children[0] = pointer();
+    } else {
+        node->nc = 1;
+    }
+    node->children[node->nc - 1] = direct_declarator();
+    return node;
+}
+
+static node_t *
+pointer()
+{
+    node_t *qualifiers, *node = init_node("pointer", 2);
+    node->token = readtoken();
+    qualifiers = type_qualifier_list();
+    if (qualifiers != NULL) {
+        node->children[0] = qualifiers;
+        if (peek() == '*') {
+            node->children[1] = pointer();
+        } else {
+            node->nc = 1;
+        }
+    } else {
+        if (peek() == '*') {
+            node->children[0] = pointer();
+            node->nc = 1;
+        } else {
+            node->nc = 0;
+        }
+    }
+    return node;
+}
+
+static node_t *
+type_qualifier_list()
+{
+    node_t *child, *node = init_node("type-qualifier-list", 2);
+    switch (peek()) {
+        case CONST:
+        case VOLATILE:
+            node->children[0] = init_node("type-qualifier", 0);
+            node->children[0]->token = readtoken();
+            node->children[1] = type_qualifier_list();
+            break;
+        default:
+            node->nc = 1;
+    }
+    return node;
+}
+
+static node_t *
+direct_declarator()
+{
+    node_t *node;
+    switch (peek()) {
+        case IDENTIFIER:
+            node = init_node("direct-declarator", 2);
+            node->children[0] = identifier();
+            break;
+        case '(':
+            node = init_node("direct-declarator", 2);
+            consume('(');
+            node->children[0] = declarator();
+            consume(')');
+            break;
+    }
+    switch (peek()) {
+        case '[':
+            consume('[');
+            //node->children[1] = contant_expression();
+            // do something simple for now, just a number constant
+            if (peek() != ']') {
+                node->children[1] = init_node("constant-expression", 0);
+                node->children[1]->token = readtoken();
+            }
+            consume(']');
+            break;
+        case '(':
+            consume('(');
+            node->children[1] = parameter_type_list();
+            consume(')');
+            break;
+        default:
+            node->nc = 1;
+    }
+    return node;
+}
+
+static node_t *
+identifier()
+{
+    node_t *node = init_node("identifier", 0);
+    node->token = readtoken();
+    return node;
+}
+
+/*
+ * parameter-type-list ->
+ *      | parameter-list
+ *      | parameter-list ',' '...'
+ *
+ * parameter-list ->
+ *      | parameter-declaration
+ *      | parameter-list ',' parameter-declaration
+ *
+ * parameter-declaration ->
+ *      | declaration-specifiers declarator
+ *      x declaration-specifiers [abstract-declarator] // assume abstract-declarator = declarator
+ */
+static node_t *
+parameter_type_list()
+{
+    node_t *node = init_node("parameter-type-list", 1);
+    node->children[0] = parameter_list();
+    if (peek() == DOTS) {
+        node->token = readtoken();
+    }
+    return node;
+}
+
+static node_t *
+parameter_list()
+{
+    node_t *node = init_node("parameter-list", 2);
+    node->children[0] = parameter_declaration();
+    if (peek() == ',') {
+        consume(',');
+        if (peek() == DOTS) {
+            node->nc = 1;
+            return node;
+        }
+        node->children[1] = parameter_list();
+    } else {
+        node->nc = 1;
+    }
+    return node;
+}
+
+static node_t *
+parameter_declaration()
+{
+    node_t *node = init_node("parameter-declaraton", 2);
+    node->children[0] = declaration_specifiers();
+
+    // No way to know if we recurse into declarator or abstract-declarator here.
+    // FIRST(declarator) = FIRST(abstract-declarator) = { IDENTIFIER, '*', '(' }
+    // Assume declarator = abstract-declarator, and do additional postprocessing
+    // to validate if the parsing was correct.
+    switch (peek()) {
+        case IDENTIFIER:
+        case '*':
+        case '(':
+            node->children[1] = declarator();
+            break;
+        default:
+            node->nc = 1;
+    }
+    return node;
 }

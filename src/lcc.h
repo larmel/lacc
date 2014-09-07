@@ -47,15 +47,20 @@ typedef enum token_type
 	IDENTIFIER,
 	STRING,
 
+	DOTS, /* ... */
+
 	/* single character */
 	OPEN_PAREN = '(',
 	CLOSE_PAREN = ')',
 	SEMICOLON = ';',
 	OPEN_CURLY = '{',
 	CLOSE_CURLY = '}',
+	OPEN_BRACKET = '[',
+	CLOSE_BRACKET = ']',
 	COMMA = ',',
 	DOT = '.',
 	ASSIGN = '=',
+	STAR = '*',
 	
 } token_t;
 

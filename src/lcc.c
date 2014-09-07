@@ -93,6 +93,9 @@ output_tree(int indent, struct node *tree)
         return;
     }
     printf("%*s(%s", indent, "", tree->text);
+    if (tree->token.value != NULL) {
+        printf(" \"%s\"", (char *)tree->token.value);
+    }
     if (tree->nc > 0) {
         printf("\n");
         for (i = 0; i < tree->nc; ++i) {
@@ -100,9 +103,6 @@ output_tree(int indent, struct node *tree)
             if (i < tree->nc - 1)
                 printf("\n");
         }
-    }
-    if (tree->token.value != NULL) {
-        printf(" \"%s\"", (char *)tree->token.value);
     }
     printf(")");
 }

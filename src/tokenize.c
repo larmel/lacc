@@ -1,6 +1,7 @@
 #include "lcc.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define MAX_TOKEN_LENGTH 256
 
@@ -156,7 +157,7 @@ static int skip_whitespace(FILE *);
 int
 get_token(FILE *input, struct token *t)
 {
-    char c;
+    char c, d, e;
     int n = 0; /* Number of chars consumed to make token */
     int i;
     int n_matched;
@@ -184,14 +185,36 @@ get_token(FILE *input, struct token *t)
         case '}':
             t->type = CLOSE_CURLY; t->value = "}";
             return 1;
+        case '[':
+            t->type = OPEN_BRACKET; t->value = "[";
+            return 1;
+        case ']':
+            t->type = CLOSE_BRACKET; t->value = "]";
+            return 1;
         case ',':
             t->type = COMMA; t->value = ",";
             return 1;
         case '.':
+            d = fgetc(input);
+            if (d == '.') {
+                e = fgetc(input);
+                if (e == '.') {
+                    t->type = DOTS; t->value = "...";
+                    return 3;
+                } else {
+                    printf("Unexpected %c, expected '.'", e);
+                    return 0;
+                }
+            } else {
+                ungetc(d, input);
+            }
             t->type = DOT; t->value = ".";
             return 1;
         case '=': /* not exactly right ... */
             t->type = ASSIGN; t->value = "=";
+            return 1;
+        case '*': /* todo: fix operators such as *= */
+            t->type = STAR; t->value = "*";
             return 1;
         default:
             ungetc(c, input);
@@ -217,6 +240,8 @@ get_token(FILE *input, struct token *t)
         if (identifier(&s_identifier, c)) {
             n_matched = 1;
             ungetc(c, input);
+            /* hack: copy buffer for non-static token */
+            t->value = strdup(t->value);
             break;
         }
         if (integer(&s_integer, c)) {
