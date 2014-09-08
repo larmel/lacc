@@ -230,7 +230,6 @@ get_token(FILE *input, struct token *t)
     int s_integer = 0;
     int s_string = 0;
 
-
     while ((c = fgetc(input)) != EOF) {
         if (keyword(&s_keyword, c)) {
             n_matched = 1;
@@ -247,6 +246,8 @@ get_token(FILE *input, struct token *t)
         if (integer(&s_integer, c)) {
             n_matched = 1;
             ungetc(c, input);
+            /* hack: copy buffer for non-static token */
+            t->value = strdup(t->value);
             break;
         }
         if (string(&s_string, c)) {

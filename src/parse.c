@@ -78,7 +78,6 @@ static node_t *direct_declarator();
 static node_t *identifier();
 static node_t *pointer();
 static node_t *type_qualifier_list();
-static node_t *parameter_type_list();
 static node_t *parameter_list();
 static node_t *parameter_declaration();
 static node_t *compound_statement();
@@ -164,33 +163,28 @@ declaration()
 static node_t *
 declaration_specifiers()
 {
-    node_t *declspec, *node = NULL;
-    switch (peek()) {
-        case AUTO: case REGISTER: case STATIC: case EXTERN: case TYPEDEF:
-            node = init_node("storage-class-specifier", 0);
-            node->token = readtoken();
-            break;
-        case VOID: case CHAR: case SHORT: case INT: case LONG: case FLOAT:
-        case DOUBLE: case SIGNED: case UNSIGNED:
-            node = init_node("type-specifier", 0);
-            node->token = readtoken();
-            break;
-        case CONST:
-        case VOLATILE:
-            node = init_node("type-qualifier", 0);
-            node->token = readtoken();
-            break;
-    }
-
-    if (node != NULL) {
-        declspec = init_node("declaration-specifiers", 2);
-        declspec->children[0] = node;
-        declspec->children[1] = declaration_specifiers();
-        return declspec;
-    }
-
-    /* need guard somewhere that the list is of at least length 1 */
-    return NULL;
+    node_t *declspec, *node = init_node("declaration-specifiers", 8);
+    node->nc = 0;
+    do {
+        switch (peek()) {
+            case AUTO: case REGISTER: case STATIC: case EXTERN: case TYPEDEF:
+                declspec = init_node("storage-class-specifier", 0);
+                break;
+            case VOID: case CHAR: case SHORT: case INT: case LONG: case FLOAT:
+            case DOUBLE: case SIGNED: case UNSIGNED:
+                declspec = init_node("type-specifier", 0);
+                break;
+            case CONST:
+            case VOLATILE:
+                declspec = init_node("type-qualifier", 0);
+                break;
+            default:
+                /* no guarantee that the list is of at least length 1 */
+                return node;
+        }
+        declspec->token = readtoken();
+        addchild(node, declspec);
+    } while (1);
 }
 
 static node_t *
@@ -210,7 +204,7 @@ init_declarator_list()
 static node_t *
 init_declarator()
 {
-    node_t *node = init_node("init_declarator", 1);
+    node_t *node = init_node("init-declarator", 1);
     node->children[0] = declarator();
     // todo: initialization
     return node;
@@ -292,16 +286,12 @@ pointer()
 static node_t *
 type_qualifier_list()
 {
-    node_t *child, *node = init_node("type-qualifier-list", 2);
-    switch (peek()) {
-        case CONST:
-        case VOLATILE:
-            node->children[0] = init_node("type-qualifier", 0);
-            node->children[0]->token = readtoken();
-            node->children[1] = type_qualifier_list();
-            break;
-        default:
-            node->nc = 1;
+    node_t *child, *node = init_node("type-qualifier-list", 4);
+    node->nc = 0;
+    while (peek() == CONST || peek() == VOLATILE) {
+        child = init_node("type-qualifier", 0);
+        child->token = readtoken();
+        addchild(node, child);
     }
     return node;
 }
@@ -309,14 +299,12 @@ type_qualifier_list()
 static node_t *
 direct_declarator()
 {
-    node_t *node;
+    node_t *node = init_node("direct-declarator", 2);
     switch (peek()) {
         case IDENTIFIER:
-            node = init_node("direct-declarator", 2);
             node->children[0] = identifier();
             break;
         case '(':
-            node = init_node("direct-declarator", 2);
             consume('(');
             node->children[0] = declarator();
             consume(')');
@@ -335,7 +323,7 @@ direct_declarator()
             break;
         case '(':
             consume('(');
-            node->children[1] = parameter_type_list();
+            node->children[1] = parameter_list();
             consume(')');
             break;
         default:
@@ -352,44 +340,27 @@ identifier()
     return node;
 }
 
-/*
- * parameter-type-list ->
- *      | parameter-list
- *      | parameter-list ',' '...'
- *
- * parameter-list ->
- *      | parameter-declaration
- *      | parameter-list ',' parameter-declaration
- *
- * parameter-declaration ->
- *      | declaration-specifiers declarator
- *      x declaration-specifiers [abstract-declarator] // assume abstract-declarator = declarator
+/* FOLLOW(parameter-list) = { ')' }, peek to return empty list;
+ * even though K&R require at least specifier: (void)
+ * Set parameter-type-list = parameter-list, including the , ...
  */
-static node_t *
-parameter_type_list()
-{
-    node_t *node = init_node("parameter-type-list", 1);
-    node->children[0] = parameter_list();
-    if (peek() == DOTS) {
-        node->token = readtoken();
-    }
-    return node;
-}
-
 static node_t *
 parameter_list()
 {
-    node_t *node = init_node("parameter-list", 2);
-    node->children[0] = parameter_declaration();
-    if (peek() == ',') {
-        consume(',');
-        if (peek() == DOTS) {
-            node->nc = 1;
-            return node;
-        }
-        node->children[1] = parameter_list();
-    } else {
-        node->nc = 1;
+    node_t *node = init_node("parameter-list", 8);
+    node->nc = 0;
+    if (peek() == DOTS) {
+        fprintf(stderr, "Parameter list with varargs must contain at least one declaration\n");
+        exit(0);
+    }
+    while (peek() != ')' && peek() != DOTS) {
+        addchild(node, parameter_declaration());
+        if (peek() == ',') {
+            consume(',');
+        } else break;
+    }
+    if (peek() == DOTS) {
+        node->token = readtoken();
     }
     return node;
 }
