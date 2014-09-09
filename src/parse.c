@@ -80,8 +80,13 @@ static node_t *pointer();
 static node_t *type_qualifier_list();
 static node_t *parameter_list();
 static node_t *parameter_declaration();
-static node_t *compound_statement();
+static node_t *block();
 static node_t *init_declarator();
+static node_t *statement();
+static node_t *expression();
+static node_t *postfix_expression();
+static node_t *primary_expression();
+
 
 /* External interface */
 node_t *
@@ -151,7 +156,7 @@ declaration()
             // todo: free init_decl_list and init_decl
             init_decl_list = declarator;
             node = init_node("function-definition", 3);
-            node->children[2] = compound_statement();
+            node->children[2] = block();
             break;
         }
     }
@@ -387,12 +392,127 @@ parameter_declaration()
     return node;
 }
 
+/* Treat statements and declarations equally, allowing declarations in between
+ * statements as in modern C. Called compound-statement in K&R.
+ */
 static node_t *
-compound_statement()
+block()
 {
-    node_t *node = init_node("compound-statement", 0);
+    node_t *node = init_node("block", 32);
+    node->nc = 0;
     consume('{');
-    // todo: declaration list and statements
+    while (peek() != '}') {
+        if (peek() == ';') {
+            consume(';');
+            continue;
+        }
+        addchild(node, statement());
+    }
     consume('}');
     return node;
 }
+
+static node_t *
+statement()
+{
+    node_t *node = init_node("not-implemented-statement", 0);
+    switch (peek()) {
+        case '{':
+            node = block();
+            break;
+        case IF:
+        case SWITCH:
+            /* selection-statement */
+            break;
+        case WHILE:
+        case DO:
+        case FOR:
+            /* iteration-statement */
+            break;
+        case GOTO:
+        case CONTINUE:
+        case BREAK:
+        case RETURN:
+            /* jump-statement */
+            break;
+        case CASE:
+        case DEFAULT:
+            /* labeled-statement */
+            break;
+        case IDENTIFIER: /* also part of label statement, need 2 lookahead */
+        case INTEGER: /* later: any constant value */
+        case STRING:
+        case '(':
+            node = expression();
+            consume(';');
+            break;
+        default:
+            fprintf(stderr, "Unexpected token %s, not a valid statement", (char *) readtoken().value);
+            exit(0);
+    }
+    return node;
+}
+
+
+static node_t *
+expression()
+{
+    node_t *node = init_node("expression", 0);
+    addchild(node, postfix_expression());
+    return node;
+}
+
+
+/* This rule is left recursive, build tree bottom up
+ */
+static node_t *
+postfix_expression()
+{
+    node_t *root = primary_expression();
+    while (peek() == '[' || peek() == '(' || peek() == '.') {
+        node_t *parent = init_node("postfix-expression", 2);
+        parent->nc = 0;
+        addchild(parent, root);
+        switch (peek()) {
+            case '[':
+                consume('[');
+                addchild(parent, expression());
+                consume(']');
+                break;
+            case '(':
+                // addchild(parent, argument_expression_list());
+                consume('(');
+                consume(')');
+                break;
+            case '.':
+                parent->token = readtoken();
+                addchild(parent, identifier());
+                break;
+            default:
+                fprintf(stderr, "Unexpected token %s, not a valid postfix expression", (char *) readtoken().value);
+                exit(0);
+        }
+        root = parent;
+    }
+    return root;
+}
+
+static node_t *
+primary_expression()
+{
+    node_t *node;
+    switch (peek()) {
+        case IDENTIFIER:
+            node = identifier();
+            break;
+        case INTEGER:
+            node = init_node("integer", 0);
+            node->token = readtoken();
+            break;
+        default:
+            fprintf(stderr, "Unexpected token %s, not a valid primary expression", (char *) readtoken().value);
+            exit(0);
+    }
+    return node;
+}
+
