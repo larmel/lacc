@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void init_preprocessing(FILE *, const char *);
+void init_preprocessing(const char *);
 int getprepline(char **);
 
 typedef enum token_type
@@ -86,5 +86,9 @@ typedef struct node {
 } node_t;
 
 struct node * parse(FILE *);
+
+
+/* error reporting, functions that can be called from any component */
+void error(const char *, ...);
 
 #endif

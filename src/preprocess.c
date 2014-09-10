@@ -3,33 +3,72 @@
 #include <ctype.h>
 #include <string.h>
 
+/* expose global state to other components */
+size_t line_number;
+const char *filename;
+
 static ssize_t preprocess(char **, size_t *, size_t);
 
 /* stack of file descriptors as resolved by includes */
-static FILE* *fd = NULL;
+static struct fnt {
+    FILE *file;
+    const char *name;
+    int line;
+} *fd = NULL;
 
-/* stack functionality */
-static size_t fd_idx = -1;
-static size_t fd_len;
+static int fd_idx = -1;
+static int fd_len;
 
-static size_t push(FILE *file)
+static int push(const char* name)
 {
     int i = 0;
-    if (fd_idx == fd_len - 1) {
-        fd_len += 16;
-        fd = realloc(fd, fd_len * sizeof(FILE*));
+    FILE *file = fopen(name, "r");
+    if (file != NULL) {
+        if (fd_idx == fd_len - 1) {
+            fd_len += 16;
+            fd = realloc(fd, fd_len * sizeof(struct fnt));
+        }
+        if (fd_idx >= 0) {
+            fd[fd_idx].line = line_number;
+        }
+        fd_idx++;
+        fd[fd_idx].file = file;
+        fd[fd_idx].name = name;
+
+        filename = name;
+        line_number = 0;
+    } else {
+        error("could not open file %s", name);
     }
-    fd[++fd_idx] = file;
     return fd_idx;
 }
 
-static size_t pop()
+static int pop()
 {
-    if (fd_idx == 0) {
-        free(fd);
-        fd_len = 0;
+    if (fd_idx >= 0) {
+        fclose(fd[fd_idx].file);
+        fd_idx--;
+        if (fd_idx >= 0) {
+            filename = fd[fd_idx].name;
+            line_number = fd[fd_idx].line;
+        }
     }
-    return --fd_idx;
+    return fd_idx;
+}
+
+/* path of initial file, used for relative include paths */
+static const char *directory;
+
+static char *
+mkpath(const char *filename)
+{
+    size_t dir_len = strlen(directory);
+    size_t fil_len = strlen(filename);
+    char *path = malloc(dir_len + 1 + fil_len + 1);
+    strcpy(path, directory);
+    strcat(path, "/");
+    strcat(path, filename);
+    return path;
 }
 
 /* symbol list */
@@ -70,22 +109,20 @@ sym_define(const char *symbol, const char *value) {
     return sym_idx++;
 }
 
-/* path of initial file, used for relative include paths */
-static const char *directory;
-
-/* initialization, called once on root file descriptor */
+/* initialization, called once with root file name */
 void
-init_preprocessing(FILE *input, const char *dir)
+init_preprocessing(const char *filename)
 {
+    char *dir = ".";
+    char *lastsep = strrchr(filename, '/');
+    if (lastsep != NULL) {
+        dir = calloc(lastsep - filename + 1, sizeof(char));
+        strncpy(dir, filename, lastsep - filename);
+    }
+
     directory = dir;
-    while (fd_idx != -1)
-        pop();
-
-    push(input);
+    push(filename);
 }
-
-/* keep track of line number within a file */
-size_t line_number;
 
 /* yield next preprocessed line */
 int
@@ -104,12 +141,11 @@ getprepline(char **buffer)
 
     while (1) {
         line_number++;
-        read = getline(&linebuffer, &length, fd[fd_idx]);
+        read = getline(&linebuffer, &length, fd[fd_idx].file);
         if (read == -1) {
             if (pop() == -1) {
                 return -1;
             }
-            line_number = 0;
             continue;
         }
         processed = preprocess(&linebuffer, &length, (size_t)read);
@@ -120,18 +156,6 @@ getprepline(char **buffer)
 
     *buffer = linebuffer;
     return processed;
-}
-
-static char *
-mkpath(const char *filename)
-{
-    size_t dir_len = strlen(directory);
-    size_t fil_len = strlen(filename);
-    char *path = malloc(dir_len + 1 + fil_len + 1);
-    strcpy(path, directory);
-    strcat(path, "/");
-    strcat(path, filename);
-    return path;
 }
 
 /* Return number of chars in resulting preprocessed line, which is stored
@@ -157,8 +181,6 @@ preprocess(char **linebuffer, size_t *length, size_t read)
         /* destructive tokenization of directive */
         token = strtok(&((*linebuffer)[i+1]), " \t");
         if (!strcmp("include", token) && !grayzone) {
-            FILE *file;
-            char *filename;
             token = strtok(NULL, " \t\n");
 
             if (strlen(token) > 2 && 
@@ -166,17 +188,7 @@ preprocess(char **linebuffer, size_t *length, size_t read)
                 token[strlen(token)-1] == '"')
             {
                 token[strlen(token)-1] = '\0';
-                filename = mkpath(token + 1);
-                file = fopen(filename, "r");
-                if (file == NULL) {
-                    fprintf(stderr, 
-                        "error: could not open file %s on line %d\n", 
-                        token, (int)line_number);
-                    return -1;
-                }
-                free(filename);
-                push(file);
-                line_number = 0;
+                push(mkpath(token + 1));
             } else if (strlen(token) > 2 && 
                 token[0] == '<' && 
                 token[strlen(token)-1] == '>') {

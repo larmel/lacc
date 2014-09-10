@@ -12,49 +12,34 @@ static void output_tree(int indent, struct node *tree);
 int main(int argc, char* argv[])
 {
     char *line;
-    FILE *input = stdin;
     const char *filename;
-    char *directory = ".";
-    struct token t;
 
     if (argc == 2) {
         filename = argv[1];
-        FILE *f;
-        char *lastsep = strrchr(filename, '/');
-        if (lastsep != NULL) {
-            directory = calloc(lastsep - filename + 1, sizeof(char));
-            strncpy(directory, filename, lastsep - filename);
-        }
-        if (f = fopen(filename, "r")) {
-            input = f;
-        }
+    } else {
+        fprintf(stderr, "fatal error: missing input file");
+        exit(0);
     }
-    printf("dir: %s\n", directory);
-    printf("file: %s\n\n", filename);
 
+    /* stitch together parsing and tokenization */
     char *filebuf;
     size_t filesize;
     FILE *p = open_memstream(&filebuf, &filesize);
 
-    init_preprocessing(input, directory);
+    init_preprocessing(filename);
 
     /* preprocess to temp file buffer */
     while (getprepline(&line) != -1) {
         fputs(line, p);
         printf("%03d  %s", (int)line_number, line);
     }
-
+    
     /* parse */
     node_t *tree = parse(p);
 
     puts("");
     output_tree(0, tree);
     puts("");
-
-    /* tokenize */
-    //while (get_token(p, &t)) {
-    //  printf("token( %s, %s )\n", (char*) t.value, describe(t.type));
-    //}
 
     fclose(p);
 

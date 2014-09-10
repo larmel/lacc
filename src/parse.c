@@ -447,7 +447,7 @@ statement()
             consume(';');
             break;
         default:
-            fprintf(stderr, "Unexpected token %s, not a valid statement", (char *) readtoken().value);
+            error("Unexpected token %s, not a valid statement", (char *) readtoken().value);
             exit(0);
     }
     return node;
