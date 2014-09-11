@@ -33,7 +33,7 @@ int main(int argc, char* argv[])
         fputs(line, p);
         printf("%03d  %s", (int)line_number, line);
     }
-    
+
     /* parse */
     node_t *tree = parse(p);
 

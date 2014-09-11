@@ -38,7 +38,7 @@ consume(enum token_type expected)
 {
     struct token t = readtoken();
     if (t.type != expected) {
-        fprintf(stderr, "Unexpected token %s, aborting\n", (char *) t.value);
+        error("Unexpected token %s, aborting\n", (char *) t.value);
         exit(1);
     }
 }
@@ -150,7 +150,7 @@ declaration()
             node_t *init_decl = init_decl_list->children[0];
             node_t *declarator = init_decl->children[0];
             if  (init_decl_list->nc != 1 || init_decl->nc != 1) {
-                fprintf(stderr, "Invalid function definition syntax");
+                error("Invalid function definition syntax");
                 exit(0);
             }
             // todo: free init_decl_list and init_decl
@@ -355,7 +355,7 @@ parameter_list()
     node_t *node = init_node("parameter-list", 8);
     node->nc = 0;
     if (peek() == DOTS) {
-        fprintf(stderr, "Parameter list with varargs must contain at least one declaration\n");
+        error("Parameter list with varargs must contain at least one declaration");
         exit(0);
     }
     while (peek() != ')' && peek() != DOTS) {
@@ -415,32 +415,84 @@ block()
 static node_t *
 statement()
 {
-    node_t *node = init_node("not-implemented-statement", 0);
-    switch (peek()) {
+    node_t *node;
+    enum token_type t = peek();
+    switch (t) {
         case '{':
             node = block();
             break;
         case IF:
         case SWITCH:
-            /* selection-statement */
+            node = init_node("selection-statement", 3);
+            node->nc = 0;
+            node->token = readtoken();
+            consume('(');
+            addchild(node, expression());
+            consume(')');
+            addchild(node, statement());
+            if (peek() == ELSE) {
+                consume(ELSE);
+                addchild(node, statement());
+            }
             break;
         case WHILE:
         case DO:
         case FOR:
-            /* iteration-statement */
+            node = init_node("iteration-statement", 4);
+            node->nc = 0;
+            node->token = readtoken();
+            if (t == WHILE) {
+                consume('(');
+                addchild(node, expression());
+                consume(')');
+                addchild(node, statement());
+            } else if (t == DO) {
+                addchild(node, statement());
+                consume(WHILE);
+                consume('(');
+                addchild(node, expression());
+                consume(')');
+            } else {
+                consume('(');
+                addchild(node, (peek() != ';') ? expression() : NULL);
+                consume(';');
+                addchild(node, (peek() != ';') ? expression() : NULL);
+                consume(';');
+                addchild(node, (peek() != ')') ? expression() : NULL);
+                consume(')');
+                addchild(node, statement());
+            }
             break;
         case GOTO:
         case CONTINUE:
         case BREAK:
         case RETURN:
-            /* jump-statement */
+            node = init_node("jump-statement", 1);
+            node->nc = 0;
+            node->token = readtoken();
+            if (t == GOTO && peek() == IDENTIFIER) {
+                addchild(node, identifier());
+            } else if (t == RETURN && peek() != ';') {
+                addchild(node, expression());
+            }
+            consume(';');
             break;
         case CASE:
         case DEFAULT:
-            /* labeled-statement */
+            node = init_node("labeled-statement", 2);
+            node->nc = 0;
+            node->token = readtoken();
+            if (peek() == ':') {
+                consume(':');
+                addchild(node, statement());
+            } else {
+                addchild(node, primary_expression()); /* todo: constant_expression */
+                consume(':');
+                addchild(node, statement());
+            }
             break;
         case IDENTIFIER: /* also part of label statement, need 2 lookahead */
-        case INTEGER: /* later: any constant value */
+        case INTEGER: /* todo: any constant value */
         case STRING:
         case '(':
             node = expression();
@@ -453,7 +505,6 @@ statement()
     return node;
 }
 
-
 static node_t *
 expression()
 {
@@ -461,7 +512,6 @@ expression()
     addchild(node, postfix_expression());
     return node;
 }
-
 
 /* This rule is left recursive, build tree bottom up
  */
@@ -489,7 +539,7 @@ postfix_expression()
                 addchild(parent, identifier());
                 break;
             default:
-                fprintf(stderr, "Unexpected token %s, not a valid postfix expression", (char *) readtoken().value);
+                error("Unexpected token '%s', not a valid postfix expression", (char *) readtoken().value);
                 exit(0);
         }
         root = parent;
@@ -510,7 +560,7 @@ primary_expression()
             node->token = readtoken();
             break;
         default:
-            fprintf(stderr, "Unexpected token %s, not a valid primary expression", (char *) readtoken().value);
+            error("Unexpected token '%s', not a valid primary expression", (char *) readtoken().value);
             exit(0);
     }
     return node;
