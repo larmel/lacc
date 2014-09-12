@@ -36,12 +36,17 @@ int main(int argc, char* argv[])
 
     /* parse */
     node_t *tree = parse(p);
+    fclose(p);
 
     puts("");
     output_tree(0, tree);
     puts("");
 
-    fclose(p);
+    puts("");
+    dump_symtab();
+    puts("");
+
+    puts("Success!");
 
     return EXIT_SUCCESS;
 }

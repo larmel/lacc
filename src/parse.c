@@ -101,11 +101,13 @@ translation_unit()
 {
     node_t *root = init_node("translation-unit", 16);
     root->nc = 0;
+    push_scope();
     while (1) {
         peek();
         if (eof) break;
         addchild(root, declaration());
     }
+    pop_scope();
     return root;
 }
 
@@ -308,6 +310,7 @@ direct_declarator()
     switch (peek()) {
         case IDENTIFIER:
             node->children[0] = identifier();
+            symbol_t *symbol = sym_add((char *) node->children[0]->token.value);
             break;
         case '(':
             consume('(');
@@ -400,6 +403,7 @@ block()
 {
     node_t *node = init_node("block", 32);
     node->nc = 0;
+    push_scope();
     consume('{');
     while (peek() != '}') {
         if (peek() == ';') {
@@ -409,6 +413,7 @@ block()
         addchild(node, statement());
     }
     consume('}');
+    pop_scope();
     return node;
 }
 
@@ -554,6 +559,7 @@ primary_expression()
     switch (peek()) {
         case IDENTIFIER:
             node = identifier();
+            symbol_t *symbol = sym_add((char *) node->token.value);
             break;
         case INTEGER:
             node = init_node("integer", 0);
@@ -565,4 +571,3 @@ primary_expression()
     }
     return node;
 }
-
