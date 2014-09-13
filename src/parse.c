@@ -290,7 +290,7 @@ type_qualifier_list()
 static node_t *
 direct_declarator()
 {
-    node_t *node = init_node("direct-declarator", 2);
+    node_t *node = init_node("direct-declarator", 1);
     switch (peek()) {
         case IDENTIFIER:
             addchild(node, identifier());
@@ -302,23 +302,25 @@ direct_declarator()
             consume(')');
             break;
     }
-    // todo: handle nested, ex: int foo[10][5];
-    switch (peek()) {
-        case '[':
+    // Handle left-recursiveness bottom up, declarations like 'int foo[10][5];'
+    while (peek() == '[' || peek() == '(') {
+        node_t *parent = init_node("direct_declarator", 2);
+        addchild(parent, node);
+        if (peek() == '[') {
             consume('[');
             if (peek() != ']') {
                 // do something simple for now, just a number constant
                 node_t *expr = init_node("constant-expression", 0);
                 expr->token = readtoken();
-                addchild(node, expr);
+                addchild(parent, expr);
             }
             consume(']');
-            break;
-        case '(':
+        } else {
             consume('(');
-            addchild(node, parameter_list());
+            addchild(parent, parameter_list());
             consume(')');
-            break;
+        }
+        node = parent;
     }
     return node;
 }
