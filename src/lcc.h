@@ -77,7 +77,7 @@ int get_token(FILE *input, struct token* t);
 /* parsing */
 
 typedef struct node {
-    char *text;
+    const char *text;
     struct token token;
     struct node **children;
     size_t nc;

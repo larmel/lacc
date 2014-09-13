@@ -75,14 +75,20 @@ void push_scope()
     if (depth == scope_cap) {
         scope_cap += 16;
         scopes = realloc(scopes, sizeof(struct lexical_scope) * scope_cap);
+        memset(&scopes[depth], 0x0, sizeof(struct lexical_scope) * 16);
     }
-    memset(&scopes[depth], 0x0, sizeof(struct lexical_scope) * 16);
 }
 
 void pop_scope()
 {
     if (depth >= 0) {
+        free(scopes[depth].symlist);
+        memset(&scopes[depth], 0x0, sizeof(struct lexical_scope));
         depth--;
+    }
+    if (depth == -1) {
+        free(scopes);
+        scopes = NULL;
     }
 }
 
