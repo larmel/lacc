@@ -1,6 +1,5 @@
 #include "lcc.h"
 
-#include <stdio.h>
 #include <string.h>
 
 #define MAX_TOKEN_LENGTH 256
@@ -22,7 +21,7 @@ identifier(int *state, char c)
         case 1:
             if (isspace(c) || !isalnum(c)) {
                 token->type = IDENTIFIER,
-                token->value = consumed;
+                token->value = strdup(consumed);
                 *state = 2;
                 return 1;
             }
@@ -59,7 +58,7 @@ integer(int *state, char c)
     *state = t[*state][iidx];
     if (*state / 10) {
         token->type = INTEGER,
-        token->value = consumed;
+        token->value = strdup(consumed);
         return 1;
     }
     return 0;
@@ -82,7 +81,7 @@ string(int *state, char c)
 
     if (*state == 3) {
         token->type = STRING;
-        token->value = consumed;
+        token->value = strdup(consumed);
         return 1;
     }
     return 0;
@@ -202,7 +201,7 @@ get_token(FILE *input, struct token *t)
                     t->type = DOTS; t->value = "...";
                     return 3;
                 } else {
-                    printf("Unexpected %c, expected '.'", e);
+                    error("Unexpected '%c', expected '.'", e);
                     return 0;
                 }
             } else {
@@ -239,15 +238,11 @@ get_token(FILE *input, struct token *t)
         if (identifier(&s_identifier, c)) {
             n_matched = 1;
             ungetc(c, input);
-            /* hack: copy buffer for non-static token */
-            t->value = strdup(t->value);
             break;
         }
         if (integer(&s_integer, c)) {
             n_matched = 1;
             ungetc(c, input);
-            /* hack: copy buffer for non-static token */
-            t->value = strdup(t->value);
             break;
         }
         if (string(&s_string, c)) {
@@ -262,7 +257,7 @@ get_token(FILE *input, struct token *t)
     }
 
     if (n_matched == -1 && c != EOF) {
-        printf("Could not match any token for input %s\n", consumed);
+        error("Could not match any token for input '%s'\n", consumed);
         return 0;
     }
 
@@ -282,7 +277,7 @@ skip_whitespace(FILE *input)
     return n;
 }
 
-static void 
+static void
 reset()
 {
     int i = 0;

@@ -38,7 +38,7 @@ consume(enum token_type expected)
 {
     struct token t = readtoken();
     if (t.type != expected) {
-        error("Unexpected token %s, aborting\n", (char *) t.value);
+        error("Unexpected token %s, aborting\n", t.value);
         exit(1);
     }
 }
@@ -294,7 +294,7 @@ direct_declarator()
     switch (peek()) {
         case IDENTIFIER:
             addchild(node, identifier());
-            symbol_t *symbol = sym_add((char *) node->children[0]->token.value);
+            symbol_t *symbol = sym_add(node->children[0]->token.value);
             break;
         case '(':
             consume('(');
@@ -481,8 +481,7 @@ statement()
             consume(';');
             break;
         default:
-            error("Unexpected token %s, not a valid statement", (char *) readtoken().value);
-            exit(0);
+            node = declaration();
     }
     return node;
 }
@@ -520,7 +519,7 @@ postfix_expression()
                 addchild(parent, identifier());
                 break;
             default:
-                error("Unexpected token '%s', not a valid postfix expression", (char *) readtoken().value);
+                error("Unexpected token '%s', not a valid postfix expression", readtoken().value);
                 exit(0);
         }
         root = parent;
@@ -535,14 +534,18 @@ primary_expression()
     switch (peek()) {
         case IDENTIFIER:
             node = identifier();
-            symbol_t *symbol = sym_add((char *) node->token.value);
+            symbol_t *symbol = sym_lookup(node->token.value);
+            if (symbol == NULL) {
+                error("Undefined symbol '%s', aborting", node->token.value);
+                exit(0);
+            }
             break;
         case INTEGER:
             node = init_node("integer", 0);
             node->token = readtoken();
             break;
         default:
-            error("Unexpected token '%s', not a valid primary expression", (char *) readtoken().value);
+            error("Unexpected token '%s', not a valid primary expression", readtoken().value);
             exit(0);
     }
     return node;

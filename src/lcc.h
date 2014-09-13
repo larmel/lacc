@@ -66,9 +66,7 @@ typedef enum token_type
 struct token
 {
     enum token_type type;
-    /* Depending on token type, store a reference to an integer, char, string,
-     * or other compile time constant. */
-    void *value;
+    const char *value;
 };
 
 int get_token(FILE *input, struct token* t);

@@ -84,7 +84,7 @@ output_tree(int indent, struct node *tree)
     }
     printf("%*s(%s", indent, "", tree->text);
     if (tree->token.value != NULL) {
-        printf(" \"%s\"", (char *)tree->token.value);
+        printf(" \"%s\"", tree->token.value);
     }
     if (tree->nc > 0) {
         printf("\n");
