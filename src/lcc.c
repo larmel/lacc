@@ -7,7 +7,6 @@
 extern size_t line_number;
 
 static const char * describe(enum token_type);
-static void output_tree(int indent, struct node *tree);
 
 int main(int argc, char* argv[])
 {
@@ -35,18 +34,16 @@ int main(int argc, char* argv[])
     }
 
     /* parse */
-    node_t *tree = parse(p);
+    init_parsing(p);
+    codegen();
+    //node_t *tree = parse(p);
     fclose(p);
-
-    puts("");
-    output_tree(0, tree);
-    puts("");
 
     puts("");
     dump_symtab();
     puts("");
 
-    puts("Success!");
+    printir(stdout);
 
     return EXIT_SUCCESS;
 }
@@ -71,28 +68,4 @@ describe(enum token_type t)
     if (t == STRING)
         return "string";
     return "";
-}
-
-/* Print parse tree in human readable format */
-static void 
-output_tree(int indent, struct node *tree)
-{
-    int i;
-    if (tree == NULL) {
-        printf("%*s(null)", indent, "");
-        return;
-    }
-    printf("%*s(%s", indent, "", tree->text);
-    if (tree->token.value != NULL) {
-        printf(" \"%s\"", tree->token.value);
-    }
-    if (tree->nc > 0) {
-        printf("\n");
-        for (i = 0; i < tree->nc; ++i) {
-            output_tree(indent + 2, tree->children[i]);
-            if (i < tree->nc - 1)
-                printf("\n");
-        }
-    }
-    printf(")");
 }

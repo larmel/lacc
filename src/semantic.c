@@ -39,7 +39,6 @@ sym_lookup(const char *name)
     for (d = depth; d >= 0; --d) {
         for (i = 0; i < scopes[d].size; ++i) {
             sym = scopes[d].symlist[i];
-            printf("Checking symbol '%s'\n", sym->name);
             if (!strcmp(name, sym->name)) {
                 return sym;
             }
@@ -51,8 +50,6 @@ sym_lookup(const char *name)
 symbol_t *
 sym_add(const char *name)
 {
-    printf("Adding symbol '%s'\n", name);
-    printf("Current scope depth is %d\n", depth);
     struct lexical_scope *scope = &scopes[depth];
     symbol_t *symbol = sym_lookup(name);
     if (symbol != NULL) {
@@ -66,7 +63,6 @@ sym_add(const char *name)
     }
     scope->symlist[scope->size] = symbol;
     scope->size++;
-    puts("Done adding symbol");
 }
 
 void push_scope()

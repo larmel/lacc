@@ -82,15 +82,18 @@ typedef struct node {
     size_t cap;
 } node_t;
 
-struct node * parse(FILE *);
+void init_parsing(FILE *fd);
+node_t *parse();
 
 
 /* type analysis */
 
 enum type { POINTER, T_INT, T_LONG, T_FLOAT, T_DOUBLE, T_CHAR, FUNCTION };
+enum flag { T_CONST = 0x01, T_EXTERN = 0x02, T_STATIC = 0x04 };
 
 typedef struct typestack {
     enum type type;
+    enum flag flag;
 
     /* if pointer */
     struct typestack *ptrto;
@@ -101,12 +104,12 @@ typedef struct typestack {
     struct typestack *retval;
 } tstack_t;
 
-/* int *foo;
+/* static int *foo;
  * ( .name = "foo", .type )
  *                     |
  *          ( .type = POINTER, .ptrto )
  *                               |
- *                       ( .type = T_INT )
+ *                       ( .type = T_INT, flag = 0x02 )
  */
 typedef struct symbol {
     const char *name;
@@ -126,6 +129,15 @@ void pop_scope();
 
 /* debugging */
 void dump_symtab();
+
+
+
+/* IR */
+
+void codegen();
+void printir(FILE *);
+
+
 
 
 /* error reporting, functions that can be called from any component */

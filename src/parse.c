@@ -86,16 +86,56 @@ static node_t *statement();
 static node_t *expression();
 static node_t *postfix_expression();
 static node_t *primary_expression();
+static node_t *initializer();
 
+static void output_tree(int indent, struct node *tree);
+
+void
+init_parsing(FILE *fd)
+{
+    input = fd;
+}
 
 /* External interface */
 node_t *
-parse(FILE *fd)
+parse()
 {
-    input = fd;
-    return translation_unit();
+    peek();
+    if (!eof) {
+        node_t *node = declaration();
+        output_tree(0, node);
+        puts("");
+        return node;
+    }
+    return NULL;
 }
 
+/* Print parse tree in human readable format */
+static void 
+output_tree(int indent, struct node *tree)
+{
+    int i;
+    if (tree == NULL) {
+        printf("%*s(null)", indent, "");
+        return;
+    }
+    printf("%*s(%s", indent, "", tree->text);
+    if (tree->token.value != NULL) {
+        printf(" \"%s\"", tree->token.value);
+    }
+    if (tree->nc > 0) {
+        printf("\n");
+        for (i = 0; i < tree->nc; ++i) {
+            output_tree(indent + 2, tree->children[i]);
+            if (i < tree->nc - 1)
+                printf("\n");
+        }
+    }
+    printf(")");
+}
+
+
+/* not used */
 static node_t *
 translation_unit()
 {
@@ -210,7 +250,24 @@ init_declarator()
 {
     node_t *node = init_node("init-declarator", 1);
     addchild(node, declarator());
-    // todo: initialization
+    if (peek() == '=') {
+        consume('=');
+        addchild(node, initializer());
+    }
+    return node;
+}
+
+static node_t *
+initializer()
+{
+    node_t *node = init_node("initializer", 1);
+    if (peek() == '{') {
+        error("Struct initializer not supported");
+        exit(0);
+    } else {
+        // todo: assignment-expression
+        addchild(node, primary_expression());
+    }
     return node;
 }
 
