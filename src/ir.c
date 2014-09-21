@@ -63,15 +63,13 @@ codegen()
 static void
 generate_function(node_t *fd)
 {
-    node_t *identifier = fd->children[1]->children[0]->children[0]->children[0];
     irop_t *label = mkirop(IR_LABEL);
-    label->data.label.text = identifier->token.value;
+    label->data.label.text = fd->token.value;
     append(label);
     append(mkirop(IR_PUSH_STACKFRAME));
     append(mkirop(IR_POP_STACKFRAME));
     append(mkirop(IR_RETURN));
 }
-
 
 void
 printir(FILE *file)

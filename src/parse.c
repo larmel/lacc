@@ -4,7 +4,6 @@
 #include <stdlib.h>
 
 static FILE *input;
-static struct node *tree;
 
 /* Tokenization interface and helper functions */
 static struct token peek_value;
@@ -58,7 +57,7 @@ init_node(const char *name, size_t n)
     return node;
 }
 
-void
+static void
 addchild(node_t *node, node_t *child)
 {
     if (node->nc == node->cap) {
@@ -69,20 +68,23 @@ addchild(node_t *node, node_t *child)
     node->nc++;
 }
 
-static node_t *translation_unit();
+static typetree_t *
+init_typetree(enum tree_type type)
+{
+    typetree_t *tree = malloc(sizeof(typetree_t));
+    tree->type = type;
+    return tree;
+}
+
 static node_t *declaration();
-static node_t *declaration_specifiers();
-static node_t *init_declarator_list();
-static node_t *declarator();
-static node_t *direct_declarator();
-static node_t *identifier();
-static node_t *pointer();
-static node_t *type_qualifier_list();
-static node_t *parameter_list();
-static node_t *parameter_declaration();
+static typetree_t *declaration_specifiers();
+static typetree_t *declarator(typetree_t *, const char **);
+static typetree_t *pointer(typetree_t *);
+static typetree_t *direct_declarator(typetree_t *, const char **);
+static typetree_t *parameter_list(typetree_t *);
 static node_t *block();
-static node_t *init_declarator();
 static node_t *statement();
+static node_t *identifier();
 static node_t *expression();
 static node_t *postfix_expression();
 static node_t *primary_expression();
@@ -101,11 +103,14 @@ node_t *
 parse()
 {
     peek();
-    if (!eof) {
+    while (!eof) {
         node_t *node = declaration();
-        output_tree(0, node);
-        puts("");
-        return node;
+        if (node != NULL) {
+            output_tree(0, node);
+            puts("");
+            return node;
+        }
+        peek();
     }
     return NULL;
 }
@@ -135,303 +140,207 @@ output_tree(int indent, struct node *tree)
 }
 
 
-/* not used */
-static node_t *
-translation_unit()
-{
-    node_t *root = init_node("translation-unit", 16);
-    push_scope();
-    while (1) {
-        peek();
-        if (eof) break;
-        addchild(root, declaration());
-    }
-    pop_scope();
-    return root;
-}
-
-
-/* Declarations, statements that reserve a storage location. Virtually the
- * same as function definitions, so merge them into one and to postvalidation.
- *
- * function-definition -> declaration-specifiers declarator compound-statement
- *
- * declaration -> declaration_specifiers [init_declarator_list] ';'
- *
- * declaration_specifiers -> 
- *      storage_class_specifier [declaration_specifiers]
- *      type_specifier [declaration_specifiers]
- *      type_qualifier [declaration_specifiers]
- *
- * storage_class_specifier ->
- *      "auto" | "register" | "static" | "extern" | "typedef"
- *
- * type_specifier ->
- *      "void" | "char" | "short" | "int" | "long" | "float" | "double" | "signed" | "unsigned"
- *
- * type_qualifier ->
- *      "const" | "volatile"
- *
- * init_declarator_list ->
- *      identifier ; simplification
+/* Return either an initialized declaration, or a function definition.
+ * Forward declarations are just registered in the symbol table.
  */
 static node_t *
 declaration()
 {
-    node_t *specifiers, *declaratorlist, *node;
-    specifiers = declaration_specifiers();
-    declaratorlist = init_declarator_list();
-    switch (peek()) {
-        case ';':
-            consume(';');
-            node = init_node("declaration", 2);
-            addchild(node, specifiers);
-            addchild(node, declaratorlist);
-            break;
-        case '{':
-            if  (declaratorlist->nc != 1 || declaratorlist->children[0]->nc != 1) {
-                error("Invalid function definition syntax");
-                exit(0);
-            }
-            // lift (init_declarator-list (init-declarator (declarator))
-            // todo: free discarded nodes
-            node = init_node("function-definition", 3);
-            addchild(node, specifiers);
-            addchild(node, declaratorlist->children[0]->children[0]);
-            addchild(node, block());
-            break;
-        default:
-            error("Unexpected token '%s' trailing declaration, aborting", readtoken().value);
-            exit(0);
-    }
-    return node;
-}
+    node_t *node = NULL;
+    const char *symbol;
+    typetree_t *type, *base = declaration_specifiers();
 
-static node_t *
-declaration_specifiers()
-{
-    node_t *declspec, *node = init_node("declaration-specifiers", 8);
-    do {
+    while (1) {
+        symbol = NULL;
+        type = declarator(base, &symbol);
+        sym_add(symbol, type);
         switch (peek()) {
-            case AUTO: case REGISTER: case STATIC: case EXTERN: case TYPEDEF:
-                declspec = init_node("storage-class-specifier", 0);
+            case ';':
+                consume(';');
                 break;
-            case VOID: case CHAR: case SHORT: case INT: case LONG: case FLOAT:
-            case DOUBLE: case SIGNED: case UNSIGNED:
-                declspec = init_node("type-specifier", 0);
+
+            // todo: can check if we are at root and require constant expression
+            case '=': {
+                node_t *child;
+                consume('=');
+                if (node == NULL) {
+                    node = init_node("declaration", 0);
+                }
+                child = init_node("assignment", 0);
+                addchild(node, child);
+                addchild(child, primary_expression()); // todo: should be assignment-expression
+                child->token.type = IDENTIFIER;
+                child->token.value = symbol;
+                if (peek() != ',')
+                    consume(';');
                 break;
-            case CONST:
-            case VOLATILE:
-                declspec = init_node("type-qualifier", 0);
-                break;
-            default:
-                /* no guarantee that the list is of at least length 1 */
+            }
+
+            // function definition must appear as only declaration
+            case '{':
+                if (node != NULL || symbol == NULL) {
+                    error("Invalid function definition, aborting");
+                    exit(1);
+                }
+                node = init_node("function-definition", 0);
+                node->token.type = IDENTIFIER;
+                node->token.value = symbol;
+                addchild(node, block());
                 return node;
         }
-        declspec->token = readtoken();
-        addchild(node, declspec);
-    } while (1);
-}
-
-static node_t *
-init_declarator_list()
-{
-    node_t *node = init_node("init-declarator-list", 2);
-    addchild(node, init_declarator());
-    while (peek() == ',') {
+        if (peek() != ',')
+            break;
         consume(',');
-        addchild(node, init_declarator());
     }
+
     return node;
 }
 
-static node_t *
-init_declarator()
+static typetree_t *
+declaration_specifiers()
 {
-    node_t *node = init_node("init-declarator", 1);
-    addchild(node, declarator());
-    if (peek() == '=') {
-        consume('=');
-        addchild(node, initializer());
+    int end = 0;
+    typetree_t *type = init_typetree(BASIC);
+    type->data.basic.qualifier = NONE_Q;
+    type->data.basic.type = NONE_T;
+    while (1) {
+        switch (peek()) {
+            case AUTO: case REGISTER: case STATIC: case EXTERN: case TYPEDEF:
+                // todo: something about storage class, maybe do it before this
+                break;
+            case CHAR:
+                type->data.basic.type = CHAR_T;
+                break;
+            case SHORT:
+            case INT:
+            case LONG:
+            case SIGNED:
+            case UNSIGNED:
+                type->data.basic.type = INT64_T;
+                break;
+            case FLOAT:
+            case DOUBLE:
+                type->data.basic.type = DOUBLE_T;
+                break;
+            case VOID:
+                type->data.basic.type = VOID_T;
+                break;
+            case CONST:
+                type->data.ptr.qualifier |= CONST_Q;
+                break;
+            case VOLATILE:
+                type->data.ptr.qualifier |= VOLATILE_Q;
+                break;
+            default:
+                end = 1;
+        }
+        if (end) break;
+        consume(peek());
     }
-    return node;
+    if (type->data.basic.type == NONE_T) {
+        error("Missing type specifier, aborting");
+        exit(1);
+    }
+    return type;
 }
 
-static node_t *
-initializer()
+static typetree_t *
+declarator(typetree_t *base, const char **symbol)
 {
-    node_t *node = init_node("initializer", 1);
-    if (peek() == '{') {
-        error("Struct initializer not supported");
-        exit(0);
-    } else {
-        // todo: assignment-expression
-        addchild(node, primary_expression());
+    while (peek() == '*') {
+        base = pointer(base);
     }
-    return node;
+    return direct_declarator(base, symbol);
 }
 
-
-/* declarator ->
- *      | [pointer] direct-declarator
- *
- * pointer -> 
- *      | '*' [type-qualifier-list]
- *      | '*' [type-qualifier-list] pointer
- *
- * direct-declarator ->
- *      | identifier
- *      | '(' declarator ')'
- *      | direct-declarator '[' [constant-expression] ']' // array declarator
- *      | direct-declarator '(' parameter-type-list ')'   // function declarator
- *      x direct-declarator '(' [identifier-list] ')'     // old-style function declaration
- *
- * parameter-type-list ->
- *      | parameter-list
- *      | parameter-list ',' '...'
- *
- * parameter-list ->
- *      | parameter-declaration
- *      | parameter-list ',' parameter-declaration
- *
- * parameter-declaration ->
- *      | declaration-specifiers declarator
- *      | declaration-specifiers [abstract-declarator] 
- *
- * abstract-declarator ->
- *      | pointer
- *      | [pointer] direct-abstract-declarator
- *
- * direct-abstract-declarator ->
- *      | '(' abstract-declarator ')'
- *      | direct-abstract-declarator '[' [constant-expression] ']' // array declarator
- *      | direct-abstract-declarator '(' parameter-type-list ')'   // function declarator
- */
-static node_t *
-declarator()
+static typetree_t *
+pointer(typetree_t *base)
 {
-    node_t *node = init_node("declarator", 2);
-    if (peek() == '*') {
-        addchild(node, pointer());
-    }
-    addchild(node, direct_declarator());
-    return node;
-}
-
-static node_t *
-pointer()
-{
-    node_t *qualifiers, *node = init_node("pointer", 2);
-    node->token = readtoken();
-    if (peek() == CONST || peek() == VOLATILE) {
-        addchild(node, type_qualifier_list());
-    }
-    if (peek() == '*') {
-        addchild(node, pointer());
-    }
-    return node;
-}
-
-static node_t *
-type_qualifier_list()
-{
-    node_t *child, *node = init_node("type-qualifier-list", 4);
+    typetree_t *type = init_typetree(POINTER);
+    type->data.ptr.to = base;
+    base = type;
+    consume('*');
     while (peek() == CONST || peek() == VOLATILE) {
-        child = init_node("type-qualifier", 0);
-        child->token = readtoken();
-        addchild(node, child);
+        type->data.ptr.qualifier |= (readtoken().type == CONST) ? CONST_Q : VOLATILE_Q;
     }
-    return node;
+    return type;
 }
 
-static node_t *
-direct_declarator()
+static typetree_t *
+direct_declarator(typetree_t *base, const char **symbol)
 {
-    node_t *node = init_node("direct-declarator", 1);
     switch (peek()) {
-        case IDENTIFIER:
-            addchild(node, identifier());
-            symbol_t *symbol = sym_add(node->children[0]->token.value);
+        case IDENTIFIER: 
+            *symbol = readtoken().value;
             break;
         case '(':
             consume('(');
-            addchild(node, declarator());
+            base = declarator(base, symbol);
             consume(')');
             break;
     }
-    // Handle left-recursiveness bottom up, declarations like 'int foo[10][5];'
+    // left-recursive declarations like 'int foo[10][5];'
     while (peek() == '[' || peek() == '(') {
-        node_t *parent = init_node("direct_declarator", 2);
-        addchild(parent, node);
-        if (peek() == '[') {
-            consume('[');
-            if (peek() != ']') {
-                // do something simple for now, just a number constant
-                node_t *expr = init_node("constant-expression", 0);
-                expr->token = readtoken();
-                addchild(parent, expr);
+        switch (peek()) {
+            case '[':
+                consume('[');
+                if (peek() != ']') {
+                    // constant expression, evaluate immediately (no parse tree emitted)
+                    readtoken();
+                    // todo: add array type
+                }
+                consume(']');
+                break;
+            case '(': {
+                consume('(');
+                base = parameter_list(base);
+                consume(')');
+                break;
             }
-            consume(']');
-        } else {
-            consume('(');
-            addchild(parent, parameter_list());
-            consume(')');
         }
-        node = parent;
     }
-    return node;
-}
-
-static node_t *
-identifier()
-{
-    node_t *node = init_node("identifier", 0);
-    node->token = readtoken();
-    return node;
+    return base;
 }
 
 /* FOLLOW(parameter-list) = { ')' }, peek to return empty list;
  * even though K&R require at least specifier: (void)
  * Set parameter-type-list = parameter-list, including the , ...
  */
-static node_t *
-parameter_list()
+static typetree_t *
+parameter_list(typetree_t *base)
 {
-    node_t *node = init_node("parameter-list", 8);
-    if (peek() == DOTS) {
-        error("Parameter list with varargs must contain at least one declaration");
-        exit(0);
-    }
-    while (peek() != ')' && peek() != DOTS) {
-        addchild(node, parameter_declaration());
-        if (peek() == ',') {
-            consume(',');
-        } else break;
-    }
-    if (peek() == DOTS) {
-        node->token = readtoken();
-    }
-    return node;
-}
+    typetree_t *func = init_typetree(FUNCTION), **args = NULL;
+    int nargs = 0;
 
-static node_t *
-parameter_declaration()
-{
-    node_t *node = init_node("parameter-declaraton", 2);
-    addchild(node, declaration_specifiers());
+    while (peek() != ')') {
+        const char *symbol = NULL;
+        typetree_t *decl = declaration_specifiers();
+        decl = declarator(decl, &symbol);
 
-    // No way to know if we recurse into declarator or abstract-declarator here.
-    // FIRST(declarator) = FIRST(abstract-declarator) = { IDENTIFIER, '*', '(' }
-    // Assume declarator = abstract-declarator, and do additional postprocessing
-    // to validate if the parsing was correct.
-    switch (peek()) {
-        case IDENTIFIER:
-        case '*':
-        case '(':
-            addchild(node, declarator());
+        // this is not exactly right, should push a new scope first
+        if (symbol != NULL)
+            sym_add(symbol, decl);
+
+        nargs++;
+        args = realloc(args, sizeof(typetree_t *) * nargs);
+        args[nargs - 1] = decl;
+
+        if (peek() != ',') break;
+        consume(',');
+        if (peek() == ')') {
+            error("Trailing comma in parameter list, aborting");
+            exit(1);
+        }
+        if (peek() == DOTS) {
+            consume(DOTS); // todo: add vararg type
             break;
+        }
     }
-    return node;
+    
+    func->data.func.ret = base;
+    func->data.func.n_args = nargs;
+    func->data.func.args = args;
+    return func;
 }
 
 /* Treat statements and declarations equally, allowing declarations in between
@@ -540,6 +449,14 @@ statement()
         default:
             node = declaration();
     }
+    return node;
+}
+
+static node_t *
+identifier()
+{
+    node_t *node = init_node("identifier", 0);
+    node->token = readtoken();
     return node;
 }
 

@@ -74,6 +74,8 @@ int get_token(FILE *input, struct token* t);
 
 /* parsing */
 
+struct typetree;
+
 typedef struct node {
     const char *text;
     struct token token;
@@ -88,40 +90,50 @@ node_t *parse();
 
 /* type analysis */
 
-enum type { POINTER, T_INT, T_LONG, T_FLOAT, T_DOUBLE, T_CHAR, FUNCTION };
-enum flag { T_CONST = 0x01, T_EXTERN = 0x02, T_STATIC = 0x04 };
+enum tree_type { BASIC, POINTER, FUNCTION };
+enum data_type { NONE_T, CHAR_T, INT64_T, DOUBLE_T, VOID_T };
+enum qualifier { CONST_Q = 0x1, VOLATILE_Q = 0x2, NONE_Q = 0x0 };
 
-typedef struct typestack {
-    enum type type;
-    enum flag flag;
+typedef struct typetree {
+    enum tree_type type;
+    union {
+        struct {
+            enum data_type type;
+            enum qualifier qualifier;
+        } basic;
+        struct {
+            struct typetree *to;
+            enum qualifier qualifier;
+        } ptr;
+        struct {
+            struct typetree **args;
+            unsigned n_args;
+            struct typetree *ret;
+        } func;
+    } data;
+} typetree_t;
 
-    /* if pointer */
-    struct typestack *ptrto;
+enum storageclass { STORAGE_EXTERN, STORAGE_STATIC };
 
-    /* if function */
-    struct typestack **args;
-    unsigned n_args;
-    struct typestack *retval;
-} tstack_t;
-
-/* static int *foo;
- * ( .name = "foo", .type )
- *                     |
+/* static int *foo, *bar;
+ * ( .name = "foo", .type )    ( .name = "bar", .type )
+ *                     |                         |
  *          ( .type = POINTER, .ptrto )
  *                               |
  *                       ( .type = T_INT, flag = 0x02 )
  */
 typedef struct symbol {
     const char *name;
-    unsigned depth;
-    struct typestack *type;
+    unsigned depth;/* should not be needed */
+    struct typetree *type;
+    enum storageclass storage;
 } symbol_t;
 
 /* resolve symbol in current scope, or NULL if not found */
 symbol_t *sym_lookup(const char *);
 
 /* add symbol to current scope */
-symbol_t *sym_add(const char *);
+void sym_add(const char *, typetree_t *);
 
 void push_scope();
 
