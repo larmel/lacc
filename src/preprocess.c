@@ -1,3 +1,5 @@
+#include "lcc.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -21,7 +23,6 @@ static int fd_len;
 
 static int push(const char* name)
 {
-    int i = 0;
     FILE *file = fopen(name, "r");
     if (file != NULL) {
         if (fd_idx == fd_len - 1) {
@@ -77,6 +78,7 @@ static const char ** values;
 static size_t sym_idx;
 static size_t sym_cap;
 
+/*
 static const char *
 sym_lookup(const char * symbol)
 {
@@ -86,6 +88,7 @@ sym_lookup(const char * symbol)
     }
     return NULL;
 }
+*/
 
 static int
 sym_isdefined(const char * symbol)
@@ -164,14 +167,12 @@ getprepline(char **buffer)
 static ssize_t
 preprocess(char **linebuffer, size_t *length, size_t read)
 {
-    char c;
     char *token;
     int i = 0;
+    static int grayzone; /* flag 1 when in false if block */
+
     while (i < read && isspace((*linebuffer)[i]))
         i++;
-
-    /* flag 1 when in false if block */
-    static int grayzone;
 
     /* ignore whitespace line */
     if (i == read) return 0;

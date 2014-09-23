@@ -60,7 +60,7 @@ typedef enum token_type
     COMMA = ',',
     DOT = '.',
     ASSIGN = '=',
-    STAR = '*',
+    STAR = '*'
 } token_t;
 
 struct token

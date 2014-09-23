@@ -6,12 +6,14 @@
 
 extern size_t line_number;
 
-static const char * describe(enum token_type);
-
 int main(int argc, char* argv[])
 {
     char *line;
     const char *filename;
+
+    char *filebuf;
+    size_t filesize;
+    FILE *p;
 
     if (argc == 2) {
         filename = argv[1];
@@ -21,9 +23,7 @@ int main(int argc, char* argv[])
     }
 
     /* stitch together parsing and tokenization */
-    char *filebuf;
-    size_t filesize;
-    FILE *p = open_memstream(&filebuf, &filesize);
+    p = open_memstream(&filebuf, &filesize);
 
     init_preprocessing(filename);
 
@@ -36,7 +36,6 @@ int main(int argc, char* argv[])
     /* parse */
     init_parsing(p);
     codegen();
-    //node_t *tree = parse(p);
     fclose(p);
 
     puts("");
@@ -46,26 +45,4 @@ int main(int argc, char* argv[])
     printir(stdout);
 
     return EXIT_SUCCESS;
-}
-
-static const char *
-describe(enum token_type t)
-{
-    if (   t == AUTO || t == BREAK || t == CASE || t == CHAR 
-        || t == CONST || t == CONTINUE || t == DEFAULT || t == DO
-        || t == DOUBLE || t == ELSE || t == ENUM || t == EXTERN
-        || t == FLOAT || t == FOR || t == GOTO || t == IF
-        || t == INT || t == LONG || t == REGISTER || t == RETURN
-        || t == SHORT || t == SIGNED || t == SIZEOF || t == STATIC
-        || t == STRUCT || t == SWITCH || t == TYPEDEF || t == UNION
-        || t == UNSIGNED || t == VOID || t == VOLATILE || t == WHILE
-       )
-        return "keyword";
-    if (t == INTEGER)
-        return "number";
-    if (t == IDENTIFIER)
-        return "identifier";
-    if (t == STRING)
-        return "string";
-    return "";
 }

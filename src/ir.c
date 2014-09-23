@@ -1,7 +1,7 @@
 #include "lcc.h"
 
 #include <stdio.h>
-
+#include <string.h>
 
 /* IR */
 enum irtype { IR_LABEL, IR_PUSH_STACKFRAME, IR_POP_STACKFRAME, IR_RETURN };

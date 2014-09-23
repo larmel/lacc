@@ -1,5 +1,6 @@
 #include "lcc.h"
 
+#include <ctype.h>
 #include <string.h>
 
 #define MAX_TOKEN_LENGTH 256
@@ -95,39 +96,40 @@ keyword(int *state, char c)
         char * value;
         enum token_type type;
     } keyword[] = {
-        { .value = "auto", .type = AUTO },
-        { .value = "break", .type = BREAK },
-        { .value = "case", .type = CASE },
-        { .value = "char", .type = CHAR },
-        { .value = "const", .type = CONST },
-        { .value = "continue", .type = CONTINUE },
-        { .value = "default", .type = DEFAULT },
-        { .value = "do", .type = DO },
-        { .value = "double", .type = DOUBLE },
-        { .value = "else", .type = ELSE },
-        { .value = "enum", .type = ENUM },
-        { .value = "extern", .type = EXTERN },
-        { .value = "float", .type = FLOAT },
-        { .value = "for", .type = FOR },
-        { .value = "goto", .type = GOTO },
-        { .value = "if", .type = IF },
-        { .value = "int", .type = INT },
-        { .value = "long", .type = LONG },
-        { .value = "register", .type = REGISTER },
-        { .value = "return", .type = RETURN },
-        { .value = "short", .type = SHORT },
-        { .value = "signed", .type = SIGNED },
-        { .value = "sizeof", .type = SIZEOF },
-        { .value = "static", .type = STATIC },
-        { .value = "struct", .type = STRUCT },
-        { .value = "switch", .type = SWITCH },
-        { .value = "typedef", .type = TYPEDEF },
-        { .value = "union", .type = UNION },
-        { .value = "unsigned", .type = UNSIGNED },
-        { .value = "void", .type = VOID },
-        { .value = "volatile", .type = VOLATILE },
-        { .value = "while", .type = WHILE }
+        { "auto", AUTO },
+        { "break", BREAK },
+        { "case", CASE },
+        { "char", CHAR },
+        { "const", CONST },
+        { "continue", CONTINUE },
+        { "default", DEFAULT },
+        { "do", DO },
+        { "double", DOUBLE },
+        { "else", ELSE },
+        { "enum", ENUM },
+        { "extern", EXTERN },
+        { "float", FLOAT },
+        { "for", FOR },
+        { "goto", GOTO },
+        { "if", IF },
+        { "int", INT },
+        { "long", LONG },
+        { "register", REGISTER },
+        { "return", RETURN },
+        { "short", SHORT },
+        { "signed", SIGNED },
+        { "sizeof", SIZEOF },
+        { "static", STATIC },
+        { "struct", STRUCT },
+        { "switch", SWITCH },
+        { "typedef", TYPEDEF },
+        { "union", UNION },
+        { "unsigned", UNSIGNED },
+        { "void", VOID },
+        { "volatile", VOLATILE },
+        { "while", WHILE }
     };
+    int i;
 
     if (!isalnum(c)) {
         if (*state == 0)
@@ -136,7 +138,6 @@ keyword(int *state, char c)
             *state = -1;
     }
 
-    int i;
     if (*state == 1) {
         for (i = 0; i < 32; ++i) {
             if (!strcmp(consumed, keyword[i].value)) {
@@ -146,6 +147,7 @@ keyword(int *state, char c)
             }
         }
     }
+
     return 0;
 }
 
@@ -158,11 +160,10 @@ get_token(FILE *input, struct token *t)
 {
     char c, d, e;
     int n = 0; /* Number of chars consumed to make token */
-    int i;
     int n_matched;
 
     /* Ignore leading comments and whitespace */
-    int whitespace = skip_whitespace(input);
+    skip_whitespace(input);
 
     t->value = NULL;
 
@@ -224,36 +225,38 @@ get_token(FILE *input, struct token *t)
     token = t;
     n_matched = -1;
 
-    int s_keyword = 0;
-    int s_identifier = 0;
-    int s_integer = 0;
-    int s_string = 0;
+    {
+        int s_keyword = 0;
+        int s_identifier = 0;
+        int s_integer = 0;
+        int s_string = 0;
 
-    while ((c = fgetc(input)) != EOF) {
-        if (keyword(&s_keyword, c)) {
-            n_matched = 1;
-            ungetc(c, input);
-            break;
-        }
-        if (identifier(&s_identifier, c)) {
-            n_matched = 1;
-            ungetc(c, input);
-            break;
-        }
-        if (integer(&s_integer, c)) {
-            n_matched = 1;
-            ungetc(c, input);
-            break;
-        }
-        if (string(&s_string, c)) {
-            n_matched = 1;
+        while ((c = fgetc(input)) != EOF) {
+            if (keyword(&s_keyword, c)) {
+                n_matched = 1;
+                ungetc(c, input);
+                break;
+            }
+            if (identifier(&s_identifier, c)) {
+                n_matched = 1;
+                ungetc(c, input);
+                break;
+            }
+            if (integer(&s_integer, c)) {
+                n_matched = 1;
+                ungetc(c, input);
+                break;
+            }
+            if (string(&s_string, c)) {
+                n_matched = 1;
+                consumed[n] = c;
+                n++;
+                break;
+            }
+
             consumed[n] = c;
             n++;
-            break;
         }
-
-        consumed[n] = c;
-        n++;
     }
 
     if (n_matched == -1 && c != EOF) {

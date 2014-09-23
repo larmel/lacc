@@ -13,11 +13,11 @@ static int eof;
 static struct token
 readtoken()
 {
+    struct token t;
     if (has_value) {
         has_value = 0;
         return peek_value;
     }
-    struct token t;
     eof = (get_token(input, &t) == 0);
     return t;
 }
@@ -88,7 +88,6 @@ static node_t *identifier();
 static node_t *expression();
 static node_t *postfix_expression();
 static node_t *primary_expression();
-static node_t *initializer();
 
 static void output_tree(int indent, struct node *tree);
 
@@ -159,7 +158,7 @@ declaration()
                 consume(';');
                 break;
 
-            // todo: can check if we are at root and require constant expression
+            /* todo: can check if we are at root and require constant expression */
             case '=': {
                 node_t *child;
                 consume('=');
@@ -168,7 +167,7 @@ declaration()
                 }
                 child = init_node("assignment", 0);
                 addchild(node, child);
-                addchild(child, primary_expression()); // todo: should be assignment-expression
+                addchild(child, primary_expression()); /* todo: should be assignment-expression */
                 child->token.type = IDENTIFIER;
                 child->token.value = symbol;
                 if (peek() != ',')
@@ -176,7 +175,7 @@ declaration()
                 break;
             }
 
-            // function definition must appear as only declaration
+            /* function definition must appear as only declaration */
             case '{':
                 if (node != NULL || symbol == NULL) {
                     error("Invalid function definition, aborting");
@@ -187,6 +186,8 @@ declaration()
                 node->token.value = symbol;
                 addchild(node, block());
                 return node;
+
+            default: break;
         }
         if (peek() != ',')
             break;
@@ -206,7 +207,7 @@ declaration_specifiers()
     while (1) {
         switch (peek()) {
             case AUTO: case REGISTER: case STATIC: case EXTERN: case TYPEDEF:
-                // todo: something about storage class, maybe do it before this
+                /* todo: something about storage class, maybe do it before this */
                 break;
             case CHAR:
                 type->data.basic.type = CHAR_T;
@@ -278,16 +279,17 @@ direct_declarator(typetree_t *base, const char **symbol)
             base = declarator(base, symbol);
             consume(')');
             break;
+        default: break;
     }
-    // left-recursive declarations like 'int foo[10][5];'
+    /* left-recursive declarations like 'int foo[10][5];' */
     while (peek() == '[' || peek() == '(') {
         switch (peek()) {
             case '[':
                 consume('[');
                 if (peek() != ']') {
-                    // constant expression, evaluate immediately (no parse tree emitted)
+                    /* constant expression, evaluate immediately (no parse tree emitted) */
                     readtoken();
-                    // todo: add array type
+                    /* todo: add array type */
                 }
                 consume(']');
                 break;
@@ -297,6 +299,7 @@ direct_declarator(typetree_t *base, const char **symbol)
                 consume(')');
                 break;
             }
+            default: break;
         }
     }
     return base;
@@ -317,7 +320,7 @@ parameter_list(typetree_t *base)
         typetree_t *decl = declaration_specifiers();
         decl = declarator(decl, &symbol);
 
-        // this is not exactly right, should push a new scope first
+        /* this is not exactly right, should push a new scope first */
         if (symbol != NULL)
             sym_add(symbol, decl);
 
@@ -332,7 +335,7 @@ parameter_list(typetree_t *base)
             exit(1);
         }
         if (peek() == DOTS) {
-            consume(DOTS); // todo: add vararg type
+            consume(DOTS); /* todo: add vararg type */
             break;
         }
     }
@@ -484,7 +487,7 @@ postfix_expression()
                 consume(']');
                 break;
             case '(':
-                // addchild(parent, argument_expression_list());
+                /* addchild(parent, argument_expression_list()); */
                 consume('(');
                 consume(')');
                 break;
@@ -505,10 +508,11 @@ static node_t *
 primary_expression()
 {
     node_t *node;
+    symbol_t *symbol;
     switch (peek()) {
         case IDENTIFIER:
             node = identifier();
-            symbol_t *symbol = sym_lookup(node->token.value);
+            symbol = sym_lookup(node->token.value);
             if (symbol == NULL) {
                 error("Undefined symbol '%s', aborting", node->token.value);
                 exit(0);

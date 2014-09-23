@@ -102,6 +102,7 @@ print_type(typetree_t *tree)
                 case VOLATILE_Q:
                     printf("volatile ");
                     break;
+                default: break;
             }
             switch (tree->data.basic.type) {
                 case CHAR_T:
@@ -116,6 +117,7 @@ print_type(typetree_t *tree)
                 case VOID_T:
                     printf("void");
                     break;
+                default: break;
             }
             break;
         case POINTER:
@@ -136,6 +138,7 @@ print_type(typetree_t *tree)
             printf(") -> ");
             print_type(tree->data.func.ret);
             break;
+        default: break;
     }
 }
 

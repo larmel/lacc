@@ -1,4 +1,4 @@
 all: bin/lcc
 
 bin/lcc: src/*.c
-	cc $+ -o $@
+	cc -Wall -Wpedantic $+ -o $@
