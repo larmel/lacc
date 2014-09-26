@@ -137,52 +137,47 @@ output_tree(int indent, struct node *tree)
     printf(")");
 }
 
-
 /* Return either an initialized declaration, or a function definition.
- * Forward declarations are just registered in the symbol table.
+ * Forward declarations are just registered in the symbol table. 
  */
 static node_t *
 declaration()
 {
-    node_t *node = NULL;
+    node_t *node = NULL, *child = NULL;
+    symbol_t *symbol;
     typetree_t *type, *base = declaration_specifiers();
+    int i;
 
-    while (1) {
-        int i;
-        const char *symbol = NULL;
-        type = declarator(base, &symbol);
-        sym_add(symbol, type);
+    do {
+        const char *name = NULL;
+        type = declarator(base, &name);
+        symbol = sym_add(name, type);
         switch (peek()) {
             case ';':
                 consume(';');
-                break;
-
-            /* todo: can check if we are at root and require constant expression */
-            case '=': {
-                node_t *child;
+                return node;
+            case '=':
                 consume('=');
-                if (node == NULL) {
+                if (node == NULL)
                     node = init_node("declaration", 0);
-                }
                 child = init_node("assignment", 0);
                 addchild(node, child);
-                addchild(child, primary_expression()); /* todo: should be assignment-expression */
+                addchild(child, primary_expression()); /* todo: assignment-expression */
                 child->token.type = IDENTIFIER;
-                child->token.value = symbol;
-                if (peek() != ',')
+                child->token.value = name;
+                if (peek() != ',') {
                     consume(';');
+                    return node;
+                }
                 break;
-            }
-
-            /* function definition must appear as only declaration */
             case '{':
-                if (node != NULL || symbol == NULL || type->type != FUNCTION) {
+                if (type->type != FUNCTION || node != NULL || symbol->depth > 0) {
                     error("Invalid function definition, aborting");
                     exit(1);
                 }
                 node = init_node("function-definition", 0);
                 node->token.type = IDENTIFIER;
-                node->token.value = symbol;
+                node->token.value = name;
                 push_scope();
                 for (i = 0; i < type->data.func.n_args; ++i) {
                     if (type->data.func.params[i] == NULL) {
@@ -194,15 +189,11 @@ declaration()
                 addchild(node, block());
                 pop_scope();
                 return node;
-
-            default: break;
+            default: 
+                break;
         }
-        if (peek() != ',')
-            break;
         consume(',');
-    }
-
-    return node;
+    } while (1);
 }
 
 static typetree_t *
@@ -360,14 +351,16 @@ parameter_list(typetree_t *base)
 static node_t *
 block()
 {
-    node_t *node = init_node("block", 32);
+    node_t *node = init_node("block", 32), *child;
     consume('{');
     while (peek() != '}') {
         if (peek() == ';') {
             consume(';');
             continue;
         }
-        addchild(node, statement());
+        child = statement();
+        if (child != NULL)
+            addchild(node, child);
     }
     consume('}');
     return node;

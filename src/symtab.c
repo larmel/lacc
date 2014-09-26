@@ -47,7 +47,7 @@ sym_lookup(const char *name)
     return NULL;
 }
 
-void
+symbol_t *
 sym_add(const char *name, typetree_t *type)
 {
     struct lexical_scope *scope = &scopes[depth];
@@ -63,6 +63,7 @@ sym_add(const char *name, typetree_t *type)
     }
     scope->symlist[scope->size] = symbol;
     scope->size++;
+    return symbol;
 }
 
 void push_scope()

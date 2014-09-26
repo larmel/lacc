@@ -134,7 +134,7 @@ typedef struct symbol {
 symbol_t *sym_lookup(const char *);
 
 /* add symbol to current scope */
-void sym_add(const char *, typetree_t *);
+symbol_t *sym_add(const char *, typetree_t *);
 
 void push_scope();
 
