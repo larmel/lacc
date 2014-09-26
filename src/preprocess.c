@@ -158,6 +158,7 @@ getprepline(char **buffer)
     }
 
     *buffer = linebuffer;
+    printf("%03d  %s", (int)line_number, linebuffer);
     return processed;
 }
 

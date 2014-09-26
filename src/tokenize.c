@@ -151,49 +151,44 @@ keyword(int *state, char c)
     return 0;
 }
 
-extern size_t line_number;
-static int has_preprocessed;
-static FILE *input;
-
-/* invoke the preprocessor on demand */
-static void
-get_line()
-{
-    char *line;
-    char *filebuf;
-    size_t filesize;
-
-    /* stitch together parsing and tokenization */
-    input = open_memstream(&filebuf, &filesize);
-
-    while (getprepline(&line) != -1) {
-        fputs(line, input);
-        printf("%03d  %s", (int)line_number, line);
-    }
-    has_preprocessed = 1;
-}
-
-static void reset();
-static int skip_whitespace();
+/* Create tokens from a preprocessed line at a time,
+ * no token can span multiple lines. Invoke the preprocessor
+ * on demand */
+static char *line = "\0";
+static int idx = 0;
 
 /* Get next token from stream, single pass */
 int
 get_token(struct token *t)
 {
     char c, d, e;
-    int n = 0; /* Number of chars consumed to make token */
+    int i, n = 0; /* Number of chars consumed to make token */
     int n_matched;
+    /*int start, end; */ /* range in current line making up the token */
 
-    if (!has_preprocessed)
-        get_line();
+    /* already failed before */
+    if (idx == -1) return 0;
 
-    /* Ignore leading comments and whitespace */
-    skip_whitespace();
+    /* Seek to start of next token */
+    do {
+        if (line[idx] == '\0') {
+            idx = 0;
+            if (getprepline(&line) == -1) {
+                idx = -1;
+                return 0;
+            }
+        }
+        while (isspace(line[idx]))
+            idx++;
+    } while (line[idx] == '\0');
 
     t->value = NULL;
+    for (i = 0; i < MAX_TOKEN_LENGTH; ++i) {
+        consumed[i] = 0;
+    }
 
     /* Simple single char tokens */
-    c = fgetc(input);
+    c = line[idx++];
     switch (c) {
         case '(':
             t->type = OPEN_PAREN; t->value = "(";
@@ -220,9 +215,9 @@ get_token(struct token *t)
             t->type = COMMA; t->value = ",";
             return 1;
         case '.':
-            d = fgetc(input);
+            d = line[idx++];
             if (d == '.') {
-                e = fgetc(input);
+                e = line[idx++];
                 if (e == '.') {
                     t->type = DOTS; t->value = "...";
                     return 3;
@@ -231,7 +226,7 @@ get_token(struct token *t)
                     return 0;
                 }
             } else {
-                ungetc(d, input);
+                idx--;
             }
             t->type = DOT; t->value = ".";
             return 1;
@@ -242,10 +237,8 @@ get_token(struct token *t)
             t->type = STAR; t->value = "*";
             return 1;
         default:
-            ungetc(c, input);
+            idx--;
     }
-
-    reset();
 
     token = t;
     n_matched = -1;
@@ -256,20 +249,20 @@ get_token(struct token *t)
         int s_integer = 0;
         int s_string = 0;
 
-        while ((c = fgetc(input)) != EOF) {
+        while ((c = line[idx++]) != '\0') {
             if (keyword(&s_keyword, c)) {
                 n_matched = 1;
-                ungetc(c, input);
+                idx--;
                 break;
             }
             if (identifier(&s_identifier, c)) {
                 n_matched = 1;
-                ungetc(c, input);
+                idx--;
                 break;
             }
             if (integer(&s_integer, c)) {
                 n_matched = 1;
-                ungetc(c, input);
+                idx--;
                 break;
             }
             if (string(&s_string, c)) {
@@ -284,32 +277,10 @@ get_token(struct token *t)
         }
     }
 
-    if (n_matched == -1 && c != EOF) {
+    if (n_matched == -1 && c != '\0') {
         error("Could not match any token for input '%s'\n", consumed);
         return 0;
     }
 
     return n;
-}
-
-static int
-skip_whitespace()
-{
-    int n = 0;
-    char c = fgetc(input);
-    while (isspace(c)) {
-        c = fgetc(input);
-        n++;
-    }
-    ungetc(c, input);
-    return n;
-}
-
-static void
-reset()
-{
-    int i = 0;
-    for (i = 0; i < MAX_TOKEN_LENGTH; ++i) {
-        consumed[i] = 0;
-    }
 }
