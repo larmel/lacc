@@ -151,19 +151,44 @@ keyword(int *state, char c)
     return 0;
 }
 
+extern size_t line_number;
+static int has_preprocessed;
+static FILE *input;
+
+/* invoke the preprocessor on demand */
+static void
+get_line()
+{
+    char *line;
+    char *filebuf;
+    size_t filesize;
+
+    /* stitch together parsing and tokenization */
+    input = open_memstream(&filebuf, &filesize);
+
+    while (getprepline(&line) != -1) {
+        fputs(line, input);
+        printf("%03d  %s", (int)line_number, line);
+    }
+    has_preprocessed = 1;
+}
+
 static void reset();
-static int skip_whitespace(FILE *);
+static int skip_whitespace();
 
 /* Get next token from stream, single pass */
 int
-get_token(FILE *input, struct token *t)
+get_token(struct token *t)
 {
     char c, d, e;
     int n = 0; /* Number of chars consumed to make token */
     int n_matched;
 
+    if (!has_preprocessed)
+        get_line();
+
     /* Ignore leading comments and whitespace */
-    skip_whitespace(input);
+    skip_whitespace();
 
     t->value = NULL;
 
@@ -268,7 +293,7 @@ get_token(FILE *input, struct token *t)
 }
 
 static int
-skip_whitespace(FILE *input)
+skip_whitespace()
 {
     int n = 0;
     char c = fgetc(input);

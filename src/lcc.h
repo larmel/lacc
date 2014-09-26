@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void init_preprocessing(const char *);
+void preprocess(const char *);
 int getprepline(char **);
 
 typedef enum token_type
@@ -69,7 +69,7 @@ struct token
     const char *value;
 };
 
-int get_token(FILE *input, struct token* t);
+int get_token(struct token* t);
 
 
 /* parsing */
@@ -84,7 +84,6 @@ typedef struct node {
     size_t cap;
 } node_t;
 
-void init_parsing(FILE *fd);
 node_t *parse();
 
 

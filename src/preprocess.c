@@ -9,7 +9,7 @@
 size_t line_number;
 const char *filename;
 
-static ssize_t preprocess(char **, size_t *, size_t);
+static ssize_t preprocess_line(char **, size_t *, size_t);
 
 /* stack of file descriptors as resolved by includes */
 static struct fnt {
@@ -114,7 +114,7 @@ sym_define(const char *symbol, const char *value) {
 
 /* initialization, called once with root file name */
 void
-init_preprocessing(const char *filename)
+preprocess(const char *filename)
 {
     char *dir = ".";
     char *lastsep = strrchr(filename, '/');
@@ -151,7 +151,7 @@ getprepline(char **buffer)
             }
             continue;
         }
-        processed = preprocess(&linebuffer, &length, (size_t)read);
+        processed = preprocess_line(&linebuffer, &length, (size_t)read);
         if (processed > 0) {
             break;
         }
@@ -165,7 +165,7 @@ getprepline(char **buffer)
    in linebuffer (possibly reallocated). Lines that are not part of the
    translation unit, ex. #define, return 0. Invalid input return -1. */
 static ssize_t
-preprocess(char **linebuffer, size_t *length, size_t read)
+preprocess_line(char **linebuffer, size_t *length, size_t read)
 {
     char *token;
     int i = 0;

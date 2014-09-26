@@ -1,9 +1,6 @@
 #include "lcc.h"
 
-#include <stdio.h>
 #include <stdlib.h>
-
-static FILE *input;
 
 /* Tokenization interface and helper functions */
 static struct token peek_value;
@@ -18,7 +15,7 @@ readtoken()
         has_value = 0;
         return peek_value;
     }
-    eof = (get_token(input, &t) == 0);
+    eof = !get_token(&t);
     return t;
 }
 
@@ -90,11 +87,6 @@ static node_t *primary_expression();
 
 static void output_tree(int indent, struct node *tree);
 
-void
-init_parsing(FILE *fd)
-{
-    input = fd;
-}
 
 /* External interface */
 node_t *
