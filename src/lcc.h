@@ -107,6 +107,7 @@ typedef struct typetree {
         } ptr;
         struct {
             struct typetree **args;
+            const char **params;
             unsigned n_args;
             struct typetree *ret;
         } func;
@@ -124,7 +125,7 @@ enum storageclass { STORAGE_EXTERN, STORAGE_STATIC };
  */
 typedef struct symbol {
     const char *name;
-    unsigned depth;/* should not be needed */
+    int depth;
     struct typetree *type;
     enum storageclass storage;
 } symbol_t;

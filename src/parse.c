@@ -42,7 +42,6 @@ consume(enum token_type expected)
     }
 }
 
-
 /* Parse tree helper functions */
 static struct node *
 init_node(const char *name, size_t n)
@@ -146,11 +145,11 @@ static node_t *
 declaration()
 {
     node_t *node = NULL;
-    const char *symbol;
     typetree_t *type, *base = declaration_specifiers();
 
     while (1) {
-        symbol = NULL;
+        int i;
+        const char *symbol = NULL;
         type = declarator(base, &symbol);
         sym_add(symbol, type);
         switch (peek()) {
@@ -177,14 +176,23 @@ declaration()
 
             /* function definition must appear as only declaration */
             case '{':
-                if (node != NULL || symbol == NULL) {
+                if (node != NULL || symbol == NULL || type->type != FUNCTION) {
                     error("Invalid function definition, aborting");
                     exit(1);
                 }
                 node = init_node("function-definition", 0);
                 node->token.type = IDENTIFIER;
                 node->token.value = symbol;
+                push_scope();
+                for (i = 0; i < type->data.func.n_args; ++i) {
+                    if (type->data.func.params[i] == NULL) {
+                        error("Missing parameter name at position %d, aborting", i + 1);
+                        exit(1);
+                    }
+                    sym_add(type->data.func.params[i], type->data.func.args[i]);
+                }
                 addchild(node, block());
+                pop_scope();
                 return node;
 
             default: break;
@@ -313,6 +321,7 @@ static typetree_t *
 parameter_list(typetree_t *base)
 {
     typetree_t *func = init_typetree(FUNCTION), **args = NULL;
+    const char **params = NULL;
     int nargs = 0;
 
     while (peek() != ')') {
@@ -320,13 +329,11 @@ parameter_list(typetree_t *base)
         typetree_t *decl = declaration_specifiers();
         decl = declarator(decl, &symbol);
 
-        /* this is not exactly right, should push a new scope first */
-        if (symbol != NULL)
-            sym_add(symbol, decl);
-
         nargs++;
         args = realloc(args, sizeof(typetree_t *) * nargs);
+        params = realloc(params, sizeof(char *) * nargs);
         args[nargs - 1] = decl;
+        params[nargs - 1] = symbol;
 
         if (peek() != ',') break;
         consume(',');
@@ -343,6 +350,7 @@ parameter_list(typetree_t *base)
     func->data.func.ret = base;
     func->data.func.n_args = nargs;
     func->data.func.args = args;
+    func->data.func.params = params;
     return func;
 }
 
@@ -353,7 +361,6 @@ static node_t *
 block()
 {
     node_t *node = init_node("block", 32);
-    push_scope();
     consume('{');
     while (peek() != '}') {
         if (peek() == ';') {
@@ -363,7 +370,6 @@ block()
         addchild(node, statement());
     }
     consume('}');
-    pop_scope();
     return node;
 }
 
@@ -374,7 +380,9 @@ statement()
     enum token_type t = peek();
     switch (t) {
         case '{':
+            push_scope();
             node = block();
+            pop_scope();
             break;
         case IF:
         case SWITCH:
@@ -459,7 +467,13 @@ static node_t *
 identifier()
 {
     node_t *node = init_node("identifier", 0);
-    node->token = readtoken();
+    struct token name = readtoken();
+    symbol_t *symbol = sym_lookup(name.value);
+    if (symbol == NULL) {
+        error("Undefined symbol '%s', aborting", name.value);
+        exit(0);
+    }
+    node->token = name;
     return node;
 }
 
@@ -508,15 +522,9 @@ static node_t *
 primary_expression()
 {
     node_t *node;
-    symbol_t *symbol;
     switch (peek()) {
         case IDENTIFIER:
             node = identifier();
-            symbol = sym_lookup(node->token.value);
-            if (symbol == NULL) {
-                error("Undefined symbol '%s', aborting", node->token.value);
-                exit(0);
-            }
             break;
         case INTEGER:
             node = init_node("integer", 0);

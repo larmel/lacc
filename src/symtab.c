@@ -8,18 +8,6 @@ static symbol_t *symtab;
 static int symtab_size;
 static int symtab_capacity;
 
-static symbol_t *
-mksymbol(const char *name, typetree_t *type)
-{
-    if (symtab_size == symtab_capacity) {
-        symtab_capacity += 64;
-        symtab = realloc(symtab, sizeof(symbol_t) * symtab_capacity);
-    }
-    symtab[symtab_size].name = strdup(name);
-    symtab[symtab_size].type = type;
-    return &symtab[symtab_size++];
-}
-
 /* stack structure to keep track of lexical scope */
 static struct lexical_scope {
     symbol_t **symlist; /* points to symtab */
@@ -30,6 +18,18 @@ static struct lexical_scope {
 static int depth = -1;
 static int scope_cap;
 
+static symbol_t *
+mksymbol(const char *name, typetree_t *type)
+{
+    if (symtab_size == symtab_capacity) {
+        symtab_capacity += 64;
+        symtab = realloc(symtab, sizeof(symbol_t) * symtab_capacity);
+    }
+    symtab[symtab_size].name = strdup(name);
+    symtab[symtab_size].type = type;
+    symtab[symtab_size].depth = depth;
+    return &symtab[symtab_size++];
+}
 
 symbol_t *
 sym_lookup(const char *name)
@@ -52,7 +52,7 @@ sym_add(const char *name, typetree_t *type)
 {
     struct lexical_scope *scope = &scopes[depth];
     symbol_t *symbol = sym_lookup(name);
-    if (symbol != NULL) {
+    if (symbol != NULL && symbol->depth == depth) {
         error("Duplicate definition of symbol '%s'", name);
         exit(0);
     }
@@ -147,6 +147,7 @@ dump_symtab()
 {
     int i;
     for (i = 0; i < symtab_size; ++i) {
+        printf("%*s", symtab[i].depth * 2, "");
         printf("%s :: ", symtab[i].name);
         print_type(symtab[i].type);
         puts("");
