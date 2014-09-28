@@ -89,7 +89,7 @@ node_t *parse();
 
 /* type analysis */
 
-enum tree_type { BASIC, POINTER, FUNCTION };
+enum tree_type { BASIC, POINTER, FUNCTION, ARRAY };
 enum data_type { NONE_T, CHAR_T, INT64_T, DOUBLE_T, VOID_T };
 enum qualifier { CONST_Q = 0x1, VOLATILE_Q = 0x2, NONE_Q = 0x0 };
 
@@ -110,7 +110,11 @@ typedef struct typetree {
             unsigned n_args;
             struct typetree *ret;
         } func;
-    } data;
+        struct {
+            unsigned size;
+            struct typetree *of;
+        } arr;
+    } d;
 } typetree_t;
 
 enum storageclass { STORAGE_EXTERN, STORAGE_STATIC };

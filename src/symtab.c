@@ -96,7 +96,7 @@ print_type(typetree_t *tree)
     if (tree == NULL) return;
     switch (tree->type) {
         case BASIC:
-            switch (tree->data.basic.qualifier) {
+            switch (tree->d.basic.qualifier) {
                 case CONST_Q:
                     printf("const ");
                     break;
@@ -105,7 +105,7 @@ print_type(typetree_t *tree)
                     break;
                 default: break;
             }
-            switch (tree->data.basic.type) {
+            switch (tree->d.basic.type) {
                 case CHAR_T:
                     printf("char");
                     break;
@@ -122,22 +122,29 @@ print_type(typetree_t *tree)
             }
             break;
         case POINTER:
-            if (tree->data.ptr.qualifier != NONE_Q) {
-                if (tree->data.ptr.qualifier & CONST_Q) printf("const ");
-                if (tree->data.ptr.qualifier & VOLATILE_Q) printf("volatile ");
+            if (tree->d.ptr.qualifier != NONE_Q) {
+                if (tree->d.ptr.qualifier & CONST_Q) printf("const ");
+                if (tree->d.ptr.qualifier & VOLATILE_Q) printf("volatile ");
             }
             printf("* ");
-            print_type(tree->data.ptr.to);
+            print_type(tree->d.ptr.to);
             break;
         case FUNCTION:
             printf("(");
-            for (i = 0; i < tree->data.func.n_args; ++i) {
-                print_type(tree->data.func.args[i]);
-                if (i < tree->data.func.n_args - 1)
+            for (i = 0; i < tree->d.func.n_args; ++i) {
+                print_type(tree->d.func.args[i]);
+                if (i < tree->d.func.n_args - 1)
                     printf(", ");
             }
             printf(") -> ");
-            print_type(tree->data.func.ret);
+            print_type(tree->d.func.ret);
+            break;
+        case ARRAY:
+            if (tree->d.arr.size > 0)
+                printf("[%u] ", tree->d.arr.size);
+            else 
+                printf("[] ");
+            print_type(tree->d.arr.of);
             break;
         default: break;
     }

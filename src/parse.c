@@ -171,12 +171,12 @@ declaration()
                 node->token.type = IDENTIFIER;
                 node->token.value = name;
                 push_scope();
-                for (i = 0; i < type->data.func.n_args; ++i) {
-                    if (type->data.func.params[i] == NULL) {
+                for (i = 0; i < type->d.func.n_args; ++i) {
+                    if (type->d.func.params[i] == NULL) {
                         error("Missing parameter name at position %d, aborting", i + 1);
                         exit(1);
                     }
-                    sym_add(type->data.func.params[i], type->data.func.args[i]);
+                    sym_add(type->d.func.params[i], type->d.func.args[i]);
                 }
                 addchild(node, block());
                 pop_scope();
@@ -193,35 +193,35 @@ declaration_specifiers()
 {
     int end = 0;
     typetree_t *type = init_typetree(BASIC);
-    type->data.basic.qualifier = NONE_Q;
-    type->data.basic.type = NONE_T;
+    type->d.basic.qualifier = NONE_Q;
+    type->d.basic.type = NONE_T;
     while (1) {
         switch (peek()) {
             case AUTO: case REGISTER: case STATIC: case EXTERN: case TYPEDEF:
                 /* todo: something about storage class, maybe do it before this */
                 break;
             case CHAR:
-                type->data.basic.type = CHAR_T;
+                type->d.basic.type = CHAR_T;
                 break;
             case SHORT:
             case INT:
             case LONG:
             case SIGNED:
             case UNSIGNED:
-                type->data.basic.type = INT64_T;
+                type->d.basic.type = INT64_T;
                 break;
             case FLOAT:
             case DOUBLE:
-                type->data.basic.type = DOUBLE_T;
+                type->d.basic.type = DOUBLE_T;
                 break;
             case VOID:
-                type->data.basic.type = VOID_T;
+                type->d.basic.type = VOID_T;
                 break;
             case CONST:
-                type->data.ptr.qualifier |= CONST_Q;
+                type->d.ptr.qualifier |= CONST_Q;
                 break;
             case VOLATILE:
-                type->data.ptr.qualifier |= VOLATILE_Q;
+                type->d.ptr.qualifier |= VOLATILE_Q;
                 break;
             default:
                 end = 1;
@@ -229,7 +229,7 @@ declaration_specifiers()
         if (end) break;
         consume(peek());
     }
-    if (type->data.basic.type == NONE_T) {
+    if (type->d.basic.type == NONE_T) {
         error("Missing type specifier, aborting");
         exit(1);
     }
@@ -249,11 +249,11 @@ static typetree_t *
 pointer(typetree_t *base)
 {
     typetree_t *type = init_typetree(POINTER);
-    type->data.ptr.to = base;
+    type->d.ptr.to = base;
     base = type;
     consume('*');
     while (peek() == CONST || peek() == VOLATILE) {
-        type->data.ptr.qualifier |= (readtoken().type == CONST) ? CONST_Q : VOLATILE_Q;
+        type->d.ptr.qualifier |= (readtoken().type == CONST) ? CONST_Q : VOLATILE_Q;
     }
     return type;
 }
@@ -261,13 +261,14 @@ pointer(typetree_t *base)
 static typetree_t *
 direct_declarator(typetree_t *base, const char **symbol)
 {
+    typetree_t *type = base;
     switch (peek()) {
         case IDENTIFIER: 
             *symbol = readtoken().value;
             break;
         case '(':
             consume('(');
-            base = declarator(base, symbol);
+            type = declarator(base, symbol);
             consume(')');
             break;
         default: break;
@@ -276,24 +277,25 @@ direct_declarator(typetree_t *base, const char **symbol)
     while (peek() == '[' || peek() == '(') {
         switch (peek()) {
             case '[':
+                type = init_typetree(ARRAY);
+                type->d.arr.of = base;
                 consume('[');
                 if (peek() != ']') {
                     /* constant expression, evaluate immediately (no parse tree emitted) */
                     readtoken();
-                    /* todo: add array type */
                 }
                 consume(']');
                 break;
             case '(': {
                 consume('(');
-                base = parameter_list(base);
+                type = parameter_list(base);
                 consume(')');
                 break;
             }
             default: break;
         }
     }
-    return base;
+    return type;
 }
 
 /* FOLLOW(parameter-list) = { ')' }, peek to return empty list;
@@ -303,7 +305,7 @@ direct_declarator(typetree_t *base, const char **symbol)
 static typetree_t *
 parameter_list(typetree_t *base)
 {
-    typetree_t *func = init_typetree(FUNCTION), **args = NULL;
+    typetree_t *type = init_typetree(FUNCTION), **args = NULL;
     const char **params = NULL;
     int nargs = 0;
 
@@ -330,11 +332,11 @@ parameter_list(typetree_t *base)
         }
     }
     
-    func->data.func.ret = base;
-    func->data.func.n_args = nargs;
-    func->data.func.args = args;
-    func->data.func.params = params;
-    return func;
+    type->d.func.ret = base;
+    type->d.func.n_args = nargs;
+    type->d.func.args = args;
+    type->d.func.params = params;
+    return type;
 }
 
 /* Treat statements and declarations equally, allowing declarations in between
