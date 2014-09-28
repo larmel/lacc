@@ -3,40 +3,34 @@
 #include <ctype.h>
 #include <string.h>
 
-#define MAX_TOKEN_LENGTH 256
 
-static char consumed[MAX_TOKEN_LENGTH];
-
-/* Reference to current token structure that should be filled on a match */
-static struct token* token;
-
-/* automaton accepting identifiers. return 1 on accept, 0 otherwise */
-static int 
-identifier(int *state, char c)
+static int identifier(char *input)
 {
-    switch (*state) {
-        case 0:
-            if (isalpha(c)) *state = 1;
-            else *state = -1;
-            break;
-        case 1:
-            if (isspace(c) || !isalnum(c)) {
-                token->type = IDENTIFIER,
-                token->value = strdup(consumed);
-                *state = 2;
-                return 1;
-            }
-            break;
-        default:
-            *state = -1;
+    int state = 0, read = 0;
+    while (1) {
+        char c = *input++;
+        switch (state) {
+            case 0:
+                if (isalpha(c)) state = 1;
+                else state = -1;
+                break;
+            case 1:
+                if (isspace(c) || !isalnum(c)) {
+                    state = 2;
+                }
+                break;
+            default:
+                state = -1;
+        }
+        if (state == 2) return read;
+        if (state < 0) return 0;
+        read++;
     }
-    return 0;
 }
 
-/* automaton accepting integers, return 1 on accept and 0 otherwise */
-static int
-integer(int *state, char c)
+static int integer(char *input)
 {
+    int state = 0, read = 0;
     static char t[7][7] = {
         /* 0 | 1-9 | a-fA-F | uU | lL | _ | xX */
         {  1,   2,     -1,    -1,  -1, -1,  -1 },
@@ -48,148 +42,117 @@ integer(int *state, char c)
         { -1,  -1,     -1,    -1,  -1, 60,  -1 }
     };
 
-    int iidx = (c == '0') ? 0 : 
-        (c >= '1' && c <= '9') ? 1 :
-        ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) ? 2 :
-        (c == 'u' || c == 'U') ? 3 :
-        (c == 'l' || c == 'L') ? 4 :
-        (isspace(c) || !isalnum(c)) ? 5 :
-        (c == 'x' || c == 'X') ? 6 : -1;
-
-    *state = t[*state][iidx];
-    if (*state / 10) {
-        token->type = INTEGER,
-        token->value = strdup(consumed);
-        return 1;
+    while (1) {
+        char c = *input++;
+        int i = (c == '0') ? 0 : 
+            (c >= '1' && c <= '9') ? 1 :
+            ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) ? 2 :
+            (c == 'u' || c == 'U') ? 3 :
+            (c == 'l' || c == 'L') ? 4 :
+            (isspace(c) || !isalnum(c)) ? 5 :
+            (c == 'x' || c == 'X') ? 6 : -1;
+        state = t[state][i];
+        if (state / 10) return read;
+        if (state < 0) return 0;
+        read++;
     }
-    return 0;
 }
 
-static int
-string(int *state, char c)
+static int string(char *input)
 {
-    if (*state == 0) {
-        if (c == '"') *state = 1;
-        else *state = -1;
-    }
-    else if (*state == 1) {
-        if (c == '\\') *state = 2;
-        else if (c == '"') *state = 3;
-    }
-    else if (*state == 2) {
-        *state = 1;
-    }
-
-    if (*state == 3) {
-        token->type = STRING;
-        token->value = strdup(consumed);
-        return 1;
-    }
-    return 0;
-}
-
-/* automaton accepting keywords, return 1 on accept and 0 otherwise */
-static int
-keyword(int *state, char c) 
-{
-    static struct {
-        char * value;
-        enum token_type type;
-    } keyword[] = {
-        { "auto", AUTO },
-        { "break", BREAK },
-        { "case", CASE },
-        { "char", CHAR },
-        { "const", CONST },
-        { "continue", CONTINUE },
-        { "default", DEFAULT },
-        { "do", DO },
-        { "double", DOUBLE },
-        { "else", ELSE },
-        { "enum", ENUM },
-        { "extern", EXTERN },
-        { "float", FLOAT },
-        { "for", FOR },
-        { "goto", GOTO },
-        { "if", IF },
-        { "int", INT },
-        { "long", LONG },
-        { "register", REGISTER },
-        { "return", RETURN },
-        { "short", SHORT },
-        { "signed", SIGNED },
-        { "sizeof", SIZEOF },
-        { "static", STATIC },
-        { "struct", STRUCT },
-        { "switch", SWITCH },
-        { "typedef", TYPEDEF },
-        { "union", UNION },
-        { "unsigned", UNSIGNED },
-        { "void", VOID },
-        { "volatile", VOLATILE },
-        { "while", WHILE }
-    };
-    int i;
-
-    if (!isalnum(c)) {
-        if (*state == 0)
-            *state = 1;
-        else 
-            *state = -1;
-    }
-
-    if (*state == 1) {
-        for (i = 0; i < 32; ++i) {
-            if (!strcmp(consumed, keyword[i].value)) {
-                token->type = keyword[i].type;
-                token->value = keyword[i].value;
-                return 1;
-            }
+    int state = 0, read = 0;
+    while (1) {
+        char c = *input++;
+        if (state == 0) {
+            if (c == '"') state = 1;
+            else state = -1;
         }
+        else if (state == 1) {
+            if (c == '\\') state = 2;
+            else if (c == '"') state = 3;
+        }
+        else if (state == 2) {
+            state = 1;
+        }
+        read++;
+        if (state == 3) return read;
+        if (state < 0) return 0;
     }
-
-    return 0;
 }
 
-/* Create tokens from a preprocessed line at a time,
- * no token can span multiple lines. Invoke the preprocessor
- * on demand */
-static char *line = "\0";
-static int idx = 0;
+static struct {
+    char * value;
+    enum token_type type;
+} keywords[] = {
+    { "auto", AUTO },
+    { "break", BREAK },
+    { "case", CASE },
+    { "char", CHAR },
+    { "const", CONST },
+    { "continue", CONTINUE },
+    { "default", DEFAULT },
+    { "do", DO },
+    { "double", DOUBLE },
+    { "else", ELSE },
+    { "enum", ENUM },
+    { "extern", EXTERN },
+    { "float", FLOAT },
+    { "for", FOR },
+    { "goto", GOTO },
+    { "if", IF },
+    { "int", INT },
+    { "long", LONG },
+    { "register", REGISTER },
+    { "return", RETURN },
+    { "short", SHORT },
+    { "signed", SIGNED },
+    { "sizeof", SIZEOF },
+    { "static", STATIC },
+    { "struct", STRUCT },
+    { "switch", SWITCH },
+    { "typedef", TYPEDEF },
+    { "union", UNION },
+    { "unsigned", UNSIGNED },
+    { "void", VOID },
+    { "volatile", VOLATILE },
+    { "while", WHILE }
+};
 
-/* Get next token from stream, single pass */
 int
 get_token(struct token *t)
 {
-    char c, d, e;
-    int i, n = 0; /* Number of chars consumed to make token */
-    int n_matched;
-    /*int start, end; */ /* range in current line making up the token */
+    int n;
 
-    /* already failed before */
-    if (idx == -1) return 0;
+    /* Create tokens from a preprocessed line at a time, no token can span
+     * multiple lines. Invoke the preprocessor on demand */
+    static char *line;
 
-    /* Seek to start of next token */
-    do {
-        if (line[idx] == '\0') {
-            idx = 0;
-            if (getprepline(&line) == -1) {
-                idx = -1;
-                return 0;
-            }
+    /* Current strtok token, preserved across invocations */
+    static char *tok = NULL;
+
+    /* Get next strtok of current preprocessed line */
+    if (tok != NULL && *tok == '\0')
+        tok = strtok(NULL, " \t\n");
+
+    /* Need more stuff from preprocessor */
+    if (tok == NULL) {
+        if (getprepline(&line) == -1) {
+            return 0; /* eof */
         }
-        while (isspace(line[idx]))
-            idx++;
-    } while (line[idx] == '\0');
-
-    t->value = NULL;
-    for (i = 0; i < MAX_TOKEN_LENGTH; ++i) {
-        consumed[i] = 0;
+        tok = strtok(line, " \t\n");
     }
 
-    /* Simple single char tokens */
-    c = line[idx++];
-    switch (c) {
+    for (n = 0; n < 32; ++n) {
+        int length = strlen(keywords[n].value);
+        if (!strncmp(tok, keywords[n].value, length) && !isalnum(*(tok + length))) {
+            tok += length;
+            t->type = keywords[n].type;
+            t->value = keywords[n].value;
+            return length;
+        }
+    }
+
+    switch (*tok++) {
         case '(':
             t->type = OPEN_PAREN; t->value = "(";
             return 1;
@@ -215,21 +178,40 @@ get_token(struct token *t)
             t->type = COMMA; t->value = ",";
             return 1;
         case '.':
-            d = line[idx++];
-            if (d == '.') {
-                e = line[idx++];
-                if (e == '.') {
-                    t->type = DOTS; t->value = "...";
-                    return 3;
-                } else {
-                    error("Unexpected '%c', expected '.'", e);
-                    return 0;
-                }
-            } else {
-                idx--;
+            if (strncmp(tok, "..", 2)) {
+                tok += 2;
+                t->type = DOTS; t->value = "...";
+                return 3;
             }
             t->type = DOT; t->value = ".";
             return 1;
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+            n = integer(tok - 1);
+            if (n) {
+                t->type = INTEGER;
+                t->value = strndup(tok - 1, n);
+                tok += n - 1;
+                return n;
+            }
+            break;
+        case '"':
+            n = string(tok - 1);
+            if (n) {
+                t->type = STRING;
+                t->value = strndup(tok, n - 1);
+                tok += n - 1;
+                return n;
+            }
+            break;
         case '=': /* not exactly right ... */
             t->type = ASSIGN; t->value = "=";
             return 1;
@@ -237,50 +219,17 @@ get_token(struct token *t)
             t->type = STAR; t->value = "*";
             return 1;
         default:
-            idx--;
+            n = identifier(tok - 1);
+            if (n) {
+                t->type = IDENTIFIER;
+                t->value = strndup(tok - 1, n);
+                tok += n - 1;
+                return n;
+            }
+            break;
     }
+    tok--;
 
-    token = t;
-    n_matched = -1;
-
-    {
-        int s_keyword = 0;
-        int s_identifier = 0;
-        int s_integer = 0;
-        int s_string = 0;
-
-        while ((c = line[idx++]) != '\0') {
-            if (keyword(&s_keyword, c)) {
-                n_matched = 1;
-                idx--;
-                break;
-            }
-            if (identifier(&s_identifier, c)) {
-                n_matched = 1;
-                idx--;
-                break;
-            }
-            if (integer(&s_integer, c)) {
-                n_matched = 1;
-                idx--;
-                break;
-            }
-            if (string(&s_string, c)) {
-                n_matched = 1;
-                consumed[n] = c;
-                n++;
-                break;
-            }
-
-            consumed[n] = c;
-            n++;
-        }
-    }
-
-    if (n_matched == -1 && c != '\0') {
-        error("Could not match any token for input '%s'\n", consumed);
-        return 0;
-    }
-
-    return n;
+    error("Could not match any token for input '%s'\n", tok);
+    return 0;
 }
