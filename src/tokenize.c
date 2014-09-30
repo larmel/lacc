@@ -153,6 +153,73 @@ get_token(struct token *t)
     }
 
     switch (*tok++) {
+        case '+':
+            if (*tok == '+') {
+                tok++;
+                t->type = INCREMENT; t->value = "++";
+                return 2;
+            }
+            t->type = PLUS; t->value = "+";
+            return 1;
+        case '-':
+            if (*tok == '-') {
+                tok++;
+                t->type = DECREMENT; t->value = "--";
+                return 2;
+            }
+            if (*tok == '>') {
+                tok++;
+                t->type = ARROW; t->value = "->";
+                return 2;
+            }
+            t->type = MINUS; t->value = "-";
+            return 1;
+        case '!':
+            if (*tok == '=') {
+                tok++;
+                t->type = NEQ; t->value = "!=";
+                return 2;
+            }
+            t->type = NOT; t->value = "!";
+            return 1;
+        case '|':
+            if (*tok == '|') {
+                tok++;
+                t->type = LOGICAL_OR; t->value = "||";
+                return 2;
+            }
+            t->type = OR; t->value = "|";
+            return 1;
+        case '&':
+            if (*tok == '&') {
+                tok++;
+                t->type = LOGICAL_AND; t->value = "&&";
+                return 2;
+            }
+            t->type = AND; t->value = "&";
+            return 1;
+        case '^':
+            t->type = XOR; t->value = "^";
+            return 1;
+        case '%':
+            t->type = MODULO; t->value = "%%";
+            return 1;
+        case '<':
+            if (*tok == '=') {
+                tok++;
+                t->type = LEQ; t->value = "<=";
+                return 2;
+            }
+            t->type = LT; t->value = "<";
+            return 1;
+        case '>':
+            if (*tok == '=') {
+                tok++;
+                t->type = GEQ; t->value = ">=";
+                return 2;
+            }
+            t->type = GT; t->value = ">";
+            return 1;
         case '(':
             t->type = OPEN_PAREN; t->value = "(";
             return 1;
@@ -212,11 +279,19 @@ get_token(struct token *t)
                 return n;
             }
             break;
-        case '=': /* not exactly right ... */
+        case '=':
+            if (*tok == '=') {
+                tok++;
+                t->type = EQ; t->value = "==";
+                return 2;
+            }
             t->type = ASSIGN; t->value = "=";
             return 1;
         case '*': /* todo: fix operators such as *= */
             t->type = STAR; t->value = "*";
+            return 1;
+        case '/':
+            t->type = SLASH; t->value = "/";
             return 1;
         default:
             n = identifier(tok - 1);

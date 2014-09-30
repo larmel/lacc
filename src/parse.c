@@ -1,6 +1,7 @@
 #include "lcc.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 /* Tokenization interface and helper functions */
 static struct token peek_value;
@@ -45,6 +46,7 @@ init_node(const char *name, size_t n)
 {
     struct node *node = malloc(sizeof(node_t));
     node->text = name;
+    node->value = 0;
     node->nc = 0;
     node->cap = n;
     if (n) node->children = malloc(sizeof(node_t *) * node->cap);
@@ -82,6 +84,7 @@ static node_t *block();
 static node_t *statement();
 static node_t *identifier();
 static node_t *expression();
+static node_t *constant_expression();
 static node_t *postfix_expression();
 static node_t *primary_expression();
 
@@ -115,7 +118,9 @@ output_tree(int indent, struct node *tree)
         return;
     }
     printf("%*s(%s", indent, "", tree->text);
-    if (tree->token.value != NULL) {
+    if (!strcmp("integer", tree->text)) {
+        printf(" %ld", tree->value);
+    } else if (tree->token.value != NULL) {
         printf(" \"%s\"", tree->token.value);
     }
     if (tree->nc > 0) {
@@ -281,8 +286,16 @@ direct_declarator(typetree_t *base, const char **symbol)
                 type->d.arr.of = base;
                 consume('[');
                 if (peek() != ']') {
-                    /* constant expression, evaluate immediately (no parse tree emitted) */
-                    readtoken();
+                    node_t *expr = constant_expression();
+                    if (strcmp("integer", expr->text)) {
+                        error("Array declaration must be a compile time constant, aborting");
+                        exit(1);
+                    }
+                    if (expr->value < 1) {
+                        error("Invalid array size %ld, aborting");
+                        exit(1);
+                    }
+                    type->d.arr.size = expr->value;
                 }
                 consume(']');
                 break;
@@ -464,12 +477,211 @@ identifier()
     return node;
 }
 
+static node_t *assignment_expression();
+static node_t *conditional_expression();
+static node_t *logical_expression();
+static node_t *or_expression();
+static node_t *and_expression();
+static node_t *equality_expression();
+static node_t *relational_expression();
+static node_t *shift_expression();
+static node_t *additive_expression();
+static node_t *multiplicative_expression();
+static node_t *cast_expression();
+static node_t *unary_expression();
+
 static node_t *
 expression()
 {
-    node_t *node = init_node("expression", 0);
-    addchild(node, postfix_expression());
+    node_t *node = assignment_expression();
     return node;
+}
+
+static node_t *
+assignment_expression()
+{
+    node_t *node = conditional_expression();
+    return node;
+}
+
+static node_t *
+constant_expression()
+{
+    node_t *node = conditional_expression();
+    return node;
+}
+
+static node_t *
+conditional_expression()
+{
+    node_t *node = logical_expression();
+    if (peek() == '?') {
+        node_t *parent = init_node("ternary-expression", 0);
+        consume('?');
+        addchild(parent, node);
+        addchild(parent, expression());
+        consume(':');
+        addchild(parent, conditional_expression());
+        node = parent;
+    }
+    return node;
+}
+
+/* merge AND/OR */
+static node_t *
+logical_expression()
+{
+    node_t *left = or_expression();
+    while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
+        node_t *right, *parent;
+        struct token t = readtoken();
+        right = and_expression();
+        if (!strcmp("integer", left->text) && !strcmp("integer", right->text)) {
+            if (*t.value == LOGICAL_OR)
+                left->value = left->value || right->value;
+            else
+                left->value = left->value && right->value;
+        } else {
+            parent = init_node("logical-expression", 2);
+            parent->token = t;
+            addchild(parent, left);
+            addchild(parent, right);
+            left = parent;
+        }
+    }
+    return left;
+}
+
+/* merge OR/XOR */
+static node_t *
+or_expression()
+{
+    node_t *left = and_expression();
+    while (peek() == '|' || peek() == '^') {
+        node_t *right, *parent;
+        struct token t = readtoken();
+        right = and_expression();
+        if (!strcmp("integer", left->text) && !strcmp("integer", right->text)) {
+            if (*t.value == '|')
+                left->value |= right->value;
+            else
+                left->value ^= right->value;
+        } else {
+            parent = init_node("or-expression", 2);
+            parent->token = t;
+            addchild(parent, left);
+            addchild(parent, right);
+            left = parent;
+        }
+    }
+    return left;
+}
+
+static node_t *
+and_expression()
+{
+    node_t *left = equality_expression();
+    while (peek() == '&') {
+        node_t *right, *parent;
+        struct token t = readtoken();
+        right = equality_expression();
+        if (!strcmp("integer", left->text) && !strcmp("integer", right->text)) {
+            left->value &= right->value;
+        } else {
+            parent = init_node("and-expression", 2);
+            parent->token = t;
+            addchild(parent, left);
+            addchild(parent, right);
+            left = parent;
+        }
+    }
+    return left;
+}
+
+static node_t *
+equality_expression()
+{
+    return relational_expression();
+}
+
+static node_t *
+relational_expression()
+{
+    return shift_expression();
+}
+
+static node_t *
+shift_expression()
+{
+    return additive_expression();
+}
+
+static node_t *
+additive_expression()
+{
+    node_t *left = multiplicative_expression();
+    while (peek() == '+' || peek() == '-') {
+        node_t *right, *parent;
+        struct token t = readtoken();
+        right = multiplicative_expression();
+        if (!strcmp("integer", left->text) && !strcmp("integer", right->text)) {
+            if (*t.value == '+') {
+                left->value += right->value;
+            } else {
+                left->value -= right->value;
+            }
+        } else {
+            parent = init_node("additive-expression", 2);
+            parent->token = t;
+            addchild(parent, left);
+            addchild(parent, right);
+            left = parent;
+        }
+    }
+    return left;
+}
+
+static node_t *
+multiplicative_expression()
+{
+    node_t *left = cast_expression();
+    while (peek() == '*' || peek() == '/' || peek() == '%') {
+        node_t *right, *parent;
+        struct token t = readtoken();
+        right = cast_expression();
+        if (!strcmp("integer", left->text) && !strcmp("integer", right->text)) {
+            switch (*t.value) {
+                case '*':
+                    left->value *= right->value;
+                    break;
+                case '/':
+                    left->value /= right->value;
+                    break;
+                default:
+                    left->value %= right->value;
+                    break;
+            }
+        } else {
+            parent = init_node("multiplicative-expression", 2);
+            parent->token = t;
+            addchild(parent, left);
+            addchild(parent, right);
+            left = parent;
+        }
+    }
+    return left;
+}
+
+static node_t *
+cast_expression()
+{
+    return unary_expression();
+}
+
+static node_t *
+unary_expression()
+{
+    return postfix_expression();
 }
 
 /* This rule is left recursive, build tree bottom up
@@ -516,6 +728,7 @@ primary_expression()
         case INTEGER:
             node = init_node("integer", 0);
             node->token = readtoken();
+            node->value = atoi(node->token.value);
             break;
         default:
             error("Unexpected token '%s', not a valid primary expression", readtoken().value);

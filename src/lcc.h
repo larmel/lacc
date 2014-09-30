@@ -9,7 +9,6 @@ int getprepline(char **);
 
 typedef enum token_type
 {
-    /* Keyword */
     AUTO,
     BREAK,
     CASE,
@@ -48,8 +47,22 @@ typedef enum token_type
     STRING,
 
     DOTS, /* ... */
+    LOGICAL_OR, /* || */
+    LOGICAL_AND, /* && */
+    OR = '|',
+    AND = '&',
+    XOR = '^',
+    MODULO = '%',
+    LT = '<',
+    GT = '>',
+    LEQ, /* <= */
+    GEQ, /* >= */
+    EQ, /* == */
+    NEQ, /* != */
+    ARROW, /* -> */
+    INCREMENT, /* ++ */
+    DECREMENT, /* -- */
 
-    /* single character */
     OPEN_PAREN = '(',
     CLOSE_PAREN = ')',
     SEMICOLON = ';',
@@ -60,7 +73,11 @@ typedef enum token_type
     COMMA = ',',
     DOT = '.',
     ASSIGN = '=',
-    STAR = '*'
+    STAR = '*',
+    SLASH = '/',
+    PLUS = '+',
+    MINUS = '-',
+    NOT = '!'
 } token_t;
 
 struct token
@@ -79,6 +96,7 @@ struct typetree;
 typedef struct node {
     const char *text;
     struct token token;
+    long value;
     struct node **children;
     size_t nc;
     size_t cap;
