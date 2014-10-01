@@ -9,7 +9,7 @@ int getprepline(char **);
 
 typedef enum token_type
 {
-    AUTO,
+    AUTO = 256, /* skip ASCII symbol range to avoid collisions */
     BREAK,
     CASE,
     CHAR,
@@ -49,12 +49,6 @@ typedef enum token_type
     DOTS, /* ... */
     LOGICAL_OR, /* || */
     LOGICAL_AND, /* && */
-    OR = '|',
-    AND = '&',
-    XOR = '^',
-    MODULO = '%',
-    LT = '<',
-    GT = '>',
     LEQ, /* <= */
     GEQ, /* >= */
     EQ, /* == */
@@ -63,6 +57,12 @@ typedef enum token_type
     INCREMENT, /* ++ */
     DECREMENT, /* -- */
 
+    OR = '|',
+    AND = '&',
+    XOR = '^',
+    MODULO = '%',
+    LT = '<',
+    GT = '>',
     OPEN_PAREN = '(',
     CLOSE_PAREN = ')',
     SEMICOLON = ';',
