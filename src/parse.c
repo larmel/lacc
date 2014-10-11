@@ -445,7 +445,7 @@ statement()
                 consume(':');
                 addchild(node, statement());
             } else {
-                addchild(node, primary_expression()); /* todo: constant_expression */
+                addchild(node, constant_expression());
                 consume(':');
                 addchild(node, statement());
             }
@@ -501,6 +501,14 @@ static node_t *
 assignment_expression()
 {
     node_t *node = conditional_expression();
+    if (peek() == '=') {
+        /* todo: node must be unary-expression or lower */
+        node_t *assignment = init_node("assignment", 2);
+        assignment->token = readtoken();
+        addchild(assignment, node);
+        addchild(assignment, assignment_expression());
+        node = assignment;
+    }
     return node;
 }
 

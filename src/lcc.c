@@ -17,8 +17,8 @@ int main(int argc, char* argv[])
     /* preprocessor gets file reference */
     preprocess(filename);
 
-    /* compile */
-    codegen();
+    /* first pass, generating ir */
+    compile();
 
     puts("");
     dump_symtab();

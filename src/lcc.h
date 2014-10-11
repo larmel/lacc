@@ -168,7 +168,7 @@ void dump_symtab();
 
 /* IR */
 
-void codegen();
+void compile();
 void printir(FILE *);
 
 
