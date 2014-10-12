@@ -9,27 +9,15 @@ enum irtype {
     IR_RET      /* ret t1 */
 };
 
-struct block;
-
-typedef struct {
+typedef struct irop {
     enum irtype type;
 
     symbol_t *a;
     symbol_t *b;
     symbol_t *c;
 
-    struct block *target;
+    block_t *target;
 } irop_t;
-
-/* A basic block representing a fork or join in the program control flow.
- * For example function entry points, for loops, if branches, etc. 
- * Initially, these are per function only, so not really basic blocks */
-typedef struct block {
-    const char *label;
-
-    irop_t *ops;
-    unsigned n;
-} block_t;
 
 
 /* Hold program representation as a list of blocks (functions)
@@ -48,6 +36,7 @@ allocirop()
         exit(0);
     }
     block = blocks[length - 1];
+
     block->n++;
     block->ops = realloc(block->ops, sizeof(irop_t) * block->n);
     return &block->ops[block->n - 1];
@@ -57,8 +46,10 @@ allocirop()
 block_t *
 mkblock(const char *label)
 {
-    block_t *block = calloc(1, sizeof(block_t));
+    block_t *block = malloc(sizeof(block_t));
     block->label = label;
+    block->ops = NULL;
+    block->n = 0;
     if (length == cap) {
         cap += 32;
         blocks = realloc(blocks, sizeof(block_t*) * cap);
@@ -68,25 +59,25 @@ mkblock(const char *label)
 }
 
 /* add new ir operations to the current block */
-irop_t *
-mkir_add(symbol_t *a, symbol_t *b, symbol_t *c)
-{
+void mkir_add(symbol_t *a, symbol_t *b, symbol_t *c) {
     irop_t *op = allocirop();
     op->type = IR_ADD;
     op->a = a;
     op->b = b;
     op->c = c;
-    return op;
 }
 
-irop_t *
-mkir_assign(symbol_t *a, symbol_t *b)
-{
+void mkir_assign(symbol_t *a, symbol_t *b) {
     irop_t *op = allocirop();
     op->type = IR_ASSIGN;
     op->a = a;
     op->b = b;
-    return op;
+}
+
+void mkir_ret(symbol_t *val) {
+    irop_t *op = allocirop();
+    op->type = IR_RET;
+    op->a = val;
 }
 
 void

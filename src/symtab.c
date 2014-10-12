@@ -4,7 +4,7 @@
 #include <string.h>
 
 /* the actual symbol table */
-static symbol_t *symtab;
+static symbol_t **symtab;
 static int symtab_size;
 static int symtab_capacity;
 
@@ -23,12 +23,14 @@ mksymbol(const char *name, typetree_t *type)
 {
     if (symtab_size == symtab_capacity) {
         symtab_capacity += 64;
-        symtab = realloc(symtab, sizeof(symbol_t) * symtab_capacity);
+        symtab = realloc(symtab, sizeof(symbol_t*) * symtab_capacity);
     }
-    symtab[symtab_size].name = strdup(name);
-    symtab[symtab_size].type = type;
-    symtab[symtab_size].depth = depth;
-    return &symtab[symtab_size++];
+    /* symbol address needs to be stable, so never realloc this */
+    symtab[symtab_size] = malloc(sizeof(symbol_t));
+    symtab[symtab_size]->name = strdup(name);
+    symtab[symtab_size]->type = type;
+    symtab[symtab_size]->depth = depth;
+    return symtab[symtab_size++];
 }
 
 symbol_t *
@@ -63,6 +65,42 @@ sym_add(const char *name, typetree_t *type)
     }
     scope->symlist[scope->size] = symbol;
     scope->size++;
+    return symbol;
+}
+
+symbol_t *
+sym_mktemp(typetree_t *type)
+{
+    static int tmpn;
+
+    char tmpname[16];
+    do {
+        snprintf(tmpname, 12, "t%d", tmpn++);
+    } while (sym_lookup(tmpname) != NULL);
+
+    return sym_add(tmpname, type);
+}
+
+symbol_t *
+sym_mkimmediate(struct token token)
+{
+    symbol_t *symbol = sym_lookup(token.value);
+    if (symbol == NULL) {
+        typetree_t *type = malloc(sizeof(typetree_t));
+        type->type = BASIC;
+        type->d.basic.qualifier = NONE_Q;
+        symbol = sym_add(token.value, type);
+        switch (token.type) {
+            case INTEGER:
+                type->d.basic.type = INT64_T;
+                symbol->value = malloc(sizeof(int));
+                *(long *)symbol->value = strtol(token.value, NULL, 0);
+                break;
+            default:
+                type->d.basic.type = VOID_T;
+                break;
+        }
+    }
     return symbol;
 }
 
@@ -155,9 +193,9 @@ dump_symtab()
 {
     int i;
     for (i = 0; i < symtab_size; ++i) {
-        printf("%*s", symtab[i].depth * 2, "");
-        printf("%s :: ", symtab[i].name);
-        print_type(symtab[i].type);
+        printf("%*s", symtab[i]->depth * 2, "");
+        printf("%s :: ", symtab[i]->name);
+        print_type(symtab[i]->type);
         puts("");
     }
 }

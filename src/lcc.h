@@ -149,6 +149,7 @@ typedef struct symbol {
     int depth;
     struct typetree *type;
     enum storageclass storage;
+    void *value;
 } symbol_t;
 
 /* resolve symbol in current scope, or NULL if not found */
@@ -156,6 +157,8 @@ symbol_t *sym_lookup(const char *);
 
 /* add symbol to current scope */
 symbol_t *sym_add(const char *, typetree_t *);
+symbol_t *sym_mktemp(typetree_t *);
+symbol_t *sym_mkimmediate(struct token);
 
 void push_scope();
 
@@ -167,6 +170,24 @@ void dump_symtab();
 
 
 /* IR */
+
+struct irop;
+
+/* A basic block representing a fork or join in the program control flow.
+ * For example function entry points, for loops, if branches, etc. 
+ * Initially, these are per function only, so not really basic blocks */
+typedef struct block {
+    const char *label;
+
+    struct irop *ops;
+    unsigned n;
+} block_t;
+
+
+block_t * mkblock(const char *);
+void mkir_add(symbol_t *, symbol_t *, symbol_t *);
+void mkir_assign(symbol_t *, symbol_t *);
+void mkir_ret(symbol_t *);
 
 void compile();
 void printir(FILE *);
