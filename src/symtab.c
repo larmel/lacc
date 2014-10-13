@@ -127,6 +127,49 @@ void pop_scope()
     }
 }
 
+int
+type_equal(typetree_t *a, typetree_t *b)
+{
+    if (a == NULL && b == NULL) return 1;
+    if (a == NULL || b == NULL) return 0;
+    if (a->type != b->type) return 0;
+    switch (a->type) {
+        case BASIC:
+            return a->d.basic.type == b->d.basic.type
+                && a->d.basic.qualifier == b->d.basic.qualifier;
+        case POINTER:
+            return a->d.ptr.qualifier == b->d.ptr.qualifier
+                && type_equal(a->d.ptr.to, b->d.ptr.to);
+        case FUNCTION:
+            return 0; /* todo */
+        case ARRAY:
+            return a->d.arr.size == b->d.arr.size
+                && type_equal(a->d.arr.of, b->d.arr.of);
+    }
+    return 0;
+}
+
+typetree_t *
+type_combine(typetree_t *a, typetree_t *b)
+{
+    if (type_equal(a, b))
+        return a;
+    error("cannot combine types, aborting");
+    exit(0);
+    return NULL;
+}
+
+typetree_t *
+init_type_basic(enum data_type type)
+{
+    typetree_t *tree = malloc(sizeof(typetree_t));
+    tree->type = BASIC;
+    tree->d.basic.type = type;
+    tree->d.basic.qualifier = NONE_Q;
+    return tree;
+}
+
+
 static void
 print_type(typetree_t *tree)
 {

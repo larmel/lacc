@@ -160,6 +160,10 @@ symbol_t *sym_add(const char *, typetree_t *);
 symbol_t *sym_mktemp(typetree_t *);
 symbol_t *sym_mkimmediate(struct token);
 
+/* functions on types */
+typetree_t *type_combine(typetree_t *, typetree_t *);
+typetree_t *init_type_basic(enum data_type);
+
 void push_scope();
 
 void pop_scope();
@@ -185,7 +189,7 @@ typedef struct block {
 
 
 block_t * mkblock(const char *);
-void mkir_add(symbol_t *, symbol_t *, symbol_t *);
+void mkir_arithmetic(symbol_t *, symbol_t *, symbol_t *, enum token_type);
 void mkir_assign(symbol_t *, symbol_t *);
 void mkir_ret(symbol_t *);
 

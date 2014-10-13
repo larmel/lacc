@@ -4,13 +4,26 @@
 #include <string.h>
 
 enum irtype {
-    IR_ADD,     /* t1 = t2 + t3 */
-    IR_ASSIGN,  /* t1 = t2 */
-    IR_RET      /* ret t1 */
+    IR_ARITHMETIC,  /* t1 = t2 <op> t3 */
+    IR_ASSIGN,      /* t1 = t2 */
+    IR_RET          /* ret t1 */
+};
+
+enum iroptype {
+    IR_OP_ADD,
+    IR_OP_SUB,
+    IR_OP_MUL,
+    IR_OP_DIV,
+    IR_OP_LOGICAL_AND,
+    IR_OP_LOGICAL_OR,
+    IR_OP_BITWISE_AND,
+    IR_OP_BITWISE_OR,
+    IR_OP_BITWISE_XOR
 };
 
 typedef struct irop {
     enum irtype type;
+    enum iroptype optype;
 
     symbol_t *a;
     symbol_t *b;
@@ -59,9 +72,42 @@ mkblock(const char *label)
 }
 
 /* add new ir operations to the current block */
-void mkir_add(symbol_t *a, symbol_t *b, symbol_t *c) {
+void mkir_arithmetic(symbol_t *a, symbol_t *b, symbol_t *c, enum token_type type) {
     irop_t *op = allocirop();
-    op->type = IR_ADD;
+    op->type = IR_ARITHMETIC;
+    switch (type) {
+        case '+':
+            op->optype = IR_OP_ADD;
+            break;
+        case '-':
+            op->optype = IR_OP_SUB;
+            break;
+        case '*':
+            op->optype = IR_OP_MUL;
+            break;
+        case '/':
+            op->optype = IR_OP_DIV;
+            break;
+        case LOGICAL_AND:
+            op->optype = IR_OP_LOGICAL_AND;
+            break;
+        case LOGICAL_OR:
+            op->optype = IR_OP_LOGICAL_OR;
+            break;
+        case '&':
+            op->optype = IR_OP_BITWISE_AND;
+            break;
+        case '|':
+            op->optype = IR_OP_BITWISE_OR;
+            break;
+        case '^':
+            op->optype = IR_OP_BITWISE_XOR;
+            break;
+        default:
+            /* nothing */
+            error("Unrecognized optype, aborting");
+            exit(0);
+    }
     op->a = a;
     op->b = b;
     op->c = c;
@@ -93,6 +139,23 @@ compile()
     pop_scope();
 }
 
+
+const char *iroptype_tostr(enum iroptype iroptype)
+{
+    switch (iroptype) {
+        case IR_OP_ADD: return "+";
+        case IR_OP_SUB: return "-";
+        case IR_OP_MUL: return "*";
+        case IR_OP_DIV: return "/";
+        case IR_OP_LOGICAL_AND: return "&&";
+        case IR_OP_LOGICAL_OR: return "||";
+        case IR_OP_BITWISE_AND: return "&";
+        case IR_OP_BITWISE_OR: return "|";
+        case IR_OP_BITWISE_XOR: return "xor";
+    }
+    return "";
+}
+
 /* should do this in dot format */
 void
 printir(FILE *file)
@@ -103,8 +166,8 @@ printir(FILE *file)
         for (j = 0; j < blocks[i]->n; ++j) {
             irop_t *op = &blocks[i]->ops[j];
             switch (op->type) {
-                case IR_ADD:
-                    fprintf(file, "%s = %s + %s\n", op->a->name, op->b->name, op->c->name);
+                case IR_ARITHMETIC:
+                    fprintf(file, "%s = %s %s %s\n", op->a->name, op->b->name, iroptype_tostr(op->optype), op->c->name);
                     break;
                 case IR_ASSIGN:
                     fprintf(file, "%s = %s\n", op->a->name, op->b->name);

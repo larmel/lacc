@@ -83,8 +83,9 @@ static typetree_t *parameter_list(typetree_t *);
 static node_t *block();
 static node_t *statement();
 static node_t *identifier();
-static node_t *expression();
 
+/* expression nodes that are called in high level rules */
+static symbol_t *expression();
 static symbol_t *constant_expression();
 static symbol_t *assignment_expression();
 
@@ -265,6 +266,18 @@ pointer(typetree_t *base)
     return type;
 }
 
+static int
+get_symbol_constant_value(symbol_t *symbol, long *out)
+{
+    if (symbol->type->type == BASIC
+        && symbol->type->d.basic.type == INT64_T
+        && symbol->value != NULL) {
+        *out = *(long *)symbol->value;
+        return 1;
+    }
+    return 0;
+}
+
 static typetree_t *
 direct_declarator(typetree_t *base, const char **symbol)
 {
@@ -288,17 +301,18 @@ direct_declarator(typetree_t *base, const char **symbol)
                 type->d.arr.of = base;
                 consume('[');
                 if (peek() != ']') {
-                    /*node_t *expr = constant_expression();
-                    if (strcmp("integer", expr->text)) {
+                    symbol_t *expr = constant_expression();
+                    long size;
+                    if (!get_symbol_constant_value(expr, &size)) {
+                        /* this should really be in const expr after folding */
                         error("Array declaration must be a compile time constant, aborting");
                         exit(1);
                     }
-                    if (expr->value < 1) {
+                    if (size < 1) {
                         error("Invalid array size %ld, aborting");
                         exit(1);
                     }
-                    type->d.arr.size = expr->value;*/
-                    constant_expression(); /* todo: fix */
+                    type->d.arr.size = size;
                 }
                 consume(']');
                 break;
@@ -308,8 +322,9 @@ direct_declarator(typetree_t *base, const char **symbol)
                 consume(')');
                 break;
             }
-            default: break;
+            default: break; /* impossible */
         }
+        base = type;
     }
     return type;
 }
@@ -376,9 +391,6 @@ block()
     return node;
 }
 
-/* todo: move */
-static symbol_t *additive_expression();
-
 static node_t *
 statement()
 {
@@ -395,7 +407,8 @@ statement()
             node = init_node("selection-statement", 3);
             node->token = readtoken();
             consume('(');
-            addchild(node, expression());
+            expression();
+            /* addchild(node, expression()); */
             consume(')');
             addchild(node, statement());
             if (peek() == ELSE) {
@@ -410,22 +423,22 @@ statement()
             node->token = readtoken();
             if (t == WHILE) {
                 consume('(');
-                addchild(node, expression());
+                expression(); /* no node */
                 consume(')');
                 addchild(node, statement());
             } else if (t == DO) {
                 addchild(node, statement());
                 consume(WHILE);
                 consume('(');
-                addchild(node, expression());
+                expression(); /* no node */
                 consume(')');
             } else {
                 consume('(');
-                addchild(node, (peek() != ';') ? expression() : NULL);
+                if (peek() != ';') expression(); /* no node */
                 consume(';');
-                addchild(node, (peek() != ';') ? expression() : NULL);
+                if (peek() != ';') expression(); /* no node */
                 consume(';');
-                addchild(node, (peek() != ')') ? expression() : NULL);
+                if (peek() != ')') expression(); /* no node */
                 consume(')');
                 addchild(node, statement());
             }
@@ -438,7 +451,7 @@ statement()
             if (t == GOTO && peek() == IDENTIFIER) {
                 addchild(node, identifier());
             } else if (t == RETURN && peek() != ';') {
-                addchild(node, expression());
+                expression(); /* no node */
             }
             consume(';');
             break;
@@ -447,7 +460,7 @@ statement()
                 symbol_t *val = NULL;
                 consume(RETURN);
                 if (peek() != ';') {
-                    val = additive_expression(); /* todo: expression() */
+                    val = expression();
                 }
                 consume(';');
                 mkir_ret(val);
@@ -471,7 +484,8 @@ statement()
         case INTEGER: /* todo: any constant value */
         case STRING:
         case '(':
-            node = expression();
+            node = init_node("expression", 0);
+            expression(); /* no node */
             consume(';');
             break;
         default:
@@ -501,17 +515,17 @@ static symbol_t *and_expression();
 static symbol_t *equality_expression();
 static symbol_t *relational_expression();
 static symbol_t *shift_expression();
+static symbol_t *additive_expression();
 static symbol_t *multiplicative_expression();
 static symbol_t *cast_expression();
 static symbol_t *postfix_expression();
 static symbol_t *unary_expression();
 static symbol_t *primary_expression();
 
-static node_t *
+static symbol_t *
 expression()
 {
-    assignment_expression();
-    return NULL;
+    return assignment_expression();
 }
 
 static symbol_t *
@@ -551,71 +565,47 @@ conditional_expression()
 static symbol_t *
 logical_expression()
 {
-    symbol_t *left = or_expression();
-    /*while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
-        node_t *right, *parent;
+    symbol_t *l = or_expression();
+    while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
         struct token t = readtoken();
-        right = and_expression();
-        if (!strcmp("integer", left->text) && !strcmp("integer", right->text)) {
-            if (*t.value == LOGICAL_OR)
-                left->value = left->value || right->value;
-            else
-                left->value = left->value && right->value;
-        } else {
-            parent = init_node("logical-expression", 2);
-            parent->token = t;
-            addchild(parent, left);
-            addchild(parent, right);
-            left = parent;
-        }
-    }*/
-    return left;
+        symbol_t *x, *r = and_expression();
+        typetree_t *type = init_type_basic(INT64_T); /* todo: check operands */
+        x = sym_mktemp(type);
+        mkir_arithmetic(x, l, r, t.type);
+        l = x;
+    }
+    return l;
 }
 
 /* merge OR/XOR */
 static symbol_t *
 or_expression()
 {
-    symbol_t *left = and_expression();
-    /*while (peek() == '|' || peek() == '^') {
-        node_t *right, *parent;
+    symbol_t *l = and_expression();
+    while (peek() == '|' || peek() == '^') {
         struct token t = readtoken();
-        right = and_expression();
-        if (!strcmp("integer", left->text) && !strcmp("integer", right->text)) {
-            if (*t.value == '|')
-                left->value |= right->value;
-            else
-                left->value ^= right->value;
-        } else {
-            parent = init_node("or-expression", 2);
-            parent->token = t;
-            addchild(parent, left);
-            addchild(parent, right);
-            left = parent;
-        }
-    }*/
-    return left;
+        symbol_t *x, *r = and_expression();
+        typetree_t *type = init_type_basic(INT64_T); /* todo: check operands */
+        x = sym_mktemp(type);
+        mkir_arithmetic(x, l, r, t.type);
+        l = x;
+    }
+    return l;
 }
 
 static symbol_t *
 and_expression()
 {
-    symbol_t *left = equality_expression();
-    /*while (peek() == '&') {
-        node_t *right, *parent;
+    symbol_t *l = equality_expression();
+    while (peek() == '&') {
         struct token t = readtoken();
-        right = equality_expression();
-        if (!strcmp("integer", left->text) && !strcmp("integer", right->text)) {
-            left->value &= right->value;
-        } else {
-            parent = init_node("and-expression", 2);
-            parent->token = t;
-            addchild(parent, left);
-            addchild(parent, right);
-            left = parent;
-        }
-    }*/
-    return left;
+        symbol_t *x, *r = and_expression();
+        typetree_t *type = init_type_basic(INT64_T); /* todo: check operands */
+        x = sym_mktemp(type);
+        mkir_arithmetic(x, l, r, t.type);
+        l = x;
+    }
+    return l;
 }
 
 static symbol_t *
@@ -643,14 +633,9 @@ additive_expression()
     while (peek() == '+' || peek() == '-') {
         struct token t = readtoken();
         symbol_t *x, *r = multiplicative_expression();
-        typetree_t *tree = malloc(sizeof(typetree_t));
-        tree->type = BASIC;
-        tree->d.basic.type = INT64_T; /* todo: combine types of operands */
-        tree->d.basic.qualifier = NONE_Q;
-        x = sym_mktemp(tree);
-        if (t.type == '+') {
-            mkir_add(x, l, r);
-        }
+        typetree_t *type = type_combine(l->type, r->type);
+        x = sym_mktemp(type);
+        mkir_arithmetic(x, l, r, t.type);
         l = x;
     }
     return l;
@@ -659,32 +644,16 @@ additive_expression()
 static symbol_t *
 multiplicative_expression()
 {
-    symbol_t *left = cast_expression();
-    /*while (peek() == '*' || peek() == '/' || peek() == '%') {
-        node_t *right, *parent;
+    symbol_t *l = cast_expression();
+    while (peek() == '*' || peek() == '/' || peek() == '%') {
         struct token t = readtoken();
-        right = cast_expression();
-        if (!strcmp("integer", left->text) && !strcmp("integer", right->text)) {
-            switch (*t.value) {
-                case '*':
-                    left->value *= right->value;
-                    break;
-                case '/':
-                    left->value /= right->value;
-                    break;
-                default:
-                    left->value %= right->value;
-                    break;
-            }
-        } else {
-            parent = init_node("multiplicative-expression", 2);
-            parent->token = t;
-            addchild(parent, left);
-            addchild(parent, right);
-            left = parent;
-        }
-    }*/
-    return left;
+        symbol_t *x, *r = cast_expression();
+        typetree_t *type = type_combine(l->type, r->type);
+        x = sym_mktemp(type);
+        mkir_arithmetic(x, l, r, t.type);
+        l = x;
+    }
+    return l;
 }
 
 static symbol_t *
@@ -747,6 +716,10 @@ primary_expression()
             break;
         case INTEGER:
             symbol = sym_mkimmediate(token);
+            break;
+        case '(':
+            symbol = expression();
+            consume(')');
             break;
         default:
             error("Unexpected token '%s', not a valid primary expression", token.value);
