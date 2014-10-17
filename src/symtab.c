@@ -169,6 +169,23 @@ init_type_basic(enum data_type type)
     return tree;
 }
 
+/* Instantiate a symbol based on a constant immediate value. Needed for 
+ * keeping uniform interface to generating ir (for now at least) */
+symbol_t *
+sym_mktemp_immediate(enum data_type type, void *value)
+{
+    typetree_t *tree = init_type_basic(type);
+    symbol_t *tmp = sym_mktemp(tree);
+    switch (type) {
+        case INT64_T:
+            tmp->value = value;
+            break;
+        default:
+            error("I do not like immediates that are not integers");
+            exit(0);
+    }
+    return tmp;
+}
 
 static void
 print_type(typetree_t *tree)
@@ -239,6 +256,9 @@ dump_symtab()
         printf("%*s", symtab[i]->depth * 2, "");
         printf("%s :: ", symtab[i]->name);
         print_type(symtab[i]->type);
+        if (symtab[i]->value != NULL) {
+            printf(" = %d", *(int *)symtab[i]->value);
+        }
         puts("");
     }
 }

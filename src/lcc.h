@@ -113,6 +113,8 @@ enum qualifier { CONST_Q = 0x1, VOLATILE_Q = 0x2, NONE_Q = 0x0 };
 
 typedef struct typetree {
     enum tree_type type;
+    unsigned size; /* storage size in bytes */
+    unsigned length; /* array dimension width, how many elements of size we have */
     union {
         struct {
             enum data_type type;
@@ -130,6 +132,10 @@ typedef struct typetree {
         } func;
         struct {
             unsigned size;
+            /* Bytes to offset on indexing. Ex. for 'int a[4][3][2]', indexing into
+             * a[1] should skip 1 * (3 * 2 * sizeof(int)) bytes, reducing to a new type
+             * which is array [3][2] of int. Stored in each level for convenience. */
+            unsigned skip;
             struct typetree *of;
         } arr;
     } d;
@@ -159,6 +165,7 @@ symbol_t *sym_lookup(const char *);
 symbol_t *sym_add(const char *, typetree_t *);
 symbol_t *sym_mktemp(typetree_t *);
 symbol_t *sym_mkimmediate(struct token);
+symbol_t *sym_mktemp_immediate(enum data_type, void *);
 
 /* functions on types */
 typetree_t *type_combine(typetree_t *, typetree_t *);
@@ -191,6 +198,7 @@ typedef struct block {
 block_t * mkblock(const char *);
 void mkir_arithmetic(symbol_t *, symbol_t *, symbol_t *, enum token_type);
 void mkir_assign(symbol_t *, symbol_t *);
+void mkir_deref(symbol_t *, symbol_t *);
 void mkir_ret(symbol_t *);
 
 void compile();

@@ -4,9 +4,10 @@
 #include <string.h>
 
 enum irtype {
-    IR_ARITHMETIC,  /* t1 = t2 <op> t3 */
-    IR_ASSIGN,      /* t1 = t2 */
-    IR_RET          /* ret t1 */
+    IR_ARITHMETIC,  /* a = b <op> c */
+    IR_ASSIGN,      /* a = b */
+    IR_DEREF,       /* a = *b */
+    IR_RET          /* ret a */
 };
 
 enum iroptype {
@@ -120,6 +121,13 @@ void mkir_assign(symbol_t *a, symbol_t *b) {
     op->b = b;
 }
 
+void mkir_deref(symbol_t *a, symbol_t *b) {
+    irop_t *op = allocirop();
+    op->type = IR_DEREF;
+    op->a = a;
+    op->b = b;
+}
+
 void mkir_ret(symbol_t *val) {
     irop_t *op = allocirop();
     op->type = IR_RET;
@@ -171,6 +179,9 @@ printir(FILE *file)
                     break;
                 case IR_ASSIGN:
                     fprintf(file, "%s = %s\n", op->a->name, op->b->name);
+                    break;
+                case IR_DEREF:
+                    fprintf(file, "%s = *%s\n", op->a->name, op->b->name);
                     break;
                 case IR_RET:
                     fprintf(file, "ret %s\n", op->a == NULL ? "" : op->a->name);

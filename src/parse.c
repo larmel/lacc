@@ -69,7 +69,7 @@ addchild(node_t *node, node_t *child)
 static typetree_t *
 init_typetree(enum tree_type type)
 {
-    typetree_t *tree = malloc(sizeof(typetree_t));
+    typetree_t *tree = calloc(1, sizeof(typetree_t));
     tree->type = type;
     return tree;
 }
@@ -266,7 +266,7 @@ pointer(typetree_t *base)
     return type;
 }
 
-static int
+static long
 get_symbol_constant_value(symbol_t *symbol, long *out)
 {
     if (symbol->type->type == BASIC
@@ -276,6 +276,55 @@ get_symbol_constant_value(symbol_t *symbol, long *out)
         return 1;
     }
     return 0;
+}
+
+/* Consume [s0][s1][s2]..[sn] in array declarations, returning type
+ * <symbol> :: [s0] [s1] [s2] .. [sn] (base)
+ */
+static typetree_t *
+direct_declarator_array(typetree_t *base)
+{
+    typetree_t *root;
+    symbol_t *expr;
+    long length;
+
+    if (peek() != '[') {
+        switch (base->type) {
+            case BASIC:
+                if (base->d.basic.type == CHAR_T) {
+                    base->size = 1;
+                    break;    
+                }
+            default:
+                base->size = 8;
+        }
+        return base;
+    }
+
+    consume('[');
+    if (peek() != ']') {
+        expr = constant_expression();
+        if (!get_symbol_constant_value(expr, &length)) {
+            error("Array declaration must be a compile time constant, aborting");
+            exit(1);
+        }
+        if (length < 1) {
+            error("Invalid array size %ld, aborting");
+            exit(1);
+        }
+    } else {
+        /* special value for unspecified array size */
+        length = 0;
+    }
+    consume(']');
+    
+    base = direct_declarator_array(base);
+    root = init_typetree(ARRAY);
+
+    root->d.arr.of = base;
+    root->length = length;
+    root->size = (base->type == ARRAY) ? base->size * base->length : base->size;
+    return root;
 }
 
 static typetree_t *
@@ -294,17 +343,19 @@ direct_declarator(typetree_t *base, const char **symbol)
         default: break;
     }
     /* left-recursive declarations like 'int foo[10][5];' */
+
+
     while (peek() == '[' || peek() == '(') {
         switch (peek()) {
             case '[':
-                type = init_typetree(ARRAY);
+                type = direct_declarator_array(base);
+                /*type = init_typetree(ARRAY);
                 type->d.arr.of = base;
                 consume('[');
                 if (peek() != ']') {
                     symbol_t *expr = constant_expression();
                     long size;
                     if (!get_symbol_constant_value(expr, &size)) {
-                        /* this should really be in const expr after folding */
                         error("Array declaration must be a compile time constant, aborting");
                         exit(1);
                     }
@@ -314,7 +365,7 @@ direct_declarator(typetree_t *base, const char **symbol)
                     }
                     type->d.arr.size = size;
                 }
-                consume(']');
+                consume(']');*/
                 break;
             case '(': {
                 consume('(');
@@ -668,12 +719,72 @@ unary_expression()
     return postfix_expression();
 }
 
+
+/* Parse and emit ir for general array indexing
+ *  - From K&R: an array is not a variable, and cannot be assigned or modified.
+ *    Referencing an array always converts the first rank to pointer type,
+ *    e.g. int foo[3][2][1]; a = foo; assignment has the type int (*)[2][1].
+ *  - Functions return and pass pointers to array. First index not necessary to
+ *    specify in array (pointer) parameters: int (*foo(int arg[][3][2][1]))[3][2][1]
+ */
+static symbol_t *
+postfix_expression_index_array(symbol_t *root)
+{
+    typetree_t *type = root->type; /* unwrap type for each indexing */
+    symbol_t *expr, *skip, *tmp;
+    symbol_t *idx;
+    do {
+        consume('[');
+        expr = expression();
+        consume(']');
+
+        /*printf("Indexing into %d x %d\n", type->length, type->size); */
+        skip = sym_mktemp_immediate(INT64_T, &type->size);
+        tmp = sym_mktemp(init_type_basic(INT64_T));
+
+        /* missing a + in here for multi-dim */
+        mkir_arithmetic(tmp, expr, skip, '*');
+
+        type = type->d.arr.of;
+
+    } while (peek() == '[');
+
+    /* Partial dereferencing decays into pointer type */
+    if (type->type == ARRAY) {
+        typetree_t *ptr = init_typetree(POINTER);
+        ptr->d.ptr.to = type->d.arr.of;
+        type = ptr;
+
+        idx = sym_mktemp(type);
+        mkir_arithmetic(idx, root, tmp, '+');
+    } else {
+        typetree_t *ptr = init_typetree(POINTER);
+        symbol_t *t;
+        ptr->d.ptr.to = type;
+        t = sym_mktemp(ptr);
+
+        mkir_arithmetic(t, root, tmp, '+'); /* idea: have mkir return symbol, and do necessary type conversion */
+
+        idx = sym_mktemp(type);
+        mkir_deref(idx, t);
+    }
+
+    root = idx;
+    return root;
+}
+
+
 /* This rule is left recursive, build tree bottom up
  */
 static symbol_t *
 postfix_expression()
 {
     symbol_t *root = primary_expression();
+
+    if (peek() == '[') {
+        root = postfix_expression_index_array(root);
+    }
+
     /*while (peek() == '[' || peek() == '(' || peek() == '.') {
         node_t *parent = init_node("postfix-expression", 2);
         addchild(parent, root);
