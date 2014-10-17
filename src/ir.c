@@ -1,38 +1,8 @@
-#include "lcc.h"
+#include "ir.h"
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
-enum irtype {
-    IR_ARITHMETIC,  /* a = b <op> c */
-    IR_ASSIGN,      /* a = b */
-    IR_DEREF,       /* a = *b */
-    IR_RET          /* ret a */
-};
-
-enum iroptype {
-    IR_OP_ADD,
-    IR_OP_SUB,
-    IR_OP_MUL,
-    IR_OP_DIV,
-    IR_OP_LOGICAL_AND,
-    IR_OP_LOGICAL_OR,
-    IR_OP_BITWISE_AND,
-    IR_OP_BITWISE_OR,
-    IR_OP_BITWISE_XOR
-};
-
-typedef struct irop {
-    enum irtype type;
-    enum iroptype optype;
-
-    symbol_t *a;
-    symbol_t *b;
-    symbol_t *c;
-
-    block_t *target;
-} irop_t;
-
 
 /* Hold program representation as a list of blocks (functions)
  * Must store stable pointers (no realloc), as jump targets are
@@ -73,42 +43,10 @@ mkblock(const char *label)
 }
 
 /* add new ir operations to the current block */
-void mkir_arithmetic(symbol_t *a, symbol_t *b, symbol_t *c, enum token_type type) {
+void mkir_arithmetic(symbol_t *a, symbol_t *b, symbol_t *c, enum iroptype type) {
     irop_t *op = allocirop();
     op->type = IR_ARITHMETIC;
-    switch (type) {
-        case '+':
-            op->optype = IR_OP_ADD;
-            break;
-        case '-':
-            op->optype = IR_OP_SUB;
-            break;
-        case '*':
-            op->optype = IR_OP_MUL;
-            break;
-        case '/':
-            op->optype = IR_OP_DIV;
-            break;
-        case LOGICAL_AND:
-            op->optype = IR_OP_LOGICAL_AND;
-            break;
-        case LOGICAL_OR:
-            op->optype = IR_OP_LOGICAL_OR;
-            break;
-        case '&':
-            op->optype = IR_OP_BITWISE_AND;
-            break;
-        case '|':
-            op->optype = IR_OP_BITWISE_OR;
-            break;
-        case '^':
-            op->optype = IR_OP_BITWISE_XOR;
-            break;
-        default:
-            /* nothing */
-            error("Unrecognized optype, aborting");
-            exit(0);
-    }
+    op->optype = type;
     op->a = a;
     op->b = b;
     op->c = c;
@@ -134,13 +72,14 @@ void mkir_ret(symbol_t *val) {
     op->a = val;
 }
 
+extern int parse();
+
 void
 compile()
 {
-    node_t *declaration;
     push_scope();
 
-    while ((declaration = parse()) != NULL) {
+    while (parse() != 0) {
         ;
     }
 
@@ -155,6 +94,7 @@ const char *iroptype_tostr(enum iroptype iroptype)
         case IR_OP_SUB: return "-";
         case IR_OP_MUL: return "*";
         case IR_OP_DIV: return "/";
+        case IR_OP_MOD: return "%%";
         case IR_OP_LOGICAL_AND: return "&&";
         case IR_OP_LOGICAL_OR: return "||";
         case IR_OP_BITWISE_AND: return "&";

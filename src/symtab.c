@@ -1,4 +1,5 @@
 #include "lcc.h"
+#include "symbol.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -238,8 +239,8 @@ print_type(typetree_t *tree)
             print_type(tree->d.func.ret);
             break;
         case ARRAY:
-            if (tree->d.arr.size > 0)
-                printf("[%u] ", tree->d.arr.size);
+            if (tree->length > 0)
+                printf("[%u] ", tree->length);
             else 
                 printf("[] ");
             print_type(tree->d.arr.of);

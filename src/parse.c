@@ -1,7 +1,18 @@
 #include "lcc.h"
+#include "symbol.h"
+#include "ir.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+typedef struct node {
+    const char *text;
+    struct token token;
+    long value;
+    struct node **children;
+    size_t nc;
+    size_t cap;
+} node_t;
 
 /* Tokenization interface and helper functions */
 static struct token peek_value;
@@ -93,7 +104,7 @@ static void output_tree(int indent, struct node *tree);
 
 
 /* External interface */
-node_t *
+int
 parse()
 {
     peek();
@@ -102,11 +113,11 @@ parse()
         if (node != NULL) {
             output_tree(0, node);
             puts("");
-            return node;
+            return 1;
         }
         peek();
     }
-    return NULL;
+    return 0;
 }
 
 /* Print parse tree in human readable format */
@@ -622,7 +633,7 @@ logical_expression()
         symbol_t *x, *r = and_expression();
         typetree_t *type = init_type_basic(INT64_T); /* todo: check operands */
         x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, t.type);
+        mkir_arithmetic(x, l, r, (t.type == LOGICAL_AND) ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR);
         l = x;
     }
     return l;
@@ -638,7 +649,7 @@ or_expression()
         symbol_t *x, *r = and_expression();
         typetree_t *type = init_type_basic(INT64_T); /* todo: check operands */
         x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, t.type);
+        mkir_arithmetic(x, l, r, (t.type == '|') ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR);
         l = x;
     }
     return l;
@@ -649,11 +660,10 @@ and_expression()
 {
     symbol_t *l = equality_expression();
     while (peek() == '&') {
-        struct token t = readtoken();
         symbol_t *x, *r = and_expression();
         typetree_t *type = init_type_basic(INT64_T); /* todo: check operands */
         x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, t.type);
+        mkir_arithmetic(x, l, r, IR_OP_BITWISE_AND);
         l = x;
     }
     return l;
@@ -686,7 +696,7 @@ additive_expression()
         symbol_t *x, *r = multiplicative_expression();
         typetree_t *type = type_combine(l->type, r->type);
         x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, t.type);
+        mkir_arithmetic(x, l, r, (t.type == '+') ? IR_OP_ADD : IR_OP_SUB);
         l = x;
     }
     return l;
@@ -701,7 +711,7 @@ multiplicative_expression()
         symbol_t *x, *r = cast_expression();
         typetree_t *type = type_combine(l->type, r->type);
         x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, t.type);
+        mkir_arithmetic(x, l, r, (t.type == '*') ? IR_OP_MUL : (t.type == '/') ? IR_OP_DIV : IR_OP_MOD);
         l = x;
     }
     return l;
@@ -743,7 +753,7 @@ postfix_expression_index_array(symbol_t *root)
         tmp = sym_mktemp(init_type_basic(INT64_T));
 
         /* missing a + in here for multi-dim */
-        mkir_arithmetic(tmp, expr, skip, '*');
+        mkir_arithmetic(tmp, expr, skip, IR_OP_MUL);
 
         type = type->d.arr.of;
 
@@ -756,14 +766,14 @@ postfix_expression_index_array(symbol_t *root)
         type = ptr;
 
         idx = sym_mktemp(type);
-        mkir_arithmetic(idx, root, tmp, '+');
+        mkir_arithmetic(idx, root, tmp, IR_OP_ADD);
     } else {
         typetree_t *ptr = init_typetree(POINTER);
         symbol_t *t;
         ptr->d.ptr.to = type;
         t = sym_mktemp(ptr);
 
-        mkir_arithmetic(t, root, tmp, '+'); /* idea: have mkir return symbol, and do necessary type conversion */
+        mkir_arithmetic(t, root, tmp, IR_OP_ADD); /* idea: have mkir return symbol, and do necessary type conversion */
 
         idx = sym_mktemp(type);
         mkir_deref(idx, t);
