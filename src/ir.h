@@ -29,9 +29,9 @@ typedef struct irop {
     enum irtype type;
     enum iroptype optype;
 
-    symbol_t *a;
-    symbol_t *b;
-    symbol_t *c;
+    const symbol_t *a;
+    const symbol_t *b;
+    const symbol_t *c;
 
     struct block *target;
 } irop_t;
@@ -49,12 +49,12 @@ typedef struct block {
 
 block_t * mkblock(const char *);
 
-void mkir_arithmetic(symbol_t *, symbol_t *, symbol_t *, enum iroptype);
+void mkir_arithmetic(const symbol_t *, const symbol_t *, const symbol_t *, enum iroptype);
 
-void mkir_assign(symbol_t *, symbol_t *);
+void mkir_assign(const symbol_t *, const symbol_t *);
 
-void mkir_deref(symbol_t *, symbol_t *);
+void mkir_deref(const symbol_t *, const symbol_t *);
 
-void mkir_ret(symbol_t *);
+void mkir_ret(const symbol_t *);
 
 #endif

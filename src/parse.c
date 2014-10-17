@@ -77,28 +77,20 @@ addchild(node_t *node, node_t *child)
     node->nc++;
 }
 
-static typetree_t *
-init_typetree(enum tree_type type)
-{
-    typetree_t *tree = calloc(1, sizeof(typetree_t));
-    tree->type = type;
-    return tree;
-}
-
 static node_t *declaration();
 static typetree_t *declaration_specifiers();
 static typetree_t *declarator(typetree_t *, const char **);
-static typetree_t *pointer(typetree_t *);
+static typetree_t *pointer(const typetree_t *);
 static typetree_t *direct_declarator(typetree_t *, const char **);
-static typetree_t *parameter_list(typetree_t *);
+static typetree_t *parameter_list(const typetree_t *);
 static node_t *block();
 static node_t *statement();
 static node_t *identifier();
 
 /* expression nodes that are called in high level rules */
-static symbol_t *expression();
-static symbol_t *constant_expression();
-static symbol_t *assignment_expression();
+static const symbol_t *expression();
+static const symbol_t *constant_expression();
+static const symbol_t *assignment_expression();
 
 static void output_tree(int indent, struct node *tree);
 
@@ -153,7 +145,7 @@ static node_t *
 declaration()
 {
     node_t *node = NULL, *child = NULL;
-    symbol_t *symbol;
+    const symbol_t *symbol;
     typetree_t *type, *base = declaration_specifiers();
     int i;
 
@@ -190,12 +182,12 @@ declaration()
                 node->token.value = name;
                 mkblock(name);
                 push_scope();
-                for (i = 0; i < type->d.func.n_args; ++i) {
-                    if (type->d.func.params[i] == NULL) {
+                for (i = 0; i < type->n_args; ++i) {
+                    if (type->params[i] == NULL) {
                         error("Missing parameter name at position %d, aborting", i + 1);
                         exit(1);
                     }
-                    sym_add(type->d.func.params[i], type->d.func.args[i]);
+                    sym_add(type->params[i], type->args[i]);
                 }
                 addchild(node, block());
                 pop_scope();
@@ -211,36 +203,35 @@ static typetree_t *
 declaration_specifiers()
 {
     int end = 0;
-    typetree_t *type = init_typetree(BASIC);
-    type->d.basic.qualifier = NONE_Q;
-    type->d.basic.type = NONE_T;
+    typetree_t *type = NULL; 
+    int flags = 0x0;
     while (1) {
         switch (peek()) {
             case AUTO: case REGISTER: case STATIC: case EXTERN: case TYPEDEF:
                 /* todo: something about storage class, maybe do it before this */
                 break;
             case CHAR:
-                type->d.basic.type = CHAR_T;
+                type = type_init(CHAR_T);
                 break;
             case SHORT:
             case INT:
             case LONG:
             case SIGNED:
             case UNSIGNED:
-                type->d.basic.type = INT64_T;
+                type = type_init(INT64_T);
                 break;
             case FLOAT:
             case DOUBLE:
-                type->d.basic.type = DOUBLE_T;
+                type = type_init(DOUBLE_T);
                 break;
             case VOID:
-                type->d.basic.type = VOID_T;
+                type = type_init(VOID_T);
                 break;
             case CONST:
-                type->d.ptr.qualifier |= CONST_Q;
+                flags |= CONST_Q;
                 break;
             case VOLATILE:
-                type->d.ptr.qualifier |= VOLATILE_Q;
+                flags |= VOLATILE_Q;
                 break;
             default:
                 end = 1;
@@ -248,10 +239,11 @@ declaration_specifiers()
         if (end) break;
         consume(peek());
     }
-    if (type->d.basic.type == NONE_T) {
+    if (type == NULL) {
         error("Missing type specifier, aborting");
         exit(1);
     }
+    type->flags = flags;
     return type;
 }
 
@@ -265,25 +257,23 @@ declarator(typetree_t *base, const char **symbol)
 }
 
 static typetree_t *
-pointer(typetree_t *base)
+pointer(const typetree_t *base)
 {
-    typetree_t *type = init_typetree(POINTER);
-    type->d.ptr.to = base;
+    typetree_t *type = type_init(POINTER);
+    type->next = base;
     base = type;
     consume('*');
     while (peek() == CONST || peek() == VOLATILE) {
-        type->d.ptr.qualifier |= (readtoken().type == CONST) ? CONST_Q : VOLATILE_Q;
+        type->flags |= (readtoken().type == CONST) ? CONST_Q : VOLATILE_Q;
     }
     return type;
 }
 
 static long
-get_symbol_constant_value(symbol_t *symbol, long *out)
+get_symbol_constant_value(const symbol_t *symbol, long *out)
 {
-    if (symbol->type->type == BASIC
-        && symbol->type->d.basic.type == INT64_T
-        && symbol->value != NULL) {
-        *out = *(long *)symbol->value;
+    if (symbol->type->type == INT64_T && symbol->is_immediate) {
+        *out = symbol->immediate.longval;
         return 1;
     }
     return 0;
@@ -295,47 +285,37 @@ get_symbol_constant_value(symbol_t *symbol, long *out)
 static typetree_t *
 direct_declarator_array(typetree_t *base)
 {
-    typetree_t *root;
-    symbol_t *expr;
-    long length;
+    if (peek() == '[') {
+        typetree_t *root;
+        const symbol_t *expr;
+        long length;
 
-    if (peek() != '[') {
-        switch (base->type) {
-            case BASIC:
-                if (base->d.basic.type == CHAR_T) {
-                    base->size = 1;
-                    break;    
-                }
-            default:
-                base->size = 8;
+        consume('[');
+        if (peek() != ']') {
+            expr = constant_expression();
+            if (!get_symbol_constant_value(expr, &length)) {
+                error("Array declaration must be a compile time constant, aborting");
+                exit(1);
+            }
+            if (length < 1) {
+                error("Invalid array size %ld, aborting");
+                exit(1);
+            }
+        } else {
+            /* special value for unspecified array size */
+            length = 0;
         }
-        return base;
+        consume(']');
+        
+        base = direct_declarator_array(base);
+        root = type_init(ARRAY);
+
+        root->next = base;
+        root->length = length;
+        root->size = (base->type == ARRAY) ? base->size * base->length : base->size;
+        base = root;
     }
-
-    consume('[');
-    if (peek() != ']') {
-        expr = constant_expression();
-        if (!get_symbol_constant_value(expr, &length)) {
-            error("Array declaration must be a compile time constant, aborting");
-            exit(1);
-        }
-        if (length < 1) {
-            error("Invalid array size %ld, aborting");
-            exit(1);
-        }
-    } else {
-        /* special value for unspecified array size */
-        length = 0;
-    }
-    consume(']');
-    
-    base = direct_declarator_array(base);
-    root = init_typetree(ARRAY);
-
-    root->d.arr.of = base;
-    root->length = length;
-    root->size = (base->type == ARRAY) ? base->size * base->length : base->size;
-    return root;
+    return base;
 }
 
 static typetree_t *
@@ -354,13 +334,11 @@ direct_declarator(typetree_t *base, const char **symbol)
         default: break;
     }
     /* left-recursive declarations like 'int foo[10][5];' */
-
-
     while (peek() == '[' || peek() == '(') {
         switch (peek()) {
             case '[':
                 type = direct_declarator_array(base);
-                /*type = init_typetree(ARRAY);
+                /*type = type_init(ARRAY);
                 type->d.arr.of = base;
                 consume('[');
                 if (peek() != ']') {
@@ -396,9 +374,10 @@ direct_declarator(typetree_t *base, const char **symbol)
  * Set parameter-type-list = parameter-list, including the , ...
  */
 static typetree_t *
-parameter_list(typetree_t *base)
+parameter_list(const typetree_t *base)
 {
-    typetree_t *type = init_typetree(FUNCTION), **args = NULL;
+    typetree_t *type = type_init(FUNCTION);
+    const typetree_t **args = NULL;
     const char **params = NULL;
     int nargs = 0;
 
@@ -425,10 +404,10 @@ parameter_list(typetree_t *base)
         }
     }
     
-    type->d.func.ret = base;
-    type->d.func.n_args = nargs;
-    type->d.func.args = args;
-    type->d.func.params = params;
+    type->next = base;
+    type->n_args = nargs;
+    type->args = args;
+    type->params = params;
     return type;
 }
 
@@ -519,7 +498,7 @@ statement()
             break;
         case RETURN:
             {
-                symbol_t *val = NULL;
+                const symbol_t *val = NULL;
                 consume(RETURN);
                 if (peek() != ';') {
                     val = expression();
@@ -561,7 +540,7 @@ identifier()
 {
     node_t *node = init_node("identifier", 0);
     struct token name = readtoken();
-    symbol_t *symbol = sym_lookup(name.value);
+    const symbol_t *symbol = sym_lookup(name.value);
     if (symbol == NULL) {
         error("Undefined symbol '%s', aborting", name.value);
         exit(0);
@@ -570,30 +549,30 @@ identifier()
     return node;
 }
 
-static symbol_t *conditional_expression();
-static symbol_t *logical_expression();
-static symbol_t *or_expression();
-static symbol_t *and_expression();
-static symbol_t *equality_expression();
-static symbol_t *relational_expression();
-static symbol_t *shift_expression();
-static symbol_t *additive_expression();
-static symbol_t *multiplicative_expression();
-static symbol_t *cast_expression();
-static symbol_t *postfix_expression();
-static symbol_t *unary_expression();
-static symbol_t *primary_expression();
+static const symbol_t *conditional_expression();
+static const symbol_t *logical_expression();
+static const symbol_t *or_expression();
+static const symbol_t *and_expression();
+static const symbol_t *equality_expression();
+static const symbol_t *relational_expression();
+static const symbol_t *shift_expression();
+static const symbol_t *additive_expression();
+static const symbol_t *multiplicative_expression();
+static const symbol_t *cast_expression();
+static const symbol_t *postfix_expression();
+static const symbol_t *unary_expression();
+static const symbol_t *primary_expression();
 
-static symbol_t *
+static const symbol_t *
 expression()
 {
     return assignment_expression();
 }
 
-static symbol_t *
+static const symbol_t *
 assignment_expression()
 {
-    symbol_t *l = conditional_expression(), *r;
+    const symbol_t *l = conditional_expression(), *r;
     if (peek() == '=') {
         /* todo: node must be unary-expression or lower (l-value) */
         consume('=');
@@ -603,17 +582,16 @@ assignment_expression()
     return l;
 }
 
-static symbol_t *
+static const symbol_t *
 constant_expression()
 {
-    symbol_t *node = conditional_expression();
-    return node;
+    return conditional_expression();
 }
 
-static symbol_t *
+static const symbol_t *
 conditional_expression()
 {
-    symbol_t *node = logical_expression();
+    const symbol_t *node = logical_expression();
     if (peek() == '?') {
         consume('?');
         expression();
@@ -624,14 +602,14 @@ conditional_expression()
 }
 
 /* merge AND/OR */
-static symbol_t *
+static const symbol_t *
 logical_expression()
 {
-    symbol_t *l = or_expression();
+    const symbol_t *l = or_expression();
     while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
         struct token t = readtoken();
-        symbol_t *x, *r = and_expression();
-        typetree_t *type = init_type_basic(INT64_T); /* todo: check operands */
+        const symbol_t *x, *r = and_expression();
+        const typetree_t *type = type_combine(l->type, r->type);
         x = sym_mktemp(type);
         mkir_arithmetic(x, l, r, (t.type == LOGICAL_AND) ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR);
         l = x;
@@ -640,14 +618,14 @@ logical_expression()
 }
 
 /* merge OR/XOR */
-static symbol_t *
+static const symbol_t *
 or_expression()
 {
-    symbol_t *l = and_expression();
+    const symbol_t *l = and_expression();
     while (peek() == '|' || peek() == '^') {
         struct token t = readtoken();
-        symbol_t *x, *r = and_expression();
-        typetree_t *type = init_type_basic(INT64_T); /* todo: check operands */
+        const symbol_t *x, *r = and_expression();
+        const typetree_t *type = type_combine(l->type, r->type);
         x = sym_mktemp(type);
         mkir_arithmetic(x, l, r, (t.type == '|') ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR);
         l = x;
@@ -655,13 +633,13 @@ or_expression()
     return l;
 }
 
-static symbol_t *
+static const symbol_t *
 and_expression()
 {
-    symbol_t *l = equality_expression();
+    const symbol_t *l = equality_expression();
     while (peek() == '&') {
-        symbol_t *x, *r = and_expression();
-        typetree_t *type = init_type_basic(INT64_T); /* todo: check operands */
+        const symbol_t *x, *r = and_expression();
+        const typetree_t *type = type_combine(l->type, r->type);
         x = sym_mktemp(type);
         mkir_arithmetic(x, l, r, IR_OP_BITWISE_AND);
         l = x;
@@ -669,32 +647,32 @@ and_expression()
     return l;
 }
 
-static symbol_t *
+static const symbol_t *
 equality_expression()
 {
     return relational_expression();
 }
 
-static symbol_t *
+static const symbol_t *
 relational_expression()
 {
     return shift_expression();
 }
 
-static symbol_t *
+static const symbol_t *
 shift_expression()
 {
     return additive_expression();
 }
 
-static symbol_t *
+static const symbol_t *
 additive_expression()
 {
-    symbol_t *l = multiplicative_expression();
+    const symbol_t *l = multiplicative_expression();
     while (peek() == '+' || peek() == '-') {
         struct token t = readtoken();
-        symbol_t *x, *r = multiplicative_expression();
-        typetree_t *type = type_combine(l->type, r->type);
+        const symbol_t *x, *r = multiplicative_expression();
+        const typetree_t *type = type_combine(l->type, r->type);
         x = sym_mktemp(type);
         mkir_arithmetic(x, l, r, (t.type == '+') ? IR_OP_ADD : IR_OP_SUB);
         l = x;
@@ -702,14 +680,14 @@ additive_expression()
     return l;
 }
 
-static symbol_t *
+static const symbol_t *
 multiplicative_expression()
 {
-    symbol_t *l = cast_expression();
+    const symbol_t *l = cast_expression();
     while (peek() == '*' || peek() == '/' || peek() == '%') {
         struct token t = readtoken();
-        symbol_t *x, *r = cast_expression();
-        typetree_t *type = type_combine(l->type, r->type);
+        const symbol_t *x, *r = cast_expression();
+        const typetree_t *type = type_combine(l->type, r->type);
         x = sym_mktemp(type);
         mkir_arithmetic(x, l, r, (t.type == '*') ? IR_OP_MUL : (t.type == '/') ? IR_OP_DIV : IR_OP_MOD);
         l = x;
@@ -717,18 +695,17 @@ multiplicative_expression()
     return l;
 }
 
-static symbol_t *
+static const symbol_t *
 cast_expression()
 {
     return unary_expression();
 }
 
-static symbol_t *
+static const symbol_t *
 unary_expression()
 {
     return postfix_expression();
 }
-
 
 /* Parse and emit ir for general array indexing
  *  - From K&R: an array is not a variable, and cannot be assigned or modified.
@@ -737,43 +714,42 @@ unary_expression()
  *  - Functions return and pass pointers to array. First index not necessary to
  *    specify in array (pointer) parameters: int (*foo(int arg[][3][2][1]))[3][2][1]
  */
-static symbol_t *
-postfix_expression_index_array(symbol_t *root)
+static const symbol_t *
+postfix_expression_index_array(const symbol_t *root)
 {
-    typetree_t *type = root->type; /* unwrap type for each indexing */
-    symbol_t *expr, *skip, *tmp;
-    symbol_t *idx;
+    const typetree_t *type = root->type; /* unwrap type for each indexing */
+    const symbol_t *expr, *skip, *t1 = NULL, *idx;
     do {
         consume('[');
         expr = expression();
         consume(']');
 
         /*printf("Indexing into %d x %d\n", type->length, type->size); */
-        skip = sym_mktemp_immediate(INT64_T, &type->size);
-        tmp = sym_mktemp(init_type_basic(INT64_T));
+        skip = sym_mkimmediate_long((long) type->size);
+        t1 = sym_mktemp(type_init(INT64_T));
 
         /* missing a + in here for multi-dim */
-        mkir_arithmetic(tmp, expr, skip, IR_OP_MUL);
+        mkir_arithmetic(t1, expr, skip, IR_OP_MUL);
 
-        type = type->d.arr.of;
+        type = type->next;
 
     } while (peek() == '[');
 
     /* Partial dereferencing decays into pointer type */
     if (type->type == ARRAY) {
-        typetree_t *ptr = init_typetree(POINTER);
-        ptr->d.ptr.to = type->d.arr.of;
+        typetree_t *ptr = type_init(POINTER);
+        ptr->next = type->next;
         type = ptr;
 
         idx = sym_mktemp(type);
-        mkir_arithmetic(idx, root, tmp, IR_OP_ADD);
+        mkir_arithmetic(idx, root, t1, IR_OP_ADD);
     } else {
-        typetree_t *ptr = init_typetree(POINTER);
-        symbol_t *t;
-        ptr->d.ptr.to = type;
+        typetree_t *ptr = type_init(POINTER);
+        const symbol_t *t;
+        ptr->next = type;
         t = sym_mktemp(ptr);
 
-        mkir_arithmetic(t, root, tmp, IR_OP_ADD); /* idea: have mkir return symbol, and do necessary type conversion */
+        mkir_arithmetic(t, root, t1, IR_OP_ADD);
 
         idx = sym_mktemp(type);
         mkir_deref(idx, t);
@@ -786,10 +762,10 @@ postfix_expression_index_array(symbol_t *root)
 
 /* This rule is left recursive, build tree bottom up
  */
-static symbol_t *
+static const symbol_t *
 postfix_expression()
 {
-    symbol_t *root = primary_expression();
+    const symbol_t *root = primary_expression();
 
     if (peek() == '[') {
         root = postfix_expression_index_array(root);
@@ -822,10 +798,10 @@ postfix_expression()
     return root;
 }
 
-static symbol_t *
+static const symbol_t *
 primary_expression()
 {
-    symbol_t *symbol;
+    const symbol_t *symbol;
     struct token token = readtoken();
     switch (token.type) {
         case IDENTIFIER:
@@ -836,7 +812,7 @@ primary_expression()
             }
             break;
         case INTEGER:
-            symbol = sym_mkimmediate(token);
+            symbol = sym_mkimmediate(INT64_T, token.value);
             break;
         case '(':
             symbol = expression();

@@ -43,7 +43,7 @@ mkblock(const char *label)
 }
 
 /* add new ir operations to the current block */
-void mkir_arithmetic(symbol_t *a, symbol_t *b, symbol_t *c, enum iroptype type) {
+void mkir_arithmetic(const symbol_t *a, const symbol_t *b, const symbol_t *c, enum iroptype type) {
     irop_t *op = allocirop();
     op->type = IR_ARITHMETIC;
     op->optype = type;
@@ -52,21 +52,21 @@ void mkir_arithmetic(symbol_t *a, symbol_t *b, symbol_t *c, enum iroptype type) 
     op->c = c;
 }
 
-void mkir_assign(symbol_t *a, symbol_t *b) {
+void mkir_assign(const symbol_t *a, const symbol_t *b) {
     irop_t *op = allocirop();
     op->type = IR_ASSIGN;
     op->a = a;
     op->b = b;
 }
 
-void mkir_deref(symbol_t *a, symbol_t *b) {
+void mkir_deref(const symbol_t *a, const symbol_t *b) {
     irop_t *op = allocirop();
     op->type = IR_DEREF;
     op->a = a;
     op->b = b;
 }
 
-void mkir_ret(symbol_t *val) {
+void mkir_ret(const symbol_t *val) {
     irop_t *op = allocirop();
     op->type = IR_RET;
     op->a = val;

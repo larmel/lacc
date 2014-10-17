@@ -11,99 +11,13 @@ static int symtab_capacity;
 
 /* stack structure to keep track of lexical scope */
 static struct lexical_scope {
-    symbol_t **symlist; /* points to symtab */
+    const symbol_t **symlist; /* points to symtab */
     size_t size;
     size_t cap;
 } *scopes = NULL;
 
 static int depth = -1;
 static int scope_cap;
-
-static symbol_t *
-mksymbol(const char *name, typetree_t *type)
-{
-    if (symtab_size == symtab_capacity) {
-        symtab_capacity += 64;
-        symtab = realloc(symtab, sizeof(symbol_t*) * symtab_capacity);
-    }
-    /* symbol address needs to be stable, so never realloc this */
-    symtab[symtab_size] = malloc(sizeof(symbol_t));
-    symtab[symtab_size]->name = strdup(name);
-    symtab[symtab_size]->type = type;
-    symtab[symtab_size]->depth = depth;
-    return symtab[symtab_size++];
-}
-
-symbol_t *
-sym_lookup(const char *name)
-{
-    symbol_t *sym;
-    int i, d;
-    for (d = depth; d >= 0; --d) {
-        for (i = 0; i < scopes[d].size; ++i) {
-            sym = scopes[d].symlist[i];
-            if (!strcmp(name, sym->name)) {
-                return sym;
-            }
-        }
-    }
-    return NULL;
-}
-
-symbol_t *
-sym_add(const char *name, typetree_t *type)
-{
-    struct lexical_scope *scope = &scopes[depth];
-    symbol_t *symbol = sym_lookup(name);
-    if (symbol != NULL && symbol->depth == depth) {
-        error("Duplicate definition of symbol '%s'", name);
-        exit(0);
-    }
-    symbol = mksymbol(name, type);
-    if (scope->size == scope->cap) {
-        scope->cap += 16;
-        scope->symlist = realloc(scope->symlist, sizeof(symbol_t*) * scope->cap);
-    }
-    scope->symlist[scope->size] = symbol;
-    scope->size++;
-    return symbol;
-}
-
-symbol_t *
-sym_mktemp(typetree_t *type)
-{
-    static int tmpn;
-
-    char tmpname[16];
-    do {
-        snprintf(tmpname, 12, "t%d", tmpn++);
-    } while (sym_lookup(tmpname) != NULL);
-
-    return sym_add(tmpname, type);
-}
-
-symbol_t *
-sym_mkimmediate(struct token token)
-{
-    symbol_t *symbol = sym_lookup(token.value);
-    if (symbol == NULL) {
-        typetree_t *type = malloc(sizeof(typetree_t));
-        type->type = BASIC;
-        type->d.basic.qualifier = NONE_Q;
-        symbol = sym_add(token.value, type);
-        switch (token.type) {
-            case INTEGER:
-                type->d.basic.type = INT64_T;
-                symbol->value = malloc(sizeof(int));
-                *(long *)symbol->value = strtol(token.value, NULL, 0);
-                break;
-            default:
-                type->d.basic.type = VOID_T;
-                break;
-        }
-    }
-    return symbol;
-}
 
 void push_scope()
 {
@@ -128,122 +42,187 @@ void pop_scope()
     }
 }
 
+static symbol_t *
+mksymbol(const char *name, const typetree_t *type)
+{
+    if (symtab_size == symtab_capacity) {
+        symtab_capacity += 64;
+        symtab = realloc(symtab, sizeof(symbol_t*) * symtab_capacity);
+    }
+    /* symbol address needs to be stable, so never realloc this */
+    symtab[symtab_size] = malloc(sizeof(symbol_t));
+    symtab[symtab_size]->name = strdup(name);
+    symtab[symtab_size]->type = type;
+    symtab[symtab_size]->depth = depth;
+    return symtab[symtab_size++];
+}
+
+static void
+addsymbol(const symbol_t *symbol)
+{
+    struct lexical_scope *scope = &scopes[depth];
+    if (scope->size == scope->cap) {
+        scope->cap += 16;
+        scope->symlist = realloc(scope->symlist, sizeof(symbol_t*) * scope->cap);
+    }
+    scope->symlist[scope->size] = symbol;
+    scope->size++;
+}
+
+const symbol_t *
+sym_lookup(const char *name)
+{
+    const symbol_t *sym;
+    int i, d;
+    for (d = depth; d >= 0; --d) {
+        for (i = 0; i < scopes[d].size; ++i) {
+            sym = scopes[d].symlist[i];
+            if (!strcmp(name, sym->name)) {
+                return sym;
+            }
+        }
+    }
+    return NULL;
+}
+
+const symbol_t *
+sym_add(const char *name, const typetree_t *type)
+{
+    const symbol_t *symbol = sym_lookup(name);
+    if (symbol != NULL && symbol->depth == depth) {
+        error("Duplicate definition of symbol '%s'", name);
+        exit(0);
+    }
+    symbol = (const symbol_t *) mksymbol(name, type);
+    addsymbol(symbol);
+    return symbol;
+}
+
+const symbol_t *
+sym_mktemp(const typetree_t *type)
+{
+    static int tmpn;
+
+    char tmpname[16];
+    do {
+        snprintf(tmpname, 12, "t%d", tmpn++);
+    } while (sym_lookup(tmpname) != NULL);
+
+    return sym_add(tmpname, type);
+}
+
+typetree_t *
+type_init(enum tree_type type)
+{
+    typetree_t *tree = calloc(1, sizeof(typetree_t));
+    tree->type = type;
+    switch (type) {
+        case CHAR_T:
+            tree->size = 1;
+            break;
+        default:
+            tree->size = 8;
+    }
+    return tree;
+}
+
+/* Create immediate variable based on textual value. Ex, number constant "5"
+ * will get its own symbol entry, as if a variable was named "5". */
+const symbol_t *
+sym_mkimmediate(enum tree_type type, const char *value)
+{
+    const symbol_t *existing = sym_lookup(value);
+    if (existing == NULL) {
+        typetree_t *tree = type_init(type);
+        symbol_t *symbol = mksymbol(value, tree);
+        symbol->is_immediate = 1;
+        switch (type) {
+            case CHAR_T:
+                symbol->immediate.charval = *value;
+                break;
+            case INT64_T: /* should probably not do conversion here, no type checking */
+                symbol->immediate.longval = strtol(value, NULL, 0);
+                break;
+            default:
+                error("Unexpected immediate type");
+                exit(0);
+        }
+        addsymbol(symbol);
+        existing = symbol;
+    }
+    return existing;
+}
+
+const symbol_t *
+sym_mkimmediate_long(long value)
+{
+    char str[16];
+    sprintf(str, "%ld", value);
+    return sym_mkimmediate(INT64_T, str);
+}
+
 int
-type_equal(typetree_t *a, typetree_t *b)
+type_equal(const typetree_t *a, const typetree_t *b)
 {
     if (a == NULL && b == NULL) return 1;
     if (a == NULL || b == NULL) return 0;
     if (a->type != b->type) return 0;
-    switch (a->type) {
-        case BASIC:
-            return a->d.basic.type == b->d.basic.type
-                && a->d.basic.qualifier == b->d.basic.qualifier;
-        case POINTER:
-            return a->d.ptr.qualifier == b->d.ptr.qualifier
-                && type_equal(a->d.ptr.to, b->d.ptr.to);
-        case FUNCTION:
-            return 0; /* todo */
-        case ARRAY:
-            return a->d.arr.size == b->d.arr.size
-                && type_equal(a->d.arr.of, b->d.arr.of);
-    }
+    /* todo */
     return 0;
 }
 
-typetree_t *
-type_combine(typetree_t *a, typetree_t *b)
+const typetree_t *
+type_combine(const typetree_t *a, const typetree_t *b)
 {
     if (type_equal(a, b))
         return a;
-    error("cannot combine types, aborting");
+    error("Cannot combine types, aborting");
     exit(0);
     return NULL;
 }
 
-typetree_t *
-init_type_basic(enum data_type type)
-{
-    typetree_t *tree = malloc(sizeof(typetree_t));
-    tree->type = BASIC;
-    tree->d.basic.type = type;
-    tree->d.basic.qualifier = NONE_Q;
-    return tree;
-}
-
-/* Instantiate a symbol based on a constant immediate value. Needed for 
- * keeping uniform interface to generating ir (for now at least) */
-symbol_t *
-sym_mktemp_immediate(enum data_type type, void *value)
-{
-    typetree_t *tree = init_type_basic(type);
-    symbol_t *tmp = sym_mktemp(tree);
-    switch (type) {
-        case INT64_T:
-            tmp->value = value;
-            break;
-        default:
-            error("I do not like immediates that are not integers");
-            exit(0);
-    }
-    return tmp;
-}
-
 static void
-print_type(typetree_t *tree)
+print_type(const typetree_t *tree)
 {
     int i;
     if (tree == NULL) return;
     switch (tree->type) {
-        case BASIC:
-            switch (tree->d.basic.qualifier) {
-                case CONST_Q:
-                    printf("const ");
-                    break;
-                case VOLATILE_Q:
-                    printf("volatile ");
-                    break;
-                default: break;
-            }
-            switch (tree->d.basic.type) {
-                case CHAR_T:
-                    printf("char");
-                    break;
-                case INT64_T:
-                    printf("int64");
-                    break;
-                case DOUBLE_T:
-                    printf("double");
-                    break;
-                case VOID_T:
-                    printf("void");
-                    break;
-                default: break;
-            }
+        case CHAR_T:
+            printf("char");
+            break;
+        case INT64_T:
+            printf("int64");
+            break;
+        case DOUBLE_T:
+            printf("double");
+            break;
+        case VOID_T:
+            printf("void");
             break;
         case POINTER:
-            if (tree->d.ptr.qualifier != NONE_Q) {
-                if (tree->d.ptr.qualifier & CONST_Q) printf("const ");
-                if (tree->d.ptr.qualifier & VOLATILE_Q) printf("volatile ");
+            if (tree->flags) {
+                if (tree->flags & CONST_Q) printf("const ");
+                if (tree->flags & VOLATILE_Q) printf("volatile ");
             }
             printf("* ");
-            print_type(tree->d.ptr.to);
+            print_type(tree->next);
             break;
         case FUNCTION:
             printf("(");
-            for (i = 0; i < tree->d.func.n_args; ++i) {
-                print_type(tree->d.func.args[i]);
-                if (i < tree->d.func.n_args - 1)
+            for (i = 0; i < tree->n_args; ++i) {
+                print_type(tree->args[i]);
+                if (i < tree->n_args - 1)
                     printf(", ");
             }
             printf(") -> ");
-            print_type(tree->d.func.ret);
+            print_type(tree->next);
             break;
         case ARRAY:
             if (tree->length > 0)
                 printf("[%u] ", tree->length);
             else 
                 printf("[] ");
-            print_type(tree->d.arr.of);
+            print_type(tree->next);
             break;
         default: break;
     }
@@ -257,8 +236,14 @@ dump_symtab()
         printf("%*s", symtab[i]->depth * 2, "");
         printf("%s :: ", symtab[i]->name);
         print_type(symtab[i]->type);
-        if (symtab[i]->value != NULL) {
-            printf(" = %d", *(int *)symtab[i]->value);
+        if (symtab[i]->is_immediate) {
+            switch (symtab[i]->type->type) {
+                case INT64_T:
+                    printf(" = %d", (int)symtab[i]->immediate.longval);
+                    break;
+                default:
+                    printf(" = immediate");
+            }
         }
         puts("");
     }
