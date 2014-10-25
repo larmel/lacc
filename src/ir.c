@@ -1,4 +1,5 @@
 #include "ir.h"
+#include "symbol.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -52,6 +53,18 @@ void mkir_arithmetic(const symbol_t *a, const symbol_t *b, const symbol_t *c, en
     op->c = c;
 }
 
+const symbol_t *
+ir_emit_arithmetic(enum iroptype type, const symbol_t *b, const symbol_t *c)
+{
+    irop_t *op = allocirop();
+    op->type = IR_ARITHMETIC;
+    op->optype = type;
+    op->a = sym_mktemp(type_combine(b->type, c->type));
+    op->b = b;
+    op->c = c;
+    return op->a;
+}
+
 void mkir_assign(const symbol_t *a, const symbol_t *b) {
     irop_t *op = allocirop();
     op->type = IR_ASSIGN;
@@ -64,6 +77,20 @@ void mkir_deref(const symbol_t *a, const symbol_t *b) {
     op->type = IR_DEREF;
     op->a = a;
     op->b = b;
+}
+
+const symbol_t *
+ir_emit_deref(const symbol_t *b) {
+    irop_t *op;
+    if (b->type->type != POINTER) {
+        error("Cannot dereference non-pointer, aborting");
+        exit(0);
+    }
+    op = allocirop();
+    op->type = IR_DEREF;
+    op->a = sym_mktemp(b->type->next);
+    op->b = b;
+    return op->a;
 }
 
 void mkir_ret(const symbol_t *val) {
@@ -79,7 +106,7 @@ compile()
 {
     push_scope();
 
-    while (parse() != 0) {
+    while (parse()) {
         ;
     }
 

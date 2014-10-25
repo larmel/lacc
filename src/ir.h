@@ -1,7 +1,7 @@
 #ifndef IR_H
 #define IR_H
 
-#include "symbol.h"
+struct symbol;
 
 enum irtype {
     IR_ARITHMETIC,  /* a = b <op> c */
@@ -29,9 +29,9 @@ typedef struct irop {
     enum irtype type;
     enum iroptype optype;
 
-    const symbol_t *a;
-    const symbol_t *b;
-    const symbol_t *c;
+    const struct symbol *a;
+    const struct symbol *b;
+    const struct symbol *c;
 
     struct block *target;
 } irop_t;
@@ -49,12 +49,14 @@ typedef struct block {
 
 block_t * mkblock(const char *);
 
-void mkir_arithmetic(const symbol_t *, const symbol_t *, const symbol_t *, enum iroptype);
+void mkir_arithmetic(const struct symbol *, const struct symbol *, const struct symbol *, enum iroptype);
+const struct symbol *ir_emit_arithmetic(enum iroptype, const struct symbol *, const struct symbol *);
 
-void mkir_assign(const symbol_t *, const symbol_t *);
+void mkir_assign(const struct symbol *, const struct symbol *);
 
-void mkir_deref(const symbol_t *, const symbol_t *);
+void mkir_deref(const struct symbol *, const struct symbol *);
+const struct symbol *ir_emit_deref(const struct symbol *);
 
-void mkir_ret(const symbol_t *);
+void mkir_ret(const struct symbol *);
 
 #endif

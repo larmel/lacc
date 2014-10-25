@@ -166,17 +166,46 @@ type_equal(const typetree_t *a, const typetree_t *b)
 {
     if (a == NULL && b == NULL) return 1;
     if (a == NULL || b == NULL) return 0;
-    if (a->type != b->type) return 0;
+    if (a->type == b->type) return 1;
     /* todo */
     return 0;
 }
 
+static void print_type(const typetree_t *);
+
+/* Resulting type of a <op> b */
 const typetree_t *
 type_combine(const typetree_t *a, const typetree_t *b)
 {
     if (type_equal(a, b))
         return a;
+
+    /* Arrays decay into pointer */
+    if (a->type == ARRAY) {
+        typetree_t *ptr = type_init(POINTER);
+        ptr->next = a->next;
+        a = ptr;
+    }
+
+    if (a->type == POINTER && b->type == INT64_T)
+        return a;
+
     error("Cannot combine types, aborting");
+    print_type(a);
+    puts("");
+    print_type(b);
+    puts("");
+    exit(0);
+    return NULL;
+}
+
+const typetree_t *
+type_deref(const typetree_t *t)
+{
+    if (t->type == POINTER || t->type == ARRAY) {
+        return t->next;
+    }
+    error("Cannot dereference non-pointer type, aborting");
     exit(0);
     return NULL;
 }

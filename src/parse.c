@@ -707,59 +707,6 @@ unary_expression()
     return postfix_expression();
 }
 
-/* Parse and emit ir for general array indexing
- *  - From K&R: an array is not a variable, and cannot be assigned or modified.
- *    Referencing an array always converts the first rank to pointer type,
- *    e.g. int foo[3][2][1]; a = foo; assignment has the type int (*)[2][1].
- *  - Functions return and pass pointers to array. First index not necessary to
- *    specify in array (pointer) parameters: int (*foo(int arg[][3][2][1]))[3][2][1]
- */
-static const symbol_t *
-postfix_expression_index_array(const symbol_t *root)
-{
-    const typetree_t *type = root->type; /* unwrap type for each indexing */
-    const symbol_t *expr, *skip, *t1 = NULL, *idx;
-    do {
-        consume('[');
-        expr = expression();
-        consume(']');
-
-        /*printf("Indexing into %d x %d\n", type->length, type->size); */
-        skip = sym_mkimmediate_long((long) type->size);
-        t1 = sym_mktemp(type_init(INT64_T));
-
-        /* missing a + in here for multi-dim */
-        mkir_arithmetic(t1, expr, skip, IR_OP_MUL);
-
-        type = type->next;
-
-    } while (peek() == '[');
-
-    /* Partial dereferencing decays into pointer type */
-    if (type->type == ARRAY) {
-        typetree_t *ptr = type_init(POINTER);
-        ptr->next = type->next;
-        type = ptr;
-
-        idx = sym_mktemp(type);
-        mkir_arithmetic(idx, root, t1, IR_OP_ADD);
-    } else {
-        typetree_t *ptr = type_init(POINTER);
-        const symbol_t *t;
-        ptr->next = type;
-        t = sym_mktemp(ptr);
-
-        mkir_arithmetic(t, root, t1, IR_OP_ADD);
-
-        idx = sym_mktemp(type);
-        mkir_deref(idx, t);
-    }
-
-    root = idx;
-    return root;
-}
-
-
 /* This rule is left recursive, build tree bottom up
  */
 static const symbol_t *
@@ -767,34 +714,46 @@ postfix_expression()
 {
     const symbol_t *root = primary_expression();
 
-    if (peek() == '[') {
-        root = postfix_expression_index_array(root);
-    }
-
-    /*while (peek() == '[' || peek() == '(' || peek() == '.') {
-        node_t *parent = init_node("postfix-expression", 2);
-        addchild(parent, root);
+    while (peek() == '[' || peek() == '(' || peek() == '.') {
         switch (peek()) {
+            /* Parse and emit ir for general array indexing
+             *  - From K&R: an array is not a variable, and cannot be assigned or modified.
+             *    Referencing an array always converts the first rank to pointer type,
+             *    e.g. int foo[3][2][1]; a = foo; assignment has the type int (*)[2][1].
+             *  - Functions return and pass pointers to array. First index not necessary to
+             *    specify in array (pointer) parameters: int (*foo(int arg[][3][2][1]))[3][2][1]
+             */
             case '[':
                 consume('[');
-                addchild(parent, expression());
+                root = ir_emit_arithmetic(IR_OP_ADD, 
+                    root, 
+                    ir_emit_arithmetic(IR_OP_MUL, 
+                        expression(), 
+                        sym_mkimmediate_long((long) root->type->size)
+                    )
+                );
                 consume(']');
+
+                if (root->type->next->type == ARRAY) {
+                    ((symbol_t *)root)->type = type_deref(root->type);
+                } else {
+                    root = ir_emit_deref(root);
+                }
                 break;
-            case '(':
-                 addchild(parent, argument_expression_list()); 
+            /*case '(':
+                addchild(parent, argument_expression_list()); 
                 consume('(');
                 consume(')');
                 break;
             case '.':
                 parent->token = readtoken();
                 addchild(parent, identifier());
-                break;
+                break;*/
             default:
                 error("Unexpected token '%s', not a valid postfix expression", readtoken().value);
                 exit(0);
         }
-        root = parent;
-    }*/
+    }
     return root;
 }
 
