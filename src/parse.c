@@ -55,10 +55,8 @@ consume(enum token_type expected)
 static struct node *
 init_node(const char *name, size_t n)
 {
-    struct node *node = malloc(sizeof(node_t));
+    struct node *node = calloc(1, sizeof(node_t));
     node->text = name;
-    node->value = 0;
-    node->nc = 0;
     node->cap = n;
     if (n) node->children = malloc(sizeof(node_t *) * node->cap);
     else node->children = NULL;
