@@ -91,13 +91,10 @@ int get_token(struct token* t);
 /* Debugging symbols */
 void dump_symtab();
 
-/* Parsing */
-int parse();
-
 /* Error reporting, functions that can be called from any component */
 void error(const char *, ...);
 
-/* And last but not least ... */
+/* Parse and compile to intermediate representation */
 void compile();
 void printir(FILE *);
 

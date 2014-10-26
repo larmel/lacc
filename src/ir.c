@@ -99,21 +99,6 @@ void mkir_ret(const symbol_t *val) {
     op->a = val;
 }
 
-extern int parse();
-
-void
-compile()
-{
-    push_scope();
-
-    while (parse()) {
-        ;
-    }
-
-    pop_scope();
-}
-
-
 const char *iroptype_tostr(enum iroptype iroptype)
 {
     switch (iroptype) {

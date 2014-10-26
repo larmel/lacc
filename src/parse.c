@@ -92,22 +92,22 @@ static const symbol_t *assignment_expression();
 
 static void output_tree(int indent, struct node *tree);
 
-
 /* External interface */
-int
-parse()
+void
+compile()
 {
-    peek();
-    while (!eof) {
+    push_scope();
+
+    do {
         node_t *node = declaration();
         if (node != NULL) {
             output_tree(0, node);
             puts("");
-            return 1;
         }
         peek();
-    }
-    return 0;
+    } while (!eof);
+
+    pop_scope();
 }
 
 /* Print parse tree in human readable format */
