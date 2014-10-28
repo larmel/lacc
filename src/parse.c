@@ -502,8 +502,9 @@ statement()
                     val = expression();
                 }
                 consume(';');
-                mkir_ret(val);
+                ir_emit_ret(val);
             }
+            node = init_node("return", 0);
             break;
         case CASE:
         case DEFAULT:
@@ -575,7 +576,7 @@ assignment_expression()
         /* todo: node must be unary-expression or lower (l-value) */
         consume('=');
         r = assignment_expression();
-        mkir_assign(l, r);
+        ir_emit_assign(l, r);
     }
     return l;
 }
@@ -605,12 +606,10 @@ logical_expression()
 {
     const symbol_t *l = or_expression();
     while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
-        struct token t = readtoken();
-        const symbol_t *x, *r = and_expression();
-        const typetree_t *type = type_combine(l->type, r->type);
-        x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, (t.type == LOGICAL_AND) ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR);
-        l = x;
+        enum iroptype optype = (readtoken().type == LOGICAL_AND) ?
+            IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
+
+        l = ir_emit_arithmetic(optype, l, and_expression());
     }
     return l;
 }
@@ -621,12 +620,10 @@ or_expression()
 {
     const symbol_t *l = and_expression();
     while (peek() == '|' || peek() == '^') {
-        struct token t = readtoken();
-        const symbol_t *x, *r = and_expression();
-        const typetree_t *type = type_combine(l->type, r->type);
-        x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, (t.type == '|') ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR);
-        l = x;
+        enum iroptype optype = (readtoken().type == '|') ?
+            IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
+
+        l = ir_emit_arithmetic(optype, l, and_expression());
     }
     return l;
 }
@@ -636,11 +633,8 @@ and_expression()
 {
     const symbol_t *l = equality_expression();
     while (peek() == '&') {
-        const symbol_t *x, *r = and_expression();
-        const typetree_t *type = type_combine(l->type, r->type);
-        x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, IR_OP_BITWISE_AND);
-        l = x;
+        consume('&');
+        l = ir_emit_arithmetic(IR_OP_BITWISE_AND, l, and_expression());
     }
     return l;
 }
@@ -668,12 +662,9 @@ additive_expression()
 {
     const symbol_t *l = multiplicative_expression();
     while (peek() == '+' || peek() == '-') {
-        struct token t = readtoken();
-        const symbol_t *x, *r = multiplicative_expression();
-        const typetree_t *type = type_combine(l->type, r->type);
-        x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, (t.type == '+') ? IR_OP_ADD : IR_OP_SUB);
-        l = x;
+        enum iroptype optype = (readtoken().type == '+') ? IR_OP_ADD : IR_OP_SUB;
+
+        l = ir_emit_arithmetic(optype, l, multiplicative_expression());
     }
     return l;
 }
@@ -683,12 +674,12 @@ multiplicative_expression()
 {
     const symbol_t *l = cast_expression();
     while (peek() == '*' || peek() == '/' || peek() == '%') {
-        struct token t = readtoken();
-        const symbol_t *x, *r = cast_expression();
-        const typetree_t *type = type_combine(l->type, r->type);
-        x = sym_mktemp(type);
-        mkir_arithmetic(x, l, r, (t.type == '*') ? IR_OP_MUL : (t.type == '/') ? IR_OP_DIV : IR_OP_MOD);
-        l = x;
+        struct token tok = readtoken();
+        enum iroptype optype = (tok.type == '*') ?
+            IR_OP_MUL : (tok.type == '/') ?
+                IR_OP_DIV : IR_OP_MOD;
+
+        l = ir_emit_arithmetic(optype, l, cast_expression());
     }
     return l;
 }

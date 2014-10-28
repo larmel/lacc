@@ -44,15 +44,6 @@ mkblock(const char *label)
 }
 
 /* add new ir operations to the current block */
-void mkir_arithmetic(const symbol_t *a, const symbol_t *b, const symbol_t *c, enum iroptype type) {
-    irop_t *op = allocirop();
-    op->type = IR_ARITHMETIC;
-    op->optype = type;
-    op->a = a;
-    op->b = b;
-    op->c = c;
-}
-
 const symbol_t *
 ir_emit_arithmetic(enum iroptype type, const symbol_t *b, const symbol_t *c)
 {
@@ -63,20 +54,6 @@ ir_emit_arithmetic(enum iroptype type, const symbol_t *b, const symbol_t *c)
     op->b = b;
     op->c = c;
     return op->a;
-}
-
-void mkir_assign(const symbol_t *a, const symbol_t *b) {
-    irop_t *op = allocirop();
-    op->type = IR_ASSIGN;
-    op->a = a;
-    op->b = b;
-}
-
-void mkir_deref(const symbol_t *a, const symbol_t *b) {
-    irop_t *op = allocirop();
-    op->type = IR_DEREF;
-    op->a = a;
-    op->b = b;
 }
 
 const symbol_t *
@@ -93,7 +70,14 @@ ir_emit_deref(const symbol_t *b) {
     return op->a;
 }
 
-void mkir_ret(const symbol_t *val) {
+void ir_emit_assign(const symbol_t *a, const symbol_t *b) {
+    irop_t *op = allocirop();
+    op->type = IR_ASSIGN;
+    op->a = a;
+    op->b = b;
+}
+
+void ir_emit_ret(const symbol_t *val) {
     irop_t *op = allocirop();
     op->type = IR_RET;
     op->a = val;

@@ -49,14 +49,11 @@ typedef struct block {
 
 block_t * mkblock(const char *);
 
-void mkir_arithmetic(const struct symbol *, const struct symbol *, const struct symbol *, enum iroptype);
 const struct symbol *ir_emit_arithmetic(enum iroptype, const struct symbol *, const struct symbol *);
-
-void mkir_assign(const struct symbol *, const struct symbol *);
-
-void mkir_deref(const struct symbol *, const struct symbol *);
 const struct symbol *ir_emit_deref(const struct symbol *);
 
-void mkir_ret(const struct symbol *);
+void ir_emit_assign(const struct symbol *, const struct symbol *);
+void ir_emit_ret(const struct symbol *);
+
 
 #endif
