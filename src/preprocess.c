@@ -158,32 +158,70 @@ getprepline(char **buffer)
     }
 
     *buffer = linebuffer;
-    printf("%03d  %s", (int)line_number, linebuffer);
+    printf("%03d  %s\n", (int)line_number, linebuffer);
     return processed;
 }
 
+/* Return number of non-commented characters, replacing commented area with
+ * space characters for later strtok. Also removes any trailing newline. */
+static size_t
+clean(char *line, size_t length)
+{
+    static int comment; /* flag 1 when in comment */
+
+    int i = 0, n = 0;
+    while (i < length) {
+        if (!comment && !strncmp("/*", &line[i], 2)) {
+            line[i++] = ' '; line[i++] = ' ';
+            comment = 1;
+        }
+        else if (comment && !strncmp("*/", &line[i], 2)) {
+            line[i++] = ' '; line[i++] = ' ';
+            comment = 0;
+        }
+        else if (comment || isspace(line[i]))
+            line[i++] = ' ';
+        else 
+            i++, n++;
+    }
+    return n;
+}
+
+static int
+is_directive(const char *line, size_t length)
+{
+    int i = 0;
+    while (i < length && isspace(line[i]))
+        i++;
+    return line[i] == '#';
+}
+
 /* Return number of chars in resulting preprocessed line, which is stored
-   in linebuffer (possibly reallocated). Lines that are not part of the
-   translation unit, ex. #define, return 0. Invalid input return -1. */
+ * in linebuffer (possibly reallocated). Lines that are not part of the
+ * translation unit, ex. #define, return 0. Invalid input return -1. */
 static ssize_t
 preprocess_line(char **linebuffer, size_t *length, size_t read)
 {
-    char *token;
-    int i = 0;
-    static int grayzone; /* flag 1 when in false if block */
+    static int iffalse; /* flag 1 when in false if block */
 
-    while (i < read && isspace((*linebuffer)[i]))
-        i++;
+    /* erase comments, and ignore lines with only whitespace */
+    if (clean(*linebuffer, read) == 0)
+        return 0;
 
-    /* ignore whitespace line */
-    if (i == read) return 0;
+    /* detect preprocessing directive */
+    if (is_directive(*linebuffer, read)) {
+        char *token = strtok(*linebuffer, "# ");
 
-    if ((*linebuffer)[i] == '#') {
+        if (!strcmp("endif", token))
+            iffalse = 0;
 
-        /* destructive tokenization of directive */
-        token = strtok(&((*linebuffer)[i+1]), " \t");
-        if (!strcmp("include", token) && !grayzone) {
-            token = strtok(NULL, " \t\n");
+        /* In false block, no other macro declaration can help */
+        if (iffalse) return 0;
+
+        if (!strcmp("include", token)) {
+            token = strtok(NULL, " \n");
+
+            printf("Including file '%s'\n", token);
 
             if (strlen(token) > 2 && 
                 token[0] == '"' && 
@@ -199,21 +237,17 @@ preprocess_line(char **linebuffer, size_t *length, size_t read)
                 return -1;
             }
 
-        } else if (!strcmp("define", token) && !grayzone) {
-            char *symbol = strtok(NULL, " \n\t");
-            char *value = strtok(NULL, " \n\t");
+        } else if (!strcmp("define", token) && !iffalse) {
+            char *symbol = strtok(NULL, " \n");
+            char *value = strtok(NULL, " \n");
             sym_define(symbol, value);
 
-        } else if (!strcmp("ifndef", token) && !grayzone) {
-            char *symbol = strtok(NULL, " \n\t");
-            grayzone = sym_isdefined(symbol);
-
-        } else if (!strcmp("endif", token)) {
-            grayzone = 0;
+        } else if (!strcmp("ifndef", token) && !iffalse) {
+            char *symbol = strtok(NULL, " \n");
+            iffalse = sym_isdefined(symbol);
         }
-
         return 0;
     }
 
-    return (grayzone) ? 0 : read;
+    return (iffalse) ? 0 : read;
 }
