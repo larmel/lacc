@@ -9,8 +9,6 @@
 size_t line_number;
 const char *filename;
 
-static ssize_t preprocess_line(char **, size_t *, size_t);
-
 /* stack of file descriptors as resolved by includes */
 static struct fnt {
     FILE *file;
@@ -29,15 +27,11 @@ static int push(const char* name)
             fd_len += 16;
             fd = realloc(fd, fd_len * sizeof(struct fnt));
         }
-        if (fd_idx >= 0) {
-            fd[fd_idx].line = line_number;
-        }
         fd_idx++;
         fd[fd_idx].file = file;
         fd[fd_idx].name = name;
 
         filename = name;
-        line_number = 0;
     } else {
         error("could not open file %s", name);
     }
@@ -51,7 +45,6 @@ static int pop()
         fd_idx--;
         if (fd_idx >= 0) {
             filename = fd[fd_idx].name;
-            line_number = fd[fd_idx].line;
         }
     }
     return fd_idx;
@@ -127,101 +120,132 @@ preprocess(const char *filename)
     push(filename);
 }
 
-/* yield next preprocessed line */
+static ssize_t getcleanline(char **, size_t *, struct fnt *);
+static ssize_t preprocess_line(char **, size_t);
+
+/* Yield next preprocessed line */
 int
 getprepline(char **buffer)
 {
-    /* reuse buffer for all lines, only freed on termination */
-    static size_t length = 1024;
-    static char *linebuffer;
-
-    ssize_t read;
-    ssize_t processed;
-
-    if (linebuffer == NULL) {
-        linebuffer = malloc(length);
-    }
+    static char *line;
+    static size_t size;
+    ssize_t read, processed;
 
     while (1) {
-        line_number++;
-        read = getline(&linebuffer, &length, fd[fd_idx].file);
-        if (read == -1) {
+        read = getcleanline(&line, &size, &fd[fd_idx]);
+        if (read == 0) {
             if (pop() == -1) {
                 return -1;
             }
             continue;
         }
-        processed = preprocess_line(&linebuffer, &length, (size_t)read);
+
+        processed = preprocess_line(&line, (size_t)read);
         if (processed > 0) {
             break;
         }
     }
 
-    *buffer = linebuffer;
-    printf("%03d  %s\n", (int)line_number, linebuffer);
+    *buffer = line;
+    line_number = fd[fd_idx].line;
+    printf("(%s, %d):  %s\n", filename, (int)line_number, line);
     return processed;
 }
 
-/* Return number of non-commented characters, replacing commented area with
- * space characters for later strtok. Also removes any trailing newline. */
-static size_t
-clean(char *line, size_t length)
+/* Read characters from stream and assemble a line. Keep track of and remove
+ * comments, join lines ending with '\', and ignore all-whitespace lines. Trim
+ * leading whitespace, guaranteeing that the first character is '#' for
+ * preprocessor directives. Increment line counter in fnt struct for each line
+ * consumed. */
+static ssize_t
+getcleanline(char **lineptr, size_t *n, struct fnt *fn)
 {
-    static int comment; /* flag 1 when in comment */
+    enum { NORMAL, COMMENT } state = 0;
+    int c, next; /* getc return values */
+    int i = 0, /* chars written to output buffer */
+        nonwhitespace = 0; /* non-whitespace characters written */
 
-    int i = 0, n = 0;
-    while (i < length) {
-        if (!comment && !strncmp("/*", &line[i], 2)) {
-            line[i++] = ' '; line[i++] = ' ';
-            comment = 1;
+    FILE *stream = fn->file;
+
+    while ((c = getc(stream)) != EOF) {
+        /* line continuation */
+        if (c == '\\') {
+            next = getc(stream);
+            if (next == EOF) {
+                error("Invalid end of file after line continuation, aborting");
+                exit(0);
+            }
+            if (next == '\n')
+                fn->line++;
+            else
+                ungetc(next, stream);
+            continue;
         }
-        else if (comment && !strncmp("*/", &line[i], 2)) {
-            line[i++] = ' '; line[i++] = ' ';
-            comment = 0;
+        /* end of comment */
+        if (state == COMMENT) {
+            if (c == '*') {
+                next = getc(stream);
+                if (next == '/')
+                    state = NORMAL;
+                else
+                    ungetc(next, stream);
+            } else if (c == '\n')
+                fn->line++;
+            continue;
         }
-        else if (comment || isspace(line[i]))
-            line[i++] = ' ';
-        else 
-            i++, n++;
+        /* start of comment */
+        if (c == '/') {
+            next = getc(stream);
+            if (next == '*') {
+                state = COMMENT;
+                continue;
+            }
+            ungetc(next, stream);
+        }
+        /* end of line, return if we have some content */
+        if (c == '\n') {
+            fn->line++;
+            if (nonwhitespace > 0)
+                break;
+        }
+        /* skip leading whitspace */
+        if (isspace(c)) {
+            if (nonwhitespace == 0)
+                continue;
+        } else
+            nonwhitespace++;
+
+        /* make sure we have room for trailing null byte, and copy character */
+        if (i + 1 >= *n) {
+            *n = (i + 1) * 2;
+            *lineptr = realloc(*lineptr, sizeof(char) * *n);
+        }
+        (*lineptr)[i++] = c;
     }
-    return n;
-}
 
-static int
-is_directive(const char *line, size_t length)
-{
-    int i = 0;
-    while (i < length && isspace(line[i]))
-        i++;
-    return line[i] == '#';
+    (*lineptr)[i] = '\0';
+    return i;
 }
 
 /* Return number of chars in resulting preprocessed line, which is stored
  * in linebuffer (possibly reallocated). Lines that are not part of the
  * translation unit, ex. #define, return 0. Invalid input return -1. */
 static ssize_t
-preprocess_line(char **linebuffer, size_t *length, size_t read)
+preprocess_line(char **linebuffer, size_t read)
 {
     static int iffalse; /* flag 1 when in false if block */
 
-    /* erase comments, and ignore lines with only whitespace */
-    if (clean(*linebuffer, read) == 0)
-        return 0;
-
     /* detect preprocessing directive */
-    if (is_directive(*linebuffer, read)) {
-        char *token = strtok(*linebuffer, "# ");
+    if ((*linebuffer)[0] == '#') {
+        char *directive = *linebuffer;
 
-        if (!strcmp("endif", token))
-            iffalse = 0;
-
-        /* In false block, no other macro declaration can help */
-        if (iffalse) return 0;
-
-        if (!strcmp("include", token)) {
-            token = strtok(NULL, " \n");
-
-            printf("Including file '%s'\n", token);
+        /* Endif needs to be considered iff in false block */
+        if (iffalse) {
+            if (!strncmp("#endif", directive, 6)) {
+                iffalse = 0;
+            }
+        } else if (!strncmp("#include", directive, 8)) {
+            char *token = strtok(&directive[8], " \n");
 
             if (strlen(token) > 2 && 
                 token[0] == '"' && 
@@ -237,13 +261,13 @@ preprocess_line(char **linebuffer, size_t *length, size_t read)
                 return -1;
             }
 
-        } else if (!strcmp("define", token) && !iffalse) {
-            char *symbol = strtok(NULL, " \n");
+        } else if (!strncmp("#define", directive, 7)) {
+            char *symbol = strtok(&directive[7], " \n");
             char *value = strtok(NULL, " \n");
             sym_define(symbol, value);
 
-        } else if (!strcmp("ifndef", token) && !iffalse) {
-            char *symbol = strtok(NULL, " \n");
+        } else if (!strncmp("#ifndef", directive, 7)) {
+            char *symbol = strtok(&directive[7], " \n");
             iffalse = sym_isdefined(symbol);
         }
         return 0;
