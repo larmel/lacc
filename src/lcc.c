@@ -17,14 +17,10 @@ int main(int argc, char* argv[])
     /* preprocessor gets file reference */
     preprocess(filename);
 
-    /* first pass, generating ir */
+    /* first pass, generate cfg */
     compile();
 
-    puts("");
     dump_symtab();
-    puts("");
-
-    printir(stdout);
 
     return EXIT_SUCCESS;
 }

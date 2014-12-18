@@ -5,15 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct node {
-    const char *text;
-    struct token token;
-    long value;
-    struct node **children;
-    size_t nc;
-    size_t cap;
-} node_t;
-
 /* Tokenization interface and helper functions */
 static struct token peek_value;
 static int has_value;
@@ -51,46 +42,21 @@ consume(enum token_type expected)
     }
 }
 
-/* Parse tree helper functions */
-static struct node *
-init_node(const char *name, size_t n)
-{
-    struct node *node = calloc(1, sizeof(node_t));
-    node->text = name;
-    node->cap = n;
-    if (n) node->children = malloc(sizeof(node_t *) * node->cap);
-    else node->children = NULL;
-    /* todo: add to free list */
-    return node;
-}
-
-static void
-addchild(node_t *node, node_t *child)
-{
-    if (node->nc == node->cap) {
-        node->cap += 8;
-        node->children = realloc(node->children, sizeof(node_t *) * node->cap);
-    }
-    node->children[node->nc] = child;
-    node->nc++;
-}
-
-static node_t *declaration();
+static block_t *declaration();
 static typetree_t *declaration_specifiers();
 static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
 static typetree_t *direct_declarator(typetree_t *, const char **);
 static typetree_t *parameter_list(const typetree_t *);
-static node_t *block();
-static node_t *statement();
-static node_t *identifier();
+static block_t *block(block_t *);
+static block_t *statement(block_t *);
+
+static const symbol_t *identifier();
 
 /* expression nodes that are called in high level rules */
-static const symbol_t *expression();
-static const symbol_t *constant_expression();
-static const symbol_t *assignment_expression();
-
-static void output_tree(int indent, struct node *tree);
+static const symbol_t *expression(block_t *);
+static const symbol_t *constant_expression(block_t *);
+static const symbol_t *assignment_expression(block_t *);
 
 /* External interface */
 void
@@ -99,9 +65,9 @@ compile()
     push_scope();
 
     do {
-        node_t *node = declaration();
-        if (node != NULL) {
-            output_tree(0, node);
+        block_t *fun = declaration();
+        if (fun != NULL) {
+            output_block(fun);
             puts("");
         }
         peek();
@@ -110,75 +76,42 @@ compile()
     pop_scope();
 }
 
-/* Print parse tree in human readable format */
-static void 
-output_tree(int indent, struct node *tree)
-{
-    int i;
-    if (tree == NULL) {
-        printf("%*s(null)", indent, "");
-        return;
-    }
-    printf("%*s(%s", indent, "", tree->text);
-    if (!strcmp("integer", tree->text)) {
-        printf(" %ld", tree->value);
-    } else if (tree->token.value != NULL) {
-        printf(" \"%s\"", tree->token.value);
-    }
-    if (tree->nc > 0) {
-        printf("\n");
-        for (i = 0; i < tree->nc; ++i) {
-            output_tree(indent + 2, tree->children[i]);
-            if (i < tree->nc - 1)
-                printf("\n");
-        }
-    }
-    printf(")");
-}
-
 /* Return either an initialized declaration, or a function definition.
  * Forward declarations are just registered in the symbol table. 
  */
-static node_t *
+static block_t *
 declaration()
 {
-    node_t *node = NULL, *child = NULL;
+    block_t *function;
     const symbol_t *symbol;
     typetree_t *type, *base = declaration_specifiers();
     int i;
 
-    do {
+    while (1) {
         const char *name = NULL;
         type = declarator(base, &name);
         symbol = sym_add(name, type);
+
         switch (peek()) {
             case ';':
                 consume(';');
-                return node;
+                return NULL;
             case '=':
                 consume('=');
-                if (node == NULL)
-                    node = init_node("declaration", 0);
-                child = init_node("assignment", 0);
-                addchild(node, child);
-                addchild(child, init_node("assignment-expression-dummy", 0));
-                assignment_expression(); /* generate assignment ir */
-                child->token.type = IDENTIFIER;
-                child->token.value = name;
+                /* Assignment expression for external declaration must be a 
+                 * constant value computable at compile time. */
+                assignment_expression(NULL); /* todo: store value in symtab */
                 if (peek() != ',') {
                     consume(';');
-                    return node;
+                    return NULL;
                 }
                 break;
             case '{':
-                if (type->type != FUNCTION || node != NULL || symbol->depth > 0) {
+                if (type->type != FUNCTION || symbol->depth > 0) {
                     error("Invalid function definition, aborting");
                     exit(1);
                 }
-                node = init_node("function-definition", 0);
-                node->token.type = IDENTIFIER;
-                node->token.value = name;
-                mkblock(name);
+                function = block_init(name);
                 push_scope();
                 for (i = 0; i < type->n_args; ++i) {
                     if (type->params[i] == NULL) {
@@ -187,14 +120,14 @@ declaration()
                     }
                     sym_add(type->params[i], type->args[i]);
                 }
-                addchild(node, block());
+                block(function); /* generate code */
                 pop_scope();
-                return node;
-            default: 
+                return function;
+            default:
                 break;
         }
         consume(',');
-    } while (1);
+    }
 }
 
 static typetree_t *
@@ -290,7 +223,8 @@ direct_declarator_array(typetree_t *base)
 
         consume('[');
         if (peek() != ']') {
-            expr = constant_expression();
+            block_t *throwaway = block_init(NULL);
+            expr = constant_expression(throwaway);
             if (!get_symbol_constant_value(expr, &length)) {
                 error("Array declaration must be a compile time constant, aborting");
                 exit(1);
@@ -412,296 +346,441 @@ parameter_list(const typetree_t *base)
 /* Treat statements and declarations equally, allowing declarations in between
  * statements as in modern C. Called compound-statement in K&R.
  */
-static node_t *
-block()
+static block_t *
+block(block_t *parent)
 {
-    node_t *node = init_node("block", 32), *child;
     consume('{');
     while (peek() != '}') {
-        if (peek() == ';') {
-            consume(';');
-            continue;
-        }
-        child = statement();
-        if (child != NULL)
-            addchild(node, child);
+        parent = statement(parent);
     }
     consume('}');
-    return node;
+    return parent;
 }
 
-static node_t *
-statement()
+/* Create or expand a block of code. Consecutive statements without branches
+ * are stored as a single block, passed as parent. Statements with branches
+ * generate new blocks. Returns the current block of execution after the
+ * statement is done. For ex: after an if statement, the empty fallback is
+ * returned. Caller must keep handles to roots, only the tail is returned. */
+static block_t *
+statement(block_t *parent)
 {
-    node_t *node;
+    block_t *node;
+
+    /* Store reference to top of loop, for resolving break and continue. Use
+     * call stack to keep track of depth, backtracking to the old value. */
+    static block_t *break_target, *continue_target;
+    block_t *old_break_target, *old_continue_target;
+
     enum token_type t = peek();
+
     switch (t) {
+        case ';':
+            consume(';');
+            node = parent;
+            break;
         case '{':
             push_scope();
-            node = block();
+            node = block(parent); /* execution continues  */
             pop_scope();
             break;
-        case IF:
         case SWITCH:
-            node = init_node("selection-statement", 3);
-            node->token = readtoken();
+        case IF:
+        {
+            block_t *right = block_init(NULL), *next = block_init(NULL);
+            readtoken();
             consume('(');
-            expression();
-            /* addchild(node, expression()); */
+
+            /* node becomes a branch, store the expression as condition
+             * variable and append code to compute the value. */
+            parent->expr = expression(parent);
             consume(')');
-            addchild(node, statement());
+
+            parent->jump[0] = next;
+            parent->jump[1] = right;
+
+            /* The order is important here: Send right as head in new statement
+             * graph, and store the resulting tail as new right, hooking it up
+             * to the fallback of the if statement. */
+            right = statement(right);
+            right->jump[0] = next;
+
             if (peek() == ELSE) {
+                block_t *left = block_init(NULL);
                 consume(ELSE);
-                addchild(node, statement());
+
+                /* Again, order is important: Set left as new jump target for
+                 * false if branch, then invoke statement to get the
+                 * (potentially different) tail. */
+                parent->jump[0] = left;
+                left = statement(left);
+
+                left->jump[0] = next;
             }
+            node = next;
             break;
+        }
         case WHILE:
         case DO:
-        case FOR:
-            node = init_node("iteration-statement", 4);
-            node->token = readtoken();
+        {
+            block_t *top = block_init(NULL), *body = block_init(NULL), *next = block_init(NULL);
+            parent->jump[0] = top; /* Parent becomes unconditional jump. */
+
+            /* Enter a new loop, store reference for break and continue target. */
+            old_break_target = break_target;
+            old_continue_target = continue_target;
+            break_target = next;
+            continue_target = top;
+
+            readtoken();
+
             if (t == WHILE) {
                 consume('(');
-                expression(); /* no node */
+                top->expr = expression(top);
                 consume(')');
-                addchild(node, statement());
+                top->jump[0] = next;
+                top->jump[1] = body;
+
+                /* Generate statement, and get tail end of body to loop back */
+                body = statement(body);
+                body->jump[0] = top;
             } else if (t == DO) {
-                addchild(node, statement());
+
+                /* Generate statement, and get tail end of body */
+                body = statement(top);
                 consume(WHILE);
                 consume('(');
-                expression(); /* no node */
+                body->expr = expression(body); /* Tail becomes branch. (nb: wrong if tail is return?!) */
+                body->jump[0] = next;
+                body->jump[1] = top;
                 consume(')');
-            } else {
-                consume('(');
-                if (peek() != ';') expression(); /* no node */
-                consume(';');
-                if (peek() != ';') expression(); /* no node */
-                consume(';');
-                if (peek() != ')') expression(); /* no node */
-                consume(')');
-                addchild(node, statement());
             }
+
+            /* Restore previous nested loop */
+            break_target = old_break_target;
+            continue_target = old_continue_target;
+
+            node = next;
             break;
-        case GOTO:
-        case CONTINUE:
-        case BREAK:
-            node = init_node("jump-statement", 1);
-            node->token = readtoken();
-            if (t == GOTO && peek() == IDENTIFIER) {
-                addchild(node, identifier());
-            } else if (t == RETURN && peek() != ';') {
-                expression(); /* no node */
+        }
+        case FOR:
+        {
+            block_t *top = block_init(NULL), *body = block_init(NULL), *increment = block_init(NULL), *next = block_init(NULL);
+
+            /* Enter a new loop, store reference for break and continue target. */
+            old_break_target = break_target;
+            old_continue_target = continue_target;
+            break_target = next;
+            continue_target = top;
+
+            consume(FOR);
+            consume('(');
+            if (peek() != ';') {
+                expression(parent);
             }
             consume(';');
+            if (peek() != ';') {
+                parent->jump[0] = top;
+                top->expr = expression(top);
+                top->jump[0] = next;
+                top->jump[1] = body;
+            } else {
+                /* Infinite loop */
+                free(top);
+                parent->jump[0] = body;
+                top = body;
+            }
+            consume(';');
+            if (peek() != ')') {
+                expression(increment);
+                increment->jump[0] = top;
+            }
+            consume(')');
+            body = statement(body);
+            body->jump[0] = increment;
+
+            /* Restore previous nested loop */
+            break_target = old_break_target;
+            continue_target = old_continue_target;
+
+            node = next;
+            break;
+        }
+        case GOTO:
+            consume(GOTO);
+            identifier();
+            /* todo */
+            consume(';');
+            break;
+        case CONTINUE:
+        case BREAK:
+            readtoken();
+            parent->jump[0] = (t == CONTINUE) ? 
+                continue_target :
+                break_target;
+            consume(';');
+            /* Return orphan node, which is dead code unless there is a label
+             * and a goto statement. Dead code elimination done in another pass. */
+            node = block_init(NULL); 
             break;
         case RETURN:
-            {
-                const symbol_t *val = NULL;
-                consume(RETURN);
-                if (peek() != ';') {
-                    val = expression();
-                }
-                consume(';');
-                ir_emit_ret(val);
-            }
-            node = init_node("return", 0);
+            consume(RETURN);
+            if (peek() != ';')
+                parent->expr = expression(parent);
+            consume(';');
+            node = block_init(NULL); /* orphan */
             break;
         case CASE:
         case DEFAULT:
-            node = init_node("labeled-statement", 2);
-            node->token = readtoken();
+            /*readtoken();
             if (peek() == ':') {
                 consume(':');
                 addchild(node, statement());
             } else {
-                /*addchild(node, constant_expression()); */
-                constant_expression();
+                constant_expression(block);
                 consume(':');
                 addchild(node, statement());
-            }
+            }*/
             break;
         case IDENTIFIER: /* also part of label statement, need 2 lookahead */
         case INTEGER: /* todo: any constant value */
         case STRING:
         case '(':
-            node = init_node("expression", 0);
-            expression(); /* no node */
+            expression(parent);
             consume(';');
+            node = parent;
             break;
         default:
-            node = declaration();
+            declaration();
+            node = parent;
     }
     return node;
 }
 
-static node_t *
+static const symbol_t *
 identifier()
 {
-    node_t *node = init_node("identifier", 0);
     struct token name = readtoken();
-    const symbol_t *symbol = sym_lookup(name.value);
-    if (symbol == NULL) {
+    const symbol_t *sym = sym_lookup(name.value);
+    if (sym == NULL) {
         error("Undefined symbol '%s', aborting", name.value);
         exit(0);
     }
-    node->token = name;
-    return node;
+    return sym;
 }
 
-static const symbol_t *conditional_expression();
-static const symbol_t *logical_expression();
-static const symbol_t *or_expression();
-static const symbol_t *and_expression();
-static const symbol_t *equality_expression();
-static const symbol_t *relational_expression();
-static const symbol_t *shift_expression();
-static const symbol_t *additive_expression();
-static const symbol_t *multiplicative_expression();
-static const symbol_t *cast_expression();
-static const symbol_t *postfix_expression();
-static const symbol_t *unary_expression();
-static const symbol_t *primary_expression();
+static const symbol_t *conditional_expression(block_t *block);
+static const symbol_t *logical_expression(block_t *block);
+static const symbol_t *or_expression(block_t *block);
+static const symbol_t *and_expression(block_t *block);
+static const symbol_t *equality_expression(block_t *block);
+static const symbol_t *relational_expression(block_t *block);
+static const symbol_t *shift_expression(block_t *block);
+static const symbol_t *additive_expression(block_t *block);
+static const symbol_t *multiplicative_expression(block_t *block);
+static const symbol_t *cast_expression(block_t *block);
+static const symbol_t *postfix_expression(block_t *block);
+static const symbol_t *unary_expression(block_t *block);
+static const symbol_t *primary_expression(block_t *block);
 
 static const symbol_t *
-expression()
+expression(block_t *block)
 {
-    return assignment_expression();
+    return assignment_expression(block);
 }
 
 static const symbol_t *
-assignment_expression()
+assignment_expression(block_t *block)
 {
-    const symbol_t *l = conditional_expression(), *r;
+    op_t op;
+    const symbol_t *l = conditional_expression(block), *r;
     if (peek() == '=') {
-        /* todo: node must be unary-expression or lower (l-value) */
         consume('=');
-        r = assignment_expression();
-        ir_emit_assign(l, r);
-    }
+        /* todo: node must be unary-expression or lower (l-value) */
+        r = assignment_expression(block);
+
+        op.type = IR_ASSIGN;
+        op.a = l;
+        op.b = r;
+        ir_append(block, op);
+    } 
     return l;
 }
 
 static const symbol_t *
-constant_expression()
+constant_expression(block_t *block)
 {
-    return conditional_expression();
+    return conditional_expression(block);
 }
 
 static const symbol_t *
-conditional_expression()
+conditional_expression(block_t *block)
 {
-    const symbol_t *node = logical_expression();
+    const symbol_t *sym = logical_expression(block);
     if (peek() == '?') {
         consume('?');
-        expression();
+        expression(block);
         consume(':');
-        conditional_expression();
+        conditional_expression(block);
     }
-    return node;
+    return sym;
 }
 
 /* merge AND/OR */
 static const symbol_t *
-logical_expression()
+logical_expression(block_t *block)
 {
-    const symbol_t *l = or_expression();
+    op_t op;
+    const symbol_t *l, *r, *res;
+    l = or_expression(block);
     while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
-        enum iroptype optype = (readtoken().type == LOGICAL_AND) ?
-            IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
+        optype_t optype = (readtoken().type == LOGICAL_AND) ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
 
-        l = ir_emit_arithmetic(optype, l, and_expression());
+        r = and_expression(block);
+        res = sym_mktemp(type_combine(l->type, r->type));
+
+        op.type = optype;
+        op.a = res;
+        op.b = l;
+        op.c = r;
+        ir_append(block, op);
+
+        l = res;
     }
     return l;
 }
 
 /* merge OR/XOR */
 static const symbol_t *
-or_expression()
+or_expression(block_t *block)
 {
-    const symbol_t *l = and_expression();
+    op_t op;
+    const symbol_t *l, *r, *res;
+    l = and_expression(block);
     while (peek() == '|' || peek() == '^') {
-        enum iroptype optype = (readtoken().type == '|') ?
-            IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
+        optype_t optype = (readtoken().type == '|') ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
 
-        l = ir_emit_arithmetic(optype, l, and_expression());
+        r = and_expression(block);
+        res = sym_mktemp(type_combine(l->type, r->type));
+
+        op.type = optype;
+        op.a = res;
+        op.b = l;
+        op.c = r;
+        ir_append(block, op);
+
+        l = res;
     }
     return l;
 }
 
 static const symbol_t *
-and_expression()
+and_expression(block_t *block)
 {
-    const symbol_t *l = equality_expression();
+    op_t op;
+    const symbol_t *l, *r, *res;
+    l = equality_expression(block);
     while (peek() == '&') {
         consume('&');
-        l = ir_emit_arithmetic(IR_OP_BITWISE_AND, l, and_expression());
+        r = and_expression(block);
+        res = sym_mktemp(type_combine(l->type, r->type));
+
+        op.type = IR_OP_BITWISE_AND;
+        op.a = res;
+        op.b = l;
+        op.c = r;
+        ir_append(block, op);
+
+        l = res;
     }
     return l;
 }
 
 static const symbol_t *
-equality_expression()
+equality_expression(block_t *block)
 {
-    return relational_expression();
+    return relational_expression(block);
 }
 
 static const symbol_t *
-relational_expression()
+relational_expression(block_t *block)
 {
-    return shift_expression();
+    return shift_expression(block);
 }
 
 static const symbol_t *
-shift_expression()
+shift_expression(block_t *block)
 {
-    return additive_expression();
+    return additive_expression(block);
 }
 
 static const symbol_t *
-additive_expression()
+additive_expression(block_t *block)
 {
-    const symbol_t *l = multiplicative_expression();
+    op_t op;
+    const symbol_t *l, *r, *res;
+    l = multiplicative_expression(block);
     while (peek() == '+' || peek() == '-') {
-        enum iroptype optype = (readtoken().type == '+') ? IR_OP_ADD : IR_OP_SUB;
+        optype_t optype = (readtoken().type == '+') ? IR_OP_ADD : IR_OP_SUB;
 
-        l = ir_emit_arithmetic(optype, l, multiplicative_expression());
+        r = multiplicative_expression(block);
+        res = sym_mktemp(type_combine(l->type, r->type));
+
+        op.type = optype;
+        op.a = res;
+        op.b = l;
+        op.c = r;
+        ir_append(block, op);
+
+        l = res;
     }
     return l;
 }
 
 static const symbol_t *
-multiplicative_expression()
+multiplicative_expression(block_t *block)
 {
-    const symbol_t *l = cast_expression();
+    op_t op;
+    const symbol_t *l, *r, *res;
+    l = cast_expression(block);
     while (peek() == '*' || peek() == '/' || peek() == '%') {
         struct token tok = readtoken();
-        enum iroptype optype = (tok.type == '*') ?
+        optype_t optype = (tok.type == '*') ?
             IR_OP_MUL : (tok.type == '/') ?
                 IR_OP_DIV : IR_OP_MOD;
 
-        l = ir_emit_arithmetic(optype, l, cast_expression());
+        r = cast_expression(block);
+        res = sym_mktemp(type_combine(l->type, r->type));
+
+        op.type = optype;
+        op.a = res;
+        op.b = l;
+        op.c = r;
+        ir_append(block, op);
+
+        l = res;
     }
     return l;
 }
 
 static const symbol_t *
-cast_expression()
+cast_expression(block_t *block)
 {
-    return unary_expression();
+    return unary_expression(block);
 }
 
 static const symbol_t *
-unary_expression()
+unary_expression(block_t *block)
 {
-    return postfix_expression();
+    return postfix_expression(block);
 }
 
 /* This rule is left recursive, build tree bottom up
  */
 static const symbol_t *
-postfix_expression()
+postfix_expression(block_t *block)
 {
-    const symbol_t *root = primary_expression();
+    const symbol_t *root = primary_expression(block);
 
     while (peek() == '[' || peek() == '(' || peek() == '.') {
         switch (peek()) {
@@ -714,19 +793,46 @@ postfix_expression()
              */
             case '[':
                 consume('[');
-                root = ir_emit_arithmetic(IR_OP_ADD, 
-                    root, 
-                    ir_emit_arithmetic(IR_OP_MUL, 
-                        expression(), 
-                        sym_mkimmediate_long((long) root->type->size)
-                    )
-                );
+                {
+                    op_t mul, add;
+                    const symbol_t *res, *l, *r;
+                    l = expression(block);
+                    r = sym_mkimmediate_long((long) root->type->size);
+                    res = sym_mktemp(type_combine(l->type, r->type));
+
+                    mul.type = IR_OP_MUL;
+                    mul.a = res;
+                    mul.b = l;
+                    mul.c = r;
+                    ir_append(block, mul);
+
+                    r = sym_mktemp(type_combine(root->type, res->type));
+                    add.type = IR_OP_ADD;
+                    add.a = r;
+                    add.b = root;
+                    add.c = res;
+                    ir_append(block, add);
+
+                    root = r;
+                }
                 consume(']');
 
                 if (root->type->next->type == ARRAY) {
                     ((symbol_t *)root)->type = type_deref(root->type);
                 } else {
-                    root = ir_emit_deref(root);
+                    op_t deref;
+                    const symbol_t *res;
+                    if (root->type->type != POINTER) {
+                        error("Cannot dereference non-pointer, aborting");
+                        exit(0);
+                    }
+                    res = sym_mktemp(root->type->next);
+                    deref.type = IR_DEREF;
+                    deref.a = res;
+                    deref.b = root;
+                    ir_append(block, deref);
+
+                    root = res;
                 }
                 break;
             /*case '(':
@@ -747,7 +853,7 @@ postfix_expression()
 }
 
 static const symbol_t *
-primary_expression()
+primary_expression(block_t *block)
 {
     const symbol_t *symbol;
     struct token token = readtoken();
@@ -763,7 +869,7 @@ primary_expression()
             symbol = sym_mkimmediate(INT64_T, token.value);
             break;
         case '(':
-            symbol = expression();
+            symbol = expression(block);
             consume(')');
             break;
         default:

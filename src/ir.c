@@ -1,128 +1,112 @@
 #include "ir.h"
 #include "symbol.h"
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-
-/* Hold program representation as a list of blocks (functions)
- * Must store stable pointers (no realloc), as jump targets are
- * stored in ir operations */
-static block_t **blocks;
-static int length;
-static int cap;
-
-static irop_t *
-allocirop()
+static const char *
+mklabel()
 {
-    block_t *block;
-    if (!length)  {
-        fprintf(stderr, "No block to add to!\n");
-        exit(0);
-    }
-    block = blocks[length - 1];
+    static int n;
 
-    block->n++;
-    block->ops = realloc(block->ops, sizeof(irop_t) * block->n);
-    return &block->ops[block->n - 1];
+    /* NB: this currently does not care about collisions with function names */
+    char *name = malloc(sizeof(char) * 16);
+    snprintf(name, 12, ".L%d", n++);
+
+    return name;
 }
 
-/* called from parsing, generate a new block */
-block_t *
-mkblock(const char *label)
+struct op *
+ir_init(enum optype type, const struct symbol *a, const struct symbol *b, const struct symbol *c)
 {
-    block_t *block = malloc(sizeof(block_t));
-    block->label = label;
-    block->ops = NULL;
-    block->n = 0;
-    if (length == cap) {
-        cap += 32;
-        blocks = realloc(blocks, sizeof(block_t*) * cap);
-    }
-    blocks[length++] = block;
+    struct op *op = malloc(sizeof(struct op));
+    op->type = type;
+    op->a = a;
+    op->b = b;
+    op->c = c;
+    return op;
+}
+
+/* Initialize a CFG block, with either some label for function name, or NULL
+ * to generate a new jump label. */
+struct block *
+block_init(const char *label)
+{
+    struct block *block = calloc(1, sizeof(struct block));
+    block->label = (label == NULL) ? mklabel() : label;
     return block;
 }
 
-/* add new ir operations to the current block */
-const symbol_t *
-ir_emit_arithmetic(enum iroptype type, const symbol_t *b, const symbol_t *c)
-{
-    irop_t *op = allocirop();
-    op->type = IR_ARITHMETIC;
-    op->optype = type;
-    op->a = sym_mktemp(type_combine(b->type, c->type));
-    op->b = b;
-    op->c = c;
-    return op->a;
-}
-
-const symbol_t *
-ir_emit_deref(const symbol_t *b) {
-    irop_t *op;
-    if (b->type->type != POINTER) {
-        error("Cannot dereference non-pointer, aborting");
-        exit(0);
-    }
-    op = allocirop();
-    op->type = IR_DEREF;
-    op->a = sym_mktemp(b->type->next);
-    op->b = b;
-    return op->a;
-}
-
-void ir_emit_assign(const symbol_t *a, const symbol_t *b) {
-    irop_t *op = allocirop();
-    op->type = IR_ASSIGN;
-    op->a = a;
-    op->b = b;
-}
-
-void ir_emit_ret(const symbol_t *val) {
-    irop_t *op = allocirop();
-    op->type = IR_RET;
-    op->a = val;
-}
-
-const char *iroptype_tostr(enum iroptype iroptype)
-{
-    switch (iroptype) {
-        case IR_OP_ADD: return "+";
-        case IR_OP_SUB: return "-";
-        case IR_OP_MUL: return "*";
-        case IR_OP_DIV: return "/";
-        case IR_OP_MOD: return "%%";
-        case IR_OP_LOGICAL_AND: return "&&";
-        case IR_OP_LOGICAL_OR: return "||";
-        case IR_OP_BITWISE_AND: return "&";
-        case IR_OP_BITWISE_OR: return "|";
-        case IR_OP_BITWISE_XOR: return "xor";
-    }
-    return "";
-}
-
-/* should do this in dot format */
+/* Add a 3-address code operation to the block. */
 void
-printir(FILE *file)
+ir_append(struct block* block, struct op op)
 {
-    int i, j;
-    for (i = 0; i < length; ++i) {
-        fprintf(file, "%s:\n", blocks[i]->label);
-        for (j = 0; j < blocks[i]->n; ++j) {
-            irop_t *op = &blocks[i]->ops[j];
-            switch (op->type) {
-                case IR_ARITHMETIC:
-                    fprintf(file, "%s = %s %s %s\n", op->a->name, op->b->name, iroptype_tostr(op->optype), op->c->name);
-                    break;
-                case IR_ASSIGN:
-                    fprintf(file, "%s = %s\n", op->a->name, op->b->name);
-                    break;
-                case IR_DEREF:
-                    fprintf(file, "%s = *%s\n", op->a->name, op->b->name);
-                    break;
-                case IR_RET:
-                    fprintf(file, "ret %s\n", op->a == NULL ? "" : op->a->name);
-                    break;
-            }
+    block->n += 1;
+    block->code = realloc(block->code, sizeof(struct op) * block->n);
+    block->code[block->n - 1] = op;
+    return;
+}
+
+
+/* debug stuff */
+
+void
+output_block(const block_t *block)
+{
+    int i;
+    if (block == NULL) {
+        return;
+    }
+    printf("%s:\n", block->label);
+    for (i = 0; i < block->n; ++i) {
+        op_t op = block->code[i];
+        switch (op.type) {
+            case IR_ASSIGN:
+                printf("\t%s = %s\n", op.a->name, op.b->name);
+                break;
+            case IR_DEREF:
+                printf("\t%s = *%s\n", op.a->name, op.b->name);
+                break;
+            case IR_OP_ADD:
+                printf("\t%s = %s + %s\n", op.a->name, op.b->name, op.c->name);
+                break;
+            case IR_OP_SUB:
+                printf("\t%s = %s - %s\n", op.a->name, op.b->name, op.c->name);
+                break;
+            case IR_OP_MUL:
+                printf("\t%s = %s * %s\n", op.a->name, op.b->name, op.c->name);
+                break;
+            case IR_OP_DIV:
+                printf("\t%s = %s / %s\n", op.a->name, op.b->name, op.c->name);
+                break;
+            case IR_OP_MOD:
+                printf("\t%s = %s %% %s\n", op.a->name, op.b->name, op.c->name);
+                break;
+            case IR_OP_LOGICAL_AND:
+                printf("\t%s = %s && %s\n", op.a->name, op.b->name, op.c->name);
+                break;
+            case IR_OP_LOGICAL_OR:
+                printf("\t%s = %s || %s\n", op.a->name, op.b->name, op.c->name);
+                break;
+            case IR_OP_BITWISE_AND:
+                printf("\t%s = %s & %s\n", op.a->name, op.b->name, op.c->name);
+                break;
+            case IR_OP_BITWISE_OR:
+                printf("\t%s = %s | %s\n", op.a->name, op.b->name, op.c->name);
+                break;
+            case IR_OP_BITWISE_XOR:
+                printf("\t%s = %s ^ %s\n", op.a->name, op.b->name, op.c->name);
+                break;
         }
+    }
+    if (block->jump[0] == NULL && block->jump[1] == NULL) {
+        printf("\treturn");
+        if (block->expr != NULL) {
+            printf(" %s", block->expr->name);
+        }
+        printf("\n");
+    } else if (block->jump[1] != NULL) {
+        printf("\tif %s goto %s\n", block->expr->name, block->jump[1]->label);
+        output_block(block->jump[0]);
+        output_block(block->jump[1]);
+    } else {
+        output_block(block->jump[0]);
     }
 }

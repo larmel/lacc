@@ -49,6 +49,20 @@ typedef struct symbol {
     } immediate;
 } symbol_t;
 
+/* ideas about separating symbol and variable. A symbol is a name, a variable
+ * is a location in memory with some value. The variable has a type, and a
+ * symbol attached to it. */
+typedef struct variable {
+    const struct typetree *type;
+    const struct symbol symbol; /* not sure about this ... */
+    unsigned stack_depth;
+
+    /* store immediate value. This can be a whole array, or whatever, so
+     * union with basic types is not enough. NULL denotes no value */
+    void *value;
+} variable_t;
+
+
 /* resolve symbol in current scope, or NULL if not found */
 const symbol_t *sym_lookup(const char *);
 

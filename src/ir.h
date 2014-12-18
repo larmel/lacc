@@ -3,14 +3,9 @@
 
 struct symbol;
 
-enum irtype {
-    IR_ARITHMETIC,  /* a = b <op> c */
+typedef enum optype {
     IR_ASSIGN,      /* a = b */
     IR_DEREF,       /* a = *b */
-    IR_RET          /* ret a */
-};
-
-enum iroptype {
     IR_OP_ADD,
     IR_OP_SUB,
     IR_OP_MUL,
@@ -21,39 +16,46 @@ enum iroptype {
     IR_OP_BITWISE_AND,
     IR_OP_BITWISE_OR,
     IR_OP_BITWISE_XOR
-};
+} optype_t;
 
-struct block;
+typedef struct op {
+    enum optype type;
 
-typedef struct irop {
-    enum irtype type;
-    enum iroptype optype;
-
+    /* operands, three address code */
     const struct symbol *a;
     const struct symbol *b;
     const struct symbol *c;
+} op_t;
 
-    struct block *target;
-} irop_t;
 
-/* A basic block representing a fork or join in the program control flow.
- * For example function entry points, for loops, if branches, etc. 
- * Initially, these are per function only, so not really basic blocks */
+/* CFG block */
 typedef struct block {
+    /* Function name, or some generated jump target label */
     const char *label;
 
-    struct irop *ops;
+    /* realloc-able list of 3-address code operations */
+    struct op *code;
     unsigned n;
+
+    /* Value to evaluate in branch conditions, or return value */
+    const struct symbol *expr;
+
+    /* Branch targets.
+     * - (NULL, NULL): Terminal node, return expr from function.
+     * - (x, NULL)   : Unconditional jump, f.ex break, goto, or bottom of loop.
+     * - (x, y)      : Branch, false and true targets respectively, from evaluating expr.
+     */
+    const struct block *jump[2];
 } block_t;
 
 
-block_t * mkblock(const char *);
+struct block *block_init(const char *);
 
-const struct symbol *ir_emit_arithmetic(enum iroptype, const struct symbol *, const struct symbol *);
-const struct symbol *ir_emit_deref(const struct symbol *);
+void ir_append(struct block *, struct op);
 
-void ir_emit_assign(const struct symbol *, const struct symbol *);
-void ir_emit_ret(const struct symbol *);
+
+/* debugging */
+void output_block(const block_t *);
 
 
 #endif

@@ -96,6 +96,5 @@ void error(const char *, ...);
 
 /* Parse and compile to intermediate representation */
 void compile();
-void printir(FILE *);
 
 #endif
