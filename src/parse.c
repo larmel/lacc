@@ -58,6 +58,10 @@ static const symbol_t *expression(block_t *);
 static const symbol_t *constant_expression(block_t *);
 static const symbol_t *assignment_expression(block_t *);
 
+
+void fdotgen(FILE *, const block_t *);
+
+
 /* External interface */
 void
 compile()
@@ -67,7 +71,9 @@ compile()
     do {
         block_t *fun = declaration();
         if (fun != NULL) {
-            output_block(fun);
+            /*output_block(fun); */
+            puts("");
+            fdotgen(stderr, fun);
             puts("");
         }
         peek();
