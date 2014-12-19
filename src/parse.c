@@ -71,10 +71,7 @@ compile()
     do {
         block_t *fun = declaration();
         if (fun != NULL) {
-            /*output_block(fun); */
-            puts("");
             fdotgen(stderr, fun);
-            puts("");
         }
         peek();
     } while (!eof);

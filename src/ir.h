@@ -54,8 +54,4 @@ struct block *block_init(const char *);
 void ir_append(struct block *, struct op);
 
 
-/* debugging */
-void output_block(const block_t *);
-
-
 #endif
