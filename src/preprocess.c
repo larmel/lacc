@@ -1,15 +1,16 @@
 #include "lcc.h"
+#include "util/map.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
 
-/* expose global state to other components */
+/* Expose global state to other components. */
 size_t line_number;
 const char *filename;
 
-/* stack of file descriptors as resolved by includes */
+/* Stack of file descriptors as resolved by includes. */
 static struct fnt {
     FILE *file;
     const char *name;
@@ -50,7 +51,11 @@ static int pop()
     return fd_idx;
 }
 
-/* path of initial file, used for relative include paths */
+/* Map between defined symbols and values. Declaring as static handles
+ * initialization to empty map. */
+static map_t symbols;
+
+/* Path of initial file, used for relative include paths. */
 static const char *directory;
 
 static char *
@@ -65,47 +70,7 @@ mkpath(const char *filename)
     return path;
 }
 
-/* symbol list */
-static const char ** symbols;
-static const char ** values;
-static size_t sym_idx;
-static size_t sym_cap;
-
-/*
-static const char *
-sym_lookup(const char * symbol)
-{
-    int i;
-    for (i = 0; i < sym_idx; ++i) {
-        if (!strcmp(symbol, symbols[i])) return values[i];
-    }
-    return NULL;
-}
-*/
-
-static int
-sym_isdefined(const char * symbol)
-{
-    int i;
-    for (i = 0; i < sym_idx; ++i) {
-        if (!strcmp(symbol, symbols[i])) return 1;
-    }
-    return 0;
-}
-
-static int
-sym_define(const char *symbol, const char *value) {
-    if (sym_idx == sym_cap) {
-        sym_cap += 64;
-        symbols = realloc(symbols, sym_cap * sizeof(char*));
-        values = realloc(values, sym_cap * sizeof(char*));
-    }
-    symbols[sym_idx] = strdup(symbol);
-    values[sym_idx] = value == NULL ? "" : strdup(value);
-    return sym_idx++;
-}
-
-/* initialization, called once with root file name */
+/* Initialization, called once with root file name. */
 void
 preprocess(const char *filename)
 {
@@ -123,7 +88,7 @@ preprocess(const char *filename)
 static ssize_t getcleanline(char **, size_t *, struct fnt *);
 static ssize_t preprocess_line(char **, size_t);
 
-/* Yield next preprocessed line */
+/* Yield next preprocessed line. */
 int
 getprepline(char **buffer)
 {
@@ -264,11 +229,11 @@ preprocess_line(char **linebuffer, size_t read)
         } else if (!strncmp("#define", directive, 7)) {
             char *symbol = strtok(&directive[7], " \n");
             char *value = strtok(NULL, " \n");
-            sym_define(symbol, value);
+            map_insert(&symbols, symbol, (void*) value);
 
         } else if (!strncmp("#ifndef", directive, 7)) {
             char *symbol = strtok(&directive[7], " \n");
-            iffalse = sym_isdefined(symbol);
+            iffalse = map_lookup(&symbols, symbol) != NULL;
         }
         return 0;
     }
