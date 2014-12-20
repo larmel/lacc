@@ -1,5 +1,6 @@
 #include "lcc.h"
 #include "util/map.h"
+#include "util/stack.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,45 +11,48 @@
 size_t line_number;
 const char *filename;
 
-/* Stack of file descriptors as resolved by includes. */
-static struct fnt {
+/* Keep stack of file descriptors as resolved by includes. Make helper
+ * functions for pushing (#include) and popping (EOF) of files, keeping track
+ * of the file name and line number for diagnostics. */
+static stack_t sources;
+
+typedef struct {
     FILE *file;
     const char *name;
     int line;
-} *fd = NULL;
+} source_t;
 
-static int fd_idx = -1;
-static int fd_len;
-
-static int push(const char* name)
+static void 
+push(const char* name)
 {
+    source_t *source;
     FILE *file = fopen(name, "r");
-    if (file != NULL) {
-        if (fd_idx == fd_len - 1) {
-            fd_len += 16;
-            fd = realloc(fd, fd_len * sizeof(struct fnt));
-        }
-        fd_idx++;
-        fd[fd_idx].file = file;
-        fd[fd_idx].name = name;
-
-        filename = name;
-    } else {
-        error("could not open file %s", name);
+    if (file == NULL) {
+        error("could not open file %s, aborting", name);
+        exit(1);
     }
-    return fd_idx;
+    source = malloc(sizeof(source_t));
+    source->file = file;
+    source->name = name;
+    source->line = 0;
+    stack_push(&sources, source);
+
+    filename = name;
 }
 
-static int pop()
+static int
+pop()
 {
-    if (fd_idx >= 0) {
-        fclose(fd[fd_idx].file);
-        fd_idx--;
-        if (fd_idx >= 0) {
-            filename = fd[fd_idx].name;
+    source_t *source = (source_t *)stack_pop(&sources);
+    if (source != NULL) {
+        fclose(source->file);
+        source = (source_t *)stack_peek(&sources);
+        if (source != NULL) {
+            filename = source->name;
+            return 1;
         }
     }
-    return fd_idx;
+    return EOF;
 }
 
 /* Map between defined symbols and values. Declaring as static handles
@@ -85,7 +89,7 @@ preprocess(const char *filename)
     push(filename);
 }
 
-static ssize_t getcleanline(char **, size_t *, struct fnt *);
+static ssize_t getcleanline(char **, size_t *, source_t *);
 static ssize_t preprocess_line(char **, size_t);
 
 /* Yield next preprocessed line. */
@@ -94,12 +98,14 @@ getprepline(char **buffer)
 {
     static char *line;
     static size_t size;
+    source_t *source;
     ssize_t read, processed;
 
     while (1) {
-        read = getcleanline(&line, &size, &fd[fd_idx]);
+        source = (source_t *)stack_peek(&sources);
+        read = getcleanline(&line, &size, source);
         if (read == 0) {
-            if (pop() == -1) {
+            if (pop() == EOF) {
                 return -1;
             }
             continue;
@@ -112,7 +118,7 @@ getprepline(char **buffer)
     }
 
     *buffer = line;
-    line_number = fd[fd_idx].line;
+    line_number = source->line;
     printf("(%s, %d):  %s\n", filename, (int)line_number, line);
     return processed;
 }
@@ -123,7 +129,7 @@ getprepline(char **buffer)
  * preprocessor directives. Increment line counter in fnt struct for each line
  * consumed. */
 static ssize_t
-getcleanline(char **lineptr, size_t *n, struct fnt *fn)
+getcleanline(char **lineptr, size_t *n, source_t *fn)
 {
     enum { NORMAL, COMMENT } state = 0;
     int c, next; /* getc return values */
