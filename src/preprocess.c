@@ -204,17 +204,14 @@ getcleanline(char **lineptr, size_t *n, source_t *fn)
 static ssize_t
 preprocess_line(char **linebuffer, size_t read)
 {
-    static int iffalse; /* flag 1 when in false if block */
+    static stack_t conditions;
+    static char false = 'f', true = 't';
 
-    /* detect preprocessing directive */
     if ((*linebuffer)[0] == '#') {
         char *directive = *linebuffer;
 
-        /* Endif needs to be considered iff in false block */
-        if (iffalse) {
-            if (!strncmp("#endif", directive, 6)) {
-                iffalse = 0;
-            }
+        if (!strncmp("#endif", directive, 6)) {
+            stack_pop(&conditions);
         } else if (!strncmp("#include", directive, 8)) {
             char *token = strtok(&directive[8], " \n");
 
@@ -239,10 +236,16 @@ preprocess_line(char **linebuffer, size_t read)
 
         } else if (!strncmp("#ifndef", directive, 7)) {
             char *symbol = strtok(&directive[7], " \n");
-            iffalse = map_lookup(&symbols, symbol) != NULL;
+            if (stack_peek(&conditions) == (void *)&false) {
+                stack_push(&conditions, (void*) &false);
+            } else {
+                void *value = (map_lookup(&symbols, symbol) == NULL) 
+                    ? (void *)&true : (void *)&false;
+                stack_push(&conditions, value);
+            }
         }
         return 0;
     }
 
-    return (iffalse) ? 0 : read;
+    return stack_pop(&conditions) == (void *)&false ? 0 : read;
 }
