@@ -59,25 +59,17 @@ static const symbol_t *constant_expression(block_t *);
 static const symbol_t *assignment_expression(block_t *);
 
 
-void fdotgen(FILE *, const function_t *);
-void fassemble(FILE *, const function_t *);
-
 /* External interface */
-void
-compile(FILE *cfg, FILE *code)
+function_t *
+parse()
 {
-    push_scope();
-
-    do {
-        function_t *fun = declaration();
-        if (fun != NULL) {
-            fdotgen(cfg, fun);
-            fassemble(code, fun);
-        }
+    function_t *fun = NULL;
+    while (!fun) {
         peek();
-    } while (!eof);
-
-    pop_scope();
+        if (eof) break;
+        fun = declaration();
+    };
+    return fun;
 }
 
 extern int var_stack_offset;

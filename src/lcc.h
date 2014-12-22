@@ -4,7 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void preprocess(const char *);
+void init(const char *);
+
 int getprepline(char **);
 
 typedef enum token_type
@@ -88,13 +89,25 @@ struct token
 
 int get_token(struct token* t);
 
-/* Debugging symbols */
-void dump_symtab();
-
 /* Error reporting, functions that can be called from any component */
 void error(const char *, ...);
 
+
+struct function;
+
 /* Parse and compile to intermediate representation */
-void compile(FILE *, FILE *);
+struct function *parse();
+
+/* Output control flow graph in .dot syntax. */
+void fdotgen(FILE *, const struct function *);
+
+/* Output assembly code. */
+void fassemble(FILE *, const struct function *);
+
+/* Symbol table. */
+void push_scope();
+void pop_scope();
+void dump_symtab();
+
 
 #endif

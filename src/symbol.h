@@ -83,9 +83,5 @@ const typetree_t *type_deref(const typetree_t *);
 const typetree_t *init_type_basic(enum tree_type);
 size_t type_varsize(const typetree_t *);
 
-void push_scope();
-
-void pop_scope();
-
 
 #endif

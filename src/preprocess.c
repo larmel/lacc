@@ -45,7 +45,8 @@ pop()
 {
     source_t *source = (source_t *)stack_pop(&sources);
     if (source != NULL) {
-        fclose(source->file);
+        if (source->file != stdin)
+            fclose(source->file);
         source = (source_t *)stack_peek(&sources);
         if (source != NULL) {
             filename = source->name;
@@ -74,19 +75,29 @@ mkpath(const char *filename)
     return path;
 }
 
-/* Initialization, called once with root file name. */
+/* Initialize with root file name, and store relative path to resolve later
+ * includes. In case of NULL, default to stdin. */
 void
-preprocess(const char *filename)
+init(const char *path)
 {
     char *dir = ".";
-    char *lastsep = strrchr(filename, '/');
-    if (lastsep != NULL) {
-        dir = calloc(lastsep - filename + 1, sizeof(char));
-        strncpy(dir, filename, lastsep - filename);
-    }
+    if (path != NULL) {
+        char *lastsep = strrchr(path, '/');
+        if (lastsep != NULL) {
+            dir = calloc(lastsep - path + 1, sizeof(char));
+            strncpy(dir, path, lastsep - path);
+        }
+        push(path);
+    } else {
+        source_t *source = malloc(sizeof(source_t));
+        source->file = stdin;
+        source->name = "<stdin>";
+        source->line = 0;
+        stack_push(&sources, source);
 
+        filename = source->name;
+    }
     directory = dir;
-    push(filename);
 }
 
 static ssize_t getcleanline(char **, size_t *, source_t *);
