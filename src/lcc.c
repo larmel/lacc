@@ -6,6 +6,7 @@
 int main(int argc, char* argv[])
 {
     const char *filename;
+    FILE *cfg, *code;
 
     if (argc == 2) {
         filename = argv[1];
@@ -14,11 +15,14 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
+    cfg  = fopen("cfg.dot", "w");
+    code = fopen("a.s", "w");
+
     /* preprocessor gets file reference */
     preprocess(filename);
 
-    /* first pass, generate cfg */
-    compile();
+    /* generate cfg and assemble */
+    compile(cfg, code);
 
     dump_symtab();
 

@@ -16,8 +16,16 @@ static struct lexical_scope {
     size_t cap;
 } *scopes = NULL;
 
+/* Nesting level of lexical scope, incremented for each { } block.
+ * 0: Global scope
+ * 1: Function arguments
+ * n: Automatic variables
+ */
 static int depth = -1;
 static int scope_cap;
+
+/* Track offset of local variables on stack. */
+int var_stack_offset;
 
 void push_scope()
 {
@@ -27,6 +35,11 @@ void push_scope()
         scopes = realloc(scopes, sizeof(struct lexical_scope) * scope_cap);
         memset(&scopes[depth], 0x0, sizeof(struct lexical_scope) * 16);
     }
+    /* Reset for function params and body. */
+    if (depth == 1)
+        var_stack_offset = 8; /* stack pointer */
+    if (depth == 2)
+        var_stack_offset = 0;
 }
 
 void pop_scope()
@@ -43,7 +56,7 @@ void pop_scope()
 }
 
 static symbol_t *
-mksymbol(const char *name, const typetree_t *type)
+mksymbol(const char *name, const typetree_t *type, int offset)
 {
     if (symtab_size == symtab_capacity) {
         symtab_capacity += 64;
@@ -54,6 +67,7 @@ mksymbol(const char *name, const typetree_t *type)
     symtab[symtab_size]->name = strdup(name);
     symtab[symtab_size]->type = type;
     symtab[symtab_size]->depth = depth;
+    symtab[symtab_size]->stack_offset = offset;
     return symtab[symtab_size++];
 }
 
@@ -89,11 +103,19 @@ const symbol_t *
 sym_add(const char *name, const typetree_t *type)
 {
     const symbol_t *symbol = sym_lookup(name);
+    int offset = 0;
     if (symbol != NULL && symbol->depth == depth) {
         error("Duplicate definition of symbol '%s'", name);
         exit(0);
     }
-    symbol = (const symbol_t *) mksymbol(name, type);
+    if (depth == 1) {
+        var_stack_offset += type_varsize(type);
+        offset = var_stack_offset;
+    } else if (depth > 1) {
+        var_stack_offset -= type_varsize(type);
+        offset = var_stack_offset;
+    }
+    symbol = (const symbol_t *) mksymbol(name, type, offset);
     addsymbol(symbol);
     return symbol;
 }
@@ -134,7 +156,7 @@ sym_mkimmediate(enum tree_type type, const char *value)
     const symbol_t *existing = sym_lookup(value);
     if (existing == NULL) {
         typetree_t *tree = type_init(type);
-        symbol_t *symbol = mksymbol(value, tree);
+        symbol_t *symbol = mksymbol(value, tree, 0);
         symbol->is_immediate = 1;
         switch (type) {
             case CHAR_T:
@@ -210,6 +232,19 @@ type_deref(const typetree_t *t)
     return NULL;
 }
 
+/* Base size of type, i.e. sizeof(pointer) for complex types, or size of basic
+ * type for int, double etc. */
+size_t
+type_varsize(const typetree_t *type)
+{
+    switch (type->type) {
+        case CHAR_T:
+            return 1;
+        default:
+            return 4; /* 32 bit */
+    }
+}
+
 static void
 print_type(const typetree_t *tree)
 {
@@ -220,7 +255,7 @@ print_type(const typetree_t *tree)
             printf("char");
             break;
         case INT64_T:
-            printf("int64");
+            printf("int");
             break;
         case DOUBLE_T:
             printf("double");
@@ -273,6 +308,12 @@ dump_symtab()
                 default:
                     printf(" = immediate");
             }
+        }
+        if (symtab[i]->stack_offset > 0) {
+            printf(" (param: %d)", symtab[i]->stack_offset);
+        }
+        if (symtab[i]->stack_offset < 0) {
+            printf(" (automatic: %d)", symtab[i]->stack_offset);
         }
         puts("");
     }

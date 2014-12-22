@@ -6,7 +6,6 @@ mklabel()
 {
     static int n;
 
-    /* NB: this currently does not care about collisions with function names */
     char *name = malloc(sizeof(char) * 16);
     snprintf(name, 12, ".L%d", n++);
 
@@ -24,13 +23,12 @@ ir_init(enum optype type, const struct symbol *a, const struct symbol *b, const 
     return op;
 }
 
-/* Initialize a CFG block, with either some label for function name, or NULL
- * to generate a new jump label. */
+/* Initialize a CFG block, with a unique jump label. */
 struct block *
-block_init(const char *label)
+block_init()
 {
     struct block *block = calloc(1, sizeof(struct block));
-    block->label = (label == NULL) ? mklabel() : label;
+    block->label = mklabel();
     return block;
 }
 

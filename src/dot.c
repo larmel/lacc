@@ -98,7 +98,7 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
 }
 
 void
-fdotgen(FILE *stream, const block_t *cfg)
+fdotgen(FILE *stream, const function_t *cfg)
 {
 	map_t *map = map_init();
 
@@ -106,7 +106,7 @@ fdotgen(FILE *stream, const block_t *cfg)
 	fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\",shape=record];\n");
 	fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\"];\n");
 
-	foutputnode(stream, map, cfg);
+	foutputnode(stream, map, cfg->body);
 
 	fprintf(stream, "}\n");
 }

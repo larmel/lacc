@@ -42,7 +42,7 @@ consume(enum token_type expected)
     }
 }
 
-static block_t *declaration();
+static function_t *declaration();
 static typetree_t *declaration_specifiers();
 static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
@@ -59,19 +59,20 @@ static const symbol_t *constant_expression(block_t *);
 static const symbol_t *assignment_expression(block_t *);
 
 
-void fdotgen(FILE *, const block_t *);
-
+void fdotgen(FILE *, const function_t *);
+void fassemble(FILE *, const function_t *);
 
 /* External interface */
 void
-compile()
+compile(FILE *cfg, FILE *code)
 {
     push_scope();
 
     do {
-        block_t *fun = declaration();
+        function_t *fun = declaration();
         if (fun != NULL) {
-            fdotgen(stderr, fun);
+            fdotgen(cfg, fun);
+            fassemble(code, fun);
         }
         peek();
     } while (!eof);
@@ -79,13 +80,14 @@ compile()
     pop_scope();
 }
 
-/* Return either an initialized declaration, or a function definition.
- * Forward declarations are just registered in the symbol table. 
- */
-static block_t *
+extern int var_stack_offset;
+
+/* Returns the first function declaration, or NULL for external declarations
+ * and that are not functions, where only the symbol table is affected. */
+static function_t *
 declaration()
 {
-    block_t *function;
+    function_t *fun;
     const symbol_t *symbol;
     typetree_t *type, *base = declaration_specifiers();
     int i;
@@ -114,18 +116,24 @@ declaration()
                     error("Invalid function definition, aborting");
                     exit(1);
                 }
-                function = block_init(name);
+                fun = calloc(1, sizeof(function_t));
+                fun->symbol = symbol;
+                fun->body = block_init();
                 push_scope();
-                for (i = 0; i < type->n_args; ++i) {
+                for (i = type->n_args - 1; i >= 0; --i) {
                     if (type->params[i] == NULL) {
                         error("Missing parameter name at position %d, aborting", i + 1);
                         exit(1);
                     }
                     sym_add(type->params[i], type->args[i]);
                 }
-                block(function); /* generate code */
+                block(fun->body); /* generate code */
+
+                /* Hack: write stack offset as we are done adding all symbols,
+                 * reading variable from symtab code. */
+                fun->locals_size = (-1) * var_stack_offset;
                 pop_scope();
-                return function;
+                return fun;
             default:
                 break;
         }
@@ -226,7 +234,7 @@ direct_declarator_array(typetree_t *base)
 
         consume('[');
         if (peek() != ']') {
-            block_t *throwaway = block_init(NULL);
+            block_t *throwaway = block_init();
             expr = constant_expression(throwaway);
             if (!get_symbol_constant_value(expr, &length)) {
                 error("Array declaration must be a compile time constant, aborting");
@@ -353,10 +361,12 @@ static block_t *
 block(block_t *parent)
 {
     consume('{');
+    push_scope();
     while (peek() != '}') {
         parent = statement(parent);
     }
     consume('}');
+    pop_scope();
     return parent;
 }
 
@@ -383,14 +393,12 @@ statement(block_t *parent)
             node = parent;
             break;
         case '{':
-            push_scope();
             node = block(parent); /* execution continues  */
-            pop_scope();
             break;
         case SWITCH:
         case IF:
         {
-            block_t *right = block_init(NULL), *next = block_init(NULL);
+            block_t *right = block_init(), *next = block_init();
             readtoken();
             consume('(');
 
@@ -409,7 +417,7 @@ statement(block_t *parent)
             right->jump[0] = next;
 
             if (peek() == ELSE) {
-                block_t *left = block_init(NULL);
+                block_t *left = block_init();
                 consume(ELSE);
 
                 /* Again, order is important: Set left as new jump target for
@@ -426,7 +434,7 @@ statement(block_t *parent)
         case WHILE:
         case DO:
         {
-            block_t *top = block_init(NULL), *body = block_init(NULL), *next = block_init(NULL);
+            block_t *top = block_init(), *body = block_init(), *next = block_init();
             parent->jump[0] = top; /* Parent becomes unconditional jump. */
 
             /* Enter a new loop, store reference for break and continue target. */
@@ -468,13 +476,13 @@ statement(block_t *parent)
         }
         case FOR:
         {
-            block_t *top = block_init(NULL), *body = block_init(NULL), *increment = block_init(NULL), *next = block_init(NULL);
+            block_t *top = block_init(), *body = block_init(), *increment = block_init(), *next = block_init();
 
             /* Enter a new loop, store reference for break and continue target. */
             old_break_target = break_target;
             old_continue_target = continue_target;
             break_target = next;
-            continue_target = top;
+            continue_target = increment;
 
             consume(FOR);
             consume('(');
@@ -523,15 +531,15 @@ statement(block_t *parent)
                 break_target;
             consume(';');
             /* Return orphan node, which is dead code unless there is a label
-             * and a goto statement. Dead code elimination done in another pass. */
-            node = block_init(NULL); 
+             * and a goto statement. */
+            node = block_init(); 
             break;
         case RETURN:
             consume(RETURN);
             if (peek() != ';')
                 parent->expr = expression(parent);
             consume(';');
-            node = block_init(NULL); /* orphan */
+            node = block_init(); /* orphan */
             break;
         case CASE:
         case DEFAULT:

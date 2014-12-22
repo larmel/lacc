@@ -95,6 +95,6 @@ void dump_symtab();
 void error(const char *, ...);
 
 /* Parse and compile to intermediate representation */
-void compile();
+void compile(FILE *, FILE *);
 
 #endif

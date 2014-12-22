@@ -27,10 +27,9 @@ typedef struct op {
     const struct symbol *c;
 } op_t;
 
-
 /* CFG block */
 typedef struct block {
-    /* Function name, or some generated jump target label */
+    /* A unique jump target label */
     const char *label;
 
     /* realloc-able list of 3-address code operations */
@@ -48,8 +47,16 @@ typedef struct block {
     const struct block *jump[2];
 } block_t;
 
+typedef struct function {
+    const struct symbol *symbol;
 
-struct block *block_init(const char *);
+    /* Number of bytes to allocate to local variables on stack. */
+    int locals_size;
+
+    block_t *body;
+} function_t;
+
+struct block *block_init();
 
 void ir_append(struct block *, struct op);
 
