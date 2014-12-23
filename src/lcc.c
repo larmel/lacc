@@ -1,4 +1,5 @@
-#include "lcc.h"
+#include "ir.h"
+#include "symbol.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -7,6 +8,11 @@ void help()
 {
     fprintf(stderr, "Usage: lcc [-S] [-o <file>] [file]\n");
 }
+
+extern void init(const char *);
+extern function_t *parse();
+extern void fdotgen(FILE *, const function_t *);
+extern void fassemble(FILE *, const function_t *);
 
 int main(int argc, char* argv[])
 {
@@ -51,5 +57,5 @@ int main(int argc, char* argv[])
 
     dump_symtab();
 
-    return EXIT_SUCCESS;
+    return 0;
 }

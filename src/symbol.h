@@ -1,12 +1,20 @@
 #ifndef SYMBOL_H
 #define SYMBOL_H
 
-#include "lcc.h"
+#include <stddef.h>
 
-enum tree_type { CHAR_T, INT64_T, DOUBLE_T, VOID_T, POINTER, FUNCTION, ARRAY };
-enum qualifier { CONST_Q = 0x1, VOLATILE_Q = 0x2, NONE_Q = 0x0 };
+enum tree_type
+{ 
+    CHAR_T, INT64_T, DOUBLE_T, VOID_T, POINTER, FUNCTION, ARRAY 
+};
 
-typedef struct typetree {
+enum qualifier
+{
+    CONST_Q = 0x1, VOLATILE_Q = 0x2, NONE_Q = 0x0
+};
+
+typedef struct typetree
+{
     enum tree_type type;
     int flags;
 
@@ -25,7 +33,10 @@ typedef struct typetree {
     const struct typetree *next;
 } typetree_t;
 
-enum storageclass { STORAGE_EXTERN, STORAGE_STATIC };
+enum storageclass
+{
+    STORAGE_EXTERN, STORAGE_STATIC
+};
 
 /* static int *foo, *bar;
  * ( .name = "foo", .type )    ( .name = "bar", .type )
@@ -34,7 +45,8 @@ enum storageclass { STORAGE_EXTERN, STORAGE_STATIC };
  *                               |             /
  *                             ( .type = INT64_T )
  */
-typedef struct symbol {
+typedef struct symbol
+{
     const char *name;
     const struct typetree *type;
 
@@ -53,19 +65,6 @@ typedef struct symbol {
     } immediate;
 } symbol_t;
 
-/* ideas about separating symbol and variable. A symbol is a name, a variable
- * is a location in memory with some value. The variable has a type, and a
- * symbol attached to it. */
-typedef struct variable {
-    const struct typetree *type;
-    const struct symbol symbol; /* not sure about this ... */
-    unsigned stack_depth;
-
-    /* store immediate value. This can be a whole array, or whatever, so
-     * union with basic types is not enough. NULL denotes no value */
-    void *value;
-} variable_t;
-
 
 /* resolve symbol in current scope, or NULL if not found */
 const symbol_t *sym_lookup(const char *);
@@ -83,5 +82,9 @@ const typetree_t *type_deref(const typetree_t *);
 const typetree_t *init_type_basic(enum tree_type);
 size_t type_varsize(const typetree_t *);
 
+void push_scope();
+void pop_scope();
+
+void dump_symtab();
 
 #endif

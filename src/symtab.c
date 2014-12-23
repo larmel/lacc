@@ -1,6 +1,7 @@
-#include "lcc.h"
+#include "error.h"
 #include "symbol.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 

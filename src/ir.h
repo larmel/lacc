@@ -3,7 +3,8 @@
 
 struct symbol;
 
-typedef enum optype {
+typedef enum optype
+{
     IR_ASSIGN,      /* a = b */
     IR_DEREF,       /* a = *b */
     IR_OP_ADD,
@@ -28,7 +29,8 @@ typedef struct op {
 } op_t;
 
 /* CFG block */
-typedef struct block {
+typedef struct block
+{
     /* A unique jump target label */
     const char *label;
 
@@ -47,7 +49,8 @@ typedef struct block {
     const struct block *jump[2];
 } block_t;
 
-typedef struct function {
+typedef struct function
+{
     const struct symbol *symbol;
 
     /* Number of bytes to allocate to local variables on stack. */
@@ -55,6 +58,7 @@ typedef struct function {
 
     block_t *body;
 } function_t;
+
 
 struct block *block_init();
 

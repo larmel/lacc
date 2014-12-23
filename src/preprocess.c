@@ -1,4 +1,4 @@
-#include "lcc.h"
+#include "error.h"
 #include "util/map.h"
 #include "util/stack.h"
 

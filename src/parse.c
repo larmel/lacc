@@ -1,5 +1,6 @@
+#include "error.h"
 #include "ir.h"
-#include "lcc.h"
+#include "token.h"
 #include "symbol.h"
 
 #include <stdlib.h>

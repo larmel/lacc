@@ -1,5 +1,7 @@
 #include "ir.h"
-#include "symbol.h"
+
+#include <stdlib.h>
+#include <stdio.h>
 
 static const char *
 mklabel()
@@ -10,17 +12,6 @@ mklabel()
     snprintf(name, 12, ".L%d", n++);
 
     return name;
-}
-
-struct op *
-ir_init(enum optype type, const struct symbol *a, const struct symbol *b, const struct symbol *c)
-{
-    struct op *op = malloc(sizeof(struct op));
-    op->type = type;
-    op->a = a;
-    op->b = b;
-    op->c = c;
-    return op;
 }
 
 /* Initialize a CFG block, with a unique jump label. */

@@ -1,8 +1,12 @@
-#include "lcc.h"
+#include "error.h"
+#include "token.h"
 
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 
+/* Import interface from preprocessor. */
+extern int getprepline(char **);
 
 static int identifier(char *input)
 {
