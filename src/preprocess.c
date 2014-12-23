@@ -130,7 +130,7 @@ getprepline(char **buffer)
 
     *buffer = line;
     line_number = source->line;
-    printf("(%s, %d):  %s\n", filename, (int)line_number, line);
+    printf("(%s, %d): `%s`\n", filename, (int)line_number, line);
     return processed;
 }
 
@@ -146,8 +146,14 @@ getcleanline(char **lineptr, size_t *n, source_t *fn)
     int c, next; /* getc return values */
     int i = 0, /* chars written to output buffer */
         nonwhitespace = 0; /* non-whitespace characters written */
-
+    
     FILE *stream = fn->file;
+
+    /* Need to have room for terminating \0 byte. */
+    if (!*n) {
+        *n = 1;
+        *lineptr = malloc(sizeof(char));
+    }
 
     while ((c = getc(stream)) != EOF) {
         /* line continuation */

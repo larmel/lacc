@@ -1,46 +1,9 @@
+#include "ir.h"
 #include "lcc.h"
 #include "symbol.h"
-#include "ir.h"
 
 #include <stdlib.h>
 #include <string.h>
-
-/* Tokenization interface and helper functions */
-static struct token peek_value;
-static int has_value;
-static int eof;
-
-static struct token
-readtoken()
-{
-    struct token t;
-    if (has_value) {
-        has_value = 0;
-        return peek_value;
-    }
-    eof = !get_token(&t);
-    return t;
-}
-
-static enum token_type
-peek()
-{
-    if (!has_value) {
-        peek_value = readtoken();
-        has_value = 1;
-    }
-    return peek_value.type;
-}
-
-static void
-consume(enum token_type expected)
-{
-    struct token t = readtoken();
-    if (t.type != expected) {
-        error("Unexpected token %s, aborting\n", t.value);
-        exit(1);
-    }
-}
 
 static function_t *declaration();
 static typetree_t *declaration_specifiers();
@@ -58,15 +21,14 @@ static const symbol_t *expression(block_t *);
 static const symbol_t *constant_expression(block_t *);
 static const symbol_t *assignment_expression(block_t *);
 
-
 /* External interface */
 function_t *
 parse()
 {
     function_t *fun = NULL;
     while (!fun) {
-        peek();
-        if (eof) break;
+        if (peek() == '$')
+            break;
         fun = declaration();
     };
     return fun;
@@ -377,7 +339,7 @@ statement(block_t *parent)
     static block_t *break_target, *continue_target;
     block_t *old_break_target, *old_continue_target;
 
-    enum token_type t = peek();
+    enum token t = peek();
 
     switch (t) {
         case ';':
@@ -563,7 +525,7 @@ statement(block_t *parent)
 static const symbol_t *
 identifier()
 {
-    struct token name = readtoken();
+    token_t name = readtoken();
     const symbol_t *sym = sym_lookup(name.value);
     if (sym == NULL) {
         error("Undefined symbol '%s', aborting", name.value);
@@ -747,7 +709,7 @@ multiplicative_expression(block_t *block)
     const symbol_t *l, *r, *res;
     l = cast_expression(block);
     while (peek() == '*' || peek() == '/' || peek() == '%') {
-        struct token tok = readtoken();
+        token_t tok = readtoken();
         optype_t optype = (tok.type == '*') ?
             IR_OP_MUL : (tok.type == '/') ?
                 IR_OP_DIV : IR_OP_MOD;
@@ -859,7 +821,7 @@ static const symbol_t *
 primary_expression(block_t *block)
 {
     const symbol_t *symbol;
-    struct token token = readtoken();
+    token_t token = readtoken();
     switch (token.type) {
         case IDENTIFIER:
             symbol = sym_lookup(token.value);

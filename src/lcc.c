@@ -40,6 +40,7 @@ int main(int argc, char* argv[])
     push_scope();
     while (1) {
         struct function *fun = parse();
+        if (!fun) break;
         if (assembly)
             fassemble(output, fun);
         else

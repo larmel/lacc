@@ -82,7 +82,7 @@ static int string(char *input)
 
 static struct {
     char * value;
-    enum token_type type;
+    enum token type;
 } keywords[] = {
     { "auto", AUTO },
     { "break", BREAK },
@@ -118,8 +118,8 @@ static struct {
     { "while", WHILE }
 };
 
-int
-get_token(struct token *t)
+static int
+get_token(token_t *t)
 {
     int n;
 
@@ -137,6 +137,8 @@ get_token(struct token *t)
     /* Need more stuff from preprocessor */
     if (tok == NULL) {
         if (getprepline(&line) == -1) {
+            t->type = END;
+            t->value = NULL;
             return 0; /* eof */
         }
         tok = strtok(line, " \t\n");
@@ -307,4 +309,42 @@ get_token(struct token *t)
 
     error("Could not match any token for input '%s'\n", tok);
     return 0;
+}
+
+static token_t peek_value;
+static int has_value;
+
+/* Tokenization interface. */
+token_t
+readtoken()
+{
+    token_t t;
+    if (has_value) {
+        if (peek_value.type != END)
+            has_value = 0;
+        return peek_value;
+    }
+    get_token(&t);
+    return t;
+}
+
+enum token
+peek()
+{
+    if (!has_value) {
+        peek_value = readtoken();
+        has_value = 1;
+    }
+    return peek_value.type;
+}
+
+void
+consume(enum token expected)
+{
+    token_t t = readtoken();
+    if (t.type != expected) {
+        error("Unexpected %s, aborting.", (t.type == '$') ?
+            "end of file" : "token", t.value);
+        exit(1);
+    }
 }

@@ -8,9 +8,9 @@ void init(const char *);
 
 int getprepline(char **);
 
-typedef enum token_type
+enum token
 {
-    AUTO = 256, /* skip ASCII symbol range to avoid collisions */
+    AUTO = 256, /* Skip ASCII symbol range to avoid collisions. */
     BREAK,
     CASE,
     CHAR,
@@ -78,16 +78,20 @@ typedef enum token_type
     SLASH = '/',
     PLUS = '+',
     MINUS = '-',
-    NOT = '!'
-} token_t;
+    NOT = '!',
 
-struct token
-{
-    enum token_type type;
-    const char *value;
+    END = '$' /* Sentinel to mark end of file */
 };
 
-int get_token(struct token* t);
+typedef struct
+{
+    enum token type;
+    const char *value;
+} token_t;
+
+token_t readtoken();
+enum token peek();
+void consume(enum token expected);
 
 /* Error reporting, functions that can be called from any component */
 void error(const char *, ...);
