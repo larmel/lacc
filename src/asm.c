@@ -88,7 +88,8 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
 void
 fassemble(FILE *stream, const function_t *func)
 {
-    map_t *memo = map_init();
+    map_t memo;
+    map_init(&memo);
 
     /* Print header, assume only one function. */
     fprintf(stream, "\t.text\n");
@@ -99,5 +100,7 @@ fassemble(FILE *stream, const function_t *func)
     fprintf(stream, "\tmovq\t%%rsp, %%rbp\n");
     fprintf(stream, "\tsub\t$%d, %%rsp\n", func->locals_size);
 
-    fassembleblock(stream, memo, func->body);
+    fassembleblock(stream, &memo, func->body);
+
+    map_finalize(&memo);
 }

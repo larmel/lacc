@@ -7,14 +7,14 @@
 /* Store state representing a key-value map. Keys are of type const char*,
  * and values are pointers to arbitrary objects (void *). */
 typedef struct map {
-	const char **keys;
-	void **values;
+    const char **keys;
+    void **values;
 
-	size_t size;
+    size_t size;
 } map_t;
 
-map_t *
-map_init();
+void
+map_init(map_t *map);
 
 void *
 map_lookup(map_t *map, const char *key);
@@ -24,5 +24,8 @@ map_insert(map_t *map, const char *key, void *value);
 
 void *
 map_remove(map_t *map, const char *key);
+
+void
+map_finalize(map_t *map);
 
 #endif

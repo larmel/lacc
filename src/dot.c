@@ -11,33 +11,33 @@
 static const char *
 sanitize(const char *label)
 {
-	return (label[0] == '.') ? &label[1] : label;
+    return (label[0] == '.') ? &label[1] : label;
 }
 
 static const char *
 escape(const char *label)
 {
-	static char buffer[256];
-	if (label[0] == '.') {
-		buffer[0] = '\\';
-		strncpy(buffer + 1, label, 254);
-		return buffer;
-	}
-	return label;
+    static char buffer[256];
+    if (label[0] == '.') {
+        buffer[0] = '\\';
+        strncpy(buffer + 1, label, 254);
+        return buffer;
+    }
+    return label;
 }
 
 static void
 foutputnode(FILE *stream, map_t *memo, const block_t *node)
 {
-	int i;
-	if (map_lookup(memo, node->label) != NULL)
-		return;
+    int i;
+    if (map_lookup(memo, node->label) != NULL)
+        return;
 
-	map_insert(memo, node->label, (void*)"done");
+    map_insert(memo, node->label, (void*)"done");
 
-	fprintf(stream, "\t%s [label=\"{ %s", sanitize(node->label), escape(node->label));
-	for (i = 0; i < node->n; ++i) {
-		op_t op = node->code[i];
+    fprintf(stream, "\t%s [label=\"{ %s", sanitize(node->label), escape(node->label));
+    for (i = 0; i < node->n; ++i) {
+        op_t op = node->code[i];
         switch (op.type) {
             case IR_ASSIGN:
                 fprintf(stream, " | %s = %s", op.a->name, op.b->name);
@@ -76,22 +76,22 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
                 fprintf(stream, " | %s = %s ^ %s", op.a->name, op.b->name, op.c->name);
                 break;
         }
-	}
+    }
     if (node->jump[0] == NULL && node->jump[1] == NULL) {
         fprintf(stream, " | return");
         if (node->expr != NULL) {
             fprintf(stream, " %s", node->expr->name);
         }
-		fprintf(stream, " }\"];\n");
+        fprintf(stream, " }\"];\n");
     } else if (node->jump[1] != NULL) {
         fprintf(stream, " | if %s goto %s", node->expr->name, escape(node->jump[1]->label));
-		fprintf(stream, " }\"];\n");
+        fprintf(stream, " }\"];\n");
         foutputnode(stream, memo, node->jump[0]);
         foutputnode(stream, memo, node->jump[1]);
         fprintf(stream, "\t%s:s -> %s:n;\n", sanitize(node->label), sanitize(node->jump[0]->label));
         fprintf(stream, "\t%s:s -> %s:n;\n", sanitize(node->label), sanitize(node->jump[1]->label));
     } else {
-		fprintf(stream, " }\"];\n");
+        fprintf(stream, " }\"];\n");
         foutputnode(stream, memo, node->jump[0]);
         fprintf(stream, "\t%s:s -> %s:n;\n", sanitize(node->label), sanitize(node->jump[0]->label));
     }
@@ -100,13 +100,16 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
 void
 fdotgen(FILE *stream, const function_t *cfg)
 {
-	map_t *map = map_init();
+    map_t memo;
+    map_init(&memo);
 
-	fprintf(stream, "digraph {\n");
-	fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\",shape=record];\n");
-	fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\"];\n");
+    fprintf(stream, "digraph {\n");
+    fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\",shape=record];\n");
+    fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\"];\n");
 
-	foutputnode(stream, map, cfg->body);
+    foutputnode(stream, &memo, cfg->body);
 
-	fprintf(stream, "}\n");
+    fprintf(stream, "}\n");
+
+    map_finalize(&memo);
 }
