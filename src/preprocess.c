@@ -62,6 +62,9 @@ pop()
  * initialization to empty map. */
 static map_t symbols;
 
+/* Keep track of nested #ifndef. */
+static stack_t conditions;
+
 /* Path of initial file, used for relative include paths. */
 static const char *directory;
 
@@ -75,6 +78,15 @@ mkpath(const char *filename)
     strcat(path, "/");
     strcat(path, filename);
     return path;
+}
+
+/* Clean up all dynamically allocated resources. */
+static void
+finalize()
+{
+    map_finalize(&symbols);
+    stack_finalize(&sources);
+    stack_finalize(&conditions);
 }
 
 /* Initialize with root file name, and store relative path to resolve later
@@ -100,6 +112,7 @@ init(const char *path)
         filename = source->name;
     }
     directory = dir;
+    atexit(finalize);
 }
 
 static ssize_t getcleanline(char **, size_t *, source_t *);
@@ -224,7 +237,6 @@ getcleanline(char **lineptr, size_t *n, source_t *fn)
 static ssize_t
 preprocess_line(char **linebuffer, size_t read)
 {
-    static stack_t conditions;
     static char false = 'f', true = 't';
 
     if ((*linebuffer)[0] == '#') {

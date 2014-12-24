@@ -1,6 +1,17 @@
 #include "stack.h"
 
 void
+stack_finalize(stack_t *stack)
+{
+    if (stack->capacity) {
+        free(stack->values);
+        stack->values = NULL;
+        stack->size = 0;
+        stack->capacity = 0;
+    }
+}
+
+void
 stack_push(stack_t *stack, void *object)
 {
     if (stack->size == stack->capacity) {

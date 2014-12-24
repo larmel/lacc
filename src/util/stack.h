@@ -12,6 +12,9 @@ typedef struct stack {
 } stack_t;
 
 void
+stack_finalize(stack_t *stack);
+
+void
 stack_push(stack_t *stack, void *object);
 
 void *
