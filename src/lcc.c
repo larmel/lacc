@@ -4,9 +4,11 @@
 #include <stdio.h>
 #include <unistd.h>
 
+int VERBOSE = 0;
+
 void help()
 {
-    fprintf(stderr, "Usage: lcc [-S] [-o <file>] [file]\n");
+    fprintf(stderr, "Usage: lcc [-S] [-v] [-o <file>] [file]\n");
 }
 
 extern void init(const char *);
@@ -20,13 +22,16 @@ int main(int argc, char* argv[])
     int c, assembly = 0;
     FILE *output = stdout;
 
-    while ((c = getopt(argc, argv, "So:")) != -1) {
+    while ((c = getopt(argc, argv, "So:v")) != -1) {
         switch (c) {
             case 'S':
                 assembly = 1;
                 break;
             case 'o':
                 output = fopen(optarg, "w");
+                break;
+            case 'v':
+                VERBOSE = 1;
                 break;
             default:
                 help();
@@ -55,7 +60,8 @@ int main(int argc, char* argv[])
     }
     pop_scope();
 
-    dump_symtab();
+    if (VERBOSE)
+        dump_symtab();
 
     return 0;
 }

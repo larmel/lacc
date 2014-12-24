@@ -1,4 +1,4 @@
-.PHONY: all clean
+.PHONY: all test clean
 
 all: bin/lcc
 
@@ -12,5 +12,9 @@ bin/util/%.o: src/util/%.c
 	mkdir -p bin/util
 	cc -Wall -Wpedantic -c $< -o $@
 
+test: bin/lcc
+	./testrunner.sh
+
 clean:
 	rm -rf bin/*
+	rm -f test/*.out test/*.s test/*.txt

@@ -11,6 +11,8 @@
 size_t line_number;
 const char *filename;
 
+extern int VERBOSE;
+
 /* Keep stack of file descriptors as resolved by includes. Make helper
  * functions for pushing (#include) and popping (EOF) of files, keeping track
  * of the file name and line number for diagnostics. */
@@ -130,7 +132,8 @@ getprepline(char **buffer)
 
     *buffer = line;
     line_number = source->line;
-    printf("(%s, %d): `%s`\n", filename, (int)line_number, line);
+    if (VERBOSE)
+        printf("(%s, %d): `%s`\n", filename, (int)line_number, line);
     return processed;
 }
 
