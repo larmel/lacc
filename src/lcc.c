@@ -50,12 +50,13 @@ int main(int argc, char* argv[])
 
     push_scope();
     while (1) {
-        struct function *fun = parse();
+        function_t *fun = parse();
         if (!fun) break;
         if (assembly)
             fassemble(output, fun);
         else
             fdotgen(output, fun);
+        cfg_finalize(fun);
         break;
     }
     pop_scope();

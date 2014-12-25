@@ -1,6 +1,8 @@
 #ifndef IR_H
 #define IR_H
 
+#include <stddef.h>
+
 struct symbol;
 
 typedef enum optype
@@ -57,12 +59,31 @@ typedef struct function
     int locals_size;
 
     block_t *body;
+
+    /* Store all associated nodes in a list to simplify deallocation. */
+    block_t **nodes;
+    size_t size;
+    size_t capacity;
 } function_t;
 
 
-struct block *block_init();
+/* Release all resources related to the control flow graph. Calls free on all 
+ * blocks and their labels, and finally the function itself. */
+void cfg_finalize(function_t *);
 
-void ir_append(struct block *, struct op);
+/* Initialize a control flow graph for a given symbol, which should be of
+ * function type. All following block_init invocations are associated with the
+ * last created cfg (function). */
+function_t *cfg_create(const struct symbol *);
+
+/* Initialize a CFG block with a unique jump label, and associate it with the
+ * current (last created) function_t object. Blocks and functions have the same
+ * lifecycle, and should only be freed by calling cfg_finalize. */
+block_t *block_init();
+
+/* Add a 3-address code operation to the block. Code is kept in a separate list
+ * for each block. */
+void ir_append(block_t *, op_t);
 
 
 #endif

@@ -49,6 +49,7 @@ pop()
     if (source != NULL) {
         if (source->file != stdin)
             fclose(source->file);
+        free(source);
         source = (source_t *)stack_peek(&sources);
         if (source != NULL) {
             filename = source->name;
@@ -84,6 +85,8 @@ mkpath(const char *filename)
 static void
 finalize()
 {
+    while (pop() != EOF)
+        ;
     map_finalize(&symbols);
     stack_finalize(&sources);
     stack_finalize(&conditions);

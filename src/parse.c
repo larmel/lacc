@@ -71,8 +71,7 @@ declaration()
                     error("Invalid function definition, aborting");
                     exit(1);
                 }
-                fun = calloc(1, sizeof(function_t));
-                fun->symbol = symbol;
+                fun = cfg_create(symbol);
                 fun->body = block_init();
                 push_scope();
                 for (i = type->n_args - 1; i >= 0; --i) {
@@ -452,7 +451,6 @@ statement(block_t *parent)
                 top->jump[1] = body;
             } else {
                 /* Infinite loop */
-                free(top);
                 parent->jump[0] = body;
                 top = body;
             }
