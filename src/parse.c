@@ -52,6 +52,8 @@ declaration()
         type = declarator(base, &name);
         symbol = sym_add(name, type);
 
+        free((void *) name);
+
         switch (peek()) {
             case ';':
                 consume(';');
@@ -220,8 +222,9 @@ direct_declarator(typetree_t *base, const char **symbol)
 {
     typetree_t *type = base;
     switch (peek()) {
-        case IDENTIFIER: 
-            *symbol = readtoken().value;
+        case IDENTIFIER:
+            /* Allocate dumplicate value, the tokenized one is temporary. */
+            *symbol = strdup(readtoken().value);
             break;
         case '(':
             consume('(');

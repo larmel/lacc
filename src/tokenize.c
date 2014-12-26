@@ -8,6 +8,10 @@
 /* Import interface from preprocessor. */
 extern int getprepline(char **);
 
+/* Store previous identifier. The C standard specifies a fixed limit, which
+ * makes it possible to store this in a statically allocated buffer. */
+static char ident[64];
+
 static int identifier(char *input)
 {
     int state = 0, read = 0;
@@ -26,11 +30,23 @@ static int identifier(char *input)
             default:
                 state = -1;
         }
-        if (state == 2) return read;
         if (state < 0) return 0;
-        read++;
+        if (state == 2) {
+            ident[read] = '\0';
+            return read;
+        }
+        if (read > 63) {
+            error("Illegal identifier length, exceeding 63 character limit.");
+            return 0;
+        }
+
+        ident[read++] = c;
     }
 }
+
+/* Store character representation of numeric constant. Better not be larger than
+ * this. */
+static char number[64];
 
 static int integer(char *input)
 {
@@ -56,9 +72,16 @@ static int integer(char *input)
             (isspace(c) || !isalnum(c)) ? 5 :
             (c == 'x' || c == 'X') ? 6 : -1;
         state = t[state][i];
-        if (state / 10) return read;
         if (state < 0) return 0;
-        read++;
+        if (state / 10) {
+            number[read] = '\0';
+            return read;
+        }
+        if (read > 63) {
+            error("Number literal too long.");
+            return 0;
+        }
+        number[read++] = c;
     }
 }
 
@@ -271,7 +294,7 @@ get_token(token_t *t)
             n = integer(tok - 1);
             if (n) {
                 t->type = INTEGER;
-                t->value = strndup(tok - 1, n);
+                t->value = number;
                 tok += n - 1;
                 return n;
             }
@@ -303,7 +326,7 @@ get_token(token_t *t)
             n = identifier(tok - 1);
             if (n) {
                 t->type = IDENTIFIER;
-                t->value = strndup(tok - 1, n);
+                t->value = ident;
                 tok += n - 1;
                 return n;
             }
