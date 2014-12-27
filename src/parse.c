@@ -170,8 +170,8 @@ pointer(const typetree_t *base)
 static long
 get_symbol_constant_value(const symbol_t *symbol, long *out)
 {
-    if (symbol->type->type == INT64_T && symbol->is_immediate) {
-        *out = symbol->immediate.longval;
+    if (symbol->type->type == INT64_T && symbol->value) {
+        *out = symbol->value->vlong;
         return 1;
     }
     return 0;
@@ -604,7 +604,7 @@ logical_expression(block_t *block)
         optype_t optype = (readtoken().type == LOGICAL_AND) ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
 
         r = and_expression(block);
-        res = sym_mktemp(type_combine(l->type, r->type));
+        res = sym_temp(type_combine(l->type, r->type));
 
         op.type = optype;
         op.a = res;
@@ -628,7 +628,7 @@ or_expression(block_t *block)
         optype_t optype = (readtoken().type == '|') ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
 
         r = and_expression(block);
-        res = sym_mktemp(type_combine(l->type, r->type));
+        res = sym_temp(type_combine(l->type, r->type));
 
         op.type = optype;
         op.a = res;
@@ -650,7 +650,7 @@ and_expression(block_t *block)
     while (peek() == '&') {
         consume('&');
         r = and_expression(block);
-        res = sym_mktemp(type_combine(l->type, r->type));
+        res = sym_temp(type_combine(l->type, r->type));
 
         op.type = IR_OP_BITWISE_AND;
         op.a = res;
@@ -691,7 +691,7 @@ additive_expression(block_t *block)
         optype_t optype = (readtoken().type == '+') ? IR_OP_ADD : IR_OP_SUB;
 
         r = multiplicative_expression(block);
-        res = sym_mktemp(type_combine(l->type, r->type));
+        res = sym_temp(type_combine(l->type, r->type));
 
         op.type = optype;
         op.a = res;
@@ -717,7 +717,7 @@ multiplicative_expression(block_t *block)
                 IR_OP_DIV : IR_OP_MOD;
 
         r = cast_expression(block);
-        res = sym_mktemp(type_combine(l->type, r->type));
+        res = sym_temp(type_combine(l->type, r->type));
 
         op.type = optype;
         op.a = res;
@@ -764,8 +764,8 @@ postfix_expression(block_t *block)
                     op_t mul, add;
                     const symbol_t *res, *l, *r;
                     l = expression(block);
-                    r = sym_mkimmediate_long((long) root->type->size);
-                    res = sym_mktemp(type_combine(l->type, r->type));
+                    r = sym_number_init((long) root->type->size);
+                    res = sym_temp(type_combine(l->type, r->type));
 
                     mul.type = IR_OP_MUL;
                     mul.a = res;
@@ -773,7 +773,7 @@ postfix_expression(block_t *block)
                     mul.c = r;
                     ir_append(block, mul);
 
-                    r = sym_mktemp(type_combine(root->type, res->type));
+                    r = sym_temp(type_combine(root->type, res->type));
                     add.type = IR_OP_ADD;
                     add.a = r;
                     add.b = root;
@@ -793,7 +793,7 @@ postfix_expression(block_t *block)
                         error("Cannot dereference non-pointer, aborting");
                         exit(0);
                     }
-                    res = sym_mktemp(root->type->next);
+                    res = sym_temp(root->type->next);
                     deref.type = IR_DEREF;
                     deref.a = res;
                     deref.b = root;
@@ -833,11 +833,14 @@ primary_expression(block_t *block)
             }
             break;
         case INTEGER:
-            symbol = sym_mkimmediate(INT64_T, token.value);
+            symbol = sym_number_init(strtol(token.value, NULL, 0));
             break;
         case '(':
             symbol = expression(block);
             consume(')');
+            break;
+        case STRING:
+            symbol = sym_string_init(token.value);
             break;
         default:
             error("Unexpected token '%s', not a valid primary expression", token.value);

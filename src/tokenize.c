@@ -102,7 +102,9 @@ static int string(char *input)
             state = 1;
         }
         read++;
-        if (state == 3) return read;
+        if (state == 3) {
+            return read;
+        }
         if (state < 0) return 0;
     }
 }
@@ -154,22 +156,21 @@ get_token(token_t *t)
      * multiple lines. Invoke the preprocessor on demand */
     static char *line;
 
-    /* Current strtok token, preserved across invocations */
+    /* Current start of token in preprocessed line. */
     static char *tok = NULL;
 
-    /* Get next strtok of current preprocessed line */
-    if (tok != NULL && *tok == '\0')
-        tok = strtok(NULL, " \t\n");
-
     /* Need more stuff from preprocessor */
-    if (tok == NULL) {
+    if (tok == NULL || *tok == '\0') {
         if (getprepline(&line) == -1) {
             t->type = END;
             t->value = NULL;
             return 0; /* eof */
         }
-        tok = strtok(line, " \t\n");
+        tok = line;
     }
+
+    while (isspace(*tok))
+        tok++;
 
     for (n = 0; n < 32; ++n) {
         int length = strlen(keywords[n].value);
@@ -302,8 +303,10 @@ get_token(token_t *t)
         case '"':
             n = string(tok - 1);
             if (n) {
+                /* Overwrite the last " to create end of string. */
+                tok[n - 2] = '\0';
                 t->type = STRING;
-                t->value = strndup(tok, n - 1);
+                t->value = tok;
                 tok += n - 1;
                 return n;
             }

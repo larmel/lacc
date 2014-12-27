@@ -11,7 +11,7 @@ load(FILE *stream, const symbol_t *sym, const char *dest)
     if (sym->stack_offset) {
         fprintf(stream, "\tmov\t%d(%%rbp), %%%s\n", sym->stack_offset, dest);
     } else {
-        fprintf(stream, "\tmov\t$%d, %%%s\n", sym->immediate.intval, dest);
+        fprintf(stream, "\tmov\t$%ld, %%%s\n", sym->value->vlong, dest);
     }
 }
 

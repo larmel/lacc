@@ -38,7 +38,14 @@ enum storageclass
     STORAGE_EXTERN, STORAGE_STATIC
 };
 
-/* static int *foo, *bar;
+typedef union value {
+    char vchar;
+    char *string;
+    long vlong;
+    double vdouble;
+} value_t;
+
+/* static int *foo, bar;
  * ( .name = "foo", .type )    ( .name = "bar", .type )
  *                     |                         |
  *          ( .type = POINTER, .next )          /
@@ -50,30 +57,33 @@ typedef struct symbol
     const char *name;
     const struct typetree *type;
 
+    enum storageclass storage;
+
+    /* Union of immediate values, compile time constants or evaluated. NULL if
+     * no value at compile time. */
+    value_t *value;
+
     /* Offset to base pointer. */
     int stack_offset;
 
-    int depth; /* todo: this should not be explicitly stored here */
-    enum storageclass storage;
-    int is_immediate;
-    union {
-        char charval;
-        int intval;
-        long longval;
-        double doubleval;
-        float floatval;
-    } immediate;
+    /* Scope depth. (todo: this should not be explicitly stored here) */
+    int depth;
 } symbol_t;
 
 
-/* resolve symbol in current scope, or NULL if not found */
+/* Resolve symbol in current scope, or NULL if not found. Add new symbol based
+ * on identifier name, or error if it is a duplicate. Create a new temporary 
+ * symbol and register it to current scope.  */
 const symbol_t *sym_lookup(const char *);
-
-/* add symbol to current scope */
 const symbol_t *sym_add(const char *, const typetree_t *);
-const symbol_t *sym_mktemp(const typetree_t *);
-const symbol_t *sym_mkimmediate(enum tree_type, const char *value);
-const symbol_t *sym_mkimmediate_long(long);
+const symbol_t *sym_temp(const typetree_t *);
+
+
+/* Create an anonymous symbol based on an immediate value, without assigning a
+ * name or making it visible in scope. */
+const symbol_t *sym_string_init(const char *);
+const symbol_t *sym_number_init(long);
+
 
 /* functions on types */
 typetree_t *type_init(enum tree_type);
@@ -81,6 +91,9 @@ const typetree_t *type_combine(const typetree_t *, const typetree_t *);
 const typetree_t *type_deref(const typetree_t *);
 const typetree_t *init_type_basic(enum tree_type);
 size_t type_varsize(const typetree_t *);
+
+void print_type(const typetree_t *);
+
 
 void push_scope();
 void pop_scope();
