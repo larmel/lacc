@@ -221,7 +221,7 @@ dump_symtab()
         if (symtab[i]->value) {
             switch (symtab[i]->type->type) {
                 case INT64_T:
-                    printf(" = %d", (int)symtab[i]->value->vlong);
+                    printf(" = %d", (int) symtab[i]->value->vlong);
                     break;
                 default:
                     printf(" = immediate");

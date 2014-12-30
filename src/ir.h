@@ -71,10 +71,9 @@ typedef struct function
  * blocks and their labels, and finally the function itself. */
 void cfg_finalize(function_t *);
 
-/* Initialize a control flow graph for a given symbol, which should be of
- * function type. All following block_init invocations are associated with the
- * last created cfg (function). */
-function_t *cfg_create(const struct symbol *);
+/* Initialize a control flow graph. All following block_init invocations are 
+ * associated with the last created cfg (function). */
+function_t *cfg_create();
 
 /* Initialize a CFG block with a unique jump label, and associate it with the
  * current (last created) function_t object. Blocks and functions have the same

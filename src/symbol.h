@@ -13,6 +13,13 @@ enum qualifier
     CONST_Q = 0x1, VOLATILE_Q = 0x2, NONE_Q = 0x0
 };
 
+/* static int *foo, bar;
+ * ( .name = "foo", .type )    ( .name = "bar", .type )
+ *                     |                         |
+ *          ( .type = POINTER, .next )          /
+ *                               |             /
+ *                             ( .type = INT64_T )
+ */
 typedef struct typetree
 {
     enum tree_type type;
@@ -45,16 +52,15 @@ typedef union value {
     double vdouble;
 } value_t;
 
-/* static int *foo, bar;
- * ( .name = "foo", .type )    ( .name = "bar", .type )
- *                     |                         |
- *          ( .type = POINTER, .next )          /
- *                               |             /
- *                             ( .type = INT64_T )
- */
+/* A symbol always has a type. In addition to that, it can either be a plain
+ * value represented as a value_t, or a variable with a name and some storage 
+ * assigned at runtime. */
 typedef struct symbol
 {
+    /* If name is NULL, then this is an immediate value. */
     const char *name;
+
+    /* Both values and variables have a type. */
     const struct typetree *type;
 
     enum storageclass storage;
@@ -66,7 +72,7 @@ typedef struct symbol
     /* Offset to base pointer. */
     int stack_offset;
 
-    /* Scope depth. (todo: this should not be explicitly stored here) */
+    /* Scope depth. */
     int depth;
 } symbol_t;
 

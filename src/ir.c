@@ -23,11 +23,8 @@ static function_t *function;
 function_t *
 cfg_create(const symbol_t *symbol)
 {
-    function_t *fun = calloc(1, sizeof(function_t));
-    fun->symbol = symbol;
-
-    function = fun;
-    return fun;
+    function = calloc(1, sizeof(function_t));
+    return function;
 }
 
 block_t *
@@ -35,9 +32,9 @@ block_init()
 {
     block_t *block;
     if (!function) {
-        error("Internal error, cannot create cfg node without function");
+        error("Internal error, cannot create cfg node without function.");
     }
-    block = calloc(1, sizeof(struct block));
+    block = calloc(1, sizeof(block_t));
     block->label = mklabel();
 
     if (function->size == function->capacity) {
@@ -69,8 +66,12 @@ cfg_finalize(function_t *func)
 void
 ir_append(block_t *block, op_t op)
 {
+    if (!block) {
+        error("Internal error, cannot append operation when block_t is NULL.");
+        exit(1);
+    }
     block->n += 1;
-    block->code = realloc(block->code, sizeof(struct op) * block->n);
+    block->code = realloc(block->code, sizeof(op_t) * block->n);
     block->code[block->n - 1] = op;
     return;
 }

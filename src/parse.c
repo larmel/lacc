@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static function_t *declaration();
+static block_t *declaration(block_t *, const symbol_t **);
 static typetree_t *declaration_specifiers();
 static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
@@ -22,74 +22,89 @@ static const symbol_t *expression(block_t *);
 static const symbol_t *constant_expression(block_t *);
 static const symbol_t *assignment_expression(block_t *);
 
+extern int var_stack_offset;
+
 /* External interface */
 function_t *
 parse()
 {
-    function_t *fun = NULL;
-    while (!fun) {
+    function_t *fun;
+    const symbol_t *symbol;
+    block_t *body;
+
+    fun = cfg_create();
+    body = block_init();
+
+    do {
         if (peek() == '$')
             break;
-        fun = declaration();
-    };
+        declaration(body, &symbol);
+    } while (symbol->type->type != FUNCTION);
+
+    fun->symbol = symbol;
+    fun->body = body;
+
+    /* Hack: write stack offset as we are done adding all symbols,
+     * reading variable from symtab code. */
+    fun->locals_size = (-1) * var_stack_offset;
     return fun;
 }
 
-extern int var_stack_offset;
-
-/* Returns the first function declaration, or NULL for external declarations
- * and that are not functions, where only the symbol table is affected. */
-static function_t *
-declaration()
+/* Cover both external declarations, functions, and local declarations (with
+ * optional initialization code) inside functions. Symbol is bound to last
+ * declared identifier. */
+static block_t *
+declaration(block_t *parent, const symbol_t **symbol)
 {
-    function_t *fun;
-    const symbol_t *symbol;
-    typetree_t *type, *base = declaration_specifiers();
+    typetree_t *type, *base;
     int i;
+
+    base = declaration_specifiers();
 
     while (1) {
         const char *name = NULL;
         type = declarator(base, &name);
-        symbol = sym_add(name, type);
+        *symbol = sym_add(name, type);
 
         free((void *) name);
 
         switch (peek()) {
             case ';':
                 consume(';');
-                return NULL;
-            case '=':
+                return parent;
+            case '=': {
+                const symbol_t *val;
                 consume('=');
-                /* Assignment expression for external declaration must be a 
-                 * constant value computable at compile time. */
-                assignment_expression(NULL); /* todo: store value in symtab */
-                if (peek() != ',') {
-                    consume(';');
-                    return NULL;
-                }
-                break;
-            case '{':
-                if (type->type != FUNCTION || symbol->depth > 0) {
-                    error("Invalid function definition, aborting");
+                val = assignment_expression(parent);
+                if (val->value) {
+                    ((symbol_t*)*symbol)->value = val->value;
+                } else if ((*symbol)->depth == 0) {
+                    error("Declaration must have constant value, aborting.");
                     exit(1);
                 }
-                fun = cfg_create(symbol);
-                fun->body = block_init();
+                if (peek() != ',') {
+                    consume(';');
+                    return parent;
+                }
+                break;
+            }
+            case '{':
+                if (type->type != FUNCTION || (*symbol)->depth > 0) {
+                    error("Invalid function definition, aborting.");
+                    exit(1);
+                }
                 push_scope();
                 for (i = type->n_args - 1; i >= 0; --i) {
-                    if (type->params[i] == NULL) {
+                    if (!type->params[i]) {
                         error("Missing parameter name at position %d, aborting", i + 1);
                         exit(1);
                     }
                     sym_add(type->params[i], type->args[i]);
                 }
-                block(fun->body); /* generate code */
+                parent = block(parent); /* generate code */
 
-                /* Hack: write stack offset as we are done adding all symbols,
-                 * reading variable from symtab code. */
-                fun->locals_size = (-1) * var_stack_offset;
                 pop_scope();
-                return fun;
+                return parent;
             default:
                 break;
         }
@@ -499,15 +514,7 @@ statement(block_t *parent)
             break;
         case CASE:
         case DEFAULT:
-            /*readtoken();
-            if (peek() == ':') {
-                consume(':');
-                addchild(node, statement());
-            } else {
-                constant_expression(block);
-                consume(':');
-                addchild(node, statement());
-            }*/
+            /* todo */
             break;
         case IDENTIFIER: /* also part of label statement, need 2 lookahead */
         case INTEGER: /* todo: any constant value */
@@ -517,9 +524,11 @@ statement(block_t *parent)
             consume(';');
             node = parent;
             break;
-        default:
-            declaration();
-            node = parent;
+        default: {
+            const symbol_t *decl;
+            node = declaration(parent, &decl);
+            break;
+        }
     }
     return node;
 }
