@@ -77,9 +77,18 @@ declaration(block_t *parent, const symbol_t **symbol)
                 consume('=');
                 val = assignment_expression(parent);
                 if (val->value) {
+                    const typetree_t *newtype = type_combine((*symbol)->type, val->type);
+                    if (!newtype) {
+                        char *a = typetostr(val->type),
+                             *b = typetostr((*symbol)->type);
+                        error("Cannot assign value of type `%s` to variable of type `%s`.", a, b);
+                        free(a), free(b);
+                        exit(1);
+                    }
+                    ((symbol_t*)*symbol)->type = newtype;
                     ((symbol_t*)*symbol)->value = val->value;
                 } else if ((*symbol)->depth == 0) {
-                    error("Declaration must have constant value, aborting.");
+                    error("Declaration must have constant value.");
                     exit(1);
                 }
                 if (peek() != ',') {
@@ -90,13 +99,13 @@ declaration(block_t *parent, const symbol_t **symbol)
             }
             case '{':
                 if (type->type != FUNCTION || (*symbol)->depth > 0) {
-                    error("Invalid function definition, aborting.");
+                    error("Invalid function definition.");
                     exit(1);
                 }
                 push_scope();
                 for (i = type->n_args - 1; i >= 0; --i) {
                     if (!type->params[i]) {
-                        error("Missing parameter name at position %d, aborting", i + 1);
+                        error("Missing parameter name at position %d", i + 1);
                         exit(1);
                     }
                     sym_add(type->params[i], type->args[i]);

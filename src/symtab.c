@@ -214,17 +214,28 @@ void
 dump_symtab()
 {
     int i;
+    char *tstr;
     for (i = 0; i < symtab_size; ++i) {
         printf("%*s", symtab[i]->depth * 2, "");
         printf("%s :: ", symtab[i]->name);
-        print_type(symtab[i]->type);
+        tstr = typetostr(symtab[i]->type);
+        printf("%s", tstr);
+        free(tstr);
         if (symtab[i]->value) {
             switch (symtab[i]->type->type) {
                 case INT64_T:
                     printf(" = %d", (int) symtab[i]->value->vlong);
                     break;
+                case ARRAY:
+                case POINTER:
+                    if (symtab[i]->type->next 
+                        && symtab[i]->type->next->type == CHAR_T) {
+                        printf(" = \"%s\"", symtab[i]->value->string);
+                        break;
+                    }
                 default:
                     printf(" = immediate");
+                    break;
             }
         }
         if (symtab[i]->stack_offset > 0) {

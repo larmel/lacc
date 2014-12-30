@@ -46,12 +46,7 @@ type_combine(const typetree_t *a, const typetree_t *b)
     if (a->type == POINTER && b->type == INT64_T)
         return a;
 
-    error("Cannot combine types, aborting");
-    print_type(a);
-    puts("");
-    print_type(b);
-    puts("");
-    exit(0);
+    error("Cannot combine types");
     return NULL;
 }
 
@@ -61,54 +56,68 @@ type_deref(const typetree_t *t)
     if (t->type == POINTER || t->type == ARRAY) {
         return t->next;
     }
-    error("Cannot dereference non-pointer type, aborting");
-    exit(0);
+    error("Cannot dereference non-pointer type");
     return NULL;
 }
 
-void
-print_type(const typetree_t *tree)
+/* Print type to buffer, returning how many characters were written. */
+static int
+snprinttype(const typetree_t *tree, char *s, int size)
 {
-    int i;
-    if (tree == NULL) return;
+    int i, w = 0;
+    if (!tree)
+        return w;
     switch (tree->type) {
         case CHAR_T:
-            printf("char");
+            w = snprintf(s, size, "char");
             break;
         case INT64_T:
-            printf("int");
+            w = snprintf(s, size, "int");
             break;
         case DOUBLE_T:
-            printf("double");
+            w = snprintf(s, size, "double");
             break;
         case VOID_T:
-            printf("void");
+            w = snprintf(s, size, "void");
             break;
         case POINTER:
             if (tree->flags) {
-                if (tree->flags & CONST_Q) printf("const ");
-                if (tree->flags & VOLATILE_Q) printf("volatile ");
+                if (tree->flags & CONST_Q) 
+                    w += snprintf(s, size, "const ");
+                if (tree->flags & VOLATILE_Q) 
+                    w += snprintf(s + w, size - w, "volatile ");
             }
-            printf("* ");
-            print_type(tree->next);
+            w += snprintf(s + w, size - w, "* ");
+            w += snprinttype(tree->next, s + w, size - w);
             break;
         case FUNCTION:
-            printf("(");
+            w += snprintf(s, size, "(");
             for (i = 0; i < tree->n_args; ++i) {
-                print_type(tree->args[i]);
+                w += snprinttype(tree->args[i], s + w, size - w);
                 if (i < tree->n_args - 1)
-                    printf(", ");
+                    w += snprintf(s + w, size - w, ", ");
             }
-            printf(") -> ");
-            print_type(tree->next);
+            w += snprintf(s + w, size - w, ") -> ");
+            w += snprinttype(tree->next, s + w, size - w);
             break;
         case ARRAY:
             if (tree->length > 0)
-                printf("[%u] ", tree->length);
-            else 
-                printf("[] ");
-            print_type(tree->next);
+                w += snprintf(s, size, "[%u] ", tree->length);
+            else
+                w += snprintf(s, size, "[] ");
+            w += snprinttype(tree->next, s + w, size - w);
             break;
-        default: break;
+        default:
+            break;
     }
+    return w;
+}
+
+/* For debug printing and error reporting types. Caller should free memory. */
+char *
+typetostr(const typetree_t *type)
+{
+    char *text = malloc(512 * sizeof(char));
+    snprinttype(type, text, 511);
+    return text;
 }
