@@ -84,5 +84,7 @@ block_t *block_init();
  * for each block. */
 void ir_append(block_t *, op_t);
 
+const struct symbol *evaluate(block_t *, optype_t, const struct symbol *, const struct symbol *);
+const struct symbol *evalindex(block_t *block, const struct symbol *, const struct symbol *);
 
 #endif

@@ -577,17 +577,12 @@ expression(block_t *block)
 static const symbol_t *
 assignment_expression(block_t *block)
 {
-    op_t op;
     const symbol_t *l = conditional_expression(block), *r;
     if (peek() == '=') {
         consume('=');
         /* todo: node must be unary-expression or lower (l-value) */
         r = assignment_expression(block);
-
-        op.type = IR_ASSIGN;
-        op.a = l;
-        op.b = r;
-        ir_append(block, op);
+        l = evaluate(block, IR_ASSIGN, l, r);
     } 
     return l;
 }
@@ -615,22 +610,14 @@ conditional_expression(block_t *block)
 static const symbol_t *
 logical_expression(block_t *block)
 {
-    op_t op;
-    const symbol_t *l, *r, *res;
+    const symbol_t *l, *r;
     l = or_expression(block);
     while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
-        optype_t optype = (readtoken().type == LOGICAL_AND) ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
+        optype_t optype = (readtoken().type == LOGICAL_AND) 
+            ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
 
         r = and_expression(block);
-        res = sym_temp(type_combine(l->type, r->type));
-
-        op.type = optype;
-        op.a = res;
-        op.b = l;
-        op.c = r;
-        ir_append(block, op);
-
-        l = res;
+        l = evaluate(block, optype, l, r);
     }
     return l;
 }
@@ -639,22 +626,14 @@ logical_expression(block_t *block)
 static const symbol_t *
 or_expression(block_t *block)
 {
-    op_t op;
-    const symbol_t *l, *r, *res;
+    const symbol_t *l, *r;
     l = and_expression(block);
     while (peek() == '|' || peek() == '^') {
-        optype_t optype = (readtoken().type == '|') ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
+        optype_t optype = (readtoken().type == '|') 
+            ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
 
         r = and_expression(block);
-        res = sym_temp(type_combine(l->type, r->type));
-
-        op.type = optype;
-        op.a = res;
-        op.b = l;
-        op.c = r;
-        ir_append(block, op);
-
-        l = res;
+        l = evaluate(block, optype, l, r);
     }
     return l;
 }
@@ -662,21 +641,12 @@ or_expression(block_t *block)
 static const symbol_t *
 and_expression(block_t *block)
 {
-    op_t op;
-    const symbol_t *l, *r, *res;
+    const symbol_t *l, *r;
     l = equality_expression(block);
     while (peek() == '&') {
         consume('&');
         r = and_expression(block);
-        res = sym_temp(type_combine(l->type, r->type));
-
-        op.type = IR_OP_BITWISE_AND;
-        op.a = res;
-        op.b = l;
-        op.c = r;
-        ir_append(block, op);
-
-        l = res;
+        l = evaluate(block, IR_OP_BITWISE_AND, l, r);
     }
     return l;
 }
@@ -702,22 +672,13 @@ shift_expression(block_t *block)
 static const symbol_t *
 additive_expression(block_t *block)
 {
-    op_t op;
-    const symbol_t *l, *r, *res;
+    const symbol_t *l, *r;
     l = multiplicative_expression(block);
     while (peek() == '+' || peek() == '-') {
         optype_t optype = (readtoken().type == '+') ? IR_OP_ADD : IR_OP_SUB;
 
         r = multiplicative_expression(block);
-        res = sym_temp(type_combine(l->type, r->type));
-
-        op.type = optype;
-        op.a = res;
-        op.b = l;
-        op.c = r;
-        ir_append(block, op);
-
-        l = res;
+        l = evaluate(block, optype, l, r);
     }
     return l;
 }
@@ -725,8 +686,7 @@ additive_expression(block_t *block)
 static const symbol_t *
 multiplicative_expression(block_t *block)
 {
-    op_t op;
-    const symbol_t *l, *r, *res;
+    const symbol_t *l, *r;
     l = cast_expression(block);
     while (peek() == '*' || peek() == '/' || peek() == '%') {
         token_t tok = readtoken();
@@ -735,15 +695,7 @@ multiplicative_expression(block_t *block)
                 IR_OP_DIV : IR_OP_MOD;
 
         r = cast_expression(block);
-        res = sym_temp(type_combine(l->type, r->type));
-
-        op.type = optype;
-        op.a = res;
-        op.b = l;
-        op.c = r;
-        ir_append(block, op);
-
-        l = res;
+        l = evaluate(block, optype, l, r);
     }
     return l;
 }
@@ -778,7 +730,9 @@ postfix_expression(block_t *block)
              */
             case '[':
                 consume('[');
-                {
+                root = evalindex(block, root, expression(block));
+                /*{
+                    
                     op_t mul, add;
                     const symbol_t *res, *l, *r;
                     l = expression(block);
@@ -799,7 +753,7 @@ postfix_expression(block_t *block)
                     ir_append(block, add);
 
                     root = r;
-                }
+                }*/
                 consume(']');
 
                 if (root->type->next->type == ARRAY) {
@@ -809,7 +763,7 @@ postfix_expression(block_t *block)
                     const symbol_t *res;
                     if (root->type->type != POINTER) {
                         error("Cannot dereference non-pointer, aborting");
-                        exit(0);
+                        exit(1);
                     }
                     res = sym_temp(root->type->next);
                     deref.type = IR_DEREF;

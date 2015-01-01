@@ -206,7 +206,7 @@ type_varsize(const typetree_t *type)
         case CHAR_T:
             return 1;
         default:
-            return 4; /* 32 bit */
+            return 8; /* 64 bit */
     }
 }
 
