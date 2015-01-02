@@ -66,7 +66,8 @@ typedef struct symbol
  * representation of expressions. There are three modes:
  *
  * DIRECT: l-value or r-value reference to symbol, which must have some
- *         storage location.
+ *         storage location. For array or function types, a direct reference
+ *         means the memory address of the array or function.
  * OFFSET: l-value or r-value reference to *(symbol + offset). Symbol should 
  *         have pointer or array type.
  * IMMEDIATE: 
@@ -101,7 +102,8 @@ typetree_t *type_init(enum tree_type);
 const typetree_t *type_combine(const typetree_t *, const typetree_t *);
 const typetree_t *type_deref(const typetree_t *);
 const typetree_t *init_type_basic(enum tree_type);
-size_t type_varsize(const typetree_t *);
+
+unsigned type_size(const typetree_t *);
 
 char *typetostr(const typetree_t *);
 

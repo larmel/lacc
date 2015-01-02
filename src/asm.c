@@ -13,10 +13,37 @@ load(FILE *stream, var_t var, const char *dest)
             fprintf(stream, "\tmovq\t$%ld, %%%s\n", var.value.v_long, dest);
             break;
         case DIRECT:
-            fprintf(stream, "\tmovq\t%d(%%rbp), %%%s\n", var.symbol->stack_offset, dest);
+            if (var.type->type == ARRAY)
+                fprintf(stream, "\tleaq\t%d(%%rbp), %%%s\n", var.symbol->stack_offset, dest);
+            else
+                fprintf(stream, "\tmovq\t%d(%%rbp), %%%s\n", var.symbol->stack_offset, dest);
             break;
         case OFFSET:
-            fprintf(stream, "\t(load offset)\n");
+            fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\n", var.symbol->stack_offset);
+            if (var.offset)
+                fprintf(stream, "\tmovq\t%d(%%r10), %%%s\n", var.offset, dest);
+            else
+                fprintf(stream, "\tmovq\t(%%r10), %%%s\n", dest);
+            break;
+    }
+}
+
+static void
+store(FILE *stream, const char *source, var_t var)
+{
+    switch (var.kind) {
+        case IMMEDIATE:
+            fprintf(stream, "\t(error: cannot write to immediate)\n");
+            break;
+        case DIRECT:
+            fprintf(stream, "\tmovq\t%%%s, %d(%%rbp)\n", source, var.symbol->stack_offset);
+            break;
+        case OFFSET:
+            fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\n", var.symbol->stack_offset);
+            if (var.offset)
+                fprintf(stream, "\tmovq\t%%%s, %d(%%r10)\n", source, var.offset);
+            else
+                fprintf(stream, "\tmovq\t%%%s, (%%r10)\n", source);
             break;
     }
 }
@@ -39,18 +66,18 @@ fassembleop(FILE *stream, const op_t op)
     switch (op.type) {
         case IR_ASSIGN:
             load(stream, op.b, "rax");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
+            store(stream, "rax", op.a);
             break;
         case IR_DEREF:
             load(stream, op.b, "rbx");
             fprintf(stream, "\tmovq\t(%%rbx), %%rax\n");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
+            store(stream, "rax", op.a);
             break;
         case IR_OP_ADD:
             load(stream, op.b, "rax");
             load(stream, op.c, "rbx");
             fprintf(stream, "\taddq\t%%rbx, %%rax\n");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
+            store(stream, "rax", op.a);
             break;
         case IR_OP_MUL:
             load(stream, op.c, "rax");
@@ -60,19 +87,19 @@ fassembleop(FILE *stream, const op_t op)
                 load(stream, op.b, "rbx");
                 fprintf(stream, "\tmulq\t%%rbx\n");
             }
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
+            store(stream, "rax", op.a);
             break;
         case IR_OP_BITWISE_AND:
             load(stream, op.b, "rax");
             load(stream, op.c, "rbx");
             fprintf(stream, "\tandq\t%%rbx, %%rax\n");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
+            store(stream, "rax", op.a);
             break;
         case IR_OP_BITWISE_XOR:
             load(stream, op.b, "rax");
             load(stream, op.c, "rbx");
             fprintf(stream, "\txorq\t%%rbx, %%rax\n");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
+            store(stream, "rax", op.a);
             break;
         default:
             fprintf(stream, "\t(none)\n");

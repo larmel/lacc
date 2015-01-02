@@ -33,6 +33,11 @@ type_equal(const typetree_t *a, const typetree_t *b)
 const typetree_t *
 type_combine(const typetree_t *a, const typetree_t *b)
 {
+    char *stra, *strb;
+    if (!a || !b) {
+        error("Internal error: cannot combine NULL type.");
+        exit(1);
+    }
     if (type_equal(a, b))
         return a;
 
@@ -46,18 +51,34 @@ type_combine(const typetree_t *a, const typetree_t *b)
     if (a->type == POINTER && b->type == INT64_T)
         return a;
 
-    error("Cannot combine types");
+    stra = typetostr(a);
+    strb = typetostr(b);
+    error("Cannot combine types `%s` and `%s`.", stra, strb);
+    free(stra);
+    free(strb);
+    exit(1);
     return NULL;
 }
 
 const typetree_t *
 type_deref(const typetree_t *t)
 {
-    if (t->type == POINTER || t->type == ARRAY) {
-        return t->next;
+    if (t->type != POINTER && t->type == ARRAY) {
+        char *str = typetostr(t);
+        error("Cannot dereference non-pointer type `%s`.", str);
+        free(str);
+        return NULL;
     }
-    error("Cannot dereference non-pointer type");
-    return NULL;
+    return t->next;
+}
+
+unsigned
+type_size(const typetree_t *t)
+{
+    unsigned size = t->size;
+    if (t->length)
+        size *= t->length;
+    return size;
 }
 
 /* Print type to buffer, returning how many characters were written. */

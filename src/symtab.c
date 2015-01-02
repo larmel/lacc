@@ -134,10 +134,10 @@ sym_add(const char *name, const typetree_t *type)
         exit(0);
     }
     if (depth == 1) {
-        var_stack_offset += type_varsize(type);
+        var_stack_offset += type_size(type);
         offset = var_stack_offset;
     } else if (depth > 1) {
-        var_stack_offset -= type_varsize(type);
+        var_stack_offset -= type_size(type);
         offset = var_stack_offset;
     }
     symbol = (const symbol_t *) sym_init(name, type, offset);
@@ -153,29 +153,16 @@ sym_temp(const typetree_t *type)
     int offset = 0;
 
     if (depth == 1) {
-        var_stack_offset += type_varsize(type);
+        var_stack_offset += type_size(type);
         offset = var_stack_offset;
     } else if (depth > 1) {
-        var_stack_offset -= type_varsize(type);
+        var_stack_offset -= type_size(type);
         offset = var_stack_offset;
     }
 
     symbol = sym_init_temp(type, offset);
     sym_register(symbol);
     return symbol;
-}
-
-/* Base size of type, i.e. sizeof(pointer) for complex types, or size of basic
- * type for int, double etc. */
-size_t
-type_varsize(const typetree_t *type)
-{
-    switch (type->type) {
-        case CHAR_T:
-            return 1;
-        default:
-            return 8; /* 64 bit */
-    }
 }
 
 void
@@ -206,12 +193,15 @@ dump_symtab()
                     break;
             }
         }
+        printf(", size=%d", symtab[i]->type->size);
+        if (symtab[i]->type->length)
+            printf(", length=%d", symtab[i]->type->length);
         if (symtab[i]->stack_offset > 0) {
             printf(" (param: %d)", symtab[i]->stack_offset);
         }
         if (symtab[i]->stack_offset < 0) {
-            printf(" (automatic: %d)", symtab[i]->stack_offset);
+            printf(" (auto: %d)", symtab[i]->stack_offset);
         }
-        puts("");
+        printf("\n");
     }
 }

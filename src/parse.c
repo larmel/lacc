@@ -254,23 +254,6 @@ direct_declarator(typetree_t *base, const char **symbol)
         switch (peek()) {
             case '[':
                 type = direct_declarator_array(base);
-                /*type = type_init(ARRAY);
-                type->d.arr.of = base;
-                consume('[');
-                if (peek() != ']') {
-                    symbol_t *expr = constant_expression();
-                    long size;
-                    if (!get_symbol_constant_value(expr, &size)) {
-                        error("Array declaration must be a compile time constant, aborting");
-                        exit(1);
-                    }
-                    if (size < 1) {
-                        error("Invalid array size %ld, aborting");
-                        exit(1);
-                    }
-                    type->d.arr.size = size;
-                }
-                consume(']');*/
                 break;
             case '(': {
                 consume('(');
@@ -575,7 +558,7 @@ assignment_expression(block_t *block)
         /* todo: node must be unary-expression or lower (l-value) */
         r = assignment_expression(block);
         l = evaluate(block, IR_ASSIGN, l, r);
-    } 
+    }
     return l;
 }
 
@@ -726,25 +709,6 @@ postfix_expression(block_t *block)
                 consume('[');
                 root = evalindex(block, root, expression(block));
                 consume(']');
-
-                /*
-                if (root->type->next->type == ARRAY) {
-                    ((symbol_t *)root)->type = type_deref(root->type);
-                } else {
-                    op_t deref;
-                    const symbol_t *res;
-                    if (root->type->type != POINTER) {
-                        error("Cannot dereference non-pointer, aborting");
-                        exit(1);
-                    }
-                    res = sym_temp(root->type->next);
-                    deref.type = IR_DEREF;
-                    deref.a = res;
-                    deref.b = root;
-                    ir_append(block, deref);
-
-                    root = res;
-                }*/
                 break;
             default:
                 error("Unexpected token '%s', not a valid postfix expression", readtoken().value);

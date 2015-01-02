@@ -41,15 +41,30 @@ evaluate(block_t *block, optype_t optype, var_t left, var_t right)
     return res;
 }
 
-/* Evaluate a[b]. */
+/* Evaluate a[b] = *(a + b). */
 var_t
 evalindex(block_t *block, var_t array, var_t expr)
 {
     var_t size;
     var_t offset;
+    var_t address;
+
+    /* For repeated indexes, a[b][c] => *(a + b)[c] => *(a + b + c), reset the 
+     * l-value deref.
+     * todo: Revisit the type reset, should preserve sub-arrays in temp vars. */
+    if (array.kind == OFFSET) {
+        array.kind = DIRECT;
+        array.type = array.symbol->type;
+    }
 
     size = var_long((long) array.type->size);
 
-    offset = evaluate(block, IR_OP_MUL, expr, size);
-    return evaluate(block, IR_OP_ADD, array, offset);
+    offset  = evaluate(block, IR_OP_MUL, expr, size);
+    address = evaluate(block, IR_OP_ADD, array, offset);
+
+    address.kind = OFFSET;
+    address.type = type_deref(address.symbol->type);
+    address.offset = 0;
+
+    return address;
 }
