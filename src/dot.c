@@ -26,6 +26,31 @@ escape(const char *label)
     return label;
 }
 
+static char *
+vartostr(const var_t var)
+{
+    char *buffer = calloc(64, sizeof(char)); /* memory leak. */
+    switch (var.kind) {
+        case IMMEDIATE:
+            if (var.type->type == INT64_T)
+                sprintf(buffer, "%ld", var.value.v_long);
+            else {
+                sprintf(buffer, "<?>");
+            }
+            break;
+        case DIRECT:
+            sprintf(buffer, "%s", var.symbol->name);
+            break;
+        case OFFSET:
+            if (!var.offset)
+                sprintf(buffer, "*%s", var.symbol->name);
+            else
+                sprintf(buffer, "%s[%d]", var.symbol->name, var.offset);
+            break;
+    }
+    return buffer;
+}
+
 static void
 foutputnode(FILE *stream, map_t *memo, const block_t *node)
 {
@@ -40,51 +65,49 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
         op_t op = node->code[i];
         switch (op.type) {
             case IR_ASSIGN:
-                fprintf(stream, " | %s = %s", op.a->name, op.b->name);
+                fprintf(stream, " | %s = %s", vartostr(op.a), vartostr(op.b));
                 break;
             case IR_DEREF:
-                fprintf(stream, " | %s = *%s", op.a->name, op.b->name);
+                fprintf(stream, " | %s = *%s", vartostr(op.a), vartostr(op.b));
                 break;
             case IR_OP_ADD:
-                fprintf(stream, " | %s = %s + %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s + %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_SUB:
-                fprintf(stream, " | %s = %s - %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s - %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_MUL:
-                fprintf(stream, " | %s = %s * %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s * %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_DIV:
-                fprintf(stream, " | %s = %s / %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s / %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_MOD:
-                fprintf(stream, " | %s = %s %% %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s %% %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_LOGICAL_AND:
-                fprintf(stream, " | %s = %s && %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s && %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_LOGICAL_OR:
-                fprintf(stream, " | %s = %s || %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s || %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_BITWISE_AND:
-                fprintf(stream, " | %s = %s & %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s & %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_BITWISE_OR:
-                fprintf(stream, " | %s = %s | %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s | %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_BITWISE_XOR:
-                fprintf(stream, " | %s = %s ^ %s", op.a->name, op.b->name, op.c->name);
+                fprintf(stream, " | %s = %s ^ %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
         }
     }
     if (node->jump[0] == NULL && node->jump[1] == NULL) {
         fprintf(stream, " | return");
-        if (node->expr != NULL) {
-            fprintf(stream, " %s", node->expr->name);
-        }
+        fprintf(stream, " %s", vartostr(node->expr));
         fprintf(stream, " }\"];\n");
     } else if (node->jump[1] != NULL) {
-        fprintf(stream, " | if %s goto %s", node->expr->name, escape(node->jump[1]->label));
+        fprintf(stream, " | if %s goto %s", vartostr(node->expr), escape(node->jump[1]->label));
         fprintf(stream, " }\"];\n");
         foutputnode(stream, memo, node->jump[0]);
         foutputnode(stream, memo, node->jump[1]);

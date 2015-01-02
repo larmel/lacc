@@ -6,29 +6,29 @@
 
 
 static void
-load(FILE *stream, const symbol_t *sym, const char *dest)
+load(FILE *stream, var_t var, const char *dest)
 {
-    if (sym->stack_offset) {
-        if (sym->type->type == ARRAY)
-            fprintf(stream, "\tleaq\t%d(%%rbp), %%%s\n", sym->stack_offset, dest);
-        else
-            fprintf(stream, "\tmovq\t%d(%%rbp), %%%s\n", sym->stack_offset, dest);
-    } else if (sym->value) {
-        fprintf(stream, "\tmovq\t$%ld, %%%s\n", sym->value->vlong, dest);
-    } else {
-        /* global variables. */
-        fprintf(stream, "\t(cannot load symbol)\n");
+    switch (var.kind) {
+        case IMMEDIATE:
+            fprintf(stream, "\tmovq\t$%ld, %%%s\n", var.value.v_long, dest);
+            break;
+        case DIRECT:
+            fprintf(stream, "\tmovq\t%d(%%rbp), %%%s\n", var.symbol->stack_offset, dest);
+            break;
+        case OFFSET:
+            fprintf(stream, "\t(load offset)\n");
+            break;
     }
 }
 
 static char *
-refer(const symbol_t *sym)
+refer(const var_t var)
 {
     static char str[256];
-    if (sym->stack_offset) {
-        sprintf(str, "%d(%%rbp)", sym->stack_offset);
+    if (var.kind == DIRECT) {
+        sprintf(str, "%d(%%rbp)", var.symbol->stack_offset);
     } else {
-        sprintf(str, "$%ld", sym->value->vlong);
+        sprintf(str, "$%ld", var.value.v_long);
     }
     return str;
 }
@@ -39,40 +39,40 @@ fassembleop(FILE *stream, const op_t op)
     switch (op.type) {
         case IR_ASSIGN:
             load(stream, op.b, "rax");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a->stack_offset);
+            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
             break;
         case IR_DEREF:
             load(stream, op.b, "rbx");
             fprintf(stream, "\tmovq\t(%%rbx), %%rax\n");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a->stack_offset);
+            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
             break;
         case IR_OP_ADD:
             load(stream, op.b, "rax");
             load(stream, op.c, "rbx");
             fprintf(stream, "\taddq\t%%rbx, %%rax\n");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a->stack_offset);
+            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
             break;
         case IR_OP_MUL:
             load(stream, op.c, "rax");
-            if (op.b->stack_offset)
+            if (op.b.kind == DIRECT || op.b.kind == DIRECT)
                 fprintf(stream, "\tmulq\t%s\n", refer(op.b));
             else {
                 load(stream, op.b, "rbx");
                 fprintf(stream, "\tmulq\t%%rbx\n");
             }
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a->stack_offset);
+            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
             break;
         case IR_OP_BITWISE_AND:
             load(stream, op.b, "rax");
             load(stream, op.c, "rbx");
             fprintf(stream, "\tandq\t%%rbx, %%rax\n");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a->stack_offset);
+            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
             break;
         case IR_OP_BITWISE_XOR:
             load(stream, op.b, "rax");
             load(stream, op.c, "rbx");
             fprintf(stream, "\txorq\t%%rbx, %%rax\n");
-            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a->stack_offset);
+            fprintf(stream, "\tmovq\t%%rax, %d(%%rbp)\n", op.a.symbol->stack_offset);
             break;
         default:
             fprintf(stream, "\t(none)\n");
@@ -93,8 +93,7 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
     }
 
     if (block->jump[0] == NULL && block->jump[1] == NULL) {
-        if (block->expr != NULL)
-            load(stream, block->expr, "rax");
+        load(stream, block->expr, "rax");
         fprintf(stream, "\tleaveq\n");
         fprintf(stream, "\tretq\n");
     } else if (block->jump[1] == NULL) {

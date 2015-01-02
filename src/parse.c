@@ -18,9 +18,9 @@ static block_t *statement(block_t *);
 static const symbol_t *identifier();
 
 /* expression nodes that are called in high level rules */
-static const symbol_t *expression(block_t *);
-static const symbol_t *constant_expression(block_t *);
-static const symbol_t *assignment_expression(block_t *);
+static var_t expression(block_t *);
+static var_t constant_expression(block_t *);
+static var_t assignment_expression(block_t *);
 
 extern int var_stack_offset;
 
@@ -73,20 +73,21 @@ declaration(block_t *parent, const symbol_t **symbol)
                 consume(';');
                 return parent;
             case '=': {
-                const symbol_t *val;
+                var_t val;
                 consume('=');
                 val = assignment_expression(parent);
-                if (val->value) {
-                    const typetree_t *newtype = type_combine((*symbol)->type, val->type);
+                if (val.kind == DIRECT) {
+                    const typetree_t *newtype = type_combine((*symbol)->type, val.type);
                     if (!newtype) {
-                        char *a = typetostr(val->type),
+                        char *a = typetostr(val.type),
                              *b = typetostr((*symbol)->type);
                         error("Cannot assign value of type `%s` to variable of type `%s`.", a, b);
                         free(a), free(b);
                         exit(1);
                     }
                     ((symbol_t*)*symbol)->type = newtype;
-                    ((symbol_t*)*symbol)->value = val->value;
+                    ((symbol_t*)*symbol)->value = malloc(sizeof(value_t));
+                    ((symbol_t*)*symbol)->value->v_long = val.value.v_long;
                 } else if ((*symbol)->depth == 0) {
                     error("Declaration must have constant value.");
                     exit(1);
@@ -191,16 +192,6 @@ pointer(const typetree_t *base)
     return type;
 }
 
-static long
-get_symbol_constant_value(const symbol_t *symbol, long *out)
-{
-    if (symbol->type->type == INT64_T && symbol->value) {
-        *out = symbol->value->vlong;
-        return 1;
-    }
-    return 0;
-}
-
 /* Consume [s0][s1][s2]..[sn] in array declarations, returning type
  * <symbol> :: [s0] [s1] [s2] .. [sn] (base)
  */
@@ -209,17 +200,18 @@ direct_declarator_array(typetree_t *base)
 {
     if (peek() == '[') {
         typetree_t *root;
-        const symbol_t *expr;
+        var_t expr;
         long length;
 
         consume('[');
         if (peek() != ']') {
             block_t *throwaway = block_init();
             expr = constant_expression(throwaway);
-            if (!get_symbol_constant_value(expr, &length)) {
+            if (expr.kind != IMMEDIATE || expr.type->type != INT64_T) {
                 error("Array declaration must be a compile time constant, aborting");
                 exit(1);
             }
+            length = expr.value.v_long;
             if (length < 1) {
                 error("Invalid array size %ld, aborting");
                 exit(1);
@@ -554,30 +546,30 @@ identifier()
     return sym;
 }
 
-static const symbol_t *conditional_expression(block_t *block);
-static const symbol_t *logical_expression(block_t *block);
-static const symbol_t *or_expression(block_t *block);
-static const symbol_t *and_expression(block_t *block);
-static const symbol_t *equality_expression(block_t *block);
-static const symbol_t *relational_expression(block_t *block);
-static const symbol_t *shift_expression(block_t *block);
-static const symbol_t *additive_expression(block_t *block);
-static const symbol_t *multiplicative_expression(block_t *block);
-static const symbol_t *cast_expression(block_t *block);
-static const symbol_t *postfix_expression(block_t *block);
-static const symbol_t *unary_expression(block_t *block);
-static const symbol_t *primary_expression(block_t *block);
+static var_t conditional_expression(block_t *block);
+static var_t logical_expression(block_t *block);
+static var_t or_expression(block_t *block);
+static var_t and_expression(block_t *block);
+static var_t equality_expression(block_t *block);
+static var_t relational_expression(block_t *block);
+static var_t shift_expression(block_t *block);
+static var_t additive_expression(block_t *block);
+static var_t multiplicative_expression(block_t *block);
+static var_t cast_expression(block_t *block);
+static var_t postfix_expression(block_t *block);
+static var_t unary_expression(block_t *block);
+static var_t primary_expression(block_t *block);
 
-static const symbol_t *
+static var_t 
 expression(block_t *block)
 {
     return assignment_expression(block);
 }
 
-static const symbol_t *
+static var_t 
 assignment_expression(block_t *block)
 {
-    const symbol_t *l = conditional_expression(block), *r;
+    var_t l = conditional_expression(block), r;
     if (peek() == '=') {
         consume('=');
         /* todo: node must be unary-expression or lower (l-value) */
@@ -587,30 +579,30 @@ assignment_expression(block_t *block)
     return l;
 }
 
-static const symbol_t *
+static var_t 
 constant_expression(block_t *block)
 {
     return conditional_expression(block);
 }
 
-static const symbol_t *
+static var_t 
 conditional_expression(block_t *block)
 {
-    const symbol_t *sym = logical_expression(block);
+    var_t v = logical_expression(block);
     if (peek() == '?') {
         consume('?');
         expression(block);
         consume(':');
         conditional_expression(block);
     }
-    return sym;
+    return v;
 }
 
 /* merge AND/OR */
-static const symbol_t *
+static var_t 
 logical_expression(block_t *block)
 {
-    const symbol_t *l, *r;
+    var_t l, r;
     l = or_expression(block);
     while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
         optype_t optype = (readtoken().type == LOGICAL_AND) 
@@ -623,10 +615,10 @@ logical_expression(block_t *block)
 }
 
 /* merge OR/XOR */
-static const symbol_t *
+static var_t
 or_expression(block_t *block)
 {
-    const symbol_t *l, *r;
+    var_t l, r;
     l = and_expression(block);
     while (peek() == '|' || peek() == '^') {
         optype_t optype = (readtoken().type == '|') 
@@ -638,10 +630,10 @@ or_expression(block_t *block)
     return l;
 }
 
-static const symbol_t *
+static var_t
 and_expression(block_t *block)
 {
-    const symbol_t *l, *r;
+    var_t l, r;
     l = equality_expression(block);
     while (peek() == '&') {
         consume('&');
@@ -651,28 +643,28 @@ and_expression(block_t *block)
     return l;
 }
 
-static const symbol_t *
+static var_t
 equality_expression(block_t *block)
 {
     return relational_expression(block);
 }
 
-static const symbol_t *
+static var_t
 relational_expression(block_t *block)
 {
     return shift_expression(block);
 }
 
-static const symbol_t *
+static var_t
 shift_expression(block_t *block)
 {
     return additive_expression(block);
 }
 
-static const symbol_t *
+static var_t
 additive_expression(block_t *block)
 {
-    const symbol_t *l, *r;
+    var_t l, r;
     l = multiplicative_expression(block);
     while (peek() == '+' || peek() == '-') {
         optype_t optype = (readtoken().type == '+') ? IR_OP_ADD : IR_OP_SUB;
@@ -683,10 +675,10 @@ additive_expression(block_t *block)
     return l;
 }
 
-static const symbol_t *
+static var_t
 multiplicative_expression(block_t *block)
 {
-    const symbol_t *l, *r;
+    var_t l, r;
     l = cast_expression(block);
     while (peek() == '*' || peek() == '/' || peek() == '%') {
         token_t tok = readtoken();
@@ -700,13 +692,13 @@ multiplicative_expression(block_t *block)
     return l;
 }
 
-static const symbol_t *
+static var_t
 cast_expression(block_t *block)
 {
     return unary_expression(block);
 }
 
-static const symbol_t *
+static var_t
 unary_expression(block_t *block)
 {
     return postfix_expression(block);
@@ -714,10 +706,12 @@ unary_expression(block_t *block)
 
 /* This rule is left recursive, build tree bottom up
  */
-static const symbol_t *
+static var_t
 postfix_expression(block_t *block)
 {
-    const symbol_t *root = primary_expression(block);
+    var_t root;
+
+    root = primary_expression(block);
 
     while (peek() == '[' || peek() == '(' || peek() == '.') {
         switch (peek()) {
@@ -731,31 +725,9 @@ postfix_expression(block_t *block)
             case '[':
                 consume('[');
                 root = evalindex(block, root, expression(block));
-                /*{
-                    
-                    op_t mul, add;
-                    const symbol_t *res, *l, *r;
-                    l = expression(block);
-                    r = sym_number_init((long) root->type->size);
-                    res = sym_temp(type_combine(l->type, r->type));
-
-                    mul.type = IR_OP_MUL;
-                    mul.a = res;
-                    mul.b = l;
-                    mul.c = r;
-                    ir_append(block, mul);
-
-                    r = sym_temp(type_combine(root->type, res->type));
-                    add.type = IR_OP_ADD;
-                    add.a = r;
-                    add.b = root;
-                    add.c = res;
-                    ir_append(block, add);
-
-                    root = r;
-                }*/
                 consume(']');
 
+                /*
                 if (root->type->next->type == ARRAY) {
                     ((symbol_t *)root)->type = type_deref(root->type);
                 } else {
@@ -772,17 +744,8 @@ postfix_expression(block_t *block)
                     ir_append(block, deref);
 
                     root = res;
-                }
+                }*/
                 break;
-            /*case '(':
-                addchild(parent, argument_expression_list()); 
-                consume('(');
-                consume(')');
-                break;
-            case '.':
-                parent->token = readtoken();
-                addchild(parent, identifier());
-                break;*/
             default:
                 error("Unexpected token '%s', not a valid postfix expression", readtoken().value);
                 exit(0);
@@ -791,11 +754,14 @@ postfix_expression(block_t *block)
     return root;
 }
 
-static const symbol_t *
+static var_t
 primary_expression(block_t *block)
 {
+    var_t var;
+    token_t token;
     const symbol_t *symbol;
-    token_t token = readtoken();
+
+    token = readtoken();
     switch (token.type) {
         case IDENTIFIER:
             symbol = sym_lookup(token.value);
@@ -803,20 +769,21 @@ primary_expression(block_t *block)
                 error("Undefined symbol '%s', aborting", token.value);
                 exit(0);
             }
+            var = var_direct(symbol);
             break;
         case INTEGER:
-            symbol = sym_number_init(strtol(token.value, NULL, 0));
+            var = var_long(strtol(token.value, NULL, 0));
             break;
         case '(':
-            symbol = expression(block);
+            var = expression(block);
             consume(')');
             break;
         case STRING:
-            symbol = sym_string_init(token.value);
+            var = var_string(token.value);
             break;
         default:
             error("Unexpected token '%s', not a valid primary expression", token.value);
             exit(0);
     }
-    return symbol;
+    return var;
 }

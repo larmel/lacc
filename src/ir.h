@@ -1,9 +1,9 @@
 #ifndef IR_H
 #define IR_H
 
-#include <stddef.h>
+#include "symbol.h"
 
-struct symbol;
+#include <stddef.h>
 
 typedef enum optype
 {
@@ -21,13 +21,13 @@ typedef enum optype
     IR_OP_BITWISE_XOR
 } optype_t;
 
+/* Three address code */
 typedef struct op {
     enum optype type;
 
-    /* operands, three address code */
-    const struct symbol *a;
-    const struct symbol *b;
-    const struct symbol *c;
+    var_t a;
+    var_t b;
+    var_t c;
 } op_t;
 
 /* CFG block */
@@ -41,7 +41,7 @@ typedef struct block
     unsigned n;
 
     /* Value to evaluate in branch conditions, or return value */
-    const struct symbol *expr;
+    var_t expr;
 
     /* Branch targets.
      * - (NULL, NULL): Terminal node, return expr from function.
@@ -84,7 +84,7 @@ block_t *block_init();
  * for each block. */
 void ir_append(block_t *, op_t);
 
-const struct symbol *evaluate(block_t *, optype_t, const struct symbol *, const struct symbol *);
-const struct symbol *evalindex(block_t *block, const struct symbol *, const struct symbol *);
+var_t evaluate(block_t *, optype_t, var_t, var_t);
+var_t evalindex(block_t *block, var_t, var_t);
 
 #endif

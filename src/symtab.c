@@ -165,38 +165,6 @@ sym_temp(const typetree_t *type)
     return symbol;
 }
 
-/* Create an immediate long value. */
-const symbol_t *
-sym_number_init(long val)
-{
-    symbol_t *symbol;
-    typetree_t *type;
-
-    type = type_init(INT64_T);
-    symbol = sym_init(NULL, type, 0);
-    symbol->value = calloc(1, sizeof(value_t));
-    symbol->value->vlong = val;
-    return symbol;
-}
-
-/* Create an immediate string value. */
-const symbol_t *
-sym_string_init(const char *str)
-{
-    symbol_t *symbol;
-    typetree_t *type;
-
-    type = type_init(ARRAY);
-    type->length = strlen(str);
-    type->next = type_init(CHAR_T);
-    type->size = type->next->size;
-
-    symbol = sym_init(NULL, type, 0);
-    symbol->value = calloc(1, sizeof(value_t));
-    symbol->value->string = strdup(str);
-    return symbol;
-}
-
 /* Base size of type, i.e. sizeof(pointer) for complex types, or size of basic
  * type for int, double etc. */
 size_t
@@ -224,13 +192,13 @@ dump_symtab()
         if (symtab[i]->value) {
             switch (symtab[i]->type->type) {
                 case INT64_T:
-                    printf(" = %d", (int) symtab[i]->value->vlong);
+                    printf(" = %d", (int) symtab[i]->value->v_long);
                     break;
                 case ARRAY:
                 case POINTER:
                     if (symtab[i]->type->next 
                         && symtab[i]->type->next->type == CHAR_T) {
-                        printf(" = \"%s\"", symtab[i]->value->string);
+                        printf(" = \"%s\"", symtab[i]->value->v_string);
                         break;
                     }
                 default:

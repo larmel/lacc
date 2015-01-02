@@ -3,16 +3,18 @@
 #include "ir.h"
 #include "symbol.h"
 
-const symbol_t *
-evaluate(block_t *block, optype_t optype, const symbol_t *left, const symbol_t *right)
+var_t
+evaluate(block_t *block, optype_t optype, var_t left, var_t right)
 {
     op_t op;
-    const symbol_t *res;
+    var_t res;
+    const symbol_t *temp;
 
     switch (optype) {
         case IR_ASSIGN:
             op.a = left;
             op.b = right;
+            res = left;
             break;
         case IR_OP_LOGICAL_AND:
         case IR_OP_LOGICAL_OR:
@@ -25,7 +27,8 @@ evaluate(block_t *block, optype_t optype, const symbol_t *left, const symbol_t *
         case IR_OP_DIV:
         case IR_OP_MOD:
         default:
-            res = sym_temp(type_combine(left->type, right->type));
+            temp = sym_temp(type_combine(left.type, right.type));
+            res = var_direct(temp);
             op.a = res;
             op.b = left;
             op.c = right;
@@ -39,13 +42,13 @@ evaluate(block_t *block, optype_t optype, const symbol_t *left, const symbol_t *
 }
 
 /* Evaluate a[b]. */
-const symbol_t *
-evalindex(block_t *block, const symbol_t *array, const symbol_t *expr)
+var_t
+evalindex(block_t *block, var_t array, var_t expr)
 {
-    const symbol_t *size;
-    const symbol_t *offset;
+    var_t size;
+    var_t offset;
 
-    size = sym_number_init((long) array->type->size);
+    size = var_long((long) array.type->size);
 
     offset = evaluate(block, IR_OP_MUL, expr, size);
     return evaluate(block, IR_OP_ADD, array, offset);

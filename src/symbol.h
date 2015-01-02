@@ -40,41 +40,46 @@ typedef struct typetree
     const struct typetree *next;
 } typetree_t;
 
-enum storageclass
+/* Immediate value. */
+typedef union value
 {
-    STORAGE_EXTERN, STORAGE_STATIC
-};
-
-typedef union value {
-    char vchar;
-    char *string;
-    long vlong;
-    double vdouble;
+    char v_char;
+    long v_long;
+    double v_double;
+    const char *v_string;
 } value_t;
 
-/* A symbol always has a type. In addition to that, it can either be a plain
- * value represented as a value_t, or a variable with a name and some storage 
- * assigned at runtime. */
+/* A symbol represents declarations that may have a storage location 
+ * at runtime, such as functions, static and local variables.
+ * Store offset to base pointer for automatic variables and function 
+ * arguments. */
 typedef struct symbol
 {
-    /* If name is NULL, then this is an immediate value. */
     const char *name;
-
-    /* Both values and variables have a type. */
-    const struct typetree *type;
-
-    enum storageclass storage;
-
-    /* Union of immediate values, compile time constants or evaluated. NULL if
-     * no value at compile time. */
-    value_t *value;
-
-    /* Offset to base pointer. */
+    const typetree_t *type;
     int stack_offset;
-
-    /* Scope depth. */
     int depth;
+    value_t *value; /* initialized value */
 } symbol_t;
+
+/* A reference to some storage location or direct value, used in intermediate
+ * representation of expressions. There are three modes:
+ *
+ * DIRECT: l-value or r-value reference to symbol, which must have some
+ *         storage location.
+ * OFFSET: l-value or r-value reference to *(symbol + offset). Symbol should 
+ *         have pointer or array type.
+ * IMMEDIATE: 
+ *         r-value immediate value, with the type specified. Symbol is NULL.
+ */
+typedef struct variable
+{
+    enum { DIRECT, OFFSET, IMMEDIATE } kind;
+    const typetree_t *type;
+    const symbol_t *symbol;
+    int offset;
+    value_t value;
+} var_t;
 
 
 /* Resolve symbol in current scope, or NULL if not found. Add new symbol based
@@ -84,11 +89,11 @@ const symbol_t *sym_lookup(const char *);
 const symbol_t *sym_add(const char *, const typetree_t *);
 const symbol_t *sym_temp(const typetree_t *);
 
-
-/* Create an anonymous symbol based on an immediate value, without assigning a
- * name or making it visible in scope. */
-const symbol_t *sym_string_init(const char *);
-const symbol_t *sym_number_init(long);
+/* Expression variables. */
+var_t var_direct(const symbol_t *);
+var_t var_offset(const symbol_t *, int);
+var_t var_string(const char *);
+var_t var_long(long);
 
 
 /* functions on types */
