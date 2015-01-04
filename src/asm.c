@@ -1,5 +1,6 @@
 #include "ir.h"
 #include "symbol.h"
+#include "error.h"
 #include "util/map.h"
 
 #include <stdio.h>
@@ -14,16 +15,23 @@ load(FILE *stream, var_t var, const char *dest)
             break;
         case DIRECT:
             if (var.type->type == ARRAY)
-                fprintf(stream, "\tleaq\t%d(%%rbp), %%%s\n", var.symbol->stack_offset, dest);
+                fprintf(stream, "\tleaq\t%d(%%rbp), %%%s\t# load %s\n", var.symbol->stack_offset, dest, var.symbol->name);
             else
-                fprintf(stream, "\tmovq\t%d(%%rbp), %%%s\n", var.symbol->stack_offset, dest);
+                fprintf(stream, "\tmovq\t%d(%%rbp), %%%s\t# load %s\n", var.symbol->stack_offset, dest, var.symbol->name);
             break;
         case OFFSET:
-            fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\n", var.symbol->stack_offset);
-            if (var.offset)
-                fprintf(stream, "\tmovq\t%d(%%r10), %%%s\n", var.offset, dest);
-            else
-                fprintf(stream, "\tmovq\t(%%r10), %%%s\n", dest);
+            fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\t# load *%s\n", var.symbol->stack_offset, var.symbol->name);
+            if (var.type->type == ARRAY) {
+                if (var.offset)
+                    fprintf(stream, "\tleaq\t%d(%%r10), %%%s\n", var.offset, dest);
+                else
+                    fprintf(stream, "\tleaq\t(%%r10), %%%s\n", dest);
+            } else {
+                if (var.offset)
+                    fprintf(stream, "\tmovq\t%d(%%r10), %%%s\n", var.offset, dest);
+                else
+                    fprintf(stream, "\tmovq\t(%%r10), %%%s\n", dest);
+            }
             break;
     }
 }
@@ -36,10 +44,10 @@ store(FILE *stream, const char *source, var_t var)
             fprintf(stream, "\t(error: cannot write to immediate)\n");
             break;
         case DIRECT:
-            fprintf(stream, "\tmovq\t%%%s, %d(%%rbp)\n", source, var.symbol->stack_offset);
+            fprintf(stream, "\tmovq\t%%%s, %d(%%rbp)\t# store %s\n", source, var.symbol->stack_offset, var.symbol->name);
             break;
         case OFFSET:
-            fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\n", var.symbol->stack_offset);
+            fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\t# store *%s\n", var.symbol->stack_offset, var.symbol->name);
             if (var.offset)
                 fprintf(stream, "\tmovq\t%%%s, %d(%%r10)\n", source, var.offset);
             else
@@ -52,10 +60,16 @@ static char *
 refer(const var_t var)
 {
     static char str[256];
-    if (var.kind == DIRECT) {
-        sprintf(str, "%d(%%rbp)", var.symbol->stack_offset);
-    } else {
-        sprintf(str, "$%ld", var.value.v_long);
+    switch (var.kind) {
+        case DIRECT:
+            sprintf(str, "%d(%%rbp)", var.symbol->stack_offset);
+            break;
+        case IMMEDIATE:
+            sprintf(str, "$%ld", var.value.v_long);
+            break;
+        default:
+            error("Could not assemble reference to offset variable.");
+            exit(1);
     }
     return str;
 }
@@ -73,6 +87,10 @@ fassembleop(FILE *stream, const op_t op)
             fprintf(stream, "\tmovq\t(%%rbx), %%rax\n");
             store(stream, "rax", op.a);
             break;
+        case IR_ADDR:
+            fprintf(stream, "\tleaq\t%s, %%rax\n", refer(op.b));
+            store(stream, "rax", op.a);
+            break;
         case IR_OP_ADD:
             load(stream, op.b, "rax");
             load(stream, op.c, "rbx");
@@ -81,7 +99,7 @@ fassembleop(FILE *stream, const op_t op)
             break;
         case IR_OP_MUL:
             load(stream, op.c, "rax");
-            if (op.b.kind == DIRECT || op.b.kind == DIRECT)
+            if (op.b.kind == DIRECT)
                 fprintf(stream, "\tmulq\t%s\n", refer(op.b));
             else {
                 load(stream, op.b, "rbx");

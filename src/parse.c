@@ -92,6 +92,7 @@ declaration(block_t *parent, const symbol_t **symbol)
                     error("Declaration must have constant value.");
                     exit(1);
                 }
+                eval_assign(parent, var_direct(*symbol), val);
                 if (peek() != ',') {
                     consume(';');
                     return parent;
@@ -503,6 +504,7 @@ statement(block_t *parent)
         case IDENTIFIER: /* also part of label statement, need 2 lookahead */
         case INTEGER: /* todo: any constant value */
         case STRING:
+        case '*':
         case '(':
             expression(parent);
             consume(';');
@@ -557,7 +559,7 @@ assignment_expression(block_t *block)
         consume('=');
         /* todo: node must be unary-expression or lower (l-value) */
         r = assignment_expression(block);
-        l = evaluate(block, IR_ASSIGN, l, r);
+        l = eval_assign(block, l, r);
     }
     return l;
 }
@@ -592,7 +594,7 @@ logical_expression(block_t *block)
             ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
 
         r = and_expression(block);
-        l = evaluate(block, optype, l, r);
+        l = eval_expr(block, optype, l, r);
     }
     return l;
 }
@@ -608,7 +610,7 @@ or_expression(block_t *block)
             ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
 
         r = and_expression(block);
-        l = evaluate(block, optype, l, r);
+        l = eval_expr(block, optype, l, r);
     }
     return l;
 }
@@ -621,7 +623,7 @@ and_expression(block_t *block)
     while (peek() == '&') {
         consume('&');
         r = and_expression(block);
-        l = evaluate(block, IR_OP_BITWISE_AND, l, r);
+        l = eval_expr(block, IR_OP_BITWISE_AND, l, r);
     }
     return l;
 }
@@ -653,7 +655,7 @@ additive_expression(block_t *block)
         optype_t optype = (readtoken().type == '+') ? IR_OP_ADD : IR_OP_SUB;
 
         r = multiplicative_expression(block);
-        l = evaluate(block, optype, l, r);
+        l = eval_expr(block, optype, l, r);
     }
     return l;
 }
@@ -670,7 +672,7 @@ multiplicative_expression(block_t *block)
                 IR_OP_DIV : IR_OP_MOD;
 
         r = cast_expression(block);
-        l = evaluate(block, optype, l, r);
+        l = eval_expr(block, optype, l, r);
     }
     return l;
 }
@@ -684,7 +686,23 @@ cast_expression(block_t *block)
 static var_t
 unary_expression(block_t *block)
 {
-    return postfix_expression(block);
+    var_t expr;
+
+    switch (peek()) {
+        case '&':
+            consume('&');
+            expr = cast_expression(block);
+            expr = eval_addr(block, expr);
+            break;
+        case '*':
+            consume('*');
+            expr = cast_expression(block);
+            expr = eval_deref(block, expr);
+            break;
+        default:
+            expr = postfix_expression(block);
+    }
+    return expr;
 }
 
 /* This rule is left recursive, build tree bottom up
@@ -693,6 +711,8 @@ static var_t
 postfix_expression(block_t *block)
 {
     var_t root;
+    var_t expr;
+    var_t addr;
 
     root = primary_expression(block);
 
@@ -706,9 +726,15 @@ postfix_expression(block_t *block)
              *    specify in array (pointer) parameters: int (*foo(int arg[][3][2][1]))[3][2][1]
              */
             case '[':
-                consume('[');
-                root = evalindex(block, root, expression(block));
-                consume(']');
+                /* Evaluate a[b] = *(a + b). */
+                while (peek() == '[') {
+                    consume('[');
+                    expr = expression(block);
+                    addr = eval_expr(block, IR_OP_MUL, expr, var_long(root.type->size));
+                    addr = eval_expr(block, IR_OP_ADD, root, addr);
+                    root = eval_deref(block, addr);
+                    consume(']');
+                }
                 break;
             default:
                 error("Unexpected token '%s', not a valid postfix expression", readtoken().value);

@@ -70,6 +70,9 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
             case IR_DEREF:
                 fprintf(stream, " | %s = *%s", vartostr(op.a), vartostr(op.b));
                 break;
+            case IR_ADDR:
+                fprintf(stream, " | %s = &%s", vartostr(op.a), vartostr(op.b));
+                break;
             case IR_OP_ADD:
                 fprintf(stream, " | %s = %s + %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;

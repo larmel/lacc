@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+
 typetree_t *
 type_init(enum tree_type type)
 {
@@ -24,8 +25,19 @@ type_equal(const typetree_t *a, const typetree_t *b)
 {
     if (a == NULL && b == NULL) return 1;
     if (a == NULL || b == NULL) return 0;
-    if (a->type == b->type) return 1;
-    /* todo */
+    if (a->type != b->type) return 0;
+
+    switch (a->type) {
+        case ARRAY:
+            return type_equal(a->next, b->next) && (a->length == b->length);
+        case POINTER:
+            return type_equal(a->next, b->next);
+        case FUNCTION:
+            error("Arithmetic on function types not supported.");
+            exit(1);
+        default:
+            return a->type == b->type;
+    }
     return 0;
 }
 
@@ -38,8 +50,6 @@ type_combine(const typetree_t *a, const typetree_t *b)
         error("Internal error: cannot combine NULL type.");
         exit(1);
     }
-    if (type_equal(a, b))
-        return a;
 
     /* Arrays decay into pointer */
     if (a->type == ARRAY) {
@@ -47,8 +57,18 @@ type_combine(const typetree_t *a, const typetree_t *b)
         ptr->next = a->next;
         a = ptr;
     }
-
     if (a->type == POINTER && b->type == INT64_T)
+        return a;
+
+    if (b->type == ARRAY) {
+        typetree_t *ptr = type_init(POINTER);
+        ptr->next = b->next;
+        b = ptr;
+    }
+    if (b->type == POINTER && a->type == INT64_T)
+        return b;
+
+    if (type_equal(a, b))
         return a;
 
     stra = typetostr(a);
@@ -63,7 +83,7 @@ type_combine(const typetree_t *a, const typetree_t *b)
 const typetree_t *
 type_deref(const typetree_t *t)
 {
-    if (t->type != POINTER && t->type == ARRAY) {
+    if (t->type != POINTER && t->type != ARRAY) {
         char *str = typetostr(t);
         error("Cannot dereference non-pointer type `%s`.", str);
         free(str);

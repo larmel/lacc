@@ -18,7 +18,7 @@ var_offset(const symbol_t *symbol, int offset)
     var_t var;
     var.kind = OFFSET;
     var.symbol = symbol;
-    var.type = symbol->type;
+    var.type = type_deref(symbol->type);
     var.offset = offset;
     return var;
 }

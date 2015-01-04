@@ -6,5 +6,5 @@ int main(int argc, char *argv[])
     foo[0] = 1;
     bar[2][1][0] = 4;
 
-    return bar[2][1][0] + foo[0];
+    return foo[0] + bar[2][1][0];
 }

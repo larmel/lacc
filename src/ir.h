@@ -9,6 +9,7 @@ typedef enum optype
 {
     IR_ASSIGN,      /* a = b */
     IR_DEREF,       /* a = *b */
+    IR_ADDR,        /* a = &b */
     IR_OP_ADD,
     IR_OP_SUB,
     IR_OP_MUL,
@@ -84,7 +85,10 @@ block_t *block_init();
  * for each block. */
 void ir_append(block_t *, op_t);
 
-var_t evaluate(block_t *, optype_t, var_t, var_t);
-var_t evalindex(block_t *block, var_t, var_t);
+var_t eval_expr(block_t *, optype_t, var_t, var_t);
+var_t eval_addr(block_t *, var_t);
+var_t eval_deref(block_t *, var_t);
+var_t eval_assign(block_t *, var_t, var_t);
+
 
 #endif
