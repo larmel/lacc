@@ -10,6 +10,8 @@ typedef enum optype
     IR_ASSIGN,      /* a = b */
     IR_DEREF,       /* a = *b */
     IR_ADDR,        /* a = &b */
+    IR_PARAM,
+    IR_CALL,        /* a = b() */
     IR_OP_ADD,
     IR_OP_SUB,
     IR_OP_MUL,
@@ -81,14 +83,13 @@ function_t *cfg_create();
  * lifecycle, and should only be freed by calling cfg_finalize. */
 block_t *block_init();
 
-/* Add a 3-address code operation to the block. Code is kept in a separate list
- * for each block. */
-void ir_append(block_t *, op_t);
-
+/* Interface used in parser to evaluate expressions and add operations to the
+ * control flow graph. */
 var_t eval_expr(block_t *, optype_t, var_t, var_t);
 var_t eval_addr(block_t *, var_t);
 var_t eval_deref(block_t *, var_t);
 var_t eval_assign(block_t *, var_t, var_t);
-
+var_t eval_call(block_t *, var_t);
+void param(block_t *, var_t);
 
 #endif

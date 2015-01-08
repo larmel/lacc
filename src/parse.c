@@ -36,18 +36,24 @@ parse()
     body = block_init();
 
     do {
+        symbol = NULL;
         if (peek() == '$')
             break;
         declaration(body, &symbol);
     } while (symbol->type->type != FUNCTION);
 
-    fun->symbol = symbol;
-    fun->body = body;
+    if (symbol) {
+        fun->symbol = symbol;
+        fun->body = body;
 
-    /* Hack: write stack offset as we are done adding all symbols,
-     * reading variable from symtab code. */
-    fun->locals_size = (-1) * var_stack_offset;
-    return fun;
+        /* Hack: write stack offset as we are done adding all symbols,
+         * reading variable from symtab code. */
+        fun->locals_size = (-1) * var_stack_offset;
+        return fun;
+    }
+
+    cfg_finalize(fun);
+    return NULL;
 }
 
 /* Cover both external declarations, functions, and local declarations (with
@@ -105,7 +111,7 @@ declaration(block_t *parent, const symbol_t **symbol)
                     exit(1);
                 }
                 push_scope();
-                for (i = type->n_args - 1; i >= 0; --i) {
+                for (i = 0; i < type->n_args; ++i) {
                     if (!type->params[i]) {
                         error("Missing parameter name at position %d", i + 1);
                         exit(1);
@@ -710,9 +716,9 @@ unary_expression(block_t *block)
 static var_t
 postfix_expression(block_t *block)
 {
-    var_t root;
-    var_t expr;
-    var_t addr;
+    int i;
+    var_t root, expr, addr;
+    var_t *arg;
 
     root = primary_expression(block);
 
@@ -735,6 +741,33 @@ postfix_expression(block_t *block)
                     root = eval_deref(block, addr);
                     consume(']');
                 }
+                break;
+            case '(':
+                /* Evaluation function call. */
+                if (root.type->type != FUNCTION) {
+                    error("Calling non-function symbol.");
+                    exit(1);
+                }
+                arg = malloc(sizeof(var_t) * root.type->n_args);
+
+                consume('(');
+                for (i = 0; i < root.type->n_args; ++i) {
+                    if (peek() == ')') {
+                        error("Too few arguments to function %s, expected %d but got %d.", root.symbol->name, root.type->n_args, i);
+                        exit(1);
+                    }
+                    arg[i] = assignment_expression(block);
+                    /* type check here. */
+                    if (i < root.type->n_args - 1)
+                        consume(',');
+                }
+                consume(')');
+
+                for (i = 0; i < root.type->n_args; ++i)
+                    param(block, arg[i]);
+                root = eval_call(block, root);
+
+                free(arg);
                 break;
             default:
                 error("Unexpected token '%s', not a valid postfix expression", readtoken().value);

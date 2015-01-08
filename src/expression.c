@@ -6,6 +6,11 @@
 
 #include <stdlib.h>
 
+
+/* Add a 3-address code operation to the block. Code is kept in a separate list
+ * for each block. */
+void ir_append(block_t *, op_t);
+
 /* Evaluate a <op> b.
  *
  * Returns a DIRECT reference to a new temporary, or an immediate value.
@@ -171,4 +176,35 @@ eval_assign(block_t *block, var_t target, var_t var)
 
     ir_append(block, op);
     return var;
+}
+
+var_t
+eval_call(block_t *block, var_t func)
+{
+    op_t op;
+    var_t res;
+    const symbol_t *temp;
+
+    if (func.type->next->type == VOID_T) {
+        res = var_void();
+    } else {
+        temp = sym_temp(func.type->next);
+        res = var_direct(temp);
+    }
+
+    op.type = IR_CALL;
+    op.a = res;
+    op.b = func;
+    ir_append(block, op);
+
+    return res;
+}
+
+void
+param(block_t *block, var_t p)
+{
+    op_t op;
+    op.type = IR_PARAM;
+    op.a = p;
+    ir_append(block, op);
 }

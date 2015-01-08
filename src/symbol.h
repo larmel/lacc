@@ -57,7 +57,8 @@ typedef struct symbol
 {
     const char *name;
     const typetree_t *type;
-    int stack_offset;
+    int param_n; /* The n'th function argument. 1-indexed to keep 0 default. */
+    int stack_offset; /* Argument or local variable offset to base pointer. */
     int depth;
     value_t *value; /* initialized value */
 } symbol_t;
@@ -95,6 +96,7 @@ var_t var_direct(const symbol_t *);
 var_t var_offset(const symbol_t *, int);
 var_t var_string(const char *);
 var_t var_long(long);
+var_t var_void();
 
 
 /* functions on types */

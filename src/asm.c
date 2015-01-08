@@ -5,6 +5,28 @@
 
 #include <stdio.h>
 
+static const char *pregs[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
+
+static char *
+refer(const var_t var)
+{
+    static char str[256];
+    switch (var.kind) {
+        case DIRECT:
+            if (var.symbol->param_n && !var.symbol->stack_offset)
+                sprintf(str, "%%%s", pregs[var.symbol->param_n - 1]);
+            else
+                sprintf(str, "%d(%%rbp)", var.symbol->stack_offset);
+            break;
+        case IMMEDIATE:
+            sprintf(str, "$%ld", var.value.v_long);
+            break;
+        default:
+            error("Could not assemble reference to offset variable.");
+            exit(1);
+    }
+    return str;
+}
 
 static void
 load(FILE *stream, var_t var, const char *dest)
@@ -17,7 +39,7 @@ load(FILE *stream, var_t var, const char *dest)
             if (var.type->type == ARRAY)
                 fprintf(stream, "\tleaq\t%d(%%rbp), %%%s\t# load %s\n", var.symbol->stack_offset, dest, var.symbol->name);
             else
-                fprintf(stream, "\tmovq\t%d(%%rbp), %%%s\t# load %s\n", var.symbol->stack_offset, dest, var.symbol->name);
+                fprintf(stream, "\tmovq\t%s, %%%s\t# load %s\n", refer(var), dest, var.symbol->name);
             break;
         case OFFSET:
             fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\t# load *%s\n", var.symbol->stack_offset, var.symbol->name);
@@ -56,27 +78,39 @@ store(FILE *stream, const char *source, var_t var)
     }
 }
 
-static char *
-refer(const var_t var)
+/* Follow AMD64 ABI: http://www.x86-64.org/documentation/abi.pdf.
+ * Registers %rsp, %rbp, %rbx, %r12, %r13, %r14, %r15 are preserved by callee.
+ * Other registers must be saved by caller before invoking a function.
+ */
+static int
+fassembleparams(FILE *stream, op_t *ops, int i)
 {
-    static char str[256];
-    switch (var.kind) {
-        case DIRECT:
-            sprintf(str, "%d(%%rbp)", var.symbol->stack_offset);
-            break;
-        case IMMEDIATE:
-            sprintf(str, "$%ld", var.value.v_long);
-            break;
-        default:
-            error("Could not assemble reference to offset variable.");
-            exit(1);
+    int n;
+
+    /* Assume there is always a IR_CALL after params, not getting out of bounds. */
+    if (ops[i].type != IR_PARAM)
+        return 0;
+
+    if (ops[i].a.type->type != INT64_T && ops[i].a.type->type != POINTER) {
+        error("Parameter other than integer types are not supported.");
+        exit(1);
     }
-    return str;
+
+    if (i < 6) {
+        fprintf(stream, "\tpushq\t%%%s\t\t# save arg %d\n", pregs[i], i);
+        load(stream, ops[i].a, pregs[i]);
+        return 1 + fassembleparams(stream, ops, i + 1);
+    }
+
+    n = fassembleparams(stream, ops, i + 1);
+    fprintf(stream, "\tpushq\t%s\n", refer(ops[i].a));
+    return n + 1;
 }
 
 static void
 fassembleop(FILE *stream, const op_t op)
 {
+    int i;
     switch (op.type) {
         case IR_ASSIGN:
             load(stream, op.b, "rax");
@@ -87,19 +121,46 @@ fassembleop(FILE *stream, const op_t op)
             fprintf(stream, "\tmovq\t(%%rbx), %%rax\n");
             store(stream, "rax", op.a);
             break;
+        case IR_PARAM:
+            error("Rogue parameter.");
+            break;
+        case IR_CALL:
+            if (op.b.symbol->type->type != FUNCTION) {
+                error("Only supports call by name directly.");
+                exit(1);
+            }
+            fprintf(stream, "\tcall\t%s\n", op.b.symbol->name);
+            for (i = op.b.type->n_args - 1; i >= 0; --i)
+                fprintf(stream, "\tpopq\t%%%s\t\t# restore\n", pregs[i]);
+            store(stream, "rax", op.a);
+            break;
         case IR_ADDR:
             fprintf(stream, "\tleaq\t%s, %%rax\n", refer(op.b));
             store(stream, "rax", op.a);
             break;
         case IR_OP_ADD:
             load(stream, op.b, "rax");
-            load(stream, op.c, "rbx");
-            fprintf(stream, "\taddq\t%%rbx, %%rax\n");
+            if (op.c.kind == DIRECT || op.c.kind == IMMEDIATE)
+                fprintf(stream, "\taddq\t%s, %%rax\n", refer(op.c));
+            else {
+                load(stream, op.c, "rbx");
+                fprintf(stream, "\taddq\t%%rbx, %%rax\n");
+            }
+            store(stream, "rax", op.a);
+            break;
+        case IR_OP_SUB:
+            load(stream, op.b, "rax");
+            if (op.c.kind == DIRECT || op.c.kind == IMMEDIATE)
+                fprintf(stream, "\tsubq\t%s, %%rax\n", refer(op.c));
+            else {
+                load(stream, op.c, "rbx");
+                fprintf(stream, "\tsubq\t%%rbx, %%rax\n");
+            }
             store(stream, "rax", op.a);
             break;
         case IR_OP_MUL:
             load(stream, op.c, "rax");
-            if (op.b.kind == DIRECT)
+            if (op.b.kind == DIRECT || op.b.kind == IMMEDIATE)
                 fprintf(stream, "\tmulq\t%s\n", refer(op.b));
             else {
                 load(stream, op.b, "rbx");
@@ -134,7 +195,11 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
 
     fprintf(stream, "%s:\n", block->label);
     for (i = 0; i < block->n; ++i) {
-        fassembleop(stream, block->code[i]);
+        if (block->code[i].type == IR_PARAM) {
+            i += fassembleparams(stream, block->code + i, 0) - 1;
+        } else {
+            fassembleop(stream, block->code[i]);
+        }
     }
 
     if (block->jump[0] == NULL && block->jump[1] == NULL) {
@@ -160,17 +225,23 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
 void
 fassemble(FILE *stream, const function_t *func)
 {
+    static int init;
+
     map_t memo;
     map_init(&memo);
 
-    /* Print header, assume only one function. */
-    fprintf(stream, "\t.text\n");
+    /* Print header. */
+    if (!init) {
+        fprintf(stream, "\t.text\n");
+        init = 1;
+    }
     fprintf(stream, "\t.globl\t%s\n", func->symbol->name);
 
     fprintf(stream, "%s:\n", func->symbol->name);
     fprintf(stream, "\tpushq\t%%rbp\n");
     fprintf(stream, "\tmovq\t%%rsp, %%rbp\n");
-    fprintf(stream, "\tsubq\t$%d, %%rsp\n", func->locals_size);
+    if (func->locals_size)
+        fprintf(stream, "\tsubq\t$%d, %%rsp\n", func->locals_size);
 
     fassembleblock(stream, &memo, func->body);
 

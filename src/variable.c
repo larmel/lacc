@@ -53,3 +53,13 @@ var_long(long value)
     var.value.v_long = value;
     return var;
 }
+
+var_t
+var_void()
+{
+    var_t var;
+
+    var.kind = IMMEDIATE;
+    var.type = type_init(VOID_T);
+    return var;
+}

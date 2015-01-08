@@ -57,7 +57,6 @@ int main(int argc, char* argv[])
         else
             fdotgen(output, fun);
         cfg_finalize(fun);
-        break;
     }
     pop_scope();
 
