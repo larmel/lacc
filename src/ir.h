@@ -40,7 +40,7 @@ typedef struct block
     const char *label;
 
     /* realloc-able list of 3-address code operations */
-    struct op *code;
+    op_t *code;
     unsigned n;
 
     /* Value to evaluate in branch conditions, or return value */
@@ -56,6 +56,7 @@ typedef struct block
 
 typedef struct function
 {
+    /* Reference to function symbol, or NULL if external declarations. */
     const struct symbol *symbol;
 
     /* Number of bytes to allocate to local variables on stack. */

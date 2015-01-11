@@ -186,23 +186,6 @@ dump_symtab()
         tstr = typetostr(symtab[i]->type);
         printf("%s", tstr);
         free(tstr);
-        if (symtab[i]->value) {
-            switch (symtab[i]->type->type) {
-                case INT64_T:
-                    printf(" = %d", (int) symtab[i]->value->v_long);
-                    break;
-                case ARRAY:
-                case POINTER:
-                    if (symtab[i]->type->next 
-                        && symtab[i]->type->next->type == CHAR_T) {
-                        printf(" = \"%s\"", symtab[i]->value->v_string);
-                        break;
-                    }
-                default:
-                    printf(" = immediate");
-                    break;
-            }
-        }
         printf(", size=%d", symtab[i]->type->size);
         if (symtab[i]->type->length)
             printf(", length=%d", symtab[i]->type->length);

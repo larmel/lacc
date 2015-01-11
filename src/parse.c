@@ -62,6 +62,7 @@ parse()
 static block_t *
 declaration(block_t *parent, const symbol_t **symbol)
 {
+    const symbol_t *sym;
     typetree_t *type, *base;
     int i;
 
@@ -70,7 +71,7 @@ declaration(block_t *parent, const symbol_t **symbol)
     while (1) {
         const char *name = NULL;
         type = declarator(base, &name);
-        *symbol = sym_add(name, type);
+        sym  = sym_add(name, type);
 
         free((void *) name);
 
@@ -82,18 +83,11 @@ declaration(block_t *parent, const symbol_t **symbol)
                 var_t val;
                 consume('=');
                 val = assignment_expression(parent);
-                if (val.kind == IMMEDIATE) {
-                    symbol_t *sym = (symbol_t *) *symbol;
-                    sym->type = type_combine(sym->type, val.type);
-                    sym->value = malloc(sizeof(value_t));
-                    *(sym->value) = val.value;
-                } else {
-                    if ((*symbol)->depth == 0) {
-                        error("Declaration must have constant value.");
-                        exit(1);
-                    }
-                    eval_assign(parent, var_direct(*symbol), val);
+                if (sym->depth == 0 && val.kind != IMMEDIATE) {
+                    error("Declaration must have constant value.");
+                    exit(1);
                 }
+                eval_assign(parent, var_direct(sym), val);
                 if (peek() != ',') {
                     consume(';');
                     return parent;
@@ -101,7 +95,7 @@ declaration(block_t *parent, const symbol_t **symbol)
                 break;
             }
             case '{':
-                if (type->type != FUNCTION || (*symbol)->depth > 0) {
+                if (type->type != FUNCTION || sym->depth > 0) {
                     error("Invalid function definition.");
                     exit(1);
                 }
@@ -114,7 +108,7 @@ declaration(block_t *parent, const symbol_t **symbol)
                     sym_add(type->params[i], type->args[i]);
                 }
                 parent = block(parent); /* generate code */
-
+                *symbol = sym;
                 pop_scope();
                 return parent;
             default:

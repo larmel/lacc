@@ -32,10 +32,16 @@ vartostr(const var_t var)
     char *buffer = calloc(64, sizeof(char)); /* memory leak. */
     switch (var.kind) {
         case IMMEDIATE:
-            if (var.type->type == INT64_T)
-                sprintf(buffer, "%ld", var.value.v_long);
-            else {
-                sprintf(buffer, "<?>");
+            switch (var.type->type) {
+                case INT64_T:
+                    sprintf(buffer, "%ld", var.value.v_long);
+                    break;
+                case POINTER:
+                case ARRAY:
+                    sprintf(buffer, "\\\"%s\\\"", var.value.v_string);
+                    break;
+                default:
+                    sprintf(buffer, "(immediate)");  
             }
             break;
         case DIRECT:
@@ -112,8 +118,10 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
         }
     }
     if (node->jump[0] == NULL && node->jump[1] == NULL) {
-        fprintf(stream, " | return");
-        fprintf(stream, " %s", vartostr(node->expr));
+        if (node->expr.type->type != VOID_T) {
+            fprintf(stream, " | return");
+            fprintf(stream, " %s", vartostr(node->expr));
+        }
         fprintf(stream, " }\"];\n");
     } else if (node->jump[1] != NULL) {
         fprintf(stream, " | if %s goto %s", vartostr(node->expr), escape(node->jump[1]->label));

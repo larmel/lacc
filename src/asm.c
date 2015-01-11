@@ -15,6 +15,11 @@ refer(const var_t var)
         case DIRECT:
             if (var.symbol->param_n && !var.symbol->stack_offset)
                 sprintf(str, "%%%s", pregs[var.symbol->param_n - 1]);
+            else if (var.symbol->depth == 0)
+                if (var.type->type == ARRAY || var.type->type == POINTER)
+                    sprintf(str, "$%s", var.symbol->name);
+                else
+                    sprintf(str, "%s(%%rip)", var.symbol->name);
             else
                 sprintf(str, "%d(%%rbp)", var.symbol->stack_offset);
             break;
@@ -36,7 +41,7 @@ load(FILE *stream, var_t var, const char *dest)
             fprintf(stream, "\tmovq\t$%ld, %%%s\n", var.value.v_long, dest);
             break;
         case DIRECT:
-            if (var.type->type == ARRAY)
+            if (var.type->type == ARRAY && var.symbol->depth)
                 fprintf(stream, "\tleaq\t%d(%%rbp), %%%s\t# load %s\n", var.symbol->stack_offset, dest, var.symbol->name);
             else
                 fprintf(stream, "\tmovq\t%s, %%%s\t# load %s\n", refer(var), dest, var.symbol->name);
@@ -91,7 +96,8 @@ fassembleparams(FILE *stream, op_t *ops, int i)
     if (ops[i].type != IR_PARAM)
         return 0;
 
-    if (ops[i].a.type->type != INT64_T && ops[i].a.type->type != POINTER) {
+    if (ops[i].a.type->type != INT64_T && ops[i].a.type->type != POINTER
+        && ops[i].a.type->type != ARRAY) {
         error("Parameter other than integer types are not supported.");
         exit(1);
     }
@@ -223,18 +229,50 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
 }
 
 void
+fasmimmediate(FILE *stream, const block_t *body)
+{
+    int i;
+    const symbol_t *symbol;
+    value_t value;
+
+    fprintf(stream, "\t.data\n");
+    for (i = 0; i < body->n; ++i) {
+        if (body->n != 1 || body->code[0].type != IR_ASSIGN) {
+            error("Internal error: External declaration must have constant value.");
+            exit(1);
+        }
+        symbol = body->code[i].a.symbol;
+        value = body->code[i].b.value;
+        
+        fprintf(stream, "\t.globl\t%s\n", symbol->name);
+        fprintf(stream, "%s:\n", symbol->name);
+        switch (symbol->type->type) {
+            case INT64_T:
+                fprintf(stream, "\t.quad\t%ld\n", value.v_long);
+                break;
+            case POINTER:
+            case ARRAY:
+                fprintf(stream, "\t.string \"%s\"\n", value.v_string);
+                break;
+            default:
+                fprintf(stream, "\t (immediate)\n");
+        }
+    }
+}
+
+void
 fassemble(FILE *stream, const function_t *func)
 {
-    static int init;
-
     map_t memo;
+
+    if (!func->symbol) {
+        fasmimmediate(stream, func->body);
+        return;
+    }
+
     map_init(&memo);
 
-    /* Print header. */
-    if (!init) {
-        fprintf(stream, "\t.text\n");
-        init = 1;
-    }
+    fprintf(stream, "\t.text\n");
     fprintf(stream, "\t.globl\t%s\n", func->symbol->name);
 
     fprintf(stream, "%s:\n", func->symbol->name);

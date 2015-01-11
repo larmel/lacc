@@ -36,6 +36,7 @@ block_init()
     }
     block = calloc(1, sizeof(block_t));
     block->label = mklabel();
+    block->expr = var_void();
 
     if (function->size == function->capacity) {
         function->capacity += 16;

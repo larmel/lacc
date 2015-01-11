@@ -40,15 +40,6 @@ typedef struct typetree
     const struct typetree *next;
 } typetree_t;
 
-/* Immediate value. */
-typedef union value
-{
-    char v_char;
-    long v_long;
-    double v_double;
-    const char *v_string;
-} value_t;
-
 /* A symbol represents declarations that may have a storage location 
  * at runtime, such as functions, static and local variables.
  * Store offset to base pointer for automatic variables and function 
@@ -60,8 +51,16 @@ typedef struct symbol
     int param_n; /* The n'th function argument. 1-indexed to keep 0 default. */
     int stack_offset; /* Argument or local variable offset to base pointer. */
     int depth;
-    value_t *value; /* initialized value */
 } symbol_t;
+
+/* Immediate value. */
+typedef union value
+{
+    char v_char;
+    long v_long;
+    double v_double;
+    const char *v_string;
+} value_t;
 
 /* A reference to some storage location or direct value, used in intermediate
  * representation of expressions. There are three modes:
