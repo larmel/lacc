@@ -35,21 +35,21 @@ parse()
     fun = cfg_create();
     body = block_init();
 
-    do {
+    while (1) {
         symbol = NULL;
         if (peek() == '$')
             break;
         declaration(body, &symbol);
-    } while (symbol->type->type != FUNCTION);
 
-    if (symbol) {
-        fun->symbol = symbol;
-        fun->body = body;
+        if (body->n > 0 || fun->size > 1) {
+            fun->symbol = symbol;
+            fun->body = body;
 
-        /* Hack: write stack offset as we are done adding all symbols,
-         * reading variable from symtab code. */
-        fun->locals_size = (-1) * var_stack_offset;
-        return fun;
+            /* Hack: write stack offset as we are done adding all symbols,
+             * reading variable from symtab code. */
+            fun->locals_size = (-1) * var_stack_offset;
+            return fun;
+        }
     }
 
     cfg_finalize(fun);
@@ -82,23 +82,18 @@ declaration(block_t *parent, const symbol_t **symbol)
                 var_t val;
                 consume('=');
                 val = assignment_expression(parent);
-                if (val.kind == DIRECT) {
-                    const typetree_t *newtype = type_combine((*symbol)->type, val.type);
-                    if (!newtype) {
-                        char *a = typetostr(val.type),
-                             *b = typetostr((*symbol)->type);
-                        error("Cannot assign value of type `%s` to variable of type `%s`.", a, b);
-                        free(a), free(b);
+                if (val.kind == IMMEDIATE) {
+                    symbol_t *sym = (symbol_t *) *symbol;
+                    sym->type = type_combine(sym->type, val.type);
+                    sym->value = malloc(sizeof(value_t));
+                    *(sym->value) = val.value;
+                } else {
+                    if ((*symbol)->depth == 0) {
+                        error("Declaration must have constant value.");
                         exit(1);
                     }
-                    ((symbol_t*)*symbol)->type = newtype;
-                    ((symbol_t*)*symbol)->value = malloc(sizeof(value_t));
-                    ((symbol_t*)*symbol)->value->v_long = val.value.v_long;
-                } else if ((*symbol)->depth == 0) {
-                    error("Declaration must have constant value.");
-                    exit(1);
+                    eval_assign(parent, var_direct(*symbol), val);
                 }
-                eval_assign(parent, var_direct(*symbol), val);
                 if (peek() != ',') {
                     consume(';');
                     return parent;
