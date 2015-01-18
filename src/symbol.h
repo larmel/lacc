@@ -3,40 +3,50 @@
 
 #include <stddef.h>
 
+
 enum tree_type
-{ 
-    CHAR_T, INT64_T, DOUBLE_T, VOID_T, POINTER, FUNCTION, ARRAY 
+{
+    INTEGER,    /* char, short, int, long */ 
+    REAL,       /* float, double */
+    POINTER,
+    FUNCTION,
+    ARRAY,
+    NONE        /* void */
 };
 
-enum qualifier
+typedef struct flags
 {
-    CONST_Q = 0x1, VOLATILE_Q = 0x2, NONE_Q = 0x0
-};
+    unsigned fconst : 1;
+    unsigned fvolatile : 1;
+    unsigned funsigned: 1;
+} flags_t;
 
 /* static int *foo, bar;
  * ( .name = "foo", .type )    ( .name = "bar", .type )
  *                     |                         |
  *          ( .type = POINTER, .next )          /
  *                               |             /
- *                             ( .type = INT64_T )
+ *                             ( .type=INTEGER, .size=4 )
  */
 typedef struct typetree
 {
     enum tree_type type;
-    int flags;
+    flags_t flags;
 
-    /* Storage size in bytes */
+    /* Storage size in bytes, for everything except INTEGER and REAL, this is
+     * always the length of one word, i.e. 8 byte. */
     unsigned size;
 
-    /* Array dimension width, how many elements of size we have */
+    /* Array dimension width, lookup base size recursively in *next to find
+     * total storage size. */
     unsigned length;
 
-    /* Specific for function types */
+    /* Specific for function types. */
     const struct typetree **args;
     const char **params;
     unsigned n_args;
 
-    /* Function return value, pointer target, or array base */
+    /* Function return value, pointer target, or array base. */
     const struct typetree *next;
 } typetree_t;
 

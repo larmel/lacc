@@ -27,12 +27,15 @@ var_t
 var_string(const char *text)
 {
     var_t var;
-    typetree_t *type;
+    typetree_t *type, *next;
+
+    next = type_init(INTEGER); /* char */
+    next->size = 1;
 
     type = type_init(ARRAY);
     type->length = strlen(text);
-    type->next = type_init(CHAR_T);
-    type->size = type->next->size;
+    type->next = next;
+    type->size = next->size * type->length;
 
     var.kind = IMMEDIATE;
     var.type = type;
@@ -46,7 +49,8 @@ var_long(long value)
     var_t var;
     typetree_t *type;
 
-    type = type_init(INT64_T);
+    type = type_init(INTEGER);
+    type->size = 8;
 
     var.kind = IMMEDIATE;
     var.type = type;
@@ -60,6 +64,6 @@ var_void()
     var_t var;
 
     var.kind = IMMEDIATE;
-    var.type = type_init(VOID_T);
+    var.type = type_init(NONE);
     return var;
 }

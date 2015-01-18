@@ -11,10 +11,14 @@ type_init(enum tree_type type)
     typetree_t *tree = calloc(1, sizeof(typetree_t));
     tree->type = type;
     switch (type) {
-        case CHAR_T:
-            tree->size = 1;
+        case INTEGER:
+        case REAL:
+            tree->size = 4; /* default is 32 bit int and float */
             break;
-        default:
+        case FUNCTION:
+        case ARRAY:
+        case POINTER:
+        case NONE:
             tree->size = 8;
     }
     return tree;
@@ -36,7 +40,7 @@ type_equal(const typetree_t *a, const typetree_t *b)
             error("Arithmetic on function types not supported.");
             exit(1);
         default:
-            return a->type == b->type;
+            return a->type == b->type && a->size == b->size;
     }
     return 0;
 }
@@ -47,7 +51,7 @@ type_combine(const typetree_t *a, const typetree_t *b)
 {
     char *stra, *strb;
     if (!a || !b) {
-        error("Internal error: cannot combine NULL type.");
+        error("Cannot combine NULL type.");
         exit(1);
     }
 
@@ -57,27 +61,33 @@ type_combine(const typetree_t *a, const typetree_t *b)
         ptr->next = a->next;
         a = ptr;
     }
-    if (a->type == POINTER && b->type == INT64_T)
-        return a;
-
     if (b->type == ARRAY) {
         typetree_t *ptr = type_init(POINTER);
         ptr->next = b->next;
         b = ptr;
     }
-    if (b->type == POINTER && a->type == INT64_T)
+
+    /* Pointer arithmetic */
+    if (a->type == POINTER && b->type == INTEGER)
+        return a;
+    if (b->type == POINTER && a->type == INTEGER)
         return b;
 
-    if (type_equal(a, b))
-        return a;
+    /* Integer promotion */
+    if (a->type == INTEGER && b->type == INTEGER) {
+        if (a->size > b->size) b = a;
+        if (a->size < b->size) a = b;
+    }
 
-    stra = typetostr(a);
-    strb = typetostr(b);
-    error("Cannot combine types `%s` and `%s`.", stra, strb);
-    free(stra);
-    free(strb);
-    exit(1);
-    return NULL;
+    if (!type_equal(a, b)) {
+        stra = typetostr(a);
+        strb = typetostr(b);
+        error("Cannot combine types `%s` and `%s`.", stra, strb);
+        free(stra);
+        free(strb);
+        exit(1);
+    }
+    return a;
 }
 
 const typetree_t *
@@ -108,26 +118,51 @@ snprinttype(const typetree_t *tree, char *s, int size)
     int i, w = 0;
     if (!tree)
         return w;
+
+    if (tree->flags.funsigned)
+        w += snprintf(s + w, size - w, "unsigned ");
+    if (tree->flags.fconst)
+        w += snprintf(s, size, "const ");
+    if (tree->flags.fvolatile)
+        w += snprintf(s + w, size - w, "volatile ");
+
     switch (tree->type) {
-        case CHAR_T:
-            w = snprintf(s, size, "char");
+        case INTEGER:
+            switch (tree->size) {
+                case 1:
+                    w += snprintf(s + w, size - w, "char");
+                    break;
+                case 2:
+                    w += snprintf(s + w, size - w, "short");
+                    break;
+                case 4:
+                    w += snprintf(s + w, size - w, "int");
+                    break;
+                case 8:
+                    w += snprintf(s + w, size - w, "long");
+                    break;
+                default:
+                    w += snprintf(s + w, size - w, "__int%d", tree->size * 8);
+                    break;
+            }
             break;
-        case INT64_T:
-            w = snprintf(s, size, "int");
+        case REAL:
+            switch (tree->size) {
+                case 4:
+                    w += snprintf(s + w, size - w, "float");
+                    break;
+                case 8:
+                    w += snprintf(s + w, size - w, "double");
+                    break;
+                default:
+                    w += snprintf(s + w, size - w, "__real%d", tree->size * 8);
+                    break;
+            }
             break;
-        case DOUBLE_T:
-            w = snprintf(s, size, "double");
-            break;
-        case VOID_T:
-            w = snprintf(s, size, "void");
+        case NONE:
+            w += snprintf(s + w, size - w, "void");
             break;
         case POINTER:
-            if (tree->flags) {
-                if (tree->flags & CONST_Q) 
-                    w += snprintf(s, size, "const ");
-                if (tree->flags & VOLATILE_Q) 
-                    w += snprintf(s + w, size - w, "volatile ");
-            }
             w += snprintf(s + w, size - w, "* ");
             w += snprinttype(tree->next, s + w, size - w);
             break;
@@ -143,9 +178,9 @@ snprinttype(const typetree_t *tree, char *s, int size)
             break;
         case ARRAY:
             if (tree->length > 0)
-                w += snprintf(s, size, "[%u] ", tree->length);
+                w += snprintf(s + w, size - w, "[%u] ", tree->length);
             else
-                w += snprintf(s, size, "[] ");
+                w += snprintf(s + w, size - w, "[] ");
             w += snprinttype(tree->next, s + w, size - w);
             break;
         default:

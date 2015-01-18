@@ -33,7 +33,7 @@ vartostr(const var_t var)
     switch (var.kind) {
         case IMMEDIATE:
             switch (var.type->type) {
-                case INT64_T:
+                case INTEGER:
                     sprintf(buffer, "%ld", var.value.v_long);
                     break;
                 case POINTER:
@@ -118,7 +118,7 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
         }
     }
     if (node->jump[0] == NULL && node->jump[1] == NULL) {
-        if (node->expr.type->type != VOID_T) {
+        if (node->expr.type->type != NONE) {
             fprintf(stream, " | return");
             fprintf(stream, " %s", vartostr(node->expr));
         }

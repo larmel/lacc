@@ -30,14 +30,14 @@ eval_expr(block_t *block, optype_t optype, var_t left, var_t right)
         case IR_OP_BITWISE_AND:
         case IR_OP_ADD:
             if (left.kind == IMMEDIATE && right.kind == IMMEDIATE &&
-                left.type->type == INT64_T && right.type->type == INT64_T) {
+                left.type->type == INTEGER && right.type->type == INTEGER) {
 
                 return var_long(left.value.v_long + right.value.v_long);
             }
         case IR_OP_SUB:
         case IR_OP_MUL:
             if (left.kind == IMMEDIATE && right.kind == IMMEDIATE &&
-                left.type->type == INT64_T && right.type->type == INT64_T) {
+                left.type->type == INTEGER && right.type->type == INTEGER) {
 
                 return var_long(left.value.v_long * right.value.v_long);
             }
@@ -185,7 +185,7 @@ eval_call(block_t *block, var_t func)
     var_t res;
     const symbol_t *temp;
 
-    if (func.type->next->type == VOID_T) {
+    if (func.type->next->type == NONE) {
         res = var_void();
     } else {
         temp = sym_temp(func.type->next);

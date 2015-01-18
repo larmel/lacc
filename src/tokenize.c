@@ -294,7 +294,7 @@ get_token(token_t *t)
         case '9':
             n = integer(tok - 1);
             if (n) {
-                t->type = INTEGER;
+                t->type = INTEGER_CONSTANT;
                 t->value = number;
                 tok += n - 1;
                 return n;

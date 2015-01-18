@@ -102,7 +102,7 @@ declaration(block_t *parent, const symbol_t **symbol)
                 push_scope();
                 for (i = 0; i < type->n_args; ++i) {
                     if (!type->params[i]) {
-                        error("Missing parameter name at position %d", i + 1);
+                        error("Missing parameter name at position %d.", i + 1);
                         exit(1);
                     }
                     sym_add(type->params[i], type->args[i]);
@@ -122,35 +122,62 @@ static typetree_t *
 declaration_specifiers()
 {
     int end = 0;
-    typetree_t *type = NULL; 
-    int flags = 0x0;
+    typetree_t *type = NULL;
+    flags_t flags;
+
+    flags.fconst = 0;
+    flags.fvolatile = 0;
     while (1) {
         switch (peek()) {
             case AUTO: case REGISTER: case STATIC: case EXTERN: case TYPEDEF:
                 /* todo: something about storage class, maybe do it before this */
                 break;
             case CHAR:
-                type = type_init(CHAR_T);
+                type = type_init(INTEGER);
+                type->size = 1;
                 break;
             case SHORT:
+                type = type_init(INTEGER);
+                type->size = 2;
+                break;
             case INT:
-            case LONG:
             case SIGNED:
+                type = type_init(INTEGER);
+                type->size = 4;
+                break;
+            case LONG:
+                type = type_init(INTEGER);
+                type->size = 8;
+                break;
             case UNSIGNED:
-                type = type_init(INT64_T);
+                if (!type) {
+                    type = type_init(INTEGER);
+                    type->size = 4;
+                }
+                flags.funsigned = 1;
                 break;
             case FLOAT:
+                type = type_init(REAL);
+                type->size = 4;
+                break;
             case DOUBLE:
-                type = type_init(DOUBLE_T);
+                type = type_init(REAL);
+                type->size = 8;
                 break;
             case VOID:
-                type = type_init(VOID_T);
+                type = type_init(NONE);
                 break;
             case CONST:
-                flags |= CONST_Q;
+                if (flags.fconst) {
+                    error("Duplicate const qualifier.");
+                }
+                flags.fconst = 1;
                 break;
             case VOLATILE:
-                flags |= VOLATILE_Q;
+                if (flags.fvolatile) {
+                    error("Duplicate volatile qualifier.");
+                }
+                flags.fvolatile = 1;
                 break;
             default:
                 end = 1;
@@ -159,7 +186,7 @@ declaration_specifiers()
         consume(peek());
     }
     if (type == NULL) {
-        error("Missing type specifier, aborting");
+        error("Missing type specifier.");
         exit(1);
     }
     type->flags = flags;
@@ -183,7 +210,10 @@ pointer(const typetree_t *base)
     base = type;
     consume('*');
     while (peek() == CONST || peek() == VOLATILE) {
-        type->flags |= (readtoken().type == CONST) ? CONST_Q : VOLATILE_Q;
+        if (readtoken().type == CONST)
+            type->flags.fconst = 1;
+        else
+            type->flags.fvolatile = 1;
     }
     return type;
 }
@@ -203,7 +233,7 @@ direct_declarator_array(typetree_t *base)
         if (peek() != ']') {
             block_t *throwaway = block_init();
             expr = constant_expression(throwaway);
-            if (expr.kind != IMMEDIATE || expr.type->type != INT64_T) {
+            if (expr.kind != IMMEDIATE || expr.type->type != INTEGER) {
                 error("Array declaration must be a compile time constant, aborting");
                 exit(1);
             }
@@ -223,7 +253,7 @@ direct_declarator_array(typetree_t *base)
 
         root->next = base;
         root->length = length;
-        root->size = (base->type == ARRAY) ? base->size * base->length : base->size;
+        /*root->size = (base->type == ARRAY) ? base->size * base->length : base->size;*/
         base = root;
     }
     return base;
@@ -497,7 +527,7 @@ statement(block_t *parent)
             /* todo */
             break;
         case IDENTIFIER: /* also part of label statement, need 2 lookahead */
-        case INTEGER: /* todo: any constant value */
+        case INTEGER_CONSTANT: /* todo: any constant value */
         case STRING:
         case '*':
         case '(':
@@ -700,6 +730,14 @@ unary_expression(block_t *block)
     return expr;
 }
 
+/* Size to skip for array indexing. */
+static unsigned array_skip(const typetree_t *t)
+{
+    if (t->type == ARRAY)
+        return t->length * array_skip(t->next);
+    return t->size;
+}
+
 /* This rule is left recursive, build tree bottom up
  */
 static var_t
@@ -725,7 +763,7 @@ postfix_expression(block_t *block)
                 while (peek() == '[') {
                     consume('[');
                     expr = expression(block);
-                    addr = eval_expr(block, IR_OP_MUL, expr, var_long(root.type->size));
+                    addr = eval_expr(block, IR_OP_MUL, expr, var_long(array_skip(root.type)));
                     addr = eval_expr(block, IR_OP_ADD, root, addr);
                     root = eval_deref(block, addr);
                     consume(']');
@@ -783,7 +821,7 @@ primary_expression(block_t *block)
             }
             var = var_direct(symbol);
             break;
-        case INTEGER:
+        case INTEGER_CONSTANT:
             var = var_long(strtol(token.value, NULL, 0));
             break;
         case '(':
