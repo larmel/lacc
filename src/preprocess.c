@@ -182,11 +182,11 @@ getcleanline(char **lineptr, size_t *n, source_t *fn)
                 error("Invalid end of file after line continuation, aborting");
                 exit(0);
             }
-            if (next == '\n')
+            if (next == '\n') {
                 fn->line++;
-            else
-                ungetc(next, stream);
-            continue;
+                continue;
+            }
+            ungetc(next, stream);
         }
         /* end of comment */
         if (state == COMMENT) {

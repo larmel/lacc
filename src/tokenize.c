@@ -1,6 +1,7 @@
 #include "error.h"
 #include "token.h"
 
+#include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -85,6 +86,67 @@ static int integer(char *input)
     }
 }
 
+/* Parse character literals in the format 'a', '\xaf', '\0', '\077' etc,
+ * starting from *in. The position of the character after the last ' character
+ * is stored in endptr. If no valid conversion can be made, *endptr == in.
+ */
+static char strtochar(char *in, char **endptr)
+{
+    char value, *end;
+
+    if (endptr)
+        *endptr = in;
+
+    if (*in++ != '\'')
+        return 0;
+
+    value = *in++;
+    if (value == '\\') {
+        switch (*in++) {
+            case 'a': value = 0x7; break;
+            case 'b': value = 0x8; break;
+            case 't': value = 0x9; break;
+            case 'n': value = 0xa; break;
+            case 'v': value = 0xb; break;
+            case 'f': value = 0xc; break;
+            case 'r': value = 0xd; break;
+            case '\\': value = '\\'; break;
+            case '?': value = '\?'; break;
+            case '`': value = '`'; break;
+            case '\"': value = '\"'; break;
+            case '0': 
+                if (*in == '\'') {
+                    value = 0; 
+                    break;
+                }
+                value = (char) strtol(in, &end, 8);
+                if (end == in) {
+                    error("Invalid octal literal.");
+                    return 0;
+                }
+                in = end;
+                break;
+            case 'x':
+                value = (char) strtol(in, &end, 16);
+                if (end == in) {
+                    error("Invalid hex literal.");
+                    return 0;
+                }
+                in = end;
+                break;
+            default:
+                error("Invalid escape sequence.");
+                return 0;
+        }
+    }
+    if (*in++ != '\'')
+        return 0;
+
+    if (endptr)
+        *endptr = in;
+    return value;
+}
+
 static int string(char *input)
 {
     int state = 0, read = 0;
@@ -157,7 +219,10 @@ get_token(token_t *t)
     static char *line;
 
     /* Current start of token in preprocessed line. */
-    static char *tok = NULL;
+    static char *tok = NULL, *end;
+
+    /* Value for numerical immediate values. */
+    long literal;
 
     /* Need more stuff from preprocessor */
     if (tok == NULL || *tok == '\0') {
@@ -311,6 +376,16 @@ get_token(token_t *t)
                 return n;
             }
             break;
+        case '\'':
+            literal = strtochar(tok - 1, &end);
+            if (end != tok - 1) {
+                snprintf(number, 63, "%d", (int)literal);
+                t->type = INTEGER_CONSTANT;
+                t->value = number;
+                tok = end;
+                return 1; /* doesn't matter what we return. */
+            }
+            break;
         case '=':
             if (*tok == '=') {
                 tok++;
@@ -337,7 +412,8 @@ get_token(token_t *t)
     }
     tok--;
 
-    error("Could not match any token for input '%s'\n", tok);
+    error("Could not match any token for input `%s`", tok);
+    exit(1);
     return 0;
 }
 
