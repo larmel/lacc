@@ -237,7 +237,7 @@ direct_declarator_array(typetree_t *base)
                 error("Array declaration must be a compile time constant, aborting");
                 exit(1);
             }
-            length = expr.value.v_long;
+            length = expr.value.integer;
             if (length < 1) {
                 error("Invalid array size %ld, aborting");
                 exit(1);
@@ -266,7 +266,7 @@ direct_declarator(typetree_t *base, const char **symbol)
     switch (peek()) {
         case IDENTIFIER:
             /* Allocate dumplicate value, the tokenized one is temporary. */
-            *symbol = strdup(readtoken().value);
+            *symbol = strdup(readtoken().value.string);
             break;
         case '(':
             consume('(');
@@ -548,7 +548,7 @@ static const symbol_t *
 identifier()
 {
     token_t name = readtoken();
-    const symbol_t *sym = sym_lookup(name.value);
+    const symbol_t *sym = sym_lookup(name.value.string);
     if (sym == NULL) {
         error("Undefined symbol '%s', aborting", name.value);
         exit(0);
@@ -814,25 +814,25 @@ primary_expression(block_t *block)
     token = readtoken();
     switch (token.type) {
         case IDENTIFIER:
-            symbol = sym_lookup(token.value);
+            symbol = sym_lookup(token.value.string);
             if (symbol == NULL) {
-                error("Undefined symbol '%s', aborting", token.value);
+                error("Undefined symbol '%s', aborting", token.value.string);
                 exit(0);
             }
             var = var_direct(symbol);
             break;
         case INTEGER_CONSTANT:
-            var = var_long(strtol(token.value, NULL, 0));
+            var = var_long(token.value.integer);
             break;
         case '(':
             var = expression(block);
             consume(')');
             break;
         case STRING:
-            var = var_string(token.value);
+            var = var_string(token.value.string);
             break;
         default:
-            error("Unexpected token '%s', not a valid primary expression", token.value);
+            error("Unexpected token '%s', not a valid primary expression", token.value.string);
             exit(0);
     }
     return var;

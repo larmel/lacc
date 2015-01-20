@@ -39,7 +39,7 @@ var_string(const char *text)
 
     var.kind = IMMEDIATE;
     var.type = type;
-    var.value.v_string = strdup(text);
+    var.value.string = strdup(text);
     return var;
 }
 
@@ -54,7 +54,7 @@ var_long(long value)
 
     var.kind = IMMEDIATE;
     var.type = type;
-    var.value.v_long = value;
+    var.value.integer = value;
     return var;
 }
 

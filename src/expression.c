@@ -32,14 +32,14 @@ eval_expr(block_t *block, optype_t optype, var_t left, var_t right)
             if (left.kind == IMMEDIATE && right.kind == IMMEDIATE &&
                 left.type->type == INTEGER && right.type->type == INTEGER) {
 
-                return var_long(left.value.v_long + right.value.v_long);
+                return var_long(left.value.integer + right.value.integer);
             }
         case IR_OP_SUB:
         case IR_OP_MUL:
             if (left.kind == IMMEDIATE && right.kind == IMMEDIATE &&
                 left.type->type == INTEGER && right.type->type == INTEGER) {
 
-                return var_long(left.value.v_long * right.value.v_long);
+                return var_long(left.value.integer * right.value.integer);
             }
         case IR_OP_DIV:
         case IR_OP_MOD:

@@ -209,10 +209,11 @@ static struct {
     { "while", WHILE }
 };
 
-static int
-get_token(token_t *t)
+static token_t
+get_token()
 {
     int n;
+    token_t token;
 
     /* Create tokens from a preprocessed line at a time, no token can span
      * multiple lines. Invoke the preprocessor on demand */
@@ -221,15 +222,12 @@ get_token(token_t *t)
     /* Current start of token in preprocessed line. */
     static char *tok = NULL, *end;
 
-    /* Value for numerical immediate values. */
-    long literal;
-
     /* Need more stuff from preprocessor */
     if (tok == NULL || *tok == '\0') {
         if (getprepline(&line) == -1) {
-            t->type = END;
-            t->value = NULL;
-            return 0; /* eof */
+            token.type = END;
+            token.value.string = NULL;
+            return token;
         }
         tok = line;
     }
@@ -241,9 +239,9 @@ get_token(token_t *t)
         int length = strlen(keywords[n].value);
         if (!strncmp(tok, keywords[n].value, length) && !isalnum(*(tok + length))) {
             tok += length;
-            t->type = keywords[n].type;
-            t->value = keywords[n].value;
-            return length;
+            token.type = keywords[n].type;
+            token.value.string = keywords[n].value;
+            return token;
         }
     }
 
@@ -251,102 +249,102 @@ get_token(token_t *t)
         case '+':
             if (*tok == '+') {
                 tok++;
-                t->type = INCREMENT; t->value = "++";
-                return 2;
+                token.type = INCREMENT; token.value.string = "++";
+                return token;
             }
-            t->type = PLUS; t->value = "+";
-            return 1;
+            token.type = PLUS; token.value.string = "+";
+            return token;
         case '-':
             if (*tok == '-') {
                 tok++;
-                t->type = DECREMENT; t->value = "--";
-                return 2;
+                token.type = DECREMENT; token.value.string = "--";
+                return token;
             }
             if (*tok == '>') {
                 tok++;
-                t->type = ARROW; t->value = "->";
-                return 2;
+                token.type = ARROW; token.value.string = "->";
+                return token;
             }
-            t->type = MINUS; t->value = "-";
-            return 1;
+            token.type = MINUS; token.value.string = "-";
+            return token;
         case '!':
             if (*tok == '=') {
                 tok++;
-                t->type = NEQ; t->value = "!=";
-                return 2;
+                token.type = NEQ; token.value.string = "!=";
+                return token;
             }
-            t->type = NOT; t->value = "!";
-            return 1;
+            token.type = NOT; token.value.string = "!";
+            return token;
         case '|':
             if (*tok == '|') {
                 tok++;
-                t->type = LOGICAL_OR; t->value = "||";
-                return 2;
+                token.type = LOGICAL_OR; token.value.string = "||";
+                return token;
             }
-            t->type = OR; t->value = "|";
-            return 1;
+            token.type = OR; token.value.string = "|";
+            return token;
         case '&':
             if (*tok == '&') {
                 tok++;
-                t->type = LOGICAL_AND; t->value = "&&";
-                return 2;
+                token.type = LOGICAL_AND; token.value.string = "&&";
+                return token;
             }
-            t->type = AND; t->value = "&";
-            return 1;
+            token.type = AND; token.value.string = "&";
+            return token;
         case '^':
-            t->type = XOR; t->value = "^";
-            return 1;
+            token.type = XOR; token.value.string = "^";
+            return token;
         case '%':
-            t->type = MODULO; t->value = "%%";
-            return 1;
+            token.type = MODULO; token.value.string = "%%";
+            return token;
         case '<':
             if (*tok == '=') {
                 tok++;
-                t->type = LEQ; t->value = "<=";
-                return 2;
+                token.type = LEQ; token.value.string = "<=";
+                return token;
             }
-            t->type = LT; t->value = "<";
-            return 1;
+            token.type = LT; token.value.string = "<";
+            return token;
         case '>':
             if (*tok == '=') {
                 tok++;
-                t->type = GEQ; t->value = ">=";
-                return 2;
+                token.type = GEQ; token.value.string = ">=";
+                return token;
             }
-            t->type = GT; t->value = ">";
-            return 1;
+            token.type = GT; token.value.string = ">";
+            return token;
         case '(':
-            t->type = OPEN_PAREN; t->value = "(";
-            return 1;
+            token.type = OPEN_PAREN; token.value.string = "(";
+            return token;
         case ')':
-            t->type = CLOSE_PAREN; t->value = ")";
-            return 1;
+            token.type = CLOSE_PAREN; token.value.string = ")";
+            return token;
         case ';':
-            t->type = SEMICOLON; t->value = ";";
-            return 1;
+            token.type = SEMICOLON; token.value.string = ";";
+            return token;
         case '{':
-            t->type = OPEN_CURLY; t->value = "{";
-            return 1;
+            token.type = OPEN_CURLY; token.value.string = "{";
+            return token;
         case '}':
-            t->type = CLOSE_CURLY; t->value = "}";
-            return 1;
+            token.type = CLOSE_CURLY; token.value.string = "}";
+            return token;
         case '[':
-            t->type = OPEN_BRACKET; t->value = "[";
-            return 1;
+            token.type = OPEN_BRACKET; token.value.string = "[";
+            return token;
         case ']':
-            t->type = CLOSE_BRACKET; t->value = "]";
-            return 1;
+            token.type = CLOSE_BRACKET; token.value.string = "]";
+            return token;
         case ',':
-            t->type = COMMA; t->value = ",";
-            return 1;
+            token.type = COMMA; token.value.string = ",";
+            return token;
         case '.':
             if (strncmp(tok, "..", 2)) {
                 tok += 2;
-                t->type = DOTS; t->value = "...";
-                return 3;
+                token.type = DOTS; token.value.string = "...";
+                return token;
             }
-            t->type = DOT; t->value = ".";
-            return 1;
+            token.type = DOT; token.value.string = ".";
+            return token;
         case '0':
         case '1':
         case '2':
@@ -359,10 +357,10 @@ get_token(token_t *t)
         case '9':
             n = integer(tok - 1);
             if (n) {
-                t->type = INTEGER_CONSTANT;
-                t->value = number;
+                token.type = INTEGER_CONSTANT;
+                token.value.integer = (long)number;
                 tok += n - 1;
-                return n;
+                return token;
             }
             break;
         case '"':
@@ -370,51 +368,46 @@ get_token(token_t *t)
             if (n) {
                 /* Overwrite the last " to create end of string. */
                 tok[n - 2] = '\0';
-                t->type = STRING;
-                t->value = tok;
+                token.type = STRING;
+                token.value.string = tok;
                 tok += n - 1;
-                return n;
+                return token;
             }
             break;
         case '\'':
-            literal = strtochar(tok - 1, &end);
+            token.type = INTEGER_CONSTANT;
+            token.value.integer = strtochar(tok - 1, &end);
             if (end != tok - 1) {
-                snprintf(number, 63, "%d", (int)literal);
-                t->type = INTEGER_CONSTANT;
-                t->value = number;
                 tok = end;
-                return 1; /* doesn't matter what we return. */
+                return token;
             }
             break;
         case '=':
             if (*tok == '=') {
                 tok++;
-                t->type = EQ; t->value = "==";
-                return 2;
+                token.type = EQ; token.value.string = "==";
+                return token;
             }
-            t->type = ASSIGN; t->value = "=";
-            return 1;
+            token.type = ASSIGN; token.value.string = "=";
+            return token;
         case '*': /* todo: fix operators such as *= */
-            t->type = STAR; t->value = "*";
-            return 1;
+            token.type = STAR; token.value.string = "*";
+            return token;
         case '/':
-            t->type = SLASH; t->value = "/";
-            return 1;
+            token.type = SLASH; token.value.string = "/";
+            return token;
         default:
             n = identifier(tok - 1);
             if (n) {
-                t->type = IDENTIFIER;
-                t->value = ident;
+                token.type = IDENTIFIER;
+                token.value.string = ident;
                 tok += n - 1;
-                return n;
+                return token;
             }
             break;
     }
-    tok--;
-
     error("Could not match any token for input `%s`", tok);
     exit(1);
-    return 0;
 }
 
 static token_t peek_value;
@@ -430,7 +423,7 @@ readtoken()
             has_value = 0;
         return peek_value;
     }
-    get_token(&t);
+    t = get_token();
     return t;
 }
 

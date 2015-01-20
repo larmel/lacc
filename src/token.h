@@ -57,11 +57,19 @@ enum token
     END = '$'
 };
 
+/* Immediate value. */
+typedef union value
+{
+    long integer;
+    double real;
+    const char *string;
+} value_t;
+
 /* Token type and value, as it appears in the input. */
 typedef struct
 {
     enum token type;
-    const char *value;
+    value_t value;
 } token_t;
 
 /* Tokenizer interface. */

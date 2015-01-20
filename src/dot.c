@@ -34,11 +34,11 @@ vartostr(const var_t var)
         case IMMEDIATE:
             switch (var.type->type) {
                 case INTEGER:
-                    sprintf(buffer, "%ld", var.value.v_long);
+                    sprintf(buffer, "%ld", var.value.integer);
                     break;
                 case POINTER:
                 case ARRAY:
-                    sprintf(buffer, "\\\"%s\\\"", var.value.v_string);
+                    sprintf(buffer, "\\\"%s\\\"", var.value.string);
                     break;
                 default:
                     sprintf(buffer, "(immediate)");  

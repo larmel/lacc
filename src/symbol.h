@@ -1,6 +1,7 @@
 #ifndef SYMBOL_H
 #define SYMBOL_H
 
+#include "token.h"
 #include <stddef.h>
 
 
@@ -62,15 +63,6 @@ typedef struct symbol
     int stack_offset; /* Argument or local variable offset to base pointer. */
     int depth;
 } symbol_t;
-
-/* Immediate value. */
-typedef union value
-{
-    char v_char;
-    long v_long;
-    double v_double;
-    const char *v_string;
-} value_t;
 
 /* A reference to some storage location or direct value, used in intermediate
  * representation of expressions. There are three modes:

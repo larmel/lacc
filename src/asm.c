@@ -73,7 +73,7 @@ refer(const var_t var)
                 sprintf(str, "%d(%%rbp)", var.symbol->stack_offset);
             break;
         case IMMEDIATE:
-            sprintf(str, "$%ld", var.value.v_long);
+            sprintf(str, "$%ld", var.value.integer);
             break;
         default:
             error("Could not assemble reference to offset variable.");
@@ -89,7 +89,7 @@ load(FILE *stream, var_t var, reg_t dest)
     unsigned w = var.type->size;
     switch (var.kind) {
         case IMMEDIATE:
-            fprintf(stream, "\tmov%c\t$%ld, %%%s\n", suffix, var.value.v_long, reg(dest, w));
+            fprintf(stream, "\tmov%c\t$%ld, %%%s\n", suffix, var.value.integer, reg(dest, w));
             break;
         case DIRECT:
             if (var.type->type == ARRAY && var.symbol->depth)
@@ -304,11 +304,11 @@ fasmimmediate(FILE *stream, const block_t *body)
             case INTEGER:
                 if (symbol->type->size != 8)
                     error("warning: Unsupported integer size.");
-                fprintf(stream, "\t.quad\t%ld\n", value.v_long);
+                fprintf(stream, "\t.quad\t%ld\n", value.integer);
                 break;
             case POINTER:
             case ARRAY:
-                fprintf(stream, "\t.string \"%s\"\n", value.v_string);
+                fprintf(stream, "\t.string \"%s\"\n", value.string);
                 break;
             default:
                 fprintf(stream, "\t (immediate)\n");
