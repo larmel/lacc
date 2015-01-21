@@ -45,45 +45,24 @@ static int identifier(char *input)
     }
 }
 
-/* Store character representation of numeric constant. Better not be larger than
- * this. */
-static char number[64];
-
-static int integer(char *input)
+/* Parse integer literal in the format '1234', '0x123', '077' using strtol,
+ * then skip any type suffix (uUlL). The type is discarded.
+ */
+static long strtonum(char *in, char **endptr)
 {
-    int state = 0, read = 0;
-    static char t[7][7] = {
-        /* 0 | 1-9 | a-fA-F | uU | lL | _ | xX */
-        {  1,   2,     -1,    -1,  -1, -1,  -1 },
-        {  2,   2,     -1,     5,  -1, 10,   3 },
-        {  2,   2,     -1,     5,   6, 20,  -1 },
-        {  4,   4,      4,    -1,  -1, -1,  -1 },
-        {  4,   4,      4,     5,   6, 40,  -1 },
-        { -1,  -1,     -1,    -1,   6, 50,  -1 },
-        { -1,  -1,     -1,    -1,  -1, 60,  -1 }
-    };
+    long value;
+    char *end;
 
-    while (1) {
-        char c = *input++;
-        int i = (c == '0') ? 0 : 
-            (c >= '1' && c <= '9') ? 1 :
-            ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) ? 2 :
-            (c == 'u' || c == 'U') ? 3 :
-            (c == 'l' || c == 'L') ? 4 :
-            (isspace(c) || !isalnum(c)) ? 5 :
-            (c == 'x' || c == 'X') ? 6 : -1;
-        state = t[state][i];
-        if (state < 0) return 0;
-        if (state / 10) {
-            number[read] = '\0';
-            return read;
-        }
-        if (read > 63) {
-            error("Number literal too long.");
-            return 0;
-        }
-        number[read++] = c;
+    value = strtol(in, &end, 0);
+
+    if (end != in) {
+        if (*end == 'u' || *end == 'U') end++;
+        if (*end == 'l' || *end == 'L') end++;
     }
+
+    if (endptr)
+        *endptr = end;
+    return value;
 }
 
 /* Parse character literals in the format 'a', '\xaf', '\0', '\077' etc,
@@ -355,11 +334,10 @@ get_token()
         case '7':
         case '8':
         case '9':
-            n = integer(tok - 1);
-            if (n) {
-                token.type = INTEGER_CONSTANT;
-                token.value.integer = (long)number;
-                tok += n - 1;
+            token.type = INTEGER_CONSTANT;
+            token.value.integer = strtonum(tok - 1, &end);
+            if (end != tok - 1) {
+                tok = end;
                 return token;
             }
             break;
