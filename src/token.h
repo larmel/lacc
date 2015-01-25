@@ -72,13 +72,13 @@ enum token
 };
 
 /* Store textual or numerical value of last token read. */
-extern long tok_intval;
-extern const char *tok_strval;
+extern long intval;
+extern const char *strval;
 
 /* Tokenizer interface. */
-enum token readtoken();
+enum token token();
 enum token peek();
-void consume(enum token expected);
+void consume(enum token);
 
 
 #endif

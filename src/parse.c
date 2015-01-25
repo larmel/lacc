@@ -210,7 +210,7 @@ pointer(const typetree_t *base)
     base = type;
     consume('*');
     while (peek() == CONST || peek() == VOLATILE) {
-        if (readtoken() == CONST)
+        if (token() == CONST)
             type->flags.fconst = 1;
         else
             type->flags.fvolatile = 1;
@@ -266,8 +266,8 @@ direct_declarator(typetree_t *base, const char **symbol)
     switch (peek()) {
         case IDENTIFIER:
             /* Allocate dumplicate value, the tokenized one is temporary. */
-            readtoken();
-            *symbol = strdup(tok_strval);
+            token();
+            *symbol = strdup(strval);
             break;
         case '(':
             consume('(');
@@ -551,9 +551,9 @@ identifier()
     const symbol_t *sym;
 
     consume(IDENTIFIER);
-    sym = sym_lookup(tok_strval);
+    sym = sym_lookup(strval);
     if (sym == NULL) {
-        error("Undefined symbol '%s', aborting", tok_strval);
+        error("Undefined symbol '%s', aborting", strval);
         exit(0);
     }
     return sym;
@@ -618,7 +618,7 @@ logical_expression(block_t *block)
     var_t l, r;
     l = or_expression(block);
     while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
-        optype_t optype = (readtoken() == LOGICAL_AND) 
+        optype_t optype = (token() == LOGICAL_AND) 
             ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
 
         r = and_expression(block);
@@ -634,7 +634,7 @@ or_expression(block_t *block)
     var_t l, r;
     l = and_expression(block);
     while (peek() == '|' || peek() == '^') {
-        optype_t optype = (readtoken() == '|') 
+        optype_t optype = (token() == '|') 
             ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
 
         r = and_expression(block);
@@ -680,7 +680,7 @@ additive_expression(block_t *block)
     var_t l, r;
     l = multiplicative_expression(block);
     while (peek() == '+' || peek() == '-') {
-        optype_t optype = (readtoken() == '+') ? IR_OP_ADD : IR_OP_SUB;
+        optype_t optype = (token() == '+') ? IR_OP_ADD : IR_OP_SUB;
 
         r = multiplicative_expression(block);
         l = eval_expr(block, optype, l, r);
@@ -694,7 +694,7 @@ multiplicative_expression(block_t *block)
     var_t l, r;
     l = cast_expression(block);
     while (peek() == '*' || peek() == '/' || peek() == '%') {
-        enum token tok = readtoken();
+        enum token tok = token();
         optype_t optype = (tok == '*') ?
             IR_OP_MUL : (tok == '/') ?
                 IR_OP_DIV : IR_OP_MOD;
@@ -813,24 +813,24 @@ primary_expression(block_t *block)
     var_t var;
     const symbol_t *symbol;
 
-    switch (readtoken()) {
+    switch (token()) {
         case IDENTIFIER:
-            symbol = sym_lookup(tok_strval);
+            symbol = sym_lookup(strval);
             if (symbol == NULL) {
-                error("Undefined symbol '%s', aborting", tok_strval);
+                error("Undefined symbol '%s', aborting", strval);
                 exit(0);
             }
             var = var_direct(symbol);
             break;
         case INTEGER_CONSTANT:
-            var = var_long(tok_intval);
+            var = var_long(intval);
             break;
         case '(':
             var = expression(block);
             consume(')');
             break;
         case STRING:
-            var = var_string(tok_strval);
+            var = var_string(strval);
             break;
         default:
             error("Unexpected token, not a valid primary expression.");

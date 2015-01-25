@@ -218,13 +218,13 @@ get_token()
             if (n < 32 && isalnum(tok[length]))
                 break;
             tok += length;
-            tok_strval = reserved[n].value;
+            strval = reserved[n].value;
             return reserved[n].type;
         }
     }
 
     if (isalpha(*tok) || *tok == '_') {
-        tok_strval = strtoident(tok, &end);
+        strval = strtoident(tok, &end);
         if (end != tok) {
             tok = end;
             return IDENTIFIER;
@@ -234,7 +234,7 @@ get_token()
     }
 
     if (isdigit(*tok)) {
-        tok_intval = strtonum(tok, &end);
+        intval = strtonum(tok, &end);
         if (end != tok) {
             tok = end;
             return INTEGER_CONSTANT;
@@ -245,7 +245,7 @@ get_token()
 
     switch (*tok) {
         case '"':
-            tok_strval = strtostr(tok, &end);
+            strval = strtostr(tok, &end);
             if (end != tok) {
                 tok = end;
                 return STRING;
@@ -253,7 +253,7 @@ get_token()
             error("Invalid string literal: `%s`.", tok);
             exit(1);
         case '\'':
-            tok_intval = strtochar(tok, &end);
+            intval = strtochar(tok, &end);
             if (end != tok) {
                 tok = end;
                 return INTEGER_CONSTANT;
@@ -274,11 +274,11 @@ static int has_value;
  * External interface.
  */
 
-long tok_intval;
+long intval;
 
-const char *tok_strval;
+const char *strval;
 
-enum token readtoken() {
+enum token token() {
     if (has_value) {
         if (peek_value != END)
             has_value = 0;
@@ -289,14 +289,14 @@ enum token readtoken() {
 
 enum token peek() {
     if (!has_value) {
-        peek_value = readtoken();
+        peek_value = token();
         has_value = 1;
     }
     return peek_value;
 }
 
 void consume(enum token expected) {
-    enum token t = readtoken();
+    enum token t = token();
     if (t != expected) {
         if (isprint(t) && isprint(expected))
             error("Unexpected token `%c`, expected `%c`", t, expected);
