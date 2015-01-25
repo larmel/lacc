@@ -9,6 +9,7 @@
 /* Import interface from preprocessor. */
 extern int getprepline(char **);
 
+
 /* Store previous identifier. The C standard specifies a fixed limit, which
  * makes it possible to store this in a statically allocated buffer. */
 static char ident[64];
@@ -65,6 +66,37 @@ static long strtonum(char *in, char **endptr)
     return value;
 }
 
+static char escpchar(char *p, char **endptr)
+{
+    *endptr = p + 1;
+    if (*p != '\\') return *p;
+
+    *endptr = p + 2;
+    switch (p[1]) {
+        case 'a': return 0x7;
+        case 'b': return 0x8;
+        case 't': return 0x9;
+        case 'n': return 0xa;
+        case 'v': return 0xb;
+        case 'f': return 0xc;
+        case 'r': return 0xd;
+        case '\\': return '\\';
+        case '?': return '\?';
+        case '`': return '`';
+        case '\"': return '\"';
+        case '0':
+            if (isdigit(p[2]) && p[2] < '8')
+                return (char) strtol(&p[1], endptr, 8);
+            return 0;
+        case 'x':
+            return (char) strtol(&p[2], endptr, 16);
+        default:
+            *endptr = p;
+            return 0;
+    }
+    return 0;
+}
+
 /* Parse character literals in the format 'a', '\xaf', '\0', '\077' etc,
  * starting from *in. The position of the character after the last ' character
  * is stored in endptr. If no valid conversion can be made, *endptr == in.
@@ -73,355 +105,218 @@ static char strtochar(char *in, char **endptr)
 {
     char value, *end;
 
-    if (endptr)
-        *endptr = in;
+    *endptr = in;
+    if (*in++ != '\'') return 0;
 
-    if (*in++ != '\'')
-        return 0;
+    value = escpchar(in, &end);
+    if (end == in) return 0;
 
-    value = *in++;
-    if (value == '\\') {
-        switch (*in++) {
-            case 'a': value = 0x7; break;
-            case 'b': value = 0x8; break;
-            case 't': value = 0x9; break;
-            case 'n': value = 0xa; break;
-            case 'v': value = 0xb; break;
-            case 'f': value = 0xc; break;
-            case 'r': value = 0xd; break;
-            case '\\': value = '\\'; break;
-            case '?': value = '\?'; break;
-            case '`': value = '`'; break;
-            case '\"': value = '\"'; break;
-            case '0': 
-                if (*in == '\'') {
-                    value = 0; 
-                    break;
-                }
-                value = (char) strtol(in, &end, 8);
-                if (end == in) {
-                    error("Invalid octal literal.");
-                    return 0;
-                }
-                in = end;
-                break;
-            case 'x':
-                value = (char) strtol(in, &end, 16);
-                if (end == in) {
-                    error("Invalid hex literal.");
-                    return 0;
-                }
-                in = end;
-                break;
-            default:
-                error("Invalid escape sequence.");
-                return 0;
-        }
-    }
-    if (*in++ != '\'')
-        return 0;
+    if (*in++ != '\'') return 0;
 
-    if (endptr)
-        *endptr = in;
+    *endptr = in;
     return value;
 }
 
-static int string(char *input)
+/* Parse string literal inputs delimited by quotation marks, handling escaped
+ * quotes. The input buffer is destructively overwritten while resolving escape
+ * sequences. */
+static const char *strtostr(char *in, char **endptr)
 {
-    int state = 0, read = 0;
-    while (1) {
-        char c = *input++;
-        if (state == 0) {
-            if (c == '"') state = 1;
-            else state = -1;
+    char *start, *str;
+
+    start = str = in;
+    *endptr = in;
+
+    if (*in++ == '"') {
+        while (*in != '"' && *in) {
+            *str++ = escpchar(in, &in);
         }
-        else if (state == 1) {
-            if (c == '\\') state = 2;
-            else if (c == '"') state = 3;
+
+        if (*in++ == '"') {
+            *str = '\0';
+            *endptr = in;
         }
-        else if (state == 2) {
-            state = 1;
-        }
-        read++;
-        if (state == 3) {
-            return read;
-        }
-        if (state < 0) return 0;
     }
+
+    return start;
 }
 
-static struct {
-    char * value;
-    enum token type;
-} keywords[] = {
-    { "auto", AUTO },
-    { "break", BREAK },
-    { "case", CASE },
-    { "char", CHAR },
-    { "const", CONST },
-    { "continue", CONTINUE },
-    { "default", DEFAULT },
-    { "do", DO },
-    { "double", DOUBLE },
-    { "else", ELSE },
-    { "enum", ENUM },
-    { "extern", EXTERN },
-    { "float", FLOAT },
-    { "for", FOR },
-    { "goto", GOTO },
-    { "if", IF },
-    { "int", INT },
-    { "long", LONG },
-    { "register", REGISTER },
-    { "return", RETURN },
-    { "short", SHORT },
-    { "signed", SIGNED },
-    { "sizeof", SIZEOF },
-    { "static", STATIC },
-    { "struct", STRUCT },
-    { "switch", SWITCH },
-    { "typedef", TYPEDEF },
-    { "union", UNION },
-    { "unsigned", UNSIGNED },
-    { "void", VOID },
-    { "volatile", VOLATILE },
-    { "while", WHILE }
-};
-
-static token_t
+/* Parse and return next token from line buffer yielded by the preprocessor.
+ * Create tokens from a preprocessed line at a time, no token can span multiple
+ * lines. Invoke the preprocessor on demand. Iterate over all multi-character 
+ * tokens and match using simple string comparison. */
+static enum token
 get_token()
 {
-    int n;
-    token_t token;
-
-    /* Create tokens from a preprocessed line at a time, no token can span
-     * multiple lines. Invoke the preprocessor on demand */
     static char *line;
+    static char *tok = NULL;
 
-    /* Current start of token in preprocessed line. */
-    static char *tok = NULL, *end;
+    static struct {
+        const char *value;
+        enum token type;
+    } reserved[] = {
+        { "auto", AUTO },
+        { "break", BREAK },
+        { "case", CASE },
+        { "char", CHAR },
+        { "const", CONST },
+        { "continue", CONTINUE },
+        { "default", DEFAULT },
+        { "do", DO },
+        { "double", DOUBLE },
+        { "else", ELSE },
+        { "enum", ENUM },
+        { "extern", EXTERN },
+        { "float", FLOAT },
+        { "for", FOR },
+        { "goto", GOTO },
+        { "if", IF },
+        { "int", INT },
+        { "long", LONG },
+        { "register", REGISTER },
+        { "return", RETURN },
+        { "short", SHORT },
+        { "signed", SIGNED },
+        { "sizeof", SIZEOF },
+        { "static", STATIC },
+        { "struct", STRUCT },
+        { "switch", SWITCH },
+        { "typedef", TYPEDEF },
+        { "union", UNION },
+        { "unsigned", UNSIGNED },
+        { "void", VOID },
+        { "volatile", VOLATILE },
+        { "while", WHILE }, /* 31 */
 
-    /* Need more stuff from preprocessor */
+        { "*=", MUL_ASSIGN },
+        { "/=", DIV_ASSIGN },
+        { "%%=", MOD_ASSIGN },
+        { "+=", PLUS_ASSIGN },
+        { "-=", MINUS_ASSIGN },
+        { "<<=", LSHIFT_ASSIGN },
+        { ">>=", RSHIFT_ASSIGN },
+        { "&=", AND_ASSIGN },
+        { "^=", XOR_ASSIGN },
+        { "|=", OR_ASSIGN },
+
+        { "...", DOTS },
+        { "||", LOGICAL_OR },
+        { "&&", LOGICAL_AND },
+        { "<=", LEQ },
+        { ">=", GEQ },
+        { "==", EQ },
+        { "!=", NEQ },
+        { "->", ARROW },
+        { "++", INCREMENT },
+        { "--", DECREMENT },
+        { "<<", LSHIFT },
+        { ">>", RSHIFT }, /* 54 */
+    };
+
+    int n;
+    char *end;
+
     if (tok == NULL || *tok == '\0') {
         if (getprepline(&line) == -1) {
-            token.type = END;
-            token.value.string = NULL;
-            return token;
+            return END;
         }
         tok = line;
     }
-
     while (isspace(*tok))
         tok++;
 
-    for (n = 0; n < 32; ++n) {
-        int length = strlen(keywords[n].value);
-        if (!strncmp(tok, keywords[n].value, length) && !isalnum(*(tok + length))) {
+    for (n = 0; n < 55; ++n) {
+        int length = strlen(reserved[n].value);
+        if (!strncmp(tok, reserved[n].value, length)) {
+            if (n < 32 && isalnum(tok[length]))
+                break;
             tok += length;
-            token.type = keywords[n].type;
-            token.value.string = keywords[n].value;
-            return token;
+            tok_strval = reserved[n].value;
+            return reserved[n].type;
         }
     }
 
-    switch (*tok++) {
-        case '+':
-            if (*tok == '+') {
-                tok++;
-                token.type = INCREMENT; token.value.string = "++";
-                return token;
-            }
-            token.type = PLUS; token.value.string = "+";
-            return token;
-        case '-':
-            if (*tok == '-') {
-                tok++;
-                token.type = DECREMENT; token.value.string = "--";
-                return token;
-            }
-            if (*tok == '>') {
-                tok++;
-                token.type = ARROW; token.value.string = "->";
-                return token;
-            }
-            token.type = MINUS; token.value.string = "-";
-            return token;
-        case '!':
-            if (*tok == '=') {
-                tok++;
-                token.type = NEQ; token.value.string = "!=";
-                return token;
-            }
-            token.type = NOT; token.value.string = "!";
-            return token;
-        case '|':
-            if (*tok == '|') {
-                tok++;
-                token.type = LOGICAL_OR; token.value.string = "||";
-                return token;
-            }
-            token.type = OR; token.value.string = "|";
-            return token;
-        case '&':
-            if (*tok == '&') {
-                tok++;
-                token.type = LOGICAL_AND; token.value.string = "&&";
-                return token;
-            }
-            token.type = AND; token.value.string = "&";
-            return token;
-        case '^':
-            token.type = XOR; token.value.string = "^";
-            return token;
-        case '%':
-            token.type = MODULO; token.value.string = "%%";
-            return token;
-        case '<':
-            if (*tok == '=') {
-                tok++;
-                token.type = LEQ; token.value.string = "<=";
-                return token;
-            }
-            token.type = LT; token.value.string = "<";
-            return token;
-        case '>':
-            if (*tok == '=') {
-                tok++;
-                token.type = GEQ; token.value.string = ">=";
-                return token;
-            }
-            token.type = GT; token.value.string = ">";
-            return token;
-        case '(':
-            token.type = OPEN_PAREN; token.value.string = "(";
-            return token;
-        case ')':
-            token.type = CLOSE_PAREN; token.value.string = ")";
-            return token;
-        case ';':
-            token.type = SEMICOLON; token.value.string = ";";
-            return token;
-        case '{':
-            token.type = OPEN_CURLY; token.value.string = "{";
-            return token;
-        case '}':
-            token.type = CLOSE_CURLY; token.value.string = "}";
-            return token;
-        case '[':
-            token.type = OPEN_BRACKET; token.value.string = "[";
-            return token;
-        case ']':
-            token.type = CLOSE_BRACKET; token.value.string = "]";
-            return token;
-        case ',':
-            token.type = COMMA; token.value.string = ",";
-            return token;
-        case '.':
-            if (strncmp(tok, "..", 2)) {
-                tok += 2;
-                token.type = DOTS; token.value.string = "...";
-                return token;
-            }
-            token.type = DOT; token.value.string = ".";
-            return token;
-        case '0':
-        case '1':
-        case '2':
-        case '3':
-        case '4':
-        case '5':
-        case '6':
-        case '7':
-        case '8':
-        case '9':
-            token.type = INTEGER_CONSTANT;
-            token.value.integer = strtonum(tok - 1, &end);
-            if (end != tok - 1) {
-                tok = end;
-                return token;
-            }
-            break;
+    if (isalpha(*tok) || *tok == '_') {
+        n = identifier(tok);
+        if (n) {
+            tok_strval = ident;
+            tok += n;
+            return IDENTIFIER;
+        }
+        error("Invalid identifier %s.", tok);
+        exit(1);
+    }
+
+    if (isdigit(*tok)) {
+        tok_intval = strtonum(tok, &end);
+        if (end != tok) {
+            tok = end;
+            return INTEGER_CONSTANT;
+        }
+        error("Invalid number literal %s.", tok);
+        exit(1);
+    }
+
+    switch (*tok) {
         case '"':
-            n = string(tok - 1);
-            if (n) {
-                /* Overwrite the last " to create end of string. */
-                tok[n - 2] = '\0';
-                token.type = STRING;
-                token.value.string = tok;
-                tok += n - 1;
-                return token;
-            }
-            break;
-        case '\'':
-            token.type = INTEGER_CONSTANT;
-            token.value.integer = strtochar(tok - 1, &end);
-            if (end != tok - 1) {
+            tok_strval = strtostr(tok, &end);
+            if (end != tok) {
                 tok = end;
-                return token;
+                return STRING;
             }
-            break;
-        case '=':
-            if (*tok == '=') {
-                tok++;
-                token.type = EQ; token.value.string = "==";
-                return token;
+            error("Invalid string literal %s.", tok);
+            exit(1);
+        case '\'':
+            tok_intval = strtochar(tok, &end);
+            if (end != tok) {
+                tok = end;
+                return INTEGER_CONSTANT;
             }
-            token.type = ASSIGN; token.value.string = "=";
-            return token;
-        case '*': /* todo: fix operators such as *= */
-            token.type = STAR; token.value.string = "*";
-            return token;
-        case '/':
-            token.type = SLASH; token.value.string = "/";
-            return token;
+            error("Invalid character literal %s.", tok);
+            exit(1);
         default:
-            n = identifier(tok - 1);
-            if (n) {
-                token.type = IDENTIFIER;
-                token.value.string = ident;
-                tok += n - 1;
-                return token;
-            }
             break;
     }
-    error("Could not match any token for input `%s`", tok);
-    exit(1);
+
+    return *tok++;
 }
 
-static token_t peek_value;
+static enum token peek_value;
 static int has_value;
 
-/* Tokenization interface. */
-token_t
-readtoken()
-{
-    token_t t;
+/* 
+ * External interface.
+ */
+
+long tok_intval;
+const char *tok_strval;
+
+enum token readtoken() {
     if (has_value) {
-        if (peek_value.type != END)
+        if (peek_value != END)
             has_value = 0;
         return peek_value;
     }
-    t = get_token();
-    return t;
+    return get_token();
 }
 
-enum token
-peek()
-{
+enum token peek() {
     if (!has_value) {
         peek_value = readtoken();
         has_value = 1;
     }
-    return peek_value.type;
+    return peek_value;
 }
 
-void
-consume(enum token expected)
-{
-    token_t t = readtoken();
-    if (t.type != expected) {
-        error("Unexpected %s, aborting.", (t.type == '$') ?
-            "end of file" : "token", t.value);
+void consume(enum token expected) {
+    enum token t = readtoken();
+    if (t != expected) {
+        if (isprint((int) t) && isprint((int) expected))
+            error("Unexpected token `%c`, expected `%c`", (char) t, (char) expected);
+        else if (isprint((int) t))
+            error("Unexpected token `%c`", (char) t);
+        else 
+            error("Unexpected token");
         exit(1);
     }
 }

@@ -31,6 +31,19 @@ enum token
     ARROW, /* -> */
     INCREMENT, /* ++ */
     DECREMENT, /* -- */
+    LSHIFT, /* << */
+    RSHIFT, /* >> */
+
+    MUL_ASSIGN, /* *= */
+    DIV_ASSIGN, /* /= */
+    MOD_ASSIGN, /* %= */
+    PLUS_ASSIGN, /* += */
+    MINUS_ASSIGN, /* -= */
+    LSHIFT_ASSIGN, /* <<= */
+    RSHIFT_ASSIGN, /* >>= */
+    AND_ASSIGN, /* &= */
+    XOR_ASSIGN, /* ^= */
+    OR_ASSIGN, /* |= */
 
     OR = '|',
     AND = '&',
@@ -53,28 +66,19 @@ enum token
     PLUS = '+',
     MINUS = '-',
     NOT = '!',
+    NEG = '~',
 
     END = '$'
 };
 
-/* Immediate value. */
-typedef union value
-{
-    long integer;
-    double real;
-    const char *string;
-} value_t;
-
-/* Token type and value, as it appears in the input. */
-typedef struct
-{
-    enum token type;
-    value_t value;
-} token_t;
+/* Store textual or numerical value of last token read. */
+extern long tok_intval;
+extern const char *tok_strval;
 
 /* Tokenizer interface. */
-token_t readtoken();
+enum token readtoken();
 enum token peek();
 void consume(enum token expected);
+
 
 #endif

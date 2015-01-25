@@ -64,6 +64,14 @@ typedef struct symbol
     int depth;
 } symbol_t;
 
+/* Immediate value. */
+typedef union value
+{
+    long integer;
+    double real;
+    const char *string;
+} value_t;
+
 /* A reference to some storage location or direct value, used in intermediate
  * representation of expressions. There are three modes:
  *

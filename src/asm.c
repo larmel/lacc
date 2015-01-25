@@ -4,6 +4,7 @@
 #include "util/map.h"
 
 #include <stdio.h>
+#include <ctype.h>
 
 
 /* Assembly instruction suffix based on value size. Char is 'b', short is 'w',
@@ -282,6 +283,19 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
     }
 }
 
+/* Output assembler friendly string, with special characters escaped. */
+void foutputstring(FILE *stream, const char *str)
+{
+    char c;
+
+    while ((c = *str++) != '\0') {
+        if (isprint(c) && c != '"')
+            putc(c, stream);
+        else
+            fprintf(stream, "\\x%x", (int) c);
+    }
+}
+
 void
 fasmimmediate(FILE *stream, const block_t *body)
 {
@@ -308,7 +322,9 @@ fasmimmediate(FILE *stream, const block_t *body)
                 break;
             case POINTER:
             case ARRAY:
-                fprintf(stream, "\t.string \"%s\"\n", value.string);
+                fprintf(stream, "\t.string \"");
+                foutputstring(stream, value.string);
+                fprintf(stream, "\"\n");
                 break;
             default:
                 fprintf(stream, "\t (immediate)\n");

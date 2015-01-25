@@ -210,7 +210,7 @@ pointer(const typetree_t *base)
     base = type;
     consume('*');
     while (peek() == CONST || peek() == VOLATILE) {
-        if (readtoken().type == CONST)
+        if (readtoken() == CONST)
             type->flags.fconst = 1;
         else
             type->flags.fvolatile = 1;
@@ -266,7 +266,8 @@ direct_declarator(typetree_t *base, const char **symbol)
     switch (peek()) {
         case IDENTIFIER:
             /* Allocate dumplicate value, the tokenized one is temporary. */
-            *symbol = strdup(readtoken().value.string);
+            readtoken();
+            *symbol = strdup(tok_strval);
             break;
         case '(':
             consume('(');
@@ -381,7 +382,7 @@ statement(block_t *parent)
         case IF:
         {
             block_t *right = block_init(), *next = block_init();
-            readtoken();
+            consume(t);
             consume('(');
 
             /* node becomes a branch, store the expression as condition
@@ -425,7 +426,7 @@ statement(block_t *parent)
             break_target = next;
             continue_target = top;
 
-            readtoken();
+            consume(t);
 
             if (t == WHILE) {
                 consume('(');
@@ -506,7 +507,7 @@ statement(block_t *parent)
             break;
         case CONTINUE:
         case BREAK:
-            readtoken();
+            consume(t);
             parent->jump[0] = (t == CONTINUE) ? 
                 continue_target :
                 break_target;
@@ -547,10 +548,12 @@ statement(block_t *parent)
 static const symbol_t *
 identifier()
 {
-    token_t name = readtoken();
-    const symbol_t *sym = sym_lookup(name.value.string);
+    const symbol_t *sym;
+
+    consume(IDENTIFIER);
+    sym = sym_lookup(tok_strval);
     if (sym == NULL) {
-        error("Undefined symbol '%s', aborting", name.value);
+        error("Undefined symbol '%s', aborting", tok_strval);
         exit(0);
     }
     return sym;
@@ -615,7 +618,7 @@ logical_expression(block_t *block)
     var_t l, r;
     l = or_expression(block);
     while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
-        optype_t optype = (readtoken().type == LOGICAL_AND) 
+        optype_t optype = (readtoken() == LOGICAL_AND) 
             ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
 
         r = and_expression(block);
@@ -631,7 +634,7 @@ or_expression(block_t *block)
     var_t l, r;
     l = and_expression(block);
     while (peek() == '|' || peek() == '^') {
-        optype_t optype = (readtoken().type == '|') 
+        optype_t optype = (readtoken() == '|') 
             ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
 
         r = and_expression(block);
@@ -677,7 +680,7 @@ additive_expression(block_t *block)
     var_t l, r;
     l = multiplicative_expression(block);
     while (peek() == '+' || peek() == '-') {
-        optype_t optype = (readtoken().type == '+') ? IR_OP_ADD : IR_OP_SUB;
+        optype_t optype = (readtoken() == '+') ? IR_OP_ADD : IR_OP_SUB;
 
         r = multiplicative_expression(block);
         l = eval_expr(block, optype, l, r);
@@ -691,9 +694,9 @@ multiplicative_expression(block_t *block)
     var_t l, r;
     l = cast_expression(block);
     while (peek() == '*' || peek() == '/' || peek() == '%') {
-        token_t tok = readtoken();
-        optype_t optype = (tok.type == '*') ?
-            IR_OP_MUL : (tok.type == '/') ?
+        enum token tok = readtoken();
+        optype_t optype = (tok == '*') ?
+            IR_OP_MUL : (tok == '/') ?
                 IR_OP_DIV : IR_OP_MOD;
 
         r = cast_expression(block);
@@ -797,7 +800,7 @@ postfix_expression(block_t *block)
                 free(arg);
                 break;
             default:
-                error("Unexpected token '%s', not a valid postfix expression", readtoken().value);
+                error("Unexpected token, not a valid postfix expression.");
                 exit(0);
         }
     }
@@ -808,31 +811,29 @@ static var_t
 primary_expression(block_t *block)
 {
     var_t var;
-    token_t token;
     const symbol_t *symbol;
 
-    token = readtoken();
-    switch (token.type) {
+    switch (readtoken()) {
         case IDENTIFIER:
-            symbol = sym_lookup(token.value.string);
+            symbol = sym_lookup(tok_strval);
             if (symbol == NULL) {
-                error("Undefined symbol '%s', aborting", token.value.string);
+                error("Undefined symbol '%s', aborting", tok_strval);
                 exit(0);
             }
             var = var_direct(symbol);
             break;
         case INTEGER_CONSTANT:
-            var = var_long(token.value.integer);
+            var = var_long(tok_intval);
             break;
         case '(':
             var = expression(block);
             consume(')');
             break;
         case STRING:
-            var = var_string(token.value.string);
+            var = var_string(tok_strval);
             break;
         default:
-            error("Unexpected token '%s', not a valid primary expression", token.value.string);
+            error("Unexpected token, not a valid primary expression.");
             exit(0);
     }
     return var;
