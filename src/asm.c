@@ -88,15 +88,25 @@ load(FILE *stream, var_t var, reg_t dest)
 {
     char suffix = asmsuffix(var.type);
     unsigned w = var.type->size;
+    char mov[] = { 'm', 'o', 'v', 'x', '\0', '\0' };
+
+    mov[3] = suffix;
+
+    /* Special write to registers that do not have byte resolution. */
+    if (w == 1 && dest > 3) {
+        mov[3] = 'z';
+        mov[4] = 'b';
+    }
+
     switch (var.kind) {
         case IMMEDIATE:
-            fprintf(stream, "\tmov%c\t$%ld, %%%s\n", suffix, var.value.integer, reg(dest, w));
+            fprintf(stream, "\t%s\t$%ld, %%%s\n", mov, var.value.integer, reg(dest, w));
             break;
         case DIRECT:
             if (var.type->type == ARRAY && var.symbol->depth)
                 fprintf(stream, "\tleaq\t%d(%%rbp), %%%s\t# load %s\n", var.symbol->stack_offset, reg(dest, w), var.symbol->name);
             else
-                fprintf(stream, "\tmov%c\t%s, %%%s\t# load %s\n", suffix, refer(var), reg(dest, w), var.symbol->name);
+                fprintf(stream, "\t%s\t%s, %%%s\t# load %s\n", mov, refer(var), reg(dest, w), var.symbol->name);
             break;
         case OFFSET:
             fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\t# load *%s\n", var.symbol->stack_offset, var.symbol->name);
@@ -107,9 +117,9 @@ load(FILE *stream, var_t var, reg_t dest)
                     fprintf(stream, "\tleaq\t(%%r10), %%%s\n", reg(dest, w));
             } else {
                 if (var.offset)
-                    fprintf(stream, "\tmov%c\t%d(%%r10), %%%s\n", suffix, var.offset, reg(dest, w));
+                    fprintf(stream, "\t%s\t%d(%%r10), %%%s\n", mov, var.offset, reg(dest, w));
                 else
-                    fprintf(stream, "\tmov%c\t(%%r10), %%%s\n", suffix, reg(dest, w));
+                    fprintf(stream, "\t%s\t(%%r10), %%%s\n", mov, reg(dest, w));
             }
             break;
     }
@@ -125,7 +135,7 @@ store(FILE *stream, reg_t source, var_t var)
             fprintf(stream, "\t(error: cannot write to immediate)\n");
             break;
         case DIRECT:
-            fprintf(stream, "\tmov%c\t%%%s, %d(%%rbp)\t# store %s\n", suffix, reg(source, w), var.symbol->stack_offset, var.symbol->name);
+            fprintf(stream, "\tmov%c\t%%%s, %s\t# store %s\n", suffix, reg(source, w), refer(var), var.symbol->name);
             break;
         case OFFSET:
             fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\t# store *%s\n", var.symbol->stack_offset, var.symbol->name);
@@ -289,7 +299,7 @@ void foutputstring(FILE *stream, const char *str)
     char c;
 
     while ((c = *str++) != '\0') {
-        if (isprint(c) && c != '"')
+        if (isprint(c) && c != '"' && c != '\\')
             putc(c, stream);
         else
             fprintf(stream, "\\x%x", (int) c);
@@ -316,9 +326,16 @@ fasmimmediate(FILE *stream, const block_t *body)
         fprintf(stream, "%s:\n", symbol->name);
         switch (symbol->type->type) {
             case INTEGER:
-                if (symbol->type->size != 8)
-                    error("warning: Unsupported integer size.");
-                fprintf(stream, "\t.quad\t%ld\n", value.integer);
+                switch (symbol->type->size) {
+                    case 1:
+                        fprintf(stream, "\t.byte\t%d\n", (unsigned char) value.integer);
+                        break;
+                    case 8:
+                        fprintf(stream, "\t.quad\t%ld\n", value.integer);
+                        break;
+                    default:
+                        error("Unable to assemble, unsupported integer size %ld.", symbol->type->size);
+                }
                 break;
             case POINTER:
             case ARRAY:

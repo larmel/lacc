@@ -1,5 +1,5 @@
-#include "error.h"
 #include "token.h"
+#include "error.h"
 
 #include <stdio.h>
 #include <ctype.h>
@@ -10,40 +10,30 @@
 extern int getprepline(char **);
 
 
-/* Store previous identifier. The C standard specifies a fixed limit, which
- * makes it possible to store this in a statically allocated buffer. */
-static char ident[64];
-
-static int identifier(char *input)
+/* Parse identifier. The C standard specifies a fixed lower limit on the
+ * length, which makes it possible to store identifiers in a static buffer.
+ */
+static const char *strtoident(char *in, char **endptr)
 {
-    int state = 0, read = 0;
-    while (1) {
-        char c = *input++;
-        switch (state) {
-            case 0:
-                if (isalpha(c)) state = 1;
-                else state = -1;
-                break;
-            case 1:
-                if (isspace(c) || !isalnum(c)) {
-                    state = 2;
-                }
-                break;
-            default:
-                state = -1;
-        }
-        if (state < 0) return 0;
-        if (state == 2) {
-            ident[read] = '\0';
-            return read;
-        }
-        if (read > 63) {
-            error("Illegal identifier length, exceeding 63 character limit.");
-            return 0;
-        }
+    static char identifier[64];
+    char c, *str;
 
-        ident[read++] = c;
+    *endptr = in;
+
+    str = identifier;
+    c = *in++;
+
+    if (isalpha(c) || c == '_') {
+        do {
+            *str++ = c;
+            c = *in++;
+        } while (isalpha(c) || isdigit(c) || c == '_');
+        if (isspace(c) || !isalnum(c)) {
+            *str = '\0';
+            *endptr = in - 1;
+        }
     }
+    return identifier;
 }
 
 /* Parse integer literal in the format '1234', '0x123', '077' using strtol,
@@ -66,35 +56,38 @@ static long strtonum(char *in, char **endptr)
     return value;
 }
 
+/* Parse character escape code, including octal and hexadecimal number
+ * literals. Unescaped characters are returned as-is. Invalid escape sequences
+ * continues with an error, consuming only the backslash.
+ */
 static char escpchar(char *p, char **endptr)
 {
-    *endptr = p + 1;
-    if (*p != '\\') return *p;
-
-    *endptr = p + 2;
-    switch (p[1]) {
-        case 'a': return 0x7;
-        case 'b': return 0x8;
-        case 't': return 0x9;
-        case 'n': return 0xa;
-        case 'v': return 0xb;
-        case 'f': return 0xc;
-        case 'r': return 0xd;
-        case '\\': return '\\';
-        case '?': return '\?';
-        case '`': return '`';
-        case '\"': return '\"';
-        case '0':
-            if (isdigit(p[2]) && p[2] < '8')
-                return (char) strtol(&p[1], endptr, 8);
-            return 0;
-        case 'x':
-            return (char) strtol(&p[2], endptr, 16);
-        default:
-            *endptr = p;
-            return 0;
+    if (*p == '\\') {
+        *endptr = p + 2;
+        switch (p[1]) {
+            case 'a': return 0x7;
+            case 'b': return 0x8;
+            case 't': return 0x9;
+            case 'n': return 0xa;
+            case 'v': return 0xb;
+            case 'f': return 0xc;
+            case 'r': return 0xd;
+            case '\\': return '\\';
+            case '?': return '\?';
+            case '`': return '`';
+            case '\"': return '\"';
+            case '0':
+                if (isdigit(p[2]) && p[2] < '8')
+                    return (char) strtol(&p[1], endptr, 8);
+                return '\0';
+            case 'x':
+                return (char) strtol(&p[2], endptr, 16);
+            default:
+                error("Invalid escape sequence `\\%c`.", p[1]);
+        }
     }
-    return 0;
+    *endptr = p + 1;
+    return *p;
 }
 
 /* Parse character literals in the format 'a', '\xaf', '\0', '\077' etc,
@@ -103,17 +96,15 @@ static char escpchar(char *p, char **endptr)
  */
 static char strtochar(char *in, char **endptr)
 {
-    char value, *end;
+    static char value;
 
     *endptr = in;
-    if (*in++ != '\'') return 0;
-
-    value = escpchar(in, &end);
-    if (end == in) return 0;
-
-    if (*in++ != '\'') return 0;
-
-    *endptr = in;
+    if (*in++ == '\'') {
+        value = escpchar(in, &in);
+        if (*in++ == '\'') {
+            *endptr = in;
+        }
+    }
     return value;
 }
 
@@ -137,7 +128,6 @@ static const char *strtostr(char *in, char **endptr)
             *endptr = in;
         }
     }
-
     return start;
 }
 
@@ -148,8 +138,7 @@ static const char *strtostr(char *in, char **endptr)
 static enum token
 get_token()
 {
-    static char *line;
-    static char *tok = NULL;
+    static char *tok;
 
     static struct {
         const char *value;
@@ -216,12 +205,10 @@ get_token()
     int n;
     char *end;
 
-    if (tok == NULL || *tok == '\0') {
-        if (getprepline(&line) == -1) {
+    if (tok == NULL || *tok == '\0')
+        if (getprepline(&tok) == -1)
             return END;
-        }
-        tok = line;
-    }
+
     while (isspace(*tok))
         tok++;
 
@@ -237,13 +224,12 @@ get_token()
     }
 
     if (isalpha(*tok) || *tok == '_') {
-        n = identifier(tok);
-        if (n) {
-            tok_strval = ident;
-            tok += n;
+        tok_strval = strtoident(tok, &end);
+        if (end != tok) {
+            tok = end;
             return IDENTIFIER;
         }
-        error("Invalid identifier %s.", tok);
+        error("Invalid identifier: `%s`.", tok);
         exit(1);
     }
 
@@ -253,7 +239,7 @@ get_token()
             tok = end;
             return INTEGER_CONSTANT;
         }
-        error("Invalid number literal %s.", tok);
+        error("Invalid number literal: `%s`.", tok);
         exit(1);
     }
 
@@ -264,7 +250,7 @@ get_token()
                 tok = end;
                 return STRING;
             }
-            error("Invalid string literal %s.", tok);
+            error("Invalid string literal: `%s`.", tok);
             exit(1);
         case '\'':
             tok_intval = strtochar(tok, &end);
@@ -272,7 +258,7 @@ get_token()
                 tok = end;
                 return INTEGER_CONSTANT;
             }
-            error("Invalid character literal %s.", tok);
+            error("Invalid character literal: `%s`.", tok);
             exit(1);
         default:
             break;
@@ -289,6 +275,7 @@ static int has_value;
  */
 
 long tok_intval;
+
 const char *tok_strval;
 
 enum token readtoken() {
@@ -311,10 +298,10 @@ enum token peek() {
 void consume(enum token expected) {
     enum token t = readtoken();
     if (t != expected) {
-        if (isprint((int) t) && isprint((int) expected))
-            error("Unexpected token `%c`, expected `%c`", (char) t, (char) expected);
-        else if (isprint((int) t))
-            error("Unexpected token `%c`", (char) t);
+        if (isprint(t) && isprint(expected))
+            error("Unexpected token `%c`, expected `%c`", t, expected);
+        else if (isprint(t))
+            error("Unexpected token `%c`", t);
         else 
             error("Unexpected token");
         exit(1);
