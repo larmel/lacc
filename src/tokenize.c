@@ -110,7 +110,8 @@ static char strtochar(char *in, char **endptr)
 
 /* Parse string literal inputs delimited by quotation marks, handling escaped
  * quotes. The input buffer is destructively overwritten while resolving escape
- * sequences. */
+ * sequences.
+ */
 static const char *strtostr(char *in, char **endptr)
 {
     char *start, *str;
@@ -134,7 +135,8 @@ static const char *strtostr(char *in, char **endptr)
 /* Parse and return next token from line buffer yielded by the preprocessor.
  * Create tokens from a preprocessed line at a time, no token can span multiple
  * lines. Invoke the preprocessor on demand. Iterate over all multi-character 
- * tokens and match using simple string comparison. */
+ * tokens and match using simple string comparison.
+ */
 static enum token
 get_token()
 {
