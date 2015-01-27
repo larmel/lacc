@@ -119,6 +119,48 @@ declaration(block_t *parent, const symbol_t **symbol)
 }
 
 static typetree_t *
+struct_declaration_list()
+{
+    typetree_t *obj;
+
+    obj = type_init(OBJECT);
+    push_scope();
+
+    do {
+        typetree_t *base;
+
+        /* This is not exactly correct, should not allow storage class. */
+        base = declaration_specifiers();
+        do {
+            typetree_t *member;
+            const char *name;
+
+            member = declarator(base, &name);
+            sym_add(name, member);
+
+            obj->n_args++;
+            obj->args = realloc(obj->args, sizeof(typetree_t *) * obj->n_args);
+            obj->params = realloc(obj->params, sizeof(char *) * obj->n_args);
+
+            obj->args[obj->n_args - 1] = member;
+            obj->params[obj->n_args - 1] = name;
+
+            if (peek() == ',') {
+                consume(',');
+                continue;
+            }
+
+        } while (peek() != ';');
+
+        consume(';');
+    } while (peek() != '}');
+
+    pop_scope();
+
+    return obj;
+}
+
+static typetree_t *
 declaration_specifiers()
 {
     int end = 0;
@@ -179,6 +221,16 @@ declaration_specifiers()
                 }
                 flags.fvolatile = 1;
                 break;
+            case STRUCT:
+                consume(STRUCT);
+                if (peek() == IDENTIFIER) {
+                    error("Unsupported named struct or union.");
+                    consume(IDENTIFIER);
+                }
+                consume('{');
+                type = struct_declaration_list();
+                consume('}');
+                return type; /* hack */
             default:
                 end = 1;
         }

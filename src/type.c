@@ -18,6 +18,7 @@ type_init(enum tree_type type)
         case FUNCTION:
         case ARRAY:
         case POINTER:
+        case OBJECT:
         case NONE:
             tree->size = 8;
     }
@@ -182,6 +183,16 @@ snprinttype(const typetree_t *tree, char *s, int size)
             else
                 w += snprintf(s + w, size - w, "[] ");
             w += snprinttype(tree->next, s + w, size - w);
+            break;
+        case OBJECT:
+            w += snprintf(s, size, "{");
+            for (i = 0; i < tree->n_args; ++i) {
+                w += snprintf(s + w, size - w, ".%s::", tree->params[i]);
+                w += snprinttype(tree->args[i], s + w, size - w);
+                if (i < tree->n_args - 1)
+                    s += snprintf(s + w, size - w, ", ");
+            }
+            w += snprintf(s + w, size - w, "}");
             break;
         default:
             break;

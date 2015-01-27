@@ -12,6 +12,7 @@ enum tree_type
     POINTER,
     FUNCTION,
     ARRAY,
+    OBJECT,     /* struct, union */
     NONE        /* void */
 };
 
