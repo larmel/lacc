@@ -123,7 +123,7 @@ snprinttype(const typetree_t *tree, char *s, int size)
     if (tree->flags.funsigned)
         w += snprintf(s + w, size - w, "unsigned ");
     if (tree->flags.fconst)
-        w += snprintf(s, size, "const ");
+        w += snprintf(s + w, size - w, "const ");
     if (tree->flags.fvolatile)
         w += snprintf(s + w, size - w, "volatile ");
 
@@ -185,7 +185,7 @@ snprinttype(const typetree_t *tree, char *s, int size)
             w += snprinttype(tree->next, s + w, size - w);
             break;
         case OBJECT:
-            w += snprintf(s, size, "{");
+            w += snprintf(s + w, size - w, "{");
             for (i = 0; i < tree->n_args; ++i) {
                 w += snprintf(s + w, size - w, ".%s::", tree->params[i]);
                 w += snprinttype(tree->args[i], s + w, size - w);
