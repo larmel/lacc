@@ -153,8 +153,8 @@ get_token()
         { "const", CONST },
         { "continue", CONTINUE },
         { "default", DEFAULT },
-        { "do", DO },
         { "double", DOUBLE },
+        { "do", DO },
         { "else", ELSE },
         { "enum", ENUM },
         { "extern", EXTERN },
@@ -301,11 +301,11 @@ void consume(enum token expected) {
     enum token t = token();
     if (t != expected) {
         if (isprint(t) && isprint(expected))
-            error("Unexpected token `%c`, expected `%c`", t, expected);
+            error("Unexpected token `%c`, expected `%c`.", t, expected);
         else if (isprint(t))
-            error("Unexpected token `%c`", t);
+            error("Unexpected token `%c`.", t);
         else 
-            error("Unexpected token");
+            error("Unexpected token `%s`.", strval);
         exit(1);
     }
 }

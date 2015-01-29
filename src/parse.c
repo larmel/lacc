@@ -3,11 +3,12 @@
 #include "token.h"
 #include "symbol.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
 static block_t *declaration(block_t *, const symbol_t **);
-static typetree_t *declaration_specifiers();
+static typetree_t *declaration_specifiers(enum storage_class *);
 static typetree_t *specifier_qualifier_list();
 static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
@@ -63,16 +64,23 @@ parse()
 static block_t *
 declaration(block_t *parent, const symbol_t **symbol)
 {
+    static int in_function;
+
     const symbol_t *sym;
     typetree_t *type, *base;
+    enum storage_class stc;
     int i;
 
-    base = declaration_specifiers();
+    base = declaration_specifiers(&stc);
 
     while (1) {
         const char *name = NULL;
         type = declarator(base, &name);
-        sym  = sym_add(name, type);
+
+        if (type->type != FUNCTION && in_function)
+            stc = STC_AUTO;
+
+        sym  = sym_add(name, type, stc);
 
         free((void *) name);
 
@@ -100,17 +108,19 @@ declaration(block_t *parent, const symbol_t **symbol)
                     error("Invalid function definition.");
                     exit(1);
                 }
+                in_function = 1;
                 push_scope();
                 for (i = 0; i < type->n_args; ++i) {
                     if (!type->params[i]) {
                         error("Missing parameter name at position %d.", i + 1);
                         exit(1);
                     }
-                    sym_add(type->params[i], type->args[i]);
+                    sym_add(type->params[i], type->args[i], STC_AUTO);
                 }
                 parent = block(parent); /* generate code */
                 *symbol = sym;
                 pop_scope();
+                in_function = 0;
                 return parent;
             default:
                 break;
@@ -135,10 +145,10 @@ struct_declaration_list(typetree_t *obj)
             name = NULL;
             member = declarator(base, &name);
             if (!name) {
-                error("Invalid declarator.");
+                error("Invalid struct member declarator.");
                 exit(1);
             }
-            sym_add(name, member);
+            sym_add(name, member, STC_NONE);
 
             obj->n_args++;
             obj->args = realloc(obj->args, sizeof(typetree_t *) * obj->n_args);
@@ -160,22 +170,6 @@ struct_declaration_list(typetree_t *obj)
     pop_scope();
 }
 
-static int
-storage_class_specifier()
-{
-    switch (peek()) {
-        case AUTO:
-        case REGISTER:
-        case STATIC:
-        case EXTERN:
-        case TYPEDEF:
-            token();
-            return 1;
-        default:
-            return 0;
-    }
-}
-
 static void
 type_qualifier(typetree_t *type)
 {
@@ -189,6 +183,9 @@ type_qualifier(typetree_t *type)
 static void
 type_specifier(typetree_t *type)
 {
+    const symbol_t *tdef;
+    flags_t flags;
+
     switch (token()) {
         case CHAR:
             type->size = 1;
@@ -227,7 +224,20 @@ type_specifier(typetree_t *type)
             /* todo */
             break;
         case IDENTIFIER:
-            /* todo: typedef-name */
+            tdef = sym_lookup(strval);
+            assert(tdef->storage == STC_TYPEDEF);
+            if (type->type != tdef->type->type) {
+                if (type->size && type->type == INTEGER) {
+                    error("Invalid type specifier.");
+                    exit(1);
+                }
+            }
+            flags = type->flags;
+            *type = *(tdef->type);
+
+            type->flags.funsigned |= flags.funsigned;
+            type->flags.fvolatile |= flags.fvolatile;
+            type->flags.fconst |= flags.fconst;
             break;
         default:
             error("Invalid type specifier.");
@@ -235,20 +245,45 @@ type_specifier(typetree_t *type)
     }
 }
 
-/* Parse type, storage class and qualifiers. Assume integer type by default. */
+/* Parse type, storage class and qualifiers. Assume integer type by default.
+ * Storage class is returned as token value, and error is raised if there are
+ * more than one storage class given.
+ * At most one storage class can be specified, fallback to STC_EXTERN if none
+ * is provided. This is correct in all cases except for automatic variables.
+ */
 static typetree_t *
-declaration_specifiers()
+declaration_specifiers(enum storage_class *stc)
 {
+    enum token stt;
     typetree_t *type;
+    const symbol_t *tdef;
+
     type = type_init(INTEGER);
+    stt  = '$';
+
     while (1) {
         switch (peek()) {
-            case CONST: case VOLATILE:
+            case CONST:
+            case VOLATILE:
                 type_qualifier(type);
                 break;
-            case AUTO: case REGISTER: case STATIC: case EXTERN: case TYPEDEF:
-                storage_class_specifier(type);
+            case AUTO:
+            case REGISTER:
+            case STATIC:
+            case EXTERN:
+            case TYPEDEF:
+                if (stt != '$') {
+                    error("Only one storage class specifier allowed.");
+                }
+                stt  = token();
+                *stc = ((stt == AUTO || stt == REGISTER) ? STC_AUTO :
+                        (stt == STATIC) ? STC_STATIC :
+                        (stt == TYPEDEF) ? STC_TYPEDEF : STC_EXTERN);
                 break;
+            case IDENTIFIER:
+                tdef = sym_lookup(strval);
+                if (!tdef || tdef->storage != STC_TYPEDEF)
+                    return type;
             case CHAR: case SHORT: case INT: case SIGNED: case LONG: 
             case UNSIGNED: case FLOAT: case DOUBLE: case VOID: case STRUCT:
             case UNION:
@@ -398,7 +433,8 @@ parameter_list(const typetree_t *base)
 
     while (peek() != ')') {
         const char *symbol = NULL;
-        typetree_t *decl = declaration_specifiers();
+        enum storage_class stc;
+        typetree_t *decl = declaration_specifiers(&stc);
         decl = declarator(decl, &symbol);
 
         nargs++;

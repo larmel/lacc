@@ -1,7 +1,6 @@
 #ifndef SYMBOL_H
 #define SYMBOL_H
 
-#include "token.h"
 #include <stddef.h>
 
 
@@ -52,6 +51,16 @@ typedef struct typetree
     const struct typetree *next;
 } typetree_t;
 
+/* Storage of a symbol, as specified with storage-class-specifier.
+ */
+enum storage_class {
+    STC_NONE,
+    STC_AUTO,
+    STC_EXTERN,
+    STC_STATIC,
+    STC_TYPEDEF
+};
+
 /* A symbol represents declarations that may have a storage location 
  * at runtime, such as functions, static and local variables.
  * Store offset to base pointer for automatic variables and function 
@@ -63,6 +72,7 @@ typedef struct symbol
     int param_n; /* The n'th function argument. 1-indexed to keep 0 default. */
     int stack_offset; /* Argument or local variable offset to base pointer. */
     int depth;
+    enum storage_class storage;
 } symbol_t;
 
 /* Immediate value. */
@@ -98,7 +108,7 @@ typedef struct variable
  * on identifier name, or error if it is a duplicate. Create a new temporary 
  * symbol and register it to current scope.  */
 const symbol_t *sym_lookup(const char *);
-const symbol_t *sym_add(const char *, const typetree_t *);
+const symbol_t *sym_add(const char *, const typetree_t *, enum storage_class);
 const symbol_t *sym_temp(const typetree_t *);
 
 /* Expression variables. */
