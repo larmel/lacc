@@ -207,12 +207,12 @@ get_token()
     int n;
     char *end;
 
+    while (tok && isspace(*tok))
+        tok++;
+
     if (tok == NULL || *tok == '\0')
         if (getprepline(&tok) == -1)
             return END;
-
-    while (isspace(*tok))
-        tok++;
 
     for (n = 0; n < 55; ++n) {
         int length = strlen(reserved[n].value);

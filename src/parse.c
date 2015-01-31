@@ -80,6 +80,10 @@ declaration(block_t *parent, const symbol_t **symbol)
         if (type->type != FUNCTION && in_function)
             stc = STC_AUTO;
 
+        if (!name) {
+            error("No name for type `%s`.", typetostr(type));
+        }
+        assert(name);
         sym  = sym_add(name, type, stc);
 
         free((void *) name);
@@ -174,9 +178,11 @@ static void
 type_qualifier(typetree_t *type)
 {
     enum token t = token();
+    assert(t == CONST || t == VOLATILE);
+
     if (t == CONST)
         type->flags.fconst = 1;
-    if (t == VOLATILE)
+    else
         type->flags.fvolatile = 1;
 }
 
@@ -228,7 +234,7 @@ type_specifier(typetree_t *type)
             assert(tdef->storage == STC_TYPEDEF);
             if (type->type != tdef->type->type) {
                 if (type->size && type->type == INTEGER) {
-                    error("Invalid type specifier.");
+                    error("Unable to apply type definition `%s` to existing declaration specifiers `%s`.", typetostr(tdef->type), typetostr(type));
                     exit(1);
                 }
             }
@@ -254,14 +260,17 @@ type_specifier(typetree_t *type)
 static typetree_t *
 declaration_specifiers(enum storage_class *stc)
 {
+    int done;
     enum token stt;
     typetree_t *type;
     const symbol_t *tdef;
 
     type = type_init(INTEGER);
+    type->size = 0;
     stt  = '$';
+    done = 0;
 
-    while (1) {
+    while (!done) {
         switch (peek()) {
             case CONST:
             case VOLATILE:
@@ -275,24 +284,30 @@ declaration_specifiers(enum storage_class *stc)
                 if (stt != '$') {
                     error("Only one storage class specifier allowed.");
                 }
-                stt  = token();
-                *stc = ((stt == AUTO || stt == REGISTER) ? STC_AUTO :
-                        (stt == STATIC) ? STC_STATIC :
-                        (stt == TYPEDEF) ? STC_TYPEDEF : STC_EXTERN);
+                stt = token();
                 break;
             case IDENTIFIER:
                 tdef = sym_lookup(strval);
-                if (!tdef || tdef->storage != STC_TYPEDEF)
-                    return type;
+                if (!tdef || tdef->storage != STC_TYPEDEF) {
+                    done = 1;
+                    break;
+                }
             case CHAR: case SHORT: case INT: case SIGNED: case LONG: 
             case UNSIGNED: case FLOAT: case DOUBLE: case VOID: case STRUCT:
             case UNION:
                 type_specifier(type);
                 break;
             default:
-                return type;
+                done = 1;
         }
     }
+    *stc = ((stt == AUTO || stt == REGISTER) ? STC_AUTO :
+            (stt == STATIC) ? STC_STATIC :
+            (stt == TYPEDEF) ? STC_TYPEDEF : STC_EXTERN);
+    if (!type->size)
+        type->size = 4;
+
+    return type;
 }
 
 /* Same as declaration-specifiers, but without storage class. */
@@ -383,39 +398,56 @@ direct_declarator_array(typetree_t *base)
     return base;
 }
 
+/* Parse function and array declarators. Some trickery is needed to handle
+ * declarations like `void (*foo)(int)`, where the inner *foo has to be 
+ * traversed first, and prepended on the outer type `* (int) -> void` 
+ * afterwards making it `* (int) -> void`.
+ * The type returned from declarator has to be either array, function or
+ * pointer, thus only need to check for type->next to find inner tail.
+ */
 static typetree_t *
 direct_declarator(typetree_t *base, const char **symbol)
 {
     typetree_t *type = base;
+    typetree_t *head, *tail = NULL;
+
     switch (peek()) {
         case IDENTIFIER:
-            /* Allocate dumplicate value, the tokenized one is temporary. */
             token();
             *symbol = strdup(strval);
             break;
         case '(':
             consume('(');
-            type = declarator(base, symbol);
+            type = head = tail = declarator(NULL, symbol);
+            while (tail->next) {
+                tail = (typetree_t *) tail->next;
+            }
             consume(')');
             break;
-        default: break;
+        default:
+            break;
     }
-    /* left-recursive declarations like 'int foo[10][5];' */
+
     while (peek() == '[' || peek() == '(') {
         switch (peek()) {
             case '[':
                 type = direct_declarator_array(base);
                 break;
-            case '(': {
+            case '(':
                 consume('(');
                 type = parameter_list(base);
                 consume(')');
                 break;
-            }
-            default: break; /* impossible */
+            default:
+                assert(0);
+        }
+        if (tail) {
+            tail->next = type;
+            type = head;
         }
         base = type;
     }
+
     return type;
 }
 
@@ -652,7 +684,15 @@ statement(block_t *parent)
         case DEFAULT:
             /* todo */
             break;
-        case IDENTIFIER: /* also part of label statement, need 2 lookahead */
+        case IDENTIFIER:
+        {
+            const symbol_t *def;
+            if ((def = sym_lookup(strval)) && def->storage == STC_TYPEDEF) {
+                node = declaration(parent, &def);
+                break;
+            }
+            /* todo: handle label statement. */
+        }
         case INTEGER_CONSTANT: /* todo: any constant value */
         case STRING:
         case '*':
@@ -661,7 +701,8 @@ statement(block_t *parent)
             consume(';');
             node = parent;
             break;
-        default: {
+        default:
+        {
             const symbol_t *decl;
             node = declaration(parent, &decl);
             break;

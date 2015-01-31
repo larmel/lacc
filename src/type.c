@@ -168,7 +168,7 @@ snprinttype(const typetree_t *tree, char *s, int size)
             w += snprinttype(tree->next, s + w, size - w);
             break;
         case FUNCTION:
-            w += snprintf(s, size, "(");
+            w += snprintf(s + w, size - w, "(");
             for (i = 0; i < tree->n_args; ++i) {
                 w += snprinttype(tree->args[i], s + w, size - w);
                 if (i < tree->n_args - 1)
