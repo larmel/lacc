@@ -9,7 +9,6 @@
 
 static block_t *declaration(block_t *, const symbol_t **);
 static typetree_t *declaration_specifiers(enum storage_class *);
-static typetree_t *specifier_qualifier_list();
 static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
 static typetree_t *direct_declarator(typetree_t *, const char **);
@@ -82,6 +81,7 @@ declaration(block_t *parent, const symbol_t **symbol)
 
         if (!name) {
             error("No name for type `%s`.", typetostr(type));
+            exit(1);
         }
         assert(name);
         sym  = sym_add(name, type, stc);
@@ -141,7 +141,7 @@ struct_declaration_list(typetree_t *obj)
     do {
         typetree_t *base;
 
-        base = specifier_qualifier_list();
+        base = declaration_specifiers(NULL);
         do {
             typetree_t *member;
             const char *name;
@@ -160,6 +160,7 @@ struct_declaration_list(typetree_t *obj)
 
             obj->args[obj->n_args - 1] = member;
             obj->params[obj->n_args - 1] = name;
+            obj->size += member->size;
 
             if (peek() == ',') {
                 consume(',');
@@ -174,88 +175,13 @@ struct_declaration_list(typetree_t *obj)
     pop_scope();
 }
 
-static void
-type_qualifier(typetree_t *type)
-{
-    enum token t = token();
-    assert(t == CONST || t == VOLATILE);
-
-    if (t == CONST)
-        type->flags.fconst = 1;
-    else
-        type->flags.fvolatile = 1;
-}
-
-static void
-type_specifier(typetree_t *type)
-{
-    const symbol_t *tdef;
-    flags_t flags;
-
-    switch (token()) {
-        case CHAR:
-            type->size = 1;
-            break;
-        case SHORT:
-            type->size = 2;
-            break;
-        case LONG:
-            type->size = 8;
-            break;
-        case UNSIGNED:
-            type->flags.funsigned = 1;
-        case INT:
-        case SIGNED:
-            break;
-        case DOUBLE:
-            type->size = 8;
-        case FLOAT:
-            type->type = REAL;
-            break;
-        case VOID:
-            type->type = NONE;
-            break;
-        case STRUCT:
-        case UNION:
-            type->type = OBJECT;
-            if (peek() == IDENTIFIER) {
-                error("Unsupported named struct or union.");
-                consume(IDENTIFIER);
-            }
-            consume('{');
-            struct_declaration_list(type);
-            consume('}');
-            break;
-        case ENUM:
-            /* todo */
-            break;
-        case IDENTIFIER:
-            tdef = sym_lookup(strval);
-            assert(tdef->storage == STC_TYPEDEF);
-            if (type->type != tdef->type->type) {
-                if (type->size && type->type == INTEGER) {
-                    error("Unable to apply type definition `%s` to existing declaration specifiers `%s`.", typetostr(tdef->type), typetostr(type));
-                    exit(1);
-                }
-            }
-            flags = type->flags;
-            *type = *(tdef->type);
-
-            type->flags.funsigned |= flags.funsigned;
-            type->flags.fvolatile |= flags.fvolatile;
-            type->flags.fconst |= flags.fconst;
-            break;
-        default:
-            error("Invalid type specifier.");
-            exit(1);
-    }
-}
-
 /* Parse type, storage class and qualifiers. Assume integer type by default.
  * Storage class is returned as token value, and error is raised if there are
  * more than one storage class given.
  * At most one storage class can be specified, fallback to STC_EXTERN if none
  * is provided. This is correct in all cases except for automatic variables.
+ * If stc is NULL, parse specifier_qualifier_list and give an error for any 
+ * storage class present.
  */
 static typetree_t *
 declaration_specifiers(enum storage_class *stc)
@@ -263,7 +189,6 @@ declaration_specifiers(enum storage_class *stc)
     int done;
     enum token stt;
     typetree_t *type;
-    const symbol_t *tdef;
 
     type = type_init(INTEGER);
     type->size = 0;
@@ -273,63 +198,111 @@ declaration_specifiers(enum storage_class *stc)
     while (!done) {
         switch (peek()) {
             case CONST:
+                consume(CONST);
+                type->flags.fconst = 1;
+                break;
             case VOLATILE:
-                type_qualifier(type);
+                consume(VOLATILE);
+                type->flags.fvolatile = 1;
                 break;
             case AUTO:
             case REGISTER:
             case STATIC:
             case EXTERN:
             case TYPEDEF:
-                if (stt != '$') {
+                if (stt != '$')
                     error("Only one storage class specifier allowed.");
-                }
+                if (!stc)
+                    error("Storage class specifier not allowed in specifier-qualifier-list.");
                 stt = token();
                 break;
             case IDENTIFIER:
+            {
+                const symbol_t *tdef;
+                flags_t flags;
+
                 tdef = sym_lookup(strval);
-                if (!tdef || tdef->storage != STC_TYPEDEF) {
-                    done = 1;
-                    break;
+                if (tdef && tdef->storage == STC_TYPEDEF) {
+                    consume(IDENTIFIER);
+                    if (type->size)
+                        error("Cannot combine type definition %s with other type specifiers.", strval);
+                    flags = type->flags;
+                    *type = *(tdef->type);
+                    type->flags.fvolatile |= flags.fvolatile;
+                    type->flags.fconst |= flags.fconst;
+                } else {
+                    done = 1;   
                 }
-            case CHAR: case SHORT: case INT: case SIGNED: case LONG: 
-            case UNSIGNED: case FLOAT: case DOUBLE: case VOID: case STRUCT:
-            case UNION:
-                type_specifier(type);
                 break;
+            }
+            case CHAR:
+                consume(CHAR);
+                type->size = 1;
+                break;
+            case SHORT:
+                consume(SHORT);
+                type->size = 2;
+                break;
+            case INT:
+            case SIGNED:
+                token();
+                type->size = 4;
+                break;
+            case LONG:
+                consume(LONG);
+                type->size = 8;
+                break;
+            case UNSIGNED:
+                consume(UNSIGNED);
+                if (!type->size)
+                    type->size = 4;
+                type->flags.funsigned = 1;
+                break;
+            case FLOAT:
+                consume(FLOAT);
+                type->type = REAL;
+                type->size = 4;
+                break;
+            case DOUBLE:
+                consume(DOUBLE);
+                type->type = REAL;
+                type->size = 8;
+                break;
+            case VOID:
+                consume(VOID);
+                type->type = NONE;
+                type->size = 8;
+                break;
+            case STRUCT:
+            case UNION:
+                token();
+                type->type = OBJECT;
+                if (peek() == IDENTIFIER) {
+                    error("Unsupported named struct or union.");
+                    consume(IDENTIFIER);
+                }
+                consume('{');
+                struct_declaration_list(type);
+                consume('}');
+                break;
+            case ENUM:
+                /* todo */
             default:
                 done = 1;
         }
     }
-    *stc = ((stt == AUTO || stt == REGISTER) ? STC_AUTO :
-            (stt == STATIC) ? STC_STATIC :
-            (stt == TYPEDEF) ? STC_TYPEDEF : STC_EXTERN);
+
+    if (stc) {
+        *stc = ((stt == AUTO || stt == REGISTER) ? STC_AUTO :
+                (stt == STATIC) ? STC_STATIC :
+                (stt == TYPEDEF) ? STC_TYPEDEF : STC_EXTERN);
+    }
+
+    assert(type->size);
     if (!type->size)
         type->size = 4;
 
     return type;
-}
-
-/* Same as declaration-specifiers, but without storage class. */
-static typetree_t *
-specifier_qualifier_list()
-{
-    typetree_t *type;
-    type = type_init(INTEGER);
-    while (1) {
-        switch (peek()) {
-            case CONST: case VOLATILE:
-                type_qualifier(type);
-                break;
-            case CHAR: case SHORT: case INT: case SIGNED: case LONG: 
-            case UNSIGNED: case FLOAT: case DOUBLE: case VOID: case STRUCT:
-            case UNION:
-                type_specifier(type);
-                break;
-            default:
-                return type;
-        }
-    }
 }
 
 static typetree_t *

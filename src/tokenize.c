@@ -300,12 +300,17 @@ enum token peek() {
 void consume(enum token expected) {
     enum token t = token();
     if (t != expected) {
-        if (isprint(t) && isprint(expected))
-            error("Unexpected token `%c`, expected `%c`.", t, expected);
-        else if (isprint(t))
-            error("Unexpected token `%c`.", t);
-        else 
-            error("Unexpected token `%s`.", strval);
+        if (isprint(t)) {
+            if (isprint(expected))
+                error("Unexpected token `%c`, expected `%c`.", t, expected);
+            else
+                error("Unexpected token `%c`.", t);
+        } else {
+            if (isprint(expected))
+                error("Unexpected token `%s`, expected `%c`.", strval, expected);
+            else
+                error("Unexpected token `%s`.", strval);
+        }
         exit(1);
     }
 }
