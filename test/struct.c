@@ -1,6 +1,9 @@
 typedef struct {
 	int x;
 	int y;
+	struct {
+		int val;
+	} z;
 } point_t;
 
 int main() {
@@ -8,10 +11,11 @@ int main() {
 	point_t *foo;
 
 	point.x = 1;
-	point.y = 2;
+	point.y = 3;
 
 	foo = &point;
-	foo->x = 2;
+	foo->x = 17;
+	foo->z.val = 5;
 
-	return point.x + point.y;
+	return point.y * point.z.val - point.x;
 }

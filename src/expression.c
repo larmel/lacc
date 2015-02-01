@@ -77,10 +77,11 @@ eval_addr(block_t *block, var_t right)
     const symbol_t *temp;
     typetree_t *type;
 
+    type = type_init(POINTER);
+    type->next = right.type;
+
     switch (right.kind) {
         case DIRECT:
-            type = type_init(POINTER);
-            type->next = right.type;
             temp = sym_temp(type);
             res = var_direct(temp);
 
@@ -95,6 +96,7 @@ eval_addr(block_t *block, var_t right)
             if (right.offset) {
                 res = eval_expr(block, IR_OP_SUB, res, var_long((long) right.offset));
             }
+            res.type = type;
             break;
         case IMMEDIATE:
             error("Address of immediate is not supported.");
