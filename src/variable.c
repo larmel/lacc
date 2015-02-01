@@ -5,7 +5,7 @@
 var_t
 var_direct(const symbol_t *symbol)
 {
-    var_t var;
+    var_t var = {0};
     var.kind = DIRECT;
     var.symbol = symbol;
     var.type = symbol->type;
@@ -15,7 +15,7 @@ var_direct(const symbol_t *symbol)
 var_t
 var_offset(const symbol_t *symbol, int offset)
 {
-    var_t var;
+    var_t var = {0};
     var.kind = OFFSET;
     var.symbol = symbol;
     var.type = type_deref(symbol->type);
@@ -26,7 +26,7 @@ var_offset(const symbol_t *symbol, int offset)
 var_t
 var_string(const char *text)
 {
-    var_t var;
+    var_t var = {0};
     typetree_t *type, *next;
 
     next = type_init(INTEGER); /* char */
@@ -46,7 +46,7 @@ var_string(const char *text)
 var_t
 var_long(long value)
 {
-    var_t var;
+    var_t var = {0};
     typetree_t *type;
 
     type = type_init(INTEGER);
@@ -61,7 +61,7 @@ var_long(long value)
 var_t
 var_void()
 {
-    var_t var;
+    var_t var = {0};
 
     var.kind = IMMEDIATE;
     var.type = type_init(NONE);

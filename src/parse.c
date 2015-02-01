@@ -891,7 +891,7 @@ postfix_expression(block_t *block)
 
     root = primary_expression(block);
 
-    while (peek() == '[' || peek() == '(' || peek() == '.') {
+    while (peek() == '[' || peek() == '(' || peek() == '.' || peek() == ARROW) {
         switch (peek()) {
             /* Parse and emit ir for general array indexing
              *  - From K&R: an array is not a variable, and cannot be assigned or modified.
@@ -938,9 +938,40 @@ postfix_expression(block_t *block)
 
                 free(arg);
                 break;
+            case '.':
+                root = eval_addr(block, root);
+            case ARROW:
+                token();
+                consume(IDENTIFIER);
+                if (root.type->type == POINTER && 
+                    root.type->next->type == OBJECT)
+                {
+                    int i, offset;
+                    const typetree_t *field;
+
+                    for (i = offset = 0; i < root.type->next->n_args; ++i) {
+                        if (!strcmp(strval, root.type->next->params[i])) {
+                            field = root.type->next->args[i];
+                            break;
+                        }
+                        offset += root.type->next->args[i]->size;
+                    }
+                    if (i == root.type->next->n_args) {
+                        error("Invalid field access, no field named %s.", strval);
+                        exit(1);
+                    }
+
+                    root.kind = OFFSET;
+                    root.type = field;
+                    root.offset += offset;
+                } else {
+                    error("Cannot access field of non-object type.");
+                    exit(1);
+                }
+                break;
             default:
-                error("Unexpected token, not a valid postfix expression.");
-                exit(0);
+                assert(0);
+                break;
         }
     }
     return root;
