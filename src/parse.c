@@ -182,6 +182,9 @@ struct_declaration_list(typetree_t *obj)
  * is provided. This is correct in all cases except for automatic variables.
  * If stc is NULL, parse specifier_qualifier_list and give an error for any 
  * storage class present.
+ *
+ * This rule can be used to backtrack, i.e. if there is no valid declaration
+ * specifier, NULL is returned.
  */
 static typetree_t *
 declaration_specifiers(enum storage_class *stc)
@@ -195,7 +198,7 @@ declaration_specifiers(enum storage_class *stc)
     stt  = '$';
     done = 0;
 
-    while (!done) {
+    do {
         switch (peek()) {
             case CONST:
                 consume(CONST);
@@ -290,7 +293,7 @@ declaration_specifiers(enum storage_class *stc)
             default:
                 done = 1;
         }
-    }
+    } while (!done);
 
     if (stc) {
         *stc = ((stt == AUTO || stt == REGISTER) ? STC_AUTO :
@@ -298,11 +301,7 @@ declaration_specifiers(enum storage_class *stc)
                 (stt == TYPEDEF) ? STC_TYPEDEF : STC_EXTERN);
     }
 
-    assert(type->size);
-    if (!type->size)
-        type->size = 4;
-
-    return type;
+    return (type->size) ? type : NULL;
 }
 
 static typetree_t *
@@ -387,6 +386,10 @@ direct_declarator(typetree_t *base, const char **symbol)
     switch (peek()) {
         case IDENTIFIER:
             token();
+            if (!symbol) {
+                error("Unexpected identifier in abstract declarator.");
+                exit(1);
+            }
             *symbol = strdup(strval);
             break;
         case '(':
@@ -865,6 +868,28 @@ unary_expression(block_t *block)
             consume('*');
             expr = cast_expression(block);
             expr = eval_deref(block, expr);
+            break;
+        case SIZEOF:
+            consume(SIZEOF);
+            if (peek() == '(') {
+                typetree_t *type;
+
+                consume('(');
+                type = declaration_specifiers(NULL);
+                if (!type) {
+                    expr = expression(block);
+                    expr = var_long(expr.type->size);
+                } else {
+                    if (peek() != ')') {
+                        type = declarator(type, NULL);
+                    }
+                    expr = var_long(type->size);
+                }
+                consume(')');
+            } else {
+                expr = unary_expression(block);
+                expr = var_long(expr.type->size);
+            }
             break;
         default:
             expr = postfix_expression(block);
