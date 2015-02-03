@@ -151,11 +151,11 @@ sym_add(const char *name, const typetree_t *type, enum storage_class stc)
     /* x86_64 specific, wrong if params cannot fit in registers. */
     if (depth == 1) {
         param = var_param_number++;
-        var_stack_offset += type_size(type);
+        var_stack_offset += type->size;
         if (param > 6)
             offset = var_stack_offset;
     } else if (depth > 1) {
-        var_stack_offset -= type_size(type);
+        var_stack_offset -= type->size;
         offset = var_stack_offset;
     }
     symbol = (const symbol_t *) sym_init(name, type, param, offset, stc);
@@ -172,10 +172,10 @@ sym_temp(const typetree_t *type)
     int offset = 0;
 
     if (depth == 1) {
-        var_stack_offset += type_size(type);
+        var_stack_offset += type->size;
         offset = var_stack_offset;
     } else if (depth > 1) {
-        var_stack_offset -= type_size(type);
+        var_stack_offset -= type->size;
         offset = var_stack_offset;
     }
 
@@ -203,8 +203,6 @@ dump_symtab()
         printf("%s", tstr);
         free(tstr);
         printf(", size=%d", symtab[i]->type->size);
-        if (symtab[i]->type->length)
-            printf(", length=%d", symtab[i]->type->length);
         if (symtab[i]->param_n) {
             if (symtab[i]->stack_offset > 0) {
                 printf(" (param: %d, offset: %d)", symtab[i]->param_n, symtab[i]->stack_offset);

@@ -22,27 +22,17 @@ typedef struct flags
     unsigned funsigned: 1;
 } flags_t;
 
-/* static int *foo, bar;
- * ( .name = "foo", .type )    ( .name = "bar", .type )
- *                     |                         |
- *          ( .type = POINTER, .next )          /
- *                               |             /
- *                             ( .type=INTEGER, .size=4 )
+/* Recursive structure representing a type.
  */
 typedef struct typetree
 {
     enum tree_type type;
     flags_t flags;
 
-    /* Storage size in bytes, for everything except INTEGER and REAL, this is
-     * always the length of one word, i.e. 8 byte. */
+    /* Total storage size in bytes, returned for sizeof( ). */
     unsigned size;
 
-    /* Array dimension width, lookup base size recursively in *next to find
-     * total storage size. */
-    unsigned length;
-
-    /* Specific for function types. */
+    /* Function parameters or struct/union members. */
     const struct typetree **args;
     const char **params;
     unsigned n_args;
@@ -61,21 +51,27 @@ enum storage_class {
     STC_TYPEDEF
 };
 
-/* A symbol represents declarations that may have a storage location 
- * at runtime, such as functions, static and local variables.
- * Store offset to base pointer for automatic variables and function 
- * arguments. */
+/* A symbol represents declarations that may have a storage location at runtime,
+ * such as functions, static and local variables. Store offset to base pointer
+ * for automatic variables and function arguments.
+ */
 typedef struct symbol
 {
     const char *name;
     const typetree_t *type;
-    int param_n; /* The n'th function argument. 1-indexed to keep 0 default. */
-    int stack_offset; /* Argument or local variable offset to base pointer. */
+
+    /* The n'th function argument. 1-indexed to keep 0 default. */
+    int param_n;
+
+    /* Argument or local variable offset to base pointer. */
+    int stack_offset;
+
     int depth;
     enum storage_class storage;
 } symbol_t;
 
-/* Immediate value. */
+/* Immediate value.
+ */
 typedef union value
 {
     long integer;
@@ -106,26 +102,26 @@ typedef struct variable
 
 /* Resolve symbol in current scope, or NULL if not found. Add new symbol based
  * on identifier name, or error if it is a duplicate. Create a new temporary 
- * symbol and register it to current scope.  */
+ * symbol and register it to current scope.
+ */
 const symbol_t *sym_lookup(const char *);
 const symbol_t *sym_add(const char *, const typetree_t *, enum storage_class);
 const symbol_t *sym_temp(const typetree_t *);
 
-/* Expression variables. */
+/* Expression variables.
+ */
 var_t var_direct(const symbol_t *);
 var_t var_offset(const symbol_t *, int);
 var_t var_string(const char *);
 var_t var_long(long);
 var_t var_void();
 
-
-/* functions on types */
+/* Functions on types.
+ */
 typetree_t *type_init(enum tree_type);
 const typetree_t *type_combine(const typetree_t *, const typetree_t *);
 const typetree_t *type_deref(const typetree_t *);
 const typetree_t *init_type_basic(enum tree_type);
-
-unsigned type_size(const typetree_t *);
 
 char *typetostr(const typetree_t *);
 

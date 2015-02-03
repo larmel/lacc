@@ -67,12 +67,9 @@ cfg_finalize(function_t *func)
 void
 ir_append(block_t *block, op_t op)
 {
-    if (!block) {
-        error("Internal error, cannot append operation when block_t is NULL.");
-        exit(1);
+    if (block) {
+        block->n += 1;
+        block->code = realloc(block->code, sizeof(op_t) * block->n);
+        block->code[block->n - 1] = op;
     }
-    block->n += 1;
-    block->code = realloc(block->code, sizeof(op_t) * block->n);
-    block->code[block->n - 1] = op;
-    return;
 }

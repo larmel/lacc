@@ -342,15 +342,14 @@ direct_declarator_array(typetree_t *base)
 
         consume('[');
         if (peek() != ']') {
-            block_t *throwaway = block_init();
-            expr = constant_expression(throwaway);
+            expr = constant_expression(NULL);
             if (expr.kind != IMMEDIATE || expr.type->type != INTEGER) {
-                error("Array declaration must be a compile time constant, aborting");
+                error("Array declaration must be a compile time constant.");
                 exit(1);
             }
             length = expr.value.integer;
             if (length < 1) {
-                error("Invalid array size %ld, aborting");
+                error("Array dimension cannot be negative.");
                 exit(1);
             }
         } else {
@@ -363,8 +362,7 @@ direct_declarator_array(typetree_t *base)
         root = type_init(ARRAY);
 
         root->next = base;
-        root->length = length;
-        /*root->size = (base->type == ARRAY) ? base->size * base->length : base->size;*/
+        root->size = length * base->size;
         base = root;
     }
     return base;
@@ -877,7 +875,7 @@ unary_expression(block_t *block)
                 consume('(');
                 type = declaration_specifiers(NULL);
                 if (!type) {
-                    expr = expression(block);
+                    expr = expression(NULL);
                     expr = var_long(expr.type->size);
                 } else {
                     if (peek() != ')') {
@@ -895,14 +893,6 @@ unary_expression(block_t *block)
             expr = postfix_expression(block);
     }
     return expr;
-}
-
-/* Size to skip for array indexing. */
-static unsigned array_skip(const typetree_t *t)
-{
-    if (t->type == ARRAY)
-        return t->length * array_skip(t->next);
-    return t->size;
 }
 
 /* This rule is left recursive, build tree bottom up
@@ -930,7 +920,7 @@ postfix_expression(block_t *block)
                 while (peek() == '[') {
                     consume('[');
                     expr = expression(block);
-                    addr = eval_expr(block, IR_OP_MUL, expr, var_long(array_skip(root.type)));
+                    addr = eval_expr(block, IR_OP_MUL, expr, var_long(root.type->size));
                     addr = eval_expr(block, IR_OP_ADD, root, addr);
                     root = eval_deref(block, addr);
                     consume(']');

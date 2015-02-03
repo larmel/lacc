@@ -112,9 +112,9 @@ load(FILE *stream, var_t var, reg_t dest)
             fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\t# load *%s\n", var.symbol->stack_offset, var.symbol->name);
             if (var.type->type == ARRAY) {
                 if (var.offset)
-                    fprintf(stream, "\tleaq\t%d(%%r10), %%%s\n", var.offset, reg(dest, w));
+                    fprintf(stream, "\tleaq\t%d(%%r10), %%%s\n", var.offset, reg(dest, 8));
                 else
-                    fprintf(stream, "\tleaq\t(%%r10), %%%s\n", reg(dest, w));
+                    fprintf(stream, "\tleaq\t(%%r10), %%%s\n", reg(dest, 8));
             } else {
                 if (var.offset)
                     fprintf(stream, "\t%s\t%d(%%r10), %%%s\n", mov, var.offset, reg(dest, w));

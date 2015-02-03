@@ -33,9 +33,8 @@ var_string(const char *text)
     next->size = 1;
 
     type = type_init(ARRAY);
-    type->length = strlen(text);
     type->next = next;
-    type->size = next->size * type->length;
+    type->size = next->size * strlen(text);
 
     var.kind = IMMEDIATE;
     var.type = type;

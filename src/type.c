@@ -34,7 +34,6 @@ type_equal(const typetree_t *a, const typetree_t *b)
 
     switch (a->type) {
         case ARRAY:
-            return type_equal(a->next, b->next) && (a->length == b->length);
         case POINTER:
             return type_equal(a->next, b->next);
         case FUNCTION:
@@ -103,16 +102,8 @@ type_deref(const typetree_t *t)
     return t->next;
 }
 
-unsigned
-type_size(const typetree_t *t)
-{
-    unsigned size = t->size;
-    if (t->length)
-        size *= t->length;
-    return size;
-}
-
-/* Print type to buffer, returning how many characters were written. */
+/* Print type to buffer, returning how many characters were written.
+ */
 static int
 snprinttype(const typetree_t *tree, char *s, int size)
 {
@@ -178,8 +169,8 @@ snprinttype(const typetree_t *tree, char *s, int size)
             w += snprinttype(tree->next, s + w, size - w);
             break;
         case ARRAY:
-            if (tree->length > 0)
-                w += snprintf(s + w, size - w, "[%u] ", tree->length);
+            if (tree->size > 0)
+                w += snprintf(s + w, size - w, "[%u] ", tree->size / tree->next->size);
             else
                 w += snprintf(s + w, size - w, "[] ");
             w += snprinttype(tree->next, s + w, size - w);
