@@ -329,8 +329,11 @@ pointer(const typetree_t *base)
     return type;
 }
 
-/* Consume [s0][s1][s2]..[sn] in array declarations, returning type
- * <symbol> :: [s0] [s1] [s2] .. [sn] (base)
+/* Parse array declarations of the form [s0][s1]..[sn], resulting in type
+ * [s0] [s1] .. [sn] (base).
+ *
+ * Only the first dimension s0 can be unspecified, yielding an incomplete type.
+ * Incomplete types are represented by having size of zero.
  */
 static typetree_t *
 direct_declarator_array(typetree_t *base)
@@ -353,14 +356,17 @@ direct_declarator_array(typetree_t *base)
                 exit(1);
             }
         } else {
-            /* special value for unspecified array size */
             length = 0;
         }
         consume(']');
-        
-        base = direct_declarator_array(base);
-        root = type_init(ARRAY);
 
+        base = direct_declarator_array(base);
+        if (!base->size) {
+            error("Array has incomplete element type.");
+            exit(1);
+        }
+
+        root = type_init(ARRAY);
         root->next = base;
         root->size = length * base->size;
         base = root;
