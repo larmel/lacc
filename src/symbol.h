@@ -122,6 +122,7 @@ typetree_t *type_init(enum tree_type);
 const typetree_t *type_combine(const typetree_t *, const typetree_t *);
 const typetree_t *type_deref(const typetree_t *);
 const typetree_t *init_type_basic(enum tree_type);
+void type_complete(typetree_t *, const typetree_t *);
 
 char *typetostr(const typetree_t *);
 

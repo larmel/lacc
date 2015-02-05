@@ -1,6 +1,7 @@
 #include "symbol.h"
 #include "error.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -28,19 +29,21 @@ type_init(enum tree_type type)
 int
 type_equal(const typetree_t *a, const typetree_t *b)
 {
-    if (a == NULL && b == NULL) return 1;
-    if (a == NULL || b == NULL) return 0;
-    if (a->type != b->type) return 0;
+    if (!a && !b) return 1;
+    if (!a || !b) return 0;
 
-    switch (a->type) {
-        case ARRAY:
-        case POINTER:
-            return type_equal(a->next, b->next);
-        case FUNCTION:
-            error("Arithmetic on function types not supported.");
-            exit(1);
-        default:
-            return a->type == b->type && a->size == b->size;
+    if (a->type == b->type
+        && a->size == b->size
+        && a->n_args == b->n_args
+        && type_equal(a->next, b->next))
+    {
+        int i;
+
+        for (i = 0; i < a->n_args; ++i) {
+            if (!type_equal(a->args[i], b->args[i]))
+                return 0;
+        }
+        return 1;   
     }
     return 0;
 }
@@ -100,6 +103,20 @@ type_deref(const typetree_t *t)
         return NULL;
     }
     return t->next;
+}
+
+/* Complete type p by applying q.
+ */
+void
+type_complete(typetree_t *p, const typetree_t *q)
+{
+    assert(!p->size && q->size);
+    
+    if (!type_equal(p->next, q->next)) {
+        error("Incompatible specification of incomplete type.");
+        exit(1);
+    }
+    *p = *q;
 }
 
 /* Print type to buffer, returning how many characters were written.

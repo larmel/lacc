@@ -135,31 +135,43 @@ sym_lookup(const char *name)
     return NULL;
 }
 
-/* Add symbol to current scope.
+/* Add symbol to current scope. If the symbol already exists in the same scope
+ * and has incomplete type, the type is completed.
+ *
+ * Calculate stack offset and function parameter index based on static context
+ * variables. This is x86_64 specific, wrong if params cannot fit in registers.
  */
 const symbol_t *
 sym_add(const char *name, const typetree_t *type, enum storage_class stc)
 {
-    const symbol_t *symbol = sym_lookup(name);
-    int param = 0;
-    int offset = 0;
+    const symbol_t *symbol;
 
-    if (symbol != NULL && symbol->depth == depth) {
-        error("Duplicate definition of symbol '%s'", name);
-        exit(0);
-    }
-    /* x86_64 specific, wrong if params cannot fit in registers. */
-    if (depth == 1) {
-        param = var_param_number++;
-        var_stack_offset += type->size;
-        if (param > 6)
+    symbol = sym_lookup(name);
+
+    if (symbol && symbol->depth == depth) {
+        if (!symbol->type->size) {
+            type_complete((typetree_t *) symbol->type, type);
+        } else {
+            error("Duplicate definition of symbol '%s'", name);
+            exit(0);
+        }
+    } else {
+        int param = 0, offset = 0;
+
+        if (depth == 1) {
+            param = var_param_number++;
+            var_stack_offset += type->size;
+            if (param > 6)
+                offset = var_stack_offset;
+        } else if (depth > 1) {
+            var_stack_offset -= type->size;
             offset = var_stack_offset;
-    } else if (depth > 1) {
-        var_stack_offset -= type->size;
-        offset = var_stack_offset;
+        }
+
+        symbol = (const symbol_t *) sym_init(name, type, param, offset, stc);
+        sym_register(symbol);
     }
-    symbol = (const symbol_t *) sym_init(name, type, param, offset, stc);
-    sym_register(symbol);
+
     return symbol;
 }
 
