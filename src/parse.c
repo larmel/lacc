@@ -432,35 +432,46 @@ direct_declarator(typetree_t *base, const char **symbol)
 static typetree_t *
 parameter_list(const typetree_t *base)
 {
-    typetree_t *type = type_init(FUNCTION);
+    typetree_t *type;
     const typetree_t **args = NULL;
     const char **params = NULL;
     int nargs = 0;
 
     while (peek() != ')') {
-        const char *symbol = NULL;
+        const char *name;
         enum storage_class stc;
-        typetree_t *decl = declaration_specifiers(&stc);
-        decl = declarator(decl, &symbol);
+        typetree_t *decl;
+
+        name = NULL;
+        decl = declaration_specifiers(&stc);
+        decl = declarator(decl, &name);
+
+        if (decl->type == ARRAY) {
+            typetree_t *ptr = type_init(POINTER);
+            ptr->next = decl->next;
+            decl = ptr;
+        }
 
         nargs++;
-        args = realloc(args, sizeof(typetree_t *) * nargs);
+        args   = realloc(args, sizeof(typetree_t *) * nargs);
         params = realloc(params, sizeof(char *) * nargs);
-        args[nargs - 1] = decl;
-        params[nargs - 1] = symbol;
+        args[nargs - 1]   = decl;
+        params[nargs - 1] = name;
 
-        if (peek() != ',') break;
+        if (peek() != ',')
+            break;
+
         consume(',');
         if (peek() == ')') {
-            error("Trailing comma in parameter list, aborting");
+            error("Unexpected trailing comma in parameter list.");
             exit(1);
-        }
-        if (peek() == DOTS) {
+        } else if (peek() == DOTS) {
             consume(DOTS); /* todo: add vararg type */
             break;
         }
     }
-    
+
+    type = type_init(FUNCTION);
     type->next = base;
     type->n_args = nargs;
     type->args = args;
