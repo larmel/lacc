@@ -20,7 +20,7 @@ static const symbol_t *identifier();
 
 /* expression nodes that are called in high level rules */
 static var_t expression(block_t *);
-static var_t constant_expression(block_t *);
+static var_t constant_expression();
 static var_t assignment_expression(block_t *);
 
 extern int var_stack_offset;
@@ -340,23 +340,17 @@ direct_declarator_array(typetree_t *base)
 {
     if (peek() == '[') {
         typetree_t *root;
-        var_t expr;
-        long length;
+        long length = 0;
 
         consume('[');
         if (peek() != ']') {
-            expr = constant_expression(NULL);
-            if (expr.kind != IMMEDIATE || expr.type->type != INTEGER) {
-                error("Array declaration must be a compile time constant.");
+            var_t expr = constant_expression();
+            assert(expr.kind == IMMEDIATE);
+            if (expr.type->type != INTEGER || expr.value.integer < 1) {
+                error("Array dimension must be a natural number.");
                 exit(1);
             }
             length = expr.value.integer;
-            if (length < 1) {
-                error("Array dimension cannot be negative.");
-                exit(1);
-            }
-        } else {
-            length = 0;
         }
         consume(']');
 
@@ -739,9 +733,16 @@ assignment_expression(block_t *block)
 }
 
 static var_t 
-constant_expression(block_t *block)
+constant_expression()
 {
-    return conditional_expression(block);
+    var_t expr;
+
+    expr = conditional_expression(NULL);
+    if (expr.kind != IMMEDIATE) {
+        error("Constant expression must be computable at compile time.");
+        exit(1);
+    }
+    return expr;
 }
 
 static var_t 
