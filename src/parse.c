@@ -894,18 +894,23 @@ unary_expression(block_t *block)
                 type = declaration_specifiers(NULL);
                 if (!type) {
                     expr = expression(NULL);
-                    expr = var_long(expr.type->size);
                 } else {
                     if (peek() != ')') {
                         type = declarator(type, NULL);
                     }
-                    expr = var_long(type->size);
+                    expr.type = type;
                 }
                 consume(')');
             } else {
                 expr = unary_expression(block);
-                expr = var_long(expr.type->size);
             }
+            if (expr.type->type == FUNCTION) {
+                error("Cannot apply 'sizeof' to function type.");
+            }
+            if (!expr.type->size) {
+                error("Cannot apply 'sizeof' to incomplete type.");
+            }
+            expr = var_long(expr.type->size);
             break;
         default:
             expr = postfix_expression(block);
