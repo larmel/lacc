@@ -66,3 +66,11 @@ var_void()
     var.type = type_init(NONE);
     return var;
 }
+
+/* Determine whether the variable can be assigned to.
+ */
+int
+islvalue(var_t var)
+{
+    return ((var.kind == DIRECT && var.symbol->name[0] != '@') || var.kind == OFFSET);
+}

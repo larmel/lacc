@@ -146,7 +146,7 @@ eval_deref(block_t *block, var_t var)
 }
 
 /* Evaluate a = b.
- * Restrictions on a: OFFSET and DIRECT is ok, but IMMEDIATE is not.
+ * Restrictions on a: OFFSET or DIRECT lvalue, not temporary.
  * Restrictions on b:
  *     DIRECT and IMMEDIATE is ok. For OFFSET, put in an explicit evaluation
  *     before the assignment, so that we don't get (*a') = (*b'), but instead
@@ -163,20 +163,22 @@ eval_assign(block_t *block, var_t target, var_t var)
 {
     op_t op;
 
-    if (target.kind == IMMEDIATE) {
-        error("Cannot assign to immediate value.");
+    if (!islvalue(target)) {
+        error("Target of assignment must be l-value.");
         exit(1);
     }
+
     if (var.kind == OFFSET) {
         var = eval_deref(block, var);
         var = var_direct(var.symbol);
     }
+    
     /* NB: missing type checking! */
     op.type = IR_ASSIGN;
     op.a = target;
     op.b = var;
-
     ir_append(block, op);
+
     return var;
 }
 

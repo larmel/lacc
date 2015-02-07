@@ -917,14 +917,12 @@ unary_expression(block_t *block)
             temp = unary_expression(block);
             expr = eval_expr(block, IR_OP_ADD, temp, var_long(1));
             expr = eval_assign(block, temp, expr);
-            expr = temp;
             break;
         case DECREMENT:
             consume(DECREMENT);
             temp = unary_expression(block);
             expr = eval_expr(block, IR_OP_SUB, temp, var_long(1));
             expr = eval_assign(block, temp, expr);
-            expr = temp;
             break;
         default:
             expr = postfix_expression(block);

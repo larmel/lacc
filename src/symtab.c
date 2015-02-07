@@ -83,17 +83,16 @@ sym_init(const char *name, const typetree_t *type, int param, int offset, enum s
     return symtab[symtab_size++];
 }
 
-/* Create a temporary symbol with automatic storage.
+/* Create a temporary symbol with automatic storage. Use a fixed prefix '@' to
+ * all temporary variables, which will never collide with real symbols.
  */
 static symbol_t *
 sym_init_temp(const typetree_t *type, int offset)
 {
     static int tmpn;
+    static char tmpname[16];
 
-    char tmpname[16];
-    do {
-        snprintf(tmpname, 12, "t%d", tmpn++);
-    } while (sym_lookup(tmpname) != NULL);
+    snprintf(tmpname, 12, "@t%d", tmpn++);
 
     return sym_init(tmpname, type, 0, offset, STC_AUTO);
 }
