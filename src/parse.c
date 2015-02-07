@@ -872,7 +872,7 @@ cast_expression(block_t *block)
 static var_t
 unary_expression(block_t *block)
 {
-    var_t expr;
+    var_t expr, temp;
 
     switch (peek()) {
         case '&':
@@ -911,6 +911,20 @@ unary_expression(block_t *block)
                 error("Cannot apply 'sizeof' to incomplete type.");
             }
             expr = var_long(expr.type->size);
+            break;
+        case INCREMENT:
+            consume(INCREMENT);
+            temp = unary_expression(block);
+            expr = eval_expr(block, IR_OP_ADD, temp, var_long(1));
+            expr = eval_assign(block, temp, expr);
+            expr = temp;
+            break;
+        case DECREMENT:
+            consume(DECREMENT);
+            temp = unary_expression(block);
+            expr = eval_expr(block, IR_OP_SUB, temp, var_long(1));
+            expr = eval_assign(block, temp, expr);
+            expr = temp;
             break;
         default:
             expr = postfix_expression(block);
