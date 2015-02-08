@@ -1,3 +1,4 @@
+#include "error.h"
 #include "ir.h"
 #include "symbol.h"
 
@@ -51,17 +52,23 @@ int main(int argc, char* argv[])
     push_scope();
     while (1) {
         function_t *fun = parse();
-        if (!fun) break;
-        if (assembly)
-            fassemble(output, fun);
-        else
-            fdotgen(output, fun);
-        cfg_finalize(fun);
+        if (errors || !fun) {
+            break;
+        }
+        if (fun) {
+            if (assembly) {
+                fassemble(output, fun);
+            } else {
+                fdotgen(output, fun);
+            }
+            cfg_finalize(fun);
+        }
     }
     pop_scope();
 
-    if (VERBOSE)
+    if (VERBOSE) {
         dump_symtab();
+    }
 
-    return 0;
+    return errors;
 }
