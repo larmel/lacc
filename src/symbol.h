@@ -97,6 +97,7 @@ typedef struct variable
     const symbol_t *symbol;
     int offset;
     value_t value;
+    int lvalue;
 } var_t;
 
 
@@ -115,7 +116,6 @@ var_t var_offset(const symbol_t *, int);
 var_t var_string(const char *);
 var_t var_long(long);
 var_t var_void();
-int islvalue(var_t);
 
 /* Functions on types.
  */

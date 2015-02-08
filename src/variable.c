@@ -9,6 +9,7 @@ var_direct(const symbol_t *symbol)
     var.kind = DIRECT;
     var.symbol = symbol;
     var.type = symbol->type;
+    var.lvalue = symbol->name[0] != '@';
     return var;
 }
 
@@ -20,6 +21,7 @@ var_offset(const symbol_t *symbol, int offset)
     var.symbol = symbol;
     var.type = type_deref(symbol->type);
     var.offset = offset;
+    var.lvalue = 1;
     return var;
 }
 
@@ -65,12 +67,4 @@ var_void()
     var.kind = IMMEDIATE;
     var.type = type_init(NONE);
     return var;
-}
-
-/* Determine whether the variable can be assigned to.
- */
-int
-islvalue(var_t var)
-{
-    return ((var.kind == DIRECT && var.symbol->name[0] != '@') || var.kind == OFFSET);
 }

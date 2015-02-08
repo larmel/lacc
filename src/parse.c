@@ -935,29 +935,25 @@ unary_expression(block_t *block)
 static var_t
 postfix_expression(block_t *block)
 {
-    int i;
-    var_t root, expr, addr;
-    var_t *arg;
+    var_t root;
+    int done;
 
     root = primary_expression(block);
+    done = 0;
 
-    while (peek() == '[' || peek() == '(' || peek() == '.' || peek() == ARROW) {
+    do {
+        var_t expr, copy, *arg;
+        int i;
+
         switch (peek()) {
-            /* Parse and emit ir for general array indexing
-             *  - From K&R: an array is not a variable, and cannot be assigned or modified.
-             *    Referencing an array always converts the first rank to pointer type,
-             *    e.g. int foo[3][2][1]; a = foo; assignment has the type int (*)[2][1].
-             *  - Functions return and pass pointers to array. First index not necessary to
-             *    specify in array (pointer) parameters: int (*foo(int arg[][3][2][1]))[3][2][1]
-             */
             case '[':
                 /* Evaluate a[b] = *(a + b). */
                 while (peek() == '[') {
                     consume('[');
                     expr = expression(block);
-                    addr = eval_expr(block, IR_OP_MUL, expr, var_long(root.type->size));
-                    addr = eval_expr(block, IR_OP_ADD, root, addr);
-                    root = eval_deref(block, addr);
+                    expr = eval_expr(block, IR_OP_MUL, expr, var_long(root.type->size));
+                    expr = eval_expr(block, IR_OP_ADD, root, expr);
+                    root = eval_deref(block, expr);
                     consume(']');
                 }
                 break;
@@ -976,7 +972,7 @@ postfix_expression(block_t *block)
                         exit(1);
                     }
                     arg[i] = assignment_expression(block);
-                    /* type check here. */
+                    /* todo: type check here. */
                     if (i < root.type->n_args - 1)
                         consume(',');
                 }
@@ -1014,16 +1010,32 @@ postfix_expression(block_t *block)
                     root.kind = OFFSET;
                     root.type = field;
                     root.offset += offset;
+                    root.lvalue = 1;
                 } else {
                     error("Cannot access field of non-object type.");
                     exit(1);
                 }
                 break;
+            case INCREMENT:
+                consume(INCREMENT);
+                copy = eval_copy(block, root);
+                expr = eval_expr(block, IR_OP_ADD, root, var_long(1));
+                eval_assign(block, root, expr);
+                root = copy;
+                break;
+            case DECREMENT:
+                consume(DECREMENT);
+                copy = eval_copy(block, root);
+                expr = eval_expr(block, IR_OP_SUB, root, var_long(1));
+                eval_assign(block, root, expr);
+                root = copy;
+                break;
             default:
-                assert(0);
+                done = 1;
                 break;
         }
-    }
+    } while (!done);
+
     return root;
 }
 

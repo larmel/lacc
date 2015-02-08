@@ -1,6 +1,6 @@
 int main() {
 	int a = 1;
-	int b = ++a;
+	int b = a++;
 	int c = --b;
-	return ++a + --b - ++c;
+	return a-- + b-- - ++c;
 }

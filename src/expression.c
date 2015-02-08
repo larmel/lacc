@@ -163,7 +163,7 @@ eval_assign(block_t *block, var_t target, var_t var)
 {
     op_t op;
 
-    if (!islvalue(target)) {
+    if (!target.lvalue) {
         error("Target of assignment must be l-value.");
         exit(1);
     }
@@ -180,6 +180,25 @@ eval_assign(block_t *block, var_t target, var_t var)
     ir_append(block, op);
 
     return var;
+}
+
+/* Evaluate a = copy(b). Create a new temporary variable to hold the result,
+ * circumventing the l-value restriction for temporaries to do the assignment.
+ */
+var_t
+eval_copy(block_t *block, var_t var)
+{
+    var_t res;
+    const symbol_t *sym;
+
+    sym = sym_temp(var.type);
+    res = var_direct(sym);
+    res.lvalue = 1;
+
+    eval_assign(block, res, var);
+
+    res.lvalue = 0;
+    return res;
 }
 
 var_t
