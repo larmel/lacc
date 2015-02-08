@@ -16,8 +16,6 @@ static typetree_t *parameter_list(const typetree_t *);
 static block_t *block(block_t *);
 static block_t *statement(block_t *);
 
-static const symbol_t *identifier();
-
 /* expression nodes that are called in high level rules */
 static var_t expression(block_t *);
 static var_t constant_expression();
@@ -643,7 +641,7 @@ statement(block_t *parent)
         }
         case GOTO:
             consume(GOTO);
-            identifier();
+            consume(IDENTIFIER);
             /* todo */
             consume(';');
             break;
@@ -694,20 +692,6 @@ statement(block_t *parent)
         }
     }
     return node;
-}
-
-static const symbol_t *
-identifier()
-{
-    const symbol_t *sym;
-
-    consume(IDENTIFIER);
-    sym = sym_lookup(strval);
-    if (sym == NULL) {
-        error("Undefined symbol '%s', aborting", strval);
-        exit(0);
-    }
-    return sym;
 }
 
 static var_t conditional_expression(block_t *block);
@@ -1048,9 +1032,9 @@ primary_expression(block_t *block)
     switch (token()) {
         case IDENTIFIER:
             symbol = sym_lookup(strval);
-            if (symbol == NULL) {
-                error("Undefined symbol '%s', aborting", strval);
-                exit(0);
+            if (!symbol) {
+                error("Undefined symbol '%s'", strval);
+                exit(1);
             }
             var = var_direct(symbol);
             break;
@@ -1066,7 +1050,7 @@ primary_expression(block_t *block)
             break;
         default:
             error("Unexpected token, not a valid primary expression.");
-            exit(0);
+            exit(1);
     }
     return var;
 }
