@@ -3,6 +3,7 @@
 #include "error.h"
 #include "util/map.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <ctype.h>
 
@@ -309,16 +310,15 @@ void foutputstring(FILE *stream, const char *str)
 void
 fasmimmediate(FILE *stream, const block_t *body)
 {
-    int i;
     const symbol_t *symbol;
     value_t value;
+    int i;
 
     fprintf(stream, "\t.data\n");
+    
     for (i = 0; i < body->n; ++i) {
-        if (body->n != 1 || body->code[0].type != IR_ASSIGN) {
-            error("Internal error: External declaration must have constant value.");
-            exit(1);
-        }
+        assert(body->code[i].type == IR_ASSIGN);
+
         symbol = body->code[i].a.symbol;
         value = body->code[i].b.value;
 
@@ -330,11 +330,17 @@ fasmimmediate(FILE *stream, const block_t *body)
                     case 1:
                         fprintf(stream, "\t.byte\t%d\n", (unsigned char) value.integer);
                         break;
+                    case 2:
+                        fprintf(stream, "\t.short\t%d\n", (short) value.integer);
+                        break;
+                    case 4:
+                        fprintf(stream, "\t.int\t%d\n", (int) value.integer);
+                        break;
                     case 8:
                         fprintf(stream, "\t.quad\t%ld\n", value.integer);
                         break;
                     default:
-                        error("Unable to assemble, unsupported integer size %ld.", symbol->type->size);
+                        assert(0);
                 }
                 break;
             case POINTER:
