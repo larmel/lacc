@@ -66,8 +66,8 @@ refer(const var_t var)
             if (var.symbol->param_n && !var.symbol->stack_offset) {
                 sprintf(str, "%%%s", reg(pregs[var.symbol->param_n - 1], var.type->size));
             }
-            else if (var.symbol->depth == 0)
-                if (var.type->type == ARRAY || var.type->type == POINTER)
+            else if (var.symbol->depth == 0 || !var.symbol->stack_offset)
+                if (var.type->type == ARRAY)
                     sprintf(str, "$%s", var.symbol->name);
                 else
                     sprintf(str, "%s(%%rip)", var.symbol->name);
@@ -101,7 +101,11 @@ load(FILE *stream, var_t var, reg_t dest)
 
     switch (var.kind) {
         case IMMEDIATE:
-            fprintf(stream, "\t%s\t$%ld, %%%s\n", mov, var.value.integer, reg(dest, w));
+            if (var.type->type == ARRAY || var.type->type == POINTER) {
+                fprintf(stream, "\t%s\t$%s, %%%s\n", mov, var.value.string, reg(dest, w));
+            } else {
+                fprintf(stream, "\t%s\t$%ld, %%%s\n", mov, var.value.integer, reg(dest, w));
+            }
             break;
         case DIRECT:
             if (var.type->type == ARRAY && var.symbol->depth)
@@ -133,8 +137,7 @@ store(FILE *stream, reg_t source, var_t var)
     unsigned w = var.type->size;
     switch (var.kind) {
         case IMMEDIATE:
-            fprintf(stream, "\t(error: cannot write to immediate)\n");
-            break;
+            assert(0);
         case DIRECT:
             fprintf(stream, "\tmov%c\t%%%s, %s\t# store %s\n", suffix, reg(source, w), refer(var), var.symbol->name);
             break;
@@ -294,89 +297,88 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
     }
 }
 
-/* Output assembler friendly string, with special characters escaped. */
-void foutputstring(FILE *stream, const char *str)
+static void
+assemble_immediate(FILE *stream, const symbol_t *symbol, value_t value)
 {
-    char c;
-
-    while ((c = *str++) != '\0') {
-        if (isprint(c) && c != '"' && c != '\\')
-            putc(c, stream);
-        else
-            fprintf(stream, "\\x%x", (int) c);
-    }
-}
-
-void
-fasmimmediate(FILE *stream, const block_t *body)
-{
-    const symbol_t *symbol;
-    value_t value;
-    int i;
-
-    fprintf(stream, "\t.data\n");
-    
-    for (i = 0; i < body->n; ++i) {
-        assert(body->code[i].type == IR_ASSIGN);
-
-        symbol = body->code[i].a.symbol;
-        value = body->code[i].b.value;
-
-        fprintf(stream, "\t.globl\t%s\n", symbol->name);
-        fprintf(stream, "%s:\n", symbol->name);
-        switch (symbol->type->type) {
-            case INTEGER:
-                switch (symbol->type->size) {
-                    case 1:
-                        fprintf(stream, "\t.byte\t%d\n", (unsigned char) value.integer);
-                        break;
-                    case 2:
-                        fprintf(stream, "\t.short\t%d\n", (short) value.integer);
-                        break;
-                    case 4:
-                        fprintf(stream, "\t.int\t%d\n", (int) value.integer);
-                        break;
-                    case 8:
-                        fprintf(stream, "\t.quad\t%ld\n", value.integer);
-                        break;
-                    default:
-                        assert(0);
-                }
-                break;
-            case POINTER:
-            case ARRAY:
-                fprintf(stream, "\t.string \"");
-                foutputstring(stream, value.string);
+    fprintf(stream, "\t.globl\t%s\n", symbol->name);
+    fprintf(stream, "%s:\n", symbol->name);
+    switch (symbol->type->type) {
+        case INTEGER:
+            switch (symbol->type->size) {
+                case 1:
+                    fprintf(stream, "\t.byte\t%d\n", (unsigned char) value.integer);
+                    break;
+                case 2:
+                    fprintf(stream, "\t.short\t%d\n", (short) value.integer);
+                    break;
+                case 4:
+                    fprintf(stream, "\t.int\t%d\n", (int) value.integer);
+                    break;
+                case 8:
+                    fprintf(stream, "\t.quad\t%ld\n", value.integer);
+                    break;
+                default:
+                    assert(0);
+            }
+            break;
+        case POINTER:
+            assert(symbol->type->next->type == INTEGER && symbol->type->next->size == 1);
+            fprintf(stream, "\t.quad\t");
+            fprintf(stream, "%s", value.string);
+            fprintf(stream, "\n");
+            break;
+        case ARRAY:
+            if (symbol->type->next->type == INTEGER && symbol->type->next->size == 1) {
+                fprintf(stream, "\t.string\t\"");
+                output_string(stream, value.string);
                 fprintf(stream, "\"\n");
-                break;
-            default:
-                fprintf(stream, "\t (immediate)\n");
-        }
+            } else {
+                assert(0);
+            }
+            break;
+        default:
+            assert(0);
     }
 }
 
-void
-fassemble(FILE *stream, const function_t *func)
+static void
+assemble_function(FILE *stream, const symbol_t *sym, block_t *body, int locals_size)
 {
     map_t memo;
-
-    if (!func->symbol) {
-        fasmimmediate(stream, func->body);
-        return;
-    }
 
     map_init(&memo);
 
     fprintf(stream, "\t.text\n");
-    fprintf(stream, "\t.globl\t%s\n", func->symbol->name);
+    fprintf(stream, "\t.globl\t%s\n", sym->name);
 
-    fprintf(stream, "%s:\n", func->symbol->name);
+    fprintf(stream, "%s:\n", sym->name);
     fprintf(stream, "\tpushq\t%%rbp\n");
     fprintf(stream, "\tmovq\t%%rsp, %%rbp\n");
-    if (func->locals_size)
-        fprintf(stream, "\tsubq\t$%d, %%rsp\n", func->locals_size);
+    if (locals_size)
+        fprintf(stream, "\tsubq\t$%d, %%rsp\n", locals_size);
 
-    fassembleblock(stream, &memo, func->body);
+    fassembleblock(stream, &memo, body);
 
     map_finalize(&memo);
+}
+
+void
+fassemble(FILE *stream, const decl_t *decl)
+{
+    int i;
+
+    if (decl->count) {
+        fprintf(stream, "\t.data\n");
+        for (i = 0; i < decl->count; ++i) {
+            assert(decl->global[i]->type->type != FUNCTION);
+
+            assemble_immediate(stream, decl->global[i], decl->value[i]);
+        }
+    }
+
+    if (decl->fun) {
+        assert(decl->fun->type->type == FUNCTION);
+        
+        assemble_function(stream, decl->fun, decl->body, decl->locals_size);
+    }
 }

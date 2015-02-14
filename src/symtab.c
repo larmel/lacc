@@ -83,16 +83,16 @@ sym_init(const char *name, const typetree_t *type, int param, int offset, enum s
     return symtab[symtab_size++];
 }
 
-/* Create a temporary symbol with automatic storage. Use a fixed prefix '@' to
+/* Create a temporary symbol with automatic storage. Use a fixed prefix '.' to
  * all temporary variables, which will never collide with real symbols.
  */
 static symbol_t *
-sym_init_temp(const typetree_t *type, int offset)
+sym_init_temp(const typetree_t *type, char prefix, int offset)
 {
     static int tmpn;
     static char tmpname[16];
 
-    snprintf(tmpname, 12, "@t%d", tmpn++);
+    snprintf(tmpname, 12, ".%c%d", prefix, tmpn++);
 
     return sym_init(tmpname, type, 0, offset, STC_AUTO);
 }
@@ -190,8 +190,22 @@ sym_temp(const typetree_t *type)
         offset = var_stack_offset;
     }
 
-    symbol = sym_init_temp(type, offset);
+    symbol = sym_init_temp(type, 't', offset);
     sym_register(symbol);
+
+    return symbol;
+}
+
+/* Add temporary symbol refering to some static value.
+ */
+const symbol_t *
+sym_temp_static(const typetree_t *type)
+{
+    symbol_t *symbol;
+
+    symbol = sym_init_temp(type, 'd', 0);
+    sym_register(symbol);
+
     return symbol;
 }
 

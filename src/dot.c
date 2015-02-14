@@ -38,7 +38,7 @@ vartostr(const var_t var)
                     break;
                 case POINTER:
                 case ARRAY:
-                    sprintf(buffer, "\\\"%s\\\"", var.value.string);
+                    sprintf(buffer, "%s", var.value.string);
                     break;
                 default:
                     sprintf(buffer, "(immediate)");  
@@ -138,18 +138,20 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
 }
 
 void
-fdotgen(FILE *stream, const function_t *cfg)
+fdotgen(FILE *stream, const decl_t *cfg)
 {
-    map_t memo;
-    map_init(&memo);
+    if (cfg->fun) {
+        map_t memo;
+        map_init(&memo);
 
-    fprintf(stream, "digraph {\n");
-    fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\",shape=record];\n");
-    fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\"];\n");
+        fprintf(stream, "digraph {\n");
+        fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\",shape=record];\n");
+        fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\"];\n");
 
-    foutputnode(stream, &memo, cfg->body);
+        foutputnode(stream, &memo, cfg->body);
 
-    fprintf(stream, "}\n");
+        fprintf(stream, "}\n");
 
-    map_finalize(&memo);
+        map_finalize(&memo);
+    }
 }

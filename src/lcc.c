@@ -13,9 +13,9 @@ void help()
 }
 
 extern void init(const char *);
-extern function_t *parse();
-extern void fdotgen(FILE *, const function_t *);
-extern void fassemble(FILE *, const function_t *);
+extern decl_t *parse();
+extern void fdotgen(FILE *, const decl_t *);
+extern void fassemble(FILE *, const decl_t *);
 
 int main(int argc, char* argv[])
 {
@@ -51,8 +51,11 @@ int main(int argc, char* argv[])
 
     push_scope();
     while (1) {
-        function_t *fun = parse();
+        decl_t *fun = parse();
         if (errors || !fun) {
+            if (errors) {
+                error("Aborting because of previous %s.", (errors > 1) ? "errors" : "error");
+            }
             break;
         }
         if (fun) {
@@ -65,6 +68,10 @@ int main(int argc, char* argv[])
         }
     }
     pop_scope();
+
+    if (assembly) {
+        output_strings(output);
+    }
 
     if (VERBOSE) {
         dump_symtab();

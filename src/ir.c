@@ -18,12 +18,12 @@ mklabel()
 
 /* Keep track of to last created function, adding new block to its internal
  * bookkeeping list. */
-static function_t *function;
+static decl_t *function;
 
-function_t *
+decl_t *
 cfg_create(const symbol_t *symbol)
 {
-    function = calloc(1, sizeof(function_t));
+    function = calloc(1, sizeof(decl_t));
     return function;
 }
 
@@ -48,7 +48,7 @@ block_init()
 }
 
 void
-cfg_finalize(function_t *func)
+cfg_finalize(decl_t *func)
 {
     if (!func) return;
     if (func->capacity) {

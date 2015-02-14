@@ -3,6 +3,7 @@
 #include "token.h"
 #include "symbol.h"
 
+#include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,94 +24,134 @@ static var_t assignment_expression(block_t *);
 
 extern int var_stack_offset;
 
+/* To be able to update static data */
+static decl_t *current_declaration;
+
 /* External interface */
-function_t *
+decl_t *
 parse()
 {
-    function_t *fun;
-    const symbol_t *symbol;
+    decl_t *decl;
     block_t *body;
+    const symbol_t *sym;
 
-    fun = cfg_create();
+    decl = cfg_create();
     body = block_init();
 
-    while (1) {
-        symbol = NULL;
-        if (peek() == '$')
-            break;
-        declaration(body, &symbol);
+    /* Temporary hack, will start passing this down the rabbit hole. */
+    current_declaration = decl;
 
-        if (body->n > 0 || fun->size > 1) {
-            fun->symbol = symbol;
-            fun->body = body;
+    while (peek() != '$') {
+        sym = NULL;
+        declaration(body, &sym);
 
-            /* Hack: write stack offset as we are done adding all symbols,
-             * reading variable from symtab code. */
-            fun->locals_size = (-1) * var_stack_offset;
-            return fun;
+        if (decl->count || sym) {
+            if (sym) {
+                decl->fun = sym;
+                decl->body = body;
+
+                /* Hack: write stack offset as we are done adding all symbols,
+                 * reading variable from symtab code.
+                 * This will also be possible to move to parse function probably.
+                 */
+                decl->locals_size = (-1) * var_stack_offset;
+            }
+            return decl;
         }
     }
 
-    cfg_finalize(fun);
+    cfg_finalize(decl);
     return NULL;
 }
 
+static const symbol_t *
+declare_static(const symbol_t *sym, var_t var)
+{
+    decl_t *decl;
+    assert(var.kind == IMMEDIATE);
+
+    decl = current_declaration;
+
+    decl->count += 1;
+    decl->global = realloc(decl->global, sizeof(symbol_t *) * decl->count);
+    decl->value  = realloc(decl->value , sizeof(value_t) * decl->count);
+    decl->global[decl->count - 1] = sym;
+    decl->value [decl->count - 1] = var.value;
+
+    return sym;
+}
+
 /* Cover both external declarations, functions, and local declarations (with
- * optional initialization code) inside functions. Symbol is bound to last
- * declared identifier. */
+ * optional initialization code) inside functions. Symbol is bound to function
+ * if encountered, otherwise not touched.
+ */
 static block_t *
 declaration(block_t *parent, const symbol_t **symbol)
 {
     static int in_function;
 
-    const symbol_t *sym;
-    typetree_t *type, *base;
+    typetree_t *base;
     enum storage_class stc;
-    int i;
 
     base = declaration_specifiers(&stc);
 
     while (1) {
-        const char *name = NULL;
+        typetree_t *type;
+        const symbol_t *sym;
+        const char *name = NULL; /* nb: memory leak. */
+        
         type = declarator(base, &name);
-
-        if (type->type != FUNCTION && in_function)
-            stc = STC_AUTO;
-
         if (!name) {
-            error("No name for type `%s`.", typetostr(type));
+            error("Missing declarator name.");
             exit(1);
         }
-        assert(name);
-        sym  = sym_add(name, type, stc);
 
-        free((void *) name);
+        if (type->type != FUNCTION && in_function) {
+            stc = STC_AUTO;
+        }
 
         switch (peek()) {
             case ';':
                 consume(';');
+                sym_add(name, type, stc);
                 return parent;
             case '=': {
                 var_t val;
+
                 consume('=');
                 val = assignment_expression(parent);
-                if (sym->depth == 0 && val.kind != IMMEDIATE) {
-                    error("Declaration must have constant value.");
-                    exit(1);
+
+                if (!type->size) {
+                    type_complete((typetree_t *)type, val.type);
                 }
-                eval_assign(parent, var_direct(sym), val);
+                sym = sym_add(name, type, stc);
+
+                if (!sym->depth){
+                    if (val.kind != IMMEDIATE) {
+                        error("Initializer value must be computable at load time.");
+                        exit(1);
+                    }
+                    declare_static(sym, val);
+                } else {
+                    eval_assign(parent, var_direct(sym), val);
+                }
+
                 if (peek() != ',') {
                     consume(';');
                     return parent;
                 }
                 break;
             }
-            case '{':
+            case '{': {
+                int i;
+
+                sym = sym_add(name, type, stc);
                 if (type->type != FUNCTION || sym->depth > 0) {
                     error("Invalid function definition.");
                     exit(1);
                 }
                 in_function = 1;
+
                 push_scope();
                 for (i = 0; i < type->n_args; ++i) {
                     if (!type->params[i]) {
@@ -119,12 +160,15 @@ declaration(block_t *parent, const symbol_t **symbol)
                     }
                     sym_add(type->params[i], type->args[i], STC_AUTO);
                 }
-                parent = block(parent); /* generate code */
+                parent = block(parent);
                 *symbol = sym;
                 pop_scope();
+
                 in_function = 0;
                 return parent;
+            }
             default:
+                sym_add(name, type, stc);
                 break;
         }
         consume(',');
@@ -1027,16 +1071,17 @@ static var_t
 primary_expression(block_t *block)
 {
     var_t var;
-    const symbol_t *symbol;
+    const char *lbl;
+    const symbol_t *sym;
 
     switch (token()) {
         case IDENTIFIER:
-            symbol = sym_lookup(strval);
-            if (!symbol) {
-                error("Undefined symbol '%s'", strval);
+            sym = sym_lookup(strval);
+            if (!sym) {
+                error("Undefined symbol '%s'.", strval);
                 exit(1);
             }
-            var = var_direct(symbol);
+            var = var_direct(sym);
             break;
         case INTEGER_CONSTANT:
             var = var_long(intval);
@@ -1046,11 +1091,13 @@ primary_expression(block_t *block)
             consume(')');
             break;
         case STRING:
-            var = var_string(strval);
+            lbl = string_constant_label(strval);
+            var = var_string(lbl, strlen(strval) + 1);
             break;
         default:
             error("Unexpected token, not a valid primary expression.");
             exit(1);
     }
+
     return var;
 }

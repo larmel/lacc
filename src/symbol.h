@@ -2,7 +2,7 @@
 #define SYMBOL_H
 
 #include <stddef.h>
-
+#include <stdio.h>
 
 enum tree_type
 {
@@ -108,12 +108,13 @@ typedef struct variable
 const symbol_t *sym_lookup(const char *);
 const symbol_t *sym_add(const char *, const typetree_t *, enum storage_class);
 const symbol_t *sym_temp(const typetree_t *);
+const symbol_t *sym_temp_static(const typetree_t *);
 
 /* Expression variables.
  */
 var_t var_direct(const symbol_t *);
 var_t var_offset(const symbol_t *, int);
-var_t var_string(const char *);
+var_t var_string(const char *, size_t);
 var_t var_long(long);
 var_t var_void();
 
@@ -131,5 +132,11 @@ void push_scope();
 void pop_scope();
 
 void dump_symtab();
+
+
+const char *string_constant_label(const char *);
+void output_string(FILE *, const char *label);
+void output_strings(FILE *);
+
 
 #endif

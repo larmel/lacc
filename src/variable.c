@@ -9,7 +9,7 @@ var_direct(const symbol_t *symbol)
     var.kind = DIRECT;
     var.symbol = symbol;
     var.type = symbol->type;
-    var.lvalue = symbol->name[0] != '@';
+    var.lvalue = symbol->name[0] != '.';
     return var;
 }
 
@@ -26,7 +26,7 @@ var_offset(const symbol_t *symbol, int offset)
 }
 
 var_t
-var_string(const char *text)
+var_string(const char *label, size_t length)
 {
     var_t var = {0};
     typetree_t *type, *next;
@@ -36,11 +36,12 @@ var_string(const char *text)
 
     type = type_init(ARRAY);
     type->next = next;
-    type->size = next->size * strlen(text);
+    type->size = next->size * length;
 
     var.kind = IMMEDIATE;
     var.type = type;
-    var.value.string = strdup(text);
+    var.value.string = label;
+
     return var;
 }
 
