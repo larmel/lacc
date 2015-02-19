@@ -59,13 +59,9 @@ typedef struct block
  */
 typedef struct decl
 {
-    /* External declarations, or static variables encountered in function. */
-    size_t count;
-    const symbol_t **global;
-    value_t *value;
-
     /* Function symbol and control flow graph, or NULL if list of declarations. */
     const symbol_t *fun;
+    block_t *head;
     block_t *body;
 
     /* Number of bytes to allocate to local variables on stack. */

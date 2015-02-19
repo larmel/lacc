@@ -367,12 +367,12 @@ fassemble(FILE *stream, const decl_t *decl)
 {
     int i;
 
-    if (decl->count) {
+    if (decl->head->n) {
         fprintf(stream, "\t.data\n");
-        for (i = 0; i < decl->count; ++i) {
-            assert(decl->global[i]->type->type != FUNCTION);
+        for (i = 0; i < decl->head->n; ++i) {
+            assert(decl->head->code[i].type == IR_ASSIGN);
 
-            assemble_immediate(stream, decl->global[i], decl->value[i]);
+            assemble_immediate(stream, decl->head->code[i].a.symbol, decl->head->code[i].b.value);
         }
     }
 

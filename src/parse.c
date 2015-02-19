@@ -14,6 +14,7 @@ static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
 static typetree_t *direct_declarator(typetree_t *, const char **);
 static typetree_t *parameter_list(const typetree_t *);
+static void initializer(block_t *block, var_t target);
 static block_t *block(block_t *);
 static block_t *statement(block_t *);
 
@@ -25,30 +26,27 @@ static var_t assignment_expression(block_t *);
 extern int var_stack_offset;
 
 /* To be able to update static data */
-static decl_t *current_declaration;
+static block_t *head;
 
 /* External interface */
 decl_t *
 parse()
 {
     decl_t *decl;
-    block_t *body;
-    const symbol_t *sym;
 
     decl = cfg_create();
-    body = block_init();
-
-    /* Temporary hack, will start passing this down the rabbit hole. */
-    current_declaration = decl;
+    decl->body = block_init();
+    decl->head = head = block_init();
 
     while (peek() != '$') {
-        sym = NULL;
-        declaration(body, &sym);
+        const symbol_t *sym;
 
-        if (decl->count || sym) {
+        sym = NULL;
+        declaration(decl->body, &sym);
+
+        if (decl->head->n || sym) {
             if (sym) {
                 decl->fun = sym;
-                decl->body = body;
 
                 /* Hack: write stack offset as we are done adding all symbols,
                  * reading variable from symtab code.
@@ -62,23 +60,6 @@ parse()
 
     cfg_finalize(decl);
     return NULL;
-}
-
-static const symbol_t *
-declare_static(const symbol_t *sym, var_t var)
-{
-    decl_t *decl;
-    assert(var.kind == IMMEDIATE);
-
-    decl = current_declaration;
-
-    decl->count += 1;
-    decl->global = realloc(decl->global, sizeof(symbol_t *) * decl->count);
-    decl->value  = realloc(decl->value , sizeof(value_t) * decl->count);
-    decl->global[decl->count - 1] = sym;
-    decl->value [decl->count - 1] = var.value;
-
-    return sym;
 }
 
 /* Cover both external declarations, functions, and local declarations (with
@@ -98,44 +79,31 @@ declaration(block_t *parent, const symbol_t **symbol)
     while (1) {
         typetree_t *type;
         const symbol_t *sym;
-        const char *name = NULL; /* nb: memory leak. */
+        const char *name = NULL;
         
         type = declarator(base, &name);
         if (!name) {
             error("Missing declarator name.");
             exit(1);
         }
-
         if (type->type != FUNCTION && in_function) {
             stc = STC_AUTO;
         }
+        sym = sym_add(name, type, stc);
+        free((void *) name);
 
         switch (peek()) {
             case ';':
                 consume(';');
-                sym_add(name, type, stc);
                 return parent;
             case '=': {
-                var_t val;
-
                 consume('=');
-                val = assignment_expression(parent);
-
-                if (!type->size) {
-                    type_complete((typetree_t *)type, val.type);
-                }
-                sym = sym_add(name, type, stc);
-
-                if (!sym->depth){
-                    if (val.kind != IMMEDIATE) {
-                        error("Initializer value must be computable at load time.");
-                        exit(1);
-                    }
-                    declare_static(sym, val);
+                if (!sym->depth) {
+                    initializer(head, var_direct(sym));
                 } else {
-                    eval_assign(parent, var_direct(sym), val);
+                    initializer(parent, var_direct(sym));
                 }
-
+                /*assert(type->size); */
                 if (peek() != ',') {
                     consume(';');
                     return parent;
@@ -144,8 +112,6 @@ declaration(block_t *parent, const symbol_t **symbol)
             }
             case '{': {
                 int i;
-
-                sym = sym_add(name, type, stc);
                 if (type->type != FUNCTION || sym->depth > 0) {
                     error("Invalid function definition.");
                     exit(1);
@@ -168,10 +134,66 @@ declaration(block_t *parent, const symbol_t **symbol)
                 return parent;
             }
             default:
-                sym_add(name, type, stc);
                 break;
         }
         consume(',');
+    }
+}
+
+/* Parse an emit initializer code for target variable.
+ * int b[] = {0, 1, 2, 3} will emit a series of assignment operations on
+ * references to symbol b.
+ */
+static void
+initializer(block_t *block, var_t target)
+{
+    const typetree_t *type;
+    var_t var;
+    int i;
+
+    if (peek() == '{') {
+        type = target.type;
+        target.kind = OFFSET;
+        target.lvalue = 1;
+        consume('{');
+        if (type->type == OBJECT) {
+            for (i = 0; i < type->n_args; ++i) {
+                target.type = type->args[i];
+                initializer(block, target);
+                target.offset += type->args[i]->size;
+                if (peek() == '}')
+                    break;
+                consume(',');
+            }
+        } else if (type->type == ARRAY) {
+            target.type = type->next;
+            for (i = 0; !type->size || i < type->size / type->next->size; ++i) {
+                initializer(block, target);
+                target.offset += type->next->size;
+                if (peek() == '}')
+                    break;
+                consume(',');
+            }
+            if (!type->size) {
+                ((typetree_t *)type)->size = target.offset;
+            }
+        } else {
+            error("Braces around initializer must represent array or object type.");
+            exit(1);
+        }
+        if (target.offset < type->size) {
+            error("Incomplete initializer is not yet supported.");
+        }
+        consume('}');
+    } else {
+        var = assignment_expression(block);
+        if (var.kind != IMMEDIATE) {
+            /*
+            error("Initializer must be computable at load time.");
+            exit(1);
+            */
+        }
+        eval_assign(block, target, var);
     }
 }
 

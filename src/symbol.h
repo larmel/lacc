@@ -86,7 +86,7 @@ typedef union value
  *         storage location. For array or function types, a direct reference
  *         means the memory address of the array or function.
  * OFFSET: l-value or r-value reference to *(symbol + offset). Symbol should 
- *         have pointer or array type.
+ *         have pointer, array or object type.
  * IMMEDIATE: 
  *         r-value immediate value, with the type specified. Symbol is NULL.
  */
