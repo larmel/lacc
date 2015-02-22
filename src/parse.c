@@ -152,8 +152,8 @@ initializer(block_t *block, var_t target)
     int i;
 
     if (peek() == '{') {
+        assert(target.kind == DIRECT);
         type = target.type;
-        target.kind = OFFSET;
         target.lvalue = 1;
         consume('{');
         if (type->type == OBJECT) {
@@ -1001,7 +1001,7 @@ postfix_expression(block_t *block)
                 while (peek() == '[') {
                     consume('[');
                     expr = expression(block);
-                    expr = eval_expr(block, IR_OP_MUL, expr, var_long(root.type->size));
+                    expr = eval_expr(block, IR_OP_MUL, expr, var_long(root.type->next->size));
                     expr = eval_expr(block, IR_OP_ADD, root, expr);
                     root = eval_deref(block, expr);
                     consume(']');

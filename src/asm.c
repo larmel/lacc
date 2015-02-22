@@ -65,14 +65,15 @@ refer(const var_t var)
         case DIRECT:
             if (var.symbol->param_n && !var.symbol->stack_offset) {
                 sprintf(str, "%%%s", reg(pregs[var.symbol->param_n - 1], var.type->size));
-            }
-            else if (var.symbol->depth == 0 || !var.symbol->stack_offset)
-                if (var.type->type == ARRAY)
+            } else if (!var.symbol->depth) {
+                if (var.type->type == ARRAY) {
                     sprintf(str, "$%s", var.symbol->name);
-                else
+                } else {
                     sprintf(str, "%s(%%rip)", var.symbol->name);
-            else
-                sprintf(str, "%d(%%rbp)", var.symbol->stack_offset);
+                }
+            } else {
+                sprintf(str, "%d(%%rbp)", var.symbol->stack_offset + var.offset);
+            }
             break;
         case IMMEDIATE:
             sprintf(str, "$%ld", var.value.integer);
@@ -298,13 +299,21 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
 }
 
 static void
-assemble_immediate(FILE *stream, const symbol_t *symbol, value_t value)
+assemble_immediate(FILE *stream, var_t target, var_t val)
 {
-    fprintf(stream, "\t.globl\t%s\n", symbol->name);
-    fprintf(stream, "%s:\n", symbol->name);
-    switch (symbol->type->type) {
+    const symbol_t *symbol;
+    value_t value;
+
+    symbol = target.symbol;
+    value = val.value;
+
+    if (!target.offset) {
+        fprintf(stream, "\t.globl\t%s\n", symbol->name);
+        fprintf(stream, "%s:\n", symbol->name);
+    }
+    switch (target.type->type) {
         case INTEGER:
-            switch (symbol->type->size) {
+            switch (target.type->size) {
                 case 1:
                     fprintf(stream, "\t.byte\t%d\n", (unsigned char) value.integer);
                     break;
@@ -372,7 +381,7 @@ fassemble(FILE *stream, const decl_t *decl)
         for (i = 0; i < decl->head->n; ++i) {
             assert(decl->head->code[i].type == IR_ASSIGN);
 
-            assemble_immediate(stream, decl->head->code[i].a.symbol, decl->head->code[i].b.value);
+            assemble_immediate(stream, decl->head->code[i].a, decl->head->code[i].b);
         }
     }
 
