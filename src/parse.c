@@ -25,28 +25,23 @@ static var_t assignment_expression(block_t *);
 
 extern int var_stack_offset;
 
-/* To be able to update static data */
-static block_t *head;
+/* Current declaration, accessed for creating new blocks or adding init code
+ * in head block. */
+static decl_t *decl;
 
-/* External interface */
 decl_t *
 parse()
 {
-    decl_t *decl;
-
     decl = cfg_create();
-    decl->body = block_init();
-    decl->head = head = block_init();
+    decl->head = block_init(decl);
+    decl->body = block_init(decl);
 
     while (peek() != '$') {
-        const symbol_t *sym;
+        decl->fun = NULL;
+        declaration(decl->body, &decl->fun);
 
-        sym = NULL;
-        declaration(decl->body, &sym);
-
-        if (decl->head->n || sym) {
-            if (sym) {
-                decl->fun = sym;
+        if (decl->head->n || decl->fun) {
+            if (decl->fun) {
 
                 /* Hack: write stack offset as we are done adding all symbols,
                  * reading variable from symtab code.
@@ -99,7 +94,7 @@ declaration(block_t *parent, const symbol_t **symbol)
             case '=': {
                 consume('=');
                 if (!sym->depth) {
-                    initializer(head, var_direct(sym));
+                    initializer(decl->head, var_direct(sym));
                 } else {
                     initializer(parent, var_direct(sym));
                 }
@@ -587,7 +582,7 @@ statement(block_t *parent)
         case SWITCH:
         case IF:
         {
-            block_t *right = block_init(), *next = block_init();
+            block_t *right = block_init(decl), *next = block_init(decl);
             consume(t);
             consume('(');
 
@@ -606,7 +601,7 @@ statement(block_t *parent)
             right->jump[0] = next;
 
             if (peek() == ELSE) {
-                block_t *left = block_init();
+                block_t *left = block_init(decl);
                 consume(ELSE);
 
                 /* Again, order is important: Set left as new jump target for
@@ -623,7 +618,7 @@ statement(block_t *parent)
         case WHILE:
         case DO:
         {
-            block_t *top = block_init(), *body = block_init(), *next = block_init();
+            block_t *top = block_init(decl), *body = block_init(decl), *next = block_init(decl);
             parent->jump[0] = top; /* Parent becomes unconditional jump. */
 
             /* Enter a new loop, store reference for break and continue target. */
@@ -665,7 +660,7 @@ statement(block_t *parent)
         }
         case FOR:
         {
-            block_t *top = block_init(), *body = block_init(), *increment = block_init(), *next = block_init();
+            block_t *top = block_init(decl), *body = block_init(decl), *increment = block_init(decl), *next = block_init(decl);
 
             /* Enter a new loop, store reference for break and continue target. */
             old_break_target = break_target;
@@ -720,14 +715,14 @@ statement(block_t *parent)
             consume(';');
             /* Return orphan node, which is dead code unless there is a label
              * and a goto statement. */
-            node = block_init(); 
+            node = block_init(decl); 
             break;
         case RETURN:
             consume(RETURN);
             if (peek() != ';')
                 parent->expr = expression(parent);
             consume(';');
-            node = block_init(); /* orphan */
+            node = block_init(decl); /* orphan */
             break;
         case CASE:
         case DEFAULT:

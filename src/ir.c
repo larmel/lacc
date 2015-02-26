@@ -2,8 +2,10 @@
 #include "symbol.h"
 #include "error.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
+
 
 static const char *
 mklabel()
@@ -16,52 +18,49 @@ mklabel()
     return name;
 }
 
-/* Keep track of to last created function, adding new block to its internal
- * bookkeeping list. */
-static decl_t *function;
-
 decl_t *
 cfg_create(const symbol_t *symbol)
 {
-    function = calloc(1, sizeof(decl_t));
-    return function;
+    decl_t *decl = calloc(1, sizeof(decl_t));
+    assert(decl);
+    return decl;
 }
 
 block_t *
-block_init()
+block_init(decl_t *decl)
 {
     block_t *block;
-    if (!function) {
+    if (!decl) {
         error("Internal error, cannot create cfg node without function.");
     }
     block = calloc(1, sizeof(block_t));
     block->label = mklabel();
     block->expr = var_void();
 
-    if (function->size == function->capacity) {
-        function->capacity += 16;
-        function->nodes = realloc(function->nodes, function->capacity * sizeof(block_t*));
+    if (decl->size == decl->capacity) {
+        decl->capacity += 16;
+        decl->nodes = realloc(decl->nodes, decl->capacity * sizeof(block_t*));
     }
-    function->nodes[function->size++] = block;
+    decl->nodes[decl->size++] = block;
 
     return block;
 }
 
 void
-cfg_finalize(decl_t *func)
+cfg_finalize(decl_t *decl)
 {
-    if (!func) return;
-    if (func->capacity) {
+    if (!decl) return;
+    if (decl->capacity) {
         int i;
-        for (i = 0; i < func->size; ++i) {
-            block_t *block = func->nodes[i];
+        for (i = 0; i < decl->size; ++i) {
+            block_t *block = decl->nodes[i];
             if (block->n) free(block->code);
             if (block->label) free((void *) block->label);
             free(block);
         }
-        free(func->nodes);
+        free(decl->nodes);
     }
-    free(func);
+    free(decl);
 }
 
 void

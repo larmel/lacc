@@ -7,10 +7,6 @@
 #include <stdlib.h>
 
 
-/* Add a 3-address code operation to the block. Code is kept in a separate list
- * for each block. */
-void ir_append(block_t *, op_t);
-
 /* Evaluate a <op> b.
  *
  * Returns a DIRECT reference to a new temporary, or an immediate value.

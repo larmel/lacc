@@ -74,18 +74,23 @@ typedef struct decl
 } decl_t;
 
 
-/* Release all resources related to the control flow graph. Calls free on all 
- * blocks and their labels, and finally the function itself. */
-void cfg_finalize(decl_t *);
-
 /* Initialize a control flow graph. All following block_init invocations are 
  * associated with the last created cfg (function). */
 decl_t *cfg_create();
 
 /* Initialize a CFG block with a unique jump label, and associate it with the
- * current (last created) decl_t object. Blocks and functions have the same
- * lifecycle, and should only be freed by calling cfg_finalize. */
-block_t *block_init();
+ * provided decl_t object. Blocks and functions have the same lifecycle, and 
+ * should only be freed by calling cfg_finalize. */
+block_t *block_init(decl_t *);
+
+/* Add a 3-address code operation to the block. Code is kept in a separate list
+ * for each block. */
+void ir_append(block_t *, op_t);
+
+/* Release all resources related to the control flow graph. Calls free on all 
+ * blocks and their labels, and finally the function itself. */
+void cfg_finalize(decl_t *);
+
 
 /* Interface used in parser to evaluate expressions and add operations to the
  * control flow graph. */
