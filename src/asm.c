@@ -1,4 +1,6 @@
 #include "ir.h"
+#include "type.h"
+#include "string.h"
 #include "symbol.h"
 #include "error.h"
 #include "util/map.h"

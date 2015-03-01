@@ -1,5 +1,4 @@
 #include "ir.h"
-#include "symbol.h"
 #include "error.h"
 
 #include <assert.h>
@@ -19,7 +18,7 @@ mklabel()
 }
 
 decl_t *
-cfg_create(const symbol_t *symbol)
+cfg_create()
 {
     decl_t *decl = calloc(1, sizeof(decl_t));
     assert(decl);

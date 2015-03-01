@@ -1,6 +1,7 @@
+#include "ir.h"
+#include "type.h"
 #include "symbol.h"
 
-#include <string.h>
 
 var_t
 var_direct(const symbol_t *symbol)

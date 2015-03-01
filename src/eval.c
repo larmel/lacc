@@ -1,7 +1,7 @@
 /* Construct op_t operations and temp variables based on symbols and optypes. */
 
 #include "ir.h"
-#include "symbol.h"
+#include "type.h"
 #include "error.h"
 
 #include <stdlib.h>

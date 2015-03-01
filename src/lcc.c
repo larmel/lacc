@@ -1,5 +1,6 @@
 #include "error.h"
 #include "ir.h"
+#include "string.h"
 #include "symbol.h"
 
 #include <stdio.h>

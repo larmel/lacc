@@ -1,4 +1,5 @@
 #include "error.h"
+#include "type.h"
 #include "symbol.h"
 
 #include <assert.h>

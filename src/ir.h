@@ -1,10 +1,43 @@
 #ifndef IR_H
 #define IR_H
 
+#include "type.h"
 #include "symbol.h"
 
 #include <stddef.h>
 
+/* Immediate value.
+ */
+typedef union value
+{
+    long integer;
+    double real;
+    const char *string;
+} value_t;
+
+/* A reference to some storage location or direct value, used in intermediate
+ * representation of expressions. There are three modes:
+ *
+ * DIRECT: l-value or r-value reference to symbol, which must have some
+ *         storage location. For array or function types, a direct reference
+ *         means the memory address of the array or function.
+ * OFFSET: l-value or r-value reference to *(symbol + offset). Symbol should 
+ *         have pointer, array or object type.
+ * IMMEDIATE: 
+ *         r-value immediate value, with the type specified. Symbol is NULL.
+ */
+typedef struct variable
+{
+    enum { DIRECT, OFFSET, IMMEDIATE } kind;
+    const typetree_t *type;
+    const symbol_t *symbol;
+    int offset;
+    value_t value;
+    int lvalue;
+} var_t;
+
+/* Three address code
+ */
 typedef enum optype
 {
     IR_ASSIGN,      /* a = b */
@@ -24,7 +57,6 @@ typedef enum optype
     IR_OP_BITWISE_XOR
 } optype_t;
 
-/* Three address code */
 typedef struct op {
     enum optype type;
 
@@ -33,7 +65,8 @@ typedef struct op {
     var_t c;
 } op_t;
 
-/* CFG block */
+/* CFG block
+ */
 typedef struct block
 {
     /* A unique jump target label */
@@ -54,7 +87,6 @@ typedef struct block
     const struct block *jump[2];
 } block_t;
 
-
 /* Represents an external declaration list or a function definition.
  */
 typedef struct decl
@@ -73,7 +105,6 @@ typedef struct decl
     size_t capacity;
 } decl_t;
 
-
 /* Initialize a control flow graph. All following block_init invocations are 
  * associated with the last created cfg (function). */
 decl_t *cfg_create();
@@ -91,7 +122,6 @@ void ir_append(block_t *, op_t);
  * blocks and their labels, and finally the function itself. */
 void cfg_finalize(decl_t *);
 
-
 /* Interface used in parser to evaluate expressions and add operations to the
  * control flow graph. */
 var_t eval_expr(block_t *, optype_t, var_t, var_t);
@@ -101,5 +131,12 @@ var_t eval_assign(block_t *, var_t, var_t);
 var_t eval_copy(block_t *, var_t);
 var_t eval_call(block_t *, var_t);
 void param(block_t *, var_t);
+
+/* Expression variables. */
+var_t var_direct(const symbol_t *);
+var_t var_offset(const symbol_t *, int);
+var_t var_string(const char *, size_t);
+var_t var_long(long);
+var_t var_void();
 
 #endif
