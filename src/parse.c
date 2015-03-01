@@ -16,7 +16,7 @@ static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
 static typetree_t *direct_declarator(typetree_t *, const char **);
 static typetree_t *parameter_list(const typetree_t *);
-static void initializer(block_t *block, var_t target);
+static const typetree_t *initializer(block_t *block, var_t target);
 static block_t *block(block_t *);
 static block_t *statement(block_t *);
 
@@ -25,6 +25,7 @@ static var_t expression(block_t *);
 static var_t constant_expression();
 static var_t assignment_expression(block_t *);
 
+/* Leak from symtab */
 extern int var_stack_offset;
 
 /* Current declaration, accessed for creating new blocks or adding init code
@@ -75,9 +76,10 @@ declaration(block_t *parent, const symbol_t **symbol)
 
     while (1) {
         typetree_t *type;
-        const symbol_t *sym;
-        const char *name = NULL;
-        
+        symbol_t *sym;
+        const char *name;
+
+        name = NULL;
         type = declarator(base, &name);
         if (!name) {
             error("Missing declarator name.");
@@ -94,13 +96,18 @@ declaration(block_t *parent, const symbol_t **symbol)
                 consume(';');
                 return parent;
             case '=': {
+                const typetree_t *init_type;
+
                 consume('=');
-                if (!sym->depth) {
-                    initializer(decl->head, var_direct(sym));
-                } else {
-                    initializer(parent, var_direct(sym));
+                init_type = initializer((!sym->depth ? decl->head : parent), var_direct(sym));
+                if (!type->size) {
+                    sym->type = type_complete(sym->type, init_type);
+                    if (sym->depth > 1) {
+                        var_stack_offset -= sym->type->size;
+                        sym->stack_offset = var_stack_offset;
+                    }
                 }
-                /*assert(type->size); */
+                assert(sym->type->size);
                 if (peek() != ',') {
                     consume(';');
                     return parent;
@@ -141,7 +148,7 @@ declaration(block_t *parent, const symbol_t **symbol)
  * int b[] = {0, 1, 2, 3} will emit a series of assignment operations on
  * references to symbol b.
  */
-static void
+static const typetree_t *
 initializer(block_t *block, var_t target)
 {
     const typetree_t *type;
@@ -172,7 +179,12 @@ initializer(block_t *block, var_t target)
                 consume(',');
             }
             if (!type->size) {
-                ((typetree_t *)type)->size = target.offset;
+                typetree_t *newtype;
+
+                newtype = type_init(ARRAY);
+                newtype->size = target.offset;
+                newtype->next = type->next;
+                type = newtype;
             }
         } else {
             error("Braces around initializer must represent array or object type.");
@@ -191,7 +203,10 @@ initializer(block_t *block, var_t target)
             */
         }
         eval_assign(block, target, var);
+        type = var.type;
     }
+
+    return type;
 }
 
 static void

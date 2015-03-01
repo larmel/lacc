@@ -37,10 +37,11 @@ typedef struct symbol
  * on identifier name, or error if it is a duplicate. Create a new temporary 
  * symbol and register it to current scope.
  */
-const symbol_t *sym_lookup(const char *);
-const symbol_t *sym_add(const char *, const typetree_t *, enum storage_class);
+symbol_t *sym_lookup(const char *);
+symbol_t *sym_add(const char *, const typetree_t *, enum storage_class);
 const symbol_t *sym_temp(const typetree_t *);
 const symbol_t *sym_temp_static(const typetree_t *);
+
 
 void push_scope();
 void pop_scope();

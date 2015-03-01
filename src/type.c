@@ -52,7 +52,6 @@ type_equal(const typetree_t *a, const typetree_t *b)
 const typetree_t *
 type_combine(const typetree_t *a, const typetree_t *b)
 {
-    char *stra, *strb;
     if (!a || !b) {
         error("Cannot combine NULL type.");
         exit(1);
@@ -83,6 +82,7 @@ type_combine(const typetree_t *a, const typetree_t *b)
     }
 
     if (!type_equal(a, b)) {
+        char *stra, *strb;
         stra = typetostr(a);
         strb = typetostr(b);
         error("Cannot combine types `%s` and `%s`.", stra, strb);
@@ -90,6 +90,7 @@ type_combine(const typetree_t *a, const typetree_t *b)
         free(strb);
         exit(1);
     }
+
     return a;
 }
 
@@ -105,18 +106,20 @@ type_deref(const typetree_t *t)
     return t->next;
 }
 
-/* Complete type p by applying q.
+/* Validate that type p can be completed by applying size from q, and return
+ * q as the result.
  */
-void
-type_complete(typetree_t *p, const typetree_t *q)
+const typetree_t *
+type_complete(const typetree_t *p, const typetree_t *q)
 {
     assert(!p->size && q->size);
     
-    if (!type_equal(p->next, q->next)) {
+    if (p->type != q->type || !type_equal(p->next, q->next)) {
         error("Incompatible specification of incomplete type.");
         exit(1);
     }
-    *p = *q;
+
+    return q;
 }
 
 /* Print type to buffer, returning how many characters were written.

@@ -14,7 +14,7 @@ static int symtab_capacity;
 
 /* stack structure to keep track of lexical scope */
 static struct lexical_scope {
-    const symbol_t **symlist; /* points to symtab */
+    symbol_t **symlist; /* points to symtab */
     size_t size;
     size_t cap;
 } *scopes = NULL;
@@ -102,7 +102,7 @@ sym_init_temp(const typetree_t *type, char prefix, int offset)
  * NULL, i.e. immediate values do not belong to any scope.
  */
 static void
-sym_register(const symbol_t *symbol)
+sym_register(symbol_t *symbol)
 {
     struct lexical_scope *scope = &scopes[depth];
     if (!symbol->name) {
@@ -119,10 +119,10 @@ sym_register(const symbol_t *symbol)
 /* Retrieve a symbol based on identifier name, or NULL of not registered or
  * visible from current scope.
  */
-const symbol_t *
+symbol_t *
 sym_lookup(const char *name)
 {
-    const symbol_t *sym;
+    symbol_t *sym;
     int i, d;
     for (d = depth; d >= 0; --d) {
         for (i = 0; i < scopes[d].size; ++i) {
@@ -141,20 +141,19 @@ sym_lookup(const char *name)
  * Calculate stack offset and function parameter index based on static context
  * variables. This is x86_64 specific, wrong if params cannot fit in registers.
  */
-const symbol_t *
+symbol_t *
 sym_add(const char *name, const typetree_t *type, enum storage_class stc)
 {
-    const symbol_t *symbol;
+    symbol_t *symbol;
 
     symbol = sym_lookup(name);
 
     if (symbol && symbol->depth == depth) {
-        if (!symbol->type->size) {
-            type_complete((typetree_t *) symbol->type, type);
-        } else {
+        if (symbol->type->size) {
             error("Duplicate definition of symbol '%s'", name);
             exit(0);
         }
+        symbol->type = type_complete(symbol->type, type);
     } else {
         int param = 0, offset = 0;
 
@@ -168,7 +167,7 @@ sym_add(const char *name, const typetree_t *type, enum storage_class stc)
             offset = var_stack_offset;
         }
 
-        symbol = (const symbol_t *) sym_init(name, type, param, offset, stc);
+        symbol = sym_init(name, type, param, offset, stc);
         sym_register(symbol);
     }
 
