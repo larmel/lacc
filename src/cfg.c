@@ -26,12 +26,11 @@ cfg_create()
 }
 
 block_t *
-block_init(decl_t *decl)
+cfg_block_init(decl_t *decl)
 {
     block_t *block;
-    if (!decl) {
-        error("Internal error, cannot create cfg node without function.");
-    }
+
+    assert(decl);
     block = calloc(1, sizeof(block_t));
     block->label = mklabel();
     block->expr = var_void();
@@ -48,7 +47,7 @@ block_init(decl_t *decl)
 void
 cfg_finalize(decl_t *decl)
 {
-    if (!decl) return;
+    assert(decl);
     if (decl->capacity) {
         int i;
         for (i = 0; i < decl->size; ++i) {
@@ -63,7 +62,7 @@ cfg_finalize(decl_t *decl)
 }
 
 void
-ir_append(block_t *block, op_t op)
+cfg_ir_append(block_t *block, op_t op)
 {
     if (block) {
         block->n += 1;

@@ -51,7 +51,7 @@ eval_expr(block_t *block, optype_t optype, var_t left, var_t right)
     }
 
     op.type = optype;
-    ir_append(block, op);
+    cfg_ir_append(block, op);
 
     return res;
 }
@@ -85,7 +85,7 @@ eval_addr(block_t *block, var_t right)
             op.a = res;
             op.b = right;
 
-            ir_append(block, op);
+            cfg_ir_append(block, op);
             break;
         case OFFSET:
             res = var_direct(right.symbol);
@@ -131,7 +131,7 @@ eval_deref(block_t *block, var_t var)
             op.a = res;
             op.b = var;
 
-            ir_append(block, op);
+            cfg_ir_append(block, op);
             break;
         case IMMEDIATE:
             error("Dereferenced immediate is not supported.");
@@ -173,7 +173,7 @@ eval_assign(block_t *block, var_t target, var_t var)
     op.type = IR_ASSIGN;
     op.a = target;
     op.b = var;
-    ir_append(block, op);
+    cfg_ir_append(block, op);
 
     return var;
 }
@@ -214,7 +214,7 @@ eval_call(block_t *block, var_t func)
     op.type = IR_CALL;
     op.a = res;
     op.b = func;
-    ir_append(block, op);
+    cfg_ir_append(block, op);
 
     return res;
 }
@@ -225,5 +225,5 @@ param(block_t *block, var_t p)
     op_t op;
     op.type = IR_PARAM;
     op.a = p;
-    ir_append(block, op);
+    cfg_ir_append(block, op);
 }

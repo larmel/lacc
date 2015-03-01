@@ -35,8 +35,8 @@ decl_t *
 parse()
 {
     decl = cfg_create();
-    decl->head = block_init(decl);
-    decl->body = block_init(decl);
+    decl->head = cfg_block_init(decl);
+    decl->body = cfg_block_init(decl);
 
     while (peek() != '$') {
         decl->fun = NULL;
@@ -584,7 +584,7 @@ statement(block_t *parent)
         case SWITCH:
         case IF:
         {
-            block_t *right = block_init(decl), *next = block_init(decl);
+            block_t *right = cfg_block_init(decl), *next = cfg_block_init(decl);
             consume(t);
             consume('(');
 
@@ -603,7 +603,7 @@ statement(block_t *parent)
             right->jump[0] = next;
 
             if (peek() == ELSE) {
-                block_t *left = block_init(decl);
+                block_t *left = cfg_block_init(decl);
                 consume(ELSE);
 
                 /* Again, order is important: Set left as new jump target for
@@ -620,7 +620,7 @@ statement(block_t *parent)
         case WHILE:
         case DO:
         {
-            block_t *top = block_init(decl), *body = block_init(decl), *next = block_init(decl);
+            block_t *top = cfg_block_init(decl), *body = cfg_block_init(decl), *next = cfg_block_init(decl);
             parent->jump[0] = top; /* Parent becomes unconditional jump. */
 
             /* Enter a new loop, store reference for break and continue target. */
@@ -662,7 +662,7 @@ statement(block_t *parent)
         }
         case FOR:
         {
-            block_t *top = block_init(decl), *body = block_init(decl), *increment = block_init(decl), *next = block_init(decl);
+            block_t *top = cfg_block_init(decl), *body = cfg_block_init(decl), *increment = cfg_block_init(decl), *next = cfg_block_init(decl);
 
             /* Enter a new loop, store reference for break and continue target. */
             old_break_target = break_target;
@@ -717,14 +717,14 @@ statement(block_t *parent)
             consume(';');
             /* Return orphan node, which is dead code unless there is a label
              * and a goto statement. */
-            node = block_init(decl); 
+            node = cfg_block_init(decl); 
             break;
         case RETURN:
             consume(RETURN);
             if (peek() != ';')
                 parent->expr = expression(parent);
             consume(';');
-            node = block_init(decl); /* orphan */
+            node = cfg_block_init(decl); /* orphan */
             break;
         case CASE:
         case DEFAULT:
