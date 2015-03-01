@@ -47,7 +47,7 @@ vartostr(const var_t var)
         case DIRECT:
             sprintf(buffer, "%s", var.symbol->name);
             break;
-        case OFFSET:
+        case DEREF:
             if (!var.offset)
                 sprintf(buffer, "*%s", var.symbol->name);
             else

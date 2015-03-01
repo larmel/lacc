@@ -116,7 +116,7 @@ load(FILE *stream, var_t var, reg_t dest)
             else
                 fprintf(stream, "\t%s\t%s, %%%s\t# load %s\n", mov, refer(var), reg(dest, w), var.symbol->name);
             break;
-        case OFFSET:
+        case DEREF:
             fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\t# load *%s\n", var.symbol->stack_offset, var.symbol->name);
             if (var.type->type == ARRAY) {
                 if (var.offset)
@@ -144,7 +144,7 @@ store(FILE *stream, reg_t source, var_t var)
         case DIRECT:
             fprintf(stream, "\tmov%c\t%%%s, %s\t# store %s\n", suffix, reg(source, w), refer(var), var.symbol->name);
             break;
-        case OFFSET:
+        case DEREF:
             fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\t# store *%s\n", var.symbol->stack_offset, var.symbol->name);
             if (var.offset)
                 fprintf(stream, "\tmov%c\t%%%s, %d(%%r10)\n", suffix, reg(source, w), var.offset);

@@ -2,6 +2,7 @@
 #include "type.h"
 #include "symbol.h"
 
+#include <assert.h>
 
 var_t
 var_direct(const symbol_t *symbol)
@@ -15,14 +16,17 @@ var_direct(const symbol_t *symbol)
 }
 
 var_t
-var_offset(const symbol_t *symbol, int offset)
+var_deref(const symbol_t *symbol, int offset)
 {
     var_t var = {0};
-    var.kind = OFFSET;
+    assert(symbol->type->type == POINTER);
+
+    var.kind = DEREF;
     var.symbol = symbol;
     var.type = type_deref(symbol->type);
     var.offset = offset;
     var.lvalue = 1;
+
     return var;
 }
 

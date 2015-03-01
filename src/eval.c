@@ -57,7 +57,7 @@ eval_expr(block_t *block, optype_t optype, var_t left, var_t right)
 }
 
 /* Evaluate &a. Depending on var_t a:
- * If OFFSET, create a new var_t with a DIRECT reference to the same symbol_t.
+ * If DEREF, create a new var_t with a DIRECT reference to the same symbol_t.
  *     Not even necessary to add any code for cases like &(*foo).
  * If DIRECT, create a temporary symbol with type pointer to a::type, and add
  *     an operation to the current block.
@@ -87,7 +87,7 @@ eval_addr(block_t *block, var_t right)
 
             cfg_ir_append(block, op);
             break;
-        case OFFSET:
+        case DEREF:
             res = var_direct(right.symbol);
             if (right.offset) {
                 res = eval_expr(block, IR_OP_SUB, res, var_long((long) right.offset));
@@ -102,9 +102,9 @@ eval_addr(block_t *block, var_t right)
 }
 
 /* Evaluate *a.
- * If OFFSET: *(*a'), double deref, evaluate the deref of a', and create 
- *     a new offset variable.
- * If DIRECT: Create a new offset variable, no evaluation.
+ * If DEREF: *(*a'), double deref, evaluate the deref of a', and create 
+ *     a new deref variable.
+ * If DIRECT: Create a new deref variable, no evaluation.
  * If IMMEDIATE: not implemented.
  */
 var_t
@@ -116,16 +116,16 @@ eval_deref(block_t *block, var_t var)
 
     switch (var.kind) {
         case DIRECT:
-            res = var_offset(var.symbol, 0);
+            res = var_deref(var.symbol, 0);
             break;
-        case OFFSET:
+        case DEREF:
             if (var.offset) {
                 var = eval_expr(block, IR_OP_SUB, 
                     var_direct(var.symbol),
                     var_long((long) var.offset));
             }
             temp = sym_temp(type_deref(var.symbol->type));
-            res = var_offset(temp, 0);
+            res = var_deref(temp, 0);
 
             op.type = IR_DEREF;
             op.a = res;
@@ -142,9 +142,9 @@ eval_deref(block_t *block, var_t var)
 }
 
 /* Evaluate a = b.
- * Restrictions on a: OFFSET or DIRECT lvalue, not temporary.
+ * Restrictions on a: DEREF or DIRECT lvalue, not temporary.
  * Restrictions on b:
- *     DIRECT and IMMEDIATE is ok. For OFFSET, put in an explicit evaluation
+ *     DIRECT and IMMEDIATE is ok. For DEREF, put in an explicit evaluation
  *     before the assignment, so that we don't get (*a') = (*b'), but instead
  *     t1 = *(b'); (*a') = t1;
  *     Use eval_deref, pretending to evaluate *(*a') and then override offset
@@ -164,7 +164,7 @@ eval_assign(block_t *block, var_t target, var_t var)
         exit(1);
     }
 
-    if (var.kind == OFFSET) {
+    if (var.kind == DEREF) {
         var = eval_deref(block, var);
         var = var_direct(var.symbol);
     }

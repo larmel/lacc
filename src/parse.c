@@ -1054,7 +1054,7 @@ postfix_expression(block_t *block)
                         exit(1);
                     }
 
-                    root.kind = OFFSET;
+                    root.kind = DEREF;
                     root.type = field;
                     root.offset += offset;
                     root.lvalue = 1;

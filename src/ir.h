@@ -20,19 +20,21 @@ typedef union value
  *
  * DIRECT: l-value or r-value reference to symbol, which must have some
  *         storage location. For array or function types, a direct reference
- *         means the memory address of the array or function.
- * OFFSET: l-value or r-value reference to *(symbol + offset). Symbol should 
- *         have pointer, array or object type.
- * IMMEDIATE: 
+ *         means the corresponding memory address of the symbol.
+ *         Direct references can have offsets, which evaluates to 
+ *         *(&symbol + offset).
+ * DEREF:  l-value or r-value reference to *(symbol + offset). Symbol must 
+ *         have pointer type.
+ * IMMEDIATE:
  *         r-value immediate value, with the type specified. Symbol is NULL.
  */
 typedef struct variable
 {
-    enum { DIRECT, OFFSET, IMMEDIATE } kind;
+    enum { DIRECT, DEREF, IMMEDIATE } kind;
     const typetree_t *type;
     const symbol_t *symbol;
-    int offset;
     value_t value;
+    int offset;
     int lvalue;
 } var_t;
 
@@ -133,7 +135,7 @@ void param(block_t *, var_t);
 
 /* Expression variables. */
 var_t var_direct(const symbol_t *);
-var_t var_offset(const symbol_t *, int);
+var_t var_deref(const symbol_t *, int);
 var_t var_string(const char *, size_t);
 var_t var_long(long);
 var_t var_void();
