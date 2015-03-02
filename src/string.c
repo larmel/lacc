@@ -93,13 +93,15 @@ output_string(FILE *stream, const char *l)
 void
 output_strings(FILE *stream)
 {
-    int i;
+    if (count) {
+        int i;
 
-    fprintf(stream, "\t.section .rodata\n");
-    for (i = 0; i < count; ++i) {
-        fprintf(stream, "%s:\n", strings[i].label);
-        fprintf(stream, "\t.string \"");
-        printstr(stream, strings[i].string);
-        fprintf(stream, "\"\n");
+        fprintf(stream, "\t.section .rodata\n");
+        for (i = 0; i < count; ++i) {
+            fprintf(stream, "%s:\n", strings[i].label);
+            fprintf(stream, "\t.string \"");
+            printstr(stream, strings[i].string);
+            fprintf(stream, "\"\n");
+        }
     }
 }
