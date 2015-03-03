@@ -25,8 +25,12 @@ static var_t expression(block_t *);
 static var_t constant_expression();
 static var_t assignment_expression(block_t *);
 
-/* Leak from symtab */
-extern int var_stack_offset;
+/* Scopes. */
+namespace_t
+    ns_ident = {"identifiers"},
+    ns_label = {"labels"},
+    ns_tag = {"tags"}
+    ;
 
 /* Current declaration, accessed for creating new blocks or adding init code
  * in head block. */
@@ -45,12 +49,7 @@ parse()
 
         if (decl->head->n || decl->fun) {
             if (decl->fun) {
-
-                /* Hack: write stack offset as we are done adding all symbols,
-                 * reading variable from symtab code.
-                 * This will also be possible to move to parse function probably.
-                 */
-                decl->locals_size = (-1) * var_stack_offset;
+                decl->locals_size = (-1) * ns_ident.var_stack_offset;
             }
             return decl;
         }
@@ -88,7 +87,7 @@ declaration(block_t *parent, const symbol_t **symbol)
         if (type->type != FUNCTION && in_function) {
             stc = STC_AUTO;
         }
-        sym = sym_add(name, type, stc);
+        sym = sym_add(&ns_ident, name, type, stc);
         free((void *) name);
 
         switch (peek()) {
@@ -103,8 +102,8 @@ declaration(block_t *parent, const symbol_t **symbol)
                 if (!type->size) {
                     sym->type = type_complete(sym->type, init_type);
                     if (sym->depth > 1) {
-                        var_stack_offset -= sym->type->size;
-                        sym->stack_offset = var_stack_offset;
+                        ns_ident.var_stack_offset -= sym->type->size;
+                        sym->stack_offset = ns_ident.var_stack_offset;
                     }
                 }
                 assert(sym->type->size);
@@ -122,17 +121,17 @@ declaration(block_t *parent, const symbol_t **symbol)
                 }
                 in_function = 1;
 
-                push_scope();
+                push_scope(&ns_ident);
                 for (i = 0; i < type->n_args; ++i) {
                     if (!type->params[i]) {
                         error("Missing parameter name at position %d.", i + 1);
                         exit(1);
                     }
-                    sym_add(type->params[i], type->args[i], STC_AUTO);
+                    sym_add(&ns_ident, type->params[i], type->args[i], STC_AUTO);
                 }
                 parent = block(parent);
                 *symbol = sym;
-                pop_scope();
+                pop_scope(&ns_ident);
 
                 in_function = 0;
                 return parent;
@@ -212,7 +211,8 @@ initializer(block_t *block, var_t target)
 static void
 struct_declaration_list(typetree_t *obj)
 {
-    push_scope();
+    namespace_t ns = {0};
+    push_scope(&ns);
 
     do {
         typetree_t *base;
@@ -228,7 +228,7 @@ struct_declaration_list(typetree_t *obj)
                 error("Invalid struct member declarator.");
                 exit(1);
             }
-            sym_add(name, member, STC_NONE);
+            sym_add(&ns, name, member, STC_NONE);
 
             obj->n_args++;
             obj->args = realloc(obj->args, sizeof(typetree_t *) * obj->n_args);
@@ -248,7 +248,7 @@ struct_declaration_list(typetree_t *obj)
         consume(';');
     } while (peek() != '}');
 
-    pop_scope();
+    pop_scope(&ns);
 }
 
 /* Parse type, storage class and qualifiers. Assume integer type by default.
@@ -300,7 +300,7 @@ declaration_specifiers(enum storage_class *stc)
                 const symbol_t *tdef;
                 flags_t flags;
 
-                tdef = sym_lookup(strval);
+                tdef = sym_lookup(&ns_ident, strval);
                 if (tdef && tdef->storage == STC_TYPEDEF) {
                     consume(IDENTIFIER);
                     if (type->size)
@@ -562,12 +562,12 @@ static block_t *
 block(block_t *parent)
 {
     consume('{');
-    push_scope();
+    push_scope(&ns_ident);
     while (peek() != '}') {
         parent = statement(parent);
     }
     consume('}');
-    pop_scope();
+    pop_scope(&ns_ident);
     return parent;
 }
 
@@ -748,7 +748,7 @@ statement(block_t *parent)
         case IDENTIFIER:
         {
             const symbol_t *def;
-            if ((def = sym_lookup(strval)) && def->storage == STC_TYPEDEF) {
+            if ((def = sym_lookup(&ns_ident, strval)) && def->storage == STC_TYPEDEF) {
                 node = declaration(parent, &def);
                 break;
             }
@@ -1110,7 +1110,7 @@ primary_expression(block_t *block)
 
     switch (token()) {
         case IDENTIFIER:
-            sym = sym_lookup(strval);
+            sym = sym_lookup(&ns_ident, strval);
             if (!sym) {
                 error("Undefined symbol '%s'.", strval);
                 exit(1);

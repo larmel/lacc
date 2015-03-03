@@ -7,112 +7,98 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* the actual symbol table */
-static symbol_t **symtab;
-static int symtab_size;
-static int symtab_capacity;
-
-/* stack structure to keep track of lexical scope */
-static struct lexical_scope {
-    symbol_t **symlist; /* points to symtab */
-    size_t size;
-    size_t cap;
-} *scopes = NULL;
-
-/* Nesting level of lexical scope, incremented for each { } block.
- * 0: Global scope
- * 1: Function arguments
- * n: Automatic variables
+/* Let every namespace have a list of scopes, to optimize lookup for a
+ * particular scope depth. Store indices into namespace list of symbols.
  */
-static int depth = -1;
-static int scope_cap;
+typedef struct scope {
+    int *idx;
+    int size;
+    int cap;
+} scope_t;
 
-/* Track offset of local variables on stack. */
-int var_stack_offset;
-int var_param_number;
 
-void push_scope()
-{
-    depth++;
-    if (depth == scope_cap) {
-        scope_cap += 16;
-        scopes = realloc(scopes, sizeof(struct lexical_scope) * scope_cap);
-        memset(&scopes[depth], 0x0, sizeof(struct lexical_scope) * 16);
+void push_scope(namespace_t *ns) {
+    assert(ns);
+
+    ns->depth++;
+    if (!ns->scope) {
+        ns->depth = 0;
     }
-    /* Reset for function params and body. */
-    if (depth == 1) {
-        var_stack_offset = 8; /* stack pointer */
-        var_param_number = 1;
-    }
-    if (depth == 2) {
-        var_stack_offset = 0;
+    ns->scope = realloc(ns->scope, sizeof(scope_t) * (ns->depth + 1));
+    memset(&ns->scope[ns->depth], 0x0, sizeof(scope_t));
+
+    if (ns->depth == 1) {
+        ns->var_stack_offset = 8;
+        ns->param_number = 1;
+    } else if (ns->depth == 2) {
+        ns->var_stack_offset = 0;
     }
 }
 
-void pop_scope()
-{
-    if (depth >= 0) {
-        free(scopes[depth].symlist);
-        memset(&scopes[depth], 0x0, sizeof(struct lexical_scope));
-        depth--;
+void pop_scope(namespace_t *ns) {
+    if (ns->depth >= 0) {
+        if (ns->scope[ns->depth].idx) {
+            free(ns->scope[ns->depth].idx);    
+        }
+        memset(&ns->scope[ns->depth], 0x0, sizeof(scope_t));
+        ns->depth--;
     }
-    if (depth == -1) {
-        free(scopes);
-        scopes = NULL;
+    if (ns->depth == -1) {
+        if (ns->scope) {
+            free(ns->scope);
+        }
+        ns->scope = NULL;
     }
 }
+
 
 /* Create and add symbol to symbol table, but not to any scope. Symbol address
  * needs to be stable, so they are stored as a realloc'able list of pointers.
  */
-static symbol_t *
-sym_init(const char *name, const typetree_t *type, int param, int offset, enum storage_class stc)
+static int
+create_symbol(namespace_t *ns, symbol_t sym)
 {
-    assert(name && type);
-
-    if (symtab_size == symtab_capacity) {
-        symtab_capacity += 64;
-        symtab = realloc(symtab, sizeof(symbol_t*) * symtab_capacity);
+    sym.depth = ns->depth;
+    if (ns->size == ns->capacity) {
+        ns->capacity += 64;
+        ns->symbol = realloc(ns->symbol, sizeof(symbol_t*) * ns->capacity);
     }
-    symtab[symtab_size] = calloc(1, sizeof(symbol_t));
-    symtab[symtab_size]->name = strdup(name);
-    symtab[symtab_size]->type = type;
-    symtab[symtab_size]->depth = depth;
-    symtab[symtab_size]->param_n = param;
-    symtab[symtab_size]->stack_offset = offset;
-    symtab[symtab_size]->storage = stc;
-    return symtab[symtab_size++];
+
+    ns->symbol[ns->size] = calloc(1, sizeof(symbol_t));
+    *(ns->symbol[ns->size]) = sym;
+
+    return ns->size++;
 }
 
-/* Create a temporary symbol with automatic storage. Use a fixed prefix '.' to
+/* Create a temporary identifier name. Use a fixed prefix '.' to
  * all temporary variables, which will never collide with real symbols.
  */
-static symbol_t *
-sym_init_temp(const typetree_t *type, char prefix, int offset)
+static char *
+prefixed_temporary_name(char prefix)
 {
     static int tmpn;
     static char tmpname[16];
 
     snprintf(tmpname, 12, ".%c%d", prefix, tmpn++);
 
-    return sym_init(tmpname, type, 0, offset, STC_AUTO);
+    return tmpname;
 }
 
 /* Add symbol to current scope, making it possible to look up. Name must be non-
  * NULL, i.e. immediate values do not belong to any scope.
  */
 static void
-sym_register(symbol_t *symbol)
+register_in_scope(namespace_t *ns, int i)
 {
-    struct lexical_scope *scope = &scopes[depth];
-    if (!symbol->name) {
-        error("Registering symbol with missing name.");
-    }
+    scope_t *scope;
+
+    assert(i < ns->size);
+    scope = &ns->scope[ns->depth];
     if (scope->size == scope->cap) {
         scope->cap += 16;
-        scope->symlist = realloc(scope->symlist, sizeof(symbol_t*) * scope->cap);
+        scope->idx = realloc(scope->idx, scope->cap * sizeof(int *));
     }
-    scope->symlist[scope->size] = symbol;
+    scope->idx[scope->size] = i;
     scope->size++;
 }
 
@@ -120,18 +106,20 @@ sym_register(symbol_t *symbol)
  * visible from current scope.
  */
 symbol_t *
-sym_lookup(const char *name)
+sym_lookup(namespace_t *ns, const char *name)
 {
-    symbol_t *sym;
     int i, d;
-    for (d = depth; d >= 0; --d) {
-        for (i = 0; i < scopes[d].size; ++i) {
-            sym = scopes[d].symlist[i];
-            if (!strcmp(name, sym->name)) {
-                return sym;
+
+    assert(ns);
+    for (d = ns->depth; d >= 0; --d) {
+        for (i = 0; i < ns->scope[d].size; ++i) {
+            int idx = ns->scope[d].idx[i];
+            if (!strcmp(name, ns->symbol[idx]->name)) {
+                return ns->symbol[idx];
             }
         }
     }
+
     return NULL;
 }
 
@@ -142,33 +130,40 @@ sym_lookup(const char *name)
  * variables. This is x86_64 specific, wrong if params cannot fit in registers.
  */
 symbol_t *
-sym_add(const char *name, const typetree_t *type, enum storage_class stc)
+sym_add(namespace_t *ns, const char *name, const typetree_t *type, enum storage_class stc)
 {
     symbol_t *symbol;
 
-    symbol = sym_lookup(name);
+    symbol = sym_lookup(ns, name);
 
-    if (symbol && symbol->depth == depth) {
+    if (symbol && symbol->depth == ns->depth) {
         if (symbol->type->size) {
             error("Duplicate definition of symbol '%s'", name);
             exit(0);
         }
         symbol->type = type_complete(symbol->type, type);
     } else {
-        int param = 0, offset = 0;
+        int idx;
+        symbol_t sym = {0};
+        sym.name = strdup(name);
+        sym.type = type;
+        sym.storage = stc;
 
-        if (depth == 1) {
-            param = var_param_number++;
-            var_stack_offset += type->size;
-            if (param > 6)
-                offset = var_stack_offset;
-        } else if (depth > 1) {
-            var_stack_offset -= type->size;
-            offset = var_stack_offset;
+        if (ns->depth == 1) {
+            sym.param_n = ns->param_number++;
+            ns->var_stack_offset += type->size;
+            if (sym.param_n > 6) {
+                sym.stack_offset = ns->var_stack_offset;
+            }
+        } else if (ns->depth > 1) {
+            ns->var_stack_offset -= type->size;
+            sym.stack_offset = ns->var_stack_offset;
         }
 
-        symbol = sym_init(name, type, param, offset, stc);
-        sym_register(symbol);
+        idx = create_symbol(ns, sym);
+        register_in_scope(ns, idx);
+
+        symbol = ns->symbol[idx];
     }
 
     return symbol;
@@ -177,66 +172,77 @@ sym_add(const char *name, const typetree_t *type, enum storage_class stc)
 /* Add temporary (autogenerated name) symbol to current scope.
  */
 const symbol_t *
-sym_temp(const typetree_t *type)
+sym_temp(namespace_t *ns, const typetree_t *type)
 {
-    symbol_t *symbol;
-    int offset = 0;
+    int idx;
 
-    if (depth == 1) {
-        var_stack_offset += type->size;
-        offset = var_stack_offset;
-    } else if (depth > 1) {
-        var_stack_offset -= type->size;
-        offset = var_stack_offset;
+    symbol_t sym = {0};
+    sym.name = strdup( prefixed_temporary_name('t') );
+    sym.type = type;
+
+    if (ns->depth == 1) {
+        ns->var_stack_offset += type->size;
+        sym.stack_offset = ns->var_stack_offset;
+    } else if (ns->depth > 1) {
+        ns->var_stack_offset -= type->size;
+        sym.stack_offset = ns->var_stack_offset;
     }
 
-    symbol = sym_init_temp(type, 't', offset);
-    sym_register(symbol);
+    idx = create_symbol(ns, sym);
+    register_in_scope(ns, idx);
 
-    return symbol;
+    return ns->symbol[idx];
 }
 
 /* Add temporary symbol refering to some static value.
  */
 const symbol_t *
-sym_temp_static(const typetree_t *type)
+sym_temp_static(namespace_t *ns, const typetree_t *type)
 {
-    symbol_t *symbol;
+    int idx;
 
-    symbol = sym_init_temp(type, 'd', 0);
-    sym_register(symbol);
+    symbol_t sym = {0};
+    sym.name = strdup( prefixed_temporary_name('d') );
+    sym.type = type;
 
-    return symbol;
+    idx = create_symbol(ns, sym);
+    register_in_scope(ns, idx);
+
+    return ns->symbol[idx];
 }
 
 void
-dump_symtab()
+dump_symtab(namespace_t *ns)
 {
     int i;
     char *tstr;
-    for (i = 0; i < symtab_size; ++i) {
-        printf("%*s", symtab[i]->depth * 2, "");
-        if (symtab[i]->storage != STC_NONE) {
-            enum storage_class stc = symtab[i]->storage;
+
+    if (ns->size) {
+        printf("namespace %s:\n", ns->name);
+    }
+    for (i = 0; i < ns->size; ++i) {
+        printf("%*s", ns->symbol[i]->depth * 2, "");
+        if (ns->symbol[i]->storage != STC_NONE) {
+            enum storage_class stc = ns->symbol[i]->storage;
             printf("%s ", 
                 (stc == STC_AUTO) ? "auto" : 
                 (stc == STC_STATIC) ? "static" :
                 (stc == STC_TYPEDEF) ? "typedef" : "extern");
         }
-        printf("%s :: ", symtab[i]->name);
-        tstr = typetostr(symtab[i]->type);
+        printf("%s :: ", ns->symbol[i]->name);
+        tstr = typetostr(ns->symbol[i]->type);
         printf("%s", tstr);
         free(tstr);
-        printf(", size=%d", symtab[i]->type->size);
-        if (symtab[i]->param_n) {
-            if (symtab[i]->stack_offset > 0) {
-                printf(" (param: %d, offset: %d)", symtab[i]->param_n, symtab[i]->stack_offset);
+        printf(", size=%d", ns->symbol[i]->type->size);
+        if (ns->symbol[i]->param_n) {
+            if (ns->symbol[i]->stack_offset > 0) {
+                printf(" (param: %d, offset: %d)", ns->symbol[i]->param_n, ns->symbol[i]->stack_offset);
             } else {
-                printf(" (param: %d)", symtab[i]->param_n);
+                printf(" (param: %d)", ns->symbol[i]->param_n);
             }
         }
-        if (symtab[i]->stack_offset < 0) {
-            printf(" (auto: %d)", symtab[i]->stack_offset);
+        if (ns->symbol[i]->stack_offset < 0) {
+            printf(" (auto: %d)", ns->symbol[i]->stack_offset);
         }
         printf("\n");
     }

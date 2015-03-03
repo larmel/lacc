@@ -39,7 +39,7 @@ eval_expr(block_t *block, optype_t optype, var_t left, var_t right)
             }
         case IR_OP_DIV:
         case IR_OP_MOD:
-            temp = sym_temp(type_combine(left.type, right.type));
+            temp = sym_temp(&ns_ident, type_combine(left.type, right.type));
             res = var_direct(temp);
             op.a = res;
             op.b = left;
@@ -78,7 +78,7 @@ eval_addr(block_t *block, var_t right)
 
     switch (right.kind) {
         case DIRECT:
-            temp = sym_temp(type);
+            temp = sym_temp(&ns_ident, type);
             res = var_direct(temp);
 
             op.type = IR_ADDR;
@@ -124,7 +124,7 @@ eval_deref(block_t *block, var_t var)
                     var_direct(var.symbol),
                     var_long((long) var.offset));
             }
-            temp = sym_temp(type_deref(var.symbol->type));
+            temp = sym_temp(&ns_ident, type_deref(var.symbol->type));
             res = var_deref(temp, 0);
 
             op.type = IR_DEREF;
@@ -187,7 +187,7 @@ eval_copy(block_t *block, var_t var)
     var_t res;
     const symbol_t *sym;
 
-    sym = sym_temp(var.type);
+    sym = sym_temp(&ns_ident, var.type);
     res = var_direct(sym);
     res.lvalue = 1;
 
@@ -207,7 +207,7 @@ eval_call(block_t *block, var_t func)
     if (func.type->next->type == NONE) {
         res = var_void();
     } else {
-        temp = sym_temp(func.type->next);
+        temp = sym_temp(&ns_ident, func.type->next);
         res = var_direct(temp);
     }
 

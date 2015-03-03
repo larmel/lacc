@@ -50,7 +50,7 @@ int main(int argc, char* argv[])
 
     init(input);
 
-    push_scope();
+    push_scope(&ns_ident);
     while (1) {
         decl_t *fun = parse();
         if (errors || !fun) {
@@ -68,14 +68,15 @@ int main(int argc, char* argv[])
             cfg_finalize(fun);
         }
     }
-    pop_scope();
+    pop_scope(&ns_ident);
 
     if (assembly) {
         output_strings(output);
     }
 
     if (VERBOSE) {
-        dump_symtab();
+        dump_symtab(&ns_ident);
+        dump_symtab(&ns_tag);
     }
 
     return errors;
