@@ -357,8 +357,15 @@ declaration_specifiers(enum storage_class *stc)
                 token();
                 type->type = OBJECT;
                 if (peek() == IDENTIFIER) {
-                    error("Unsupported named struct or union.");
+                    symbol_t *tag;
                     consume(IDENTIFIER);
+                    tag = sym_lookup(&ns_tag, strval);
+                    if (tag) {
+                        type = (typetree_t *) tag->type;
+                        done = 1;
+                        break;
+                    }
+                    sym_add(&ns_tag, strval, type, STC_NONE);
                 }
                 consume('{');
                 struct_declaration_list(type);

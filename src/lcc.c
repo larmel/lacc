@@ -51,6 +51,7 @@ int main(int argc, char* argv[])
     init(input);
 
     push_scope(&ns_ident);
+    push_scope(&ns_tag);
     while (1) {
         decl_t *fun = parse();
         if (errors || !fun) {
@@ -68,6 +69,7 @@ int main(int argc, char* argv[])
             cfg_finalize(fun);
         }
     }
+    pop_scope(&ns_tag);
     pop_scope(&ns_ident);
 
     if (assembly) {
