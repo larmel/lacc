@@ -4,6 +4,7 @@
 #include "type.h"
 #include "error.h"
 
+#include <assert.h>
 #include <stdlib.h>
 
 
@@ -41,6 +42,7 @@ eval_expr(block_t *block, optype_t optype, var_t left, var_t right)
         case IR_OP_MOD:
             temp = sym_temp(&ns_ident, type_combine(left.type, right.type));
             res = var_direct(temp);
+            assert(res.kind != IMMEDIATE);
             op.a = res;
             op.b = left;
             op.c = right;
@@ -189,6 +191,7 @@ eval_copy(block_t *block, var_t var)
 
     sym = sym_temp(&ns_ident, var.type);
     res = var_direct(sym);
+    assert(res.kind != IMMEDIATE);
     res.lvalue = 1;
 
     eval_assign(block, res, var);

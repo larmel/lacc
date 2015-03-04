@@ -179,6 +179,7 @@ sym_temp(namespace_t *ns, const typetree_t *type)
     symbol_t sym = {0};
     sym.name = strdup( prefixed_temporary_name('t') );
     sym.type = type;
+    sym.storage = STC_AUTO;
 
     if (ns->depth == 1) {
         ns->var_stack_offset += type->size;
@@ -243,6 +244,9 @@ dump_symtab(namespace_t *ns)
         }
         if (ns->symbol[i]->stack_offset < 0) {
             printf(" (auto: %d)", ns->symbol[i]->stack_offset);
+        }
+        if (ns->symbol[i]->storage == STC_NONE) {
+            printf(", value=%d", ns->symbol[i]->enum_value);
         }
         printf("\n");
     }

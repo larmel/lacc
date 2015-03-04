@@ -8,10 +8,15 @@ var_t
 var_direct(const symbol_t *symbol)
 {
     var_t var = {0};
-    var.kind = DIRECT;
-    var.symbol = symbol;
     var.type = symbol->type;
-    var.lvalue = symbol->name[0] != '.';
+    if (symbol->storage == STC_NONE) {
+        var.kind = IMMEDIATE;
+        var.value.integer = symbol->enum_value;
+    } else {
+        var.kind = DIRECT;
+        var.symbol = symbol;
+        var.lvalue = symbol->name[0] != '.';
+    }
     return var;
 }
 

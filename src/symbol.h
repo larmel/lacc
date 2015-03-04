@@ -22,6 +22,10 @@ typedef struct symbol {
     const char *name;
     const typetree_t *type;
 
+    /* Enumeration constants live in the normal symbol table, and always have
+     * integer type. Denoted by storage class STC_NONE. */
+    int enum_value;
+
     /* The n'th function argument. 1-indexed to keep 0 default. */
     int param_n;
 

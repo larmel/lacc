@@ -251,6 +251,37 @@ struct_declaration_list(typetree_t *obj)
     pop_scope(&ns);
 }
 
+static void
+enumerator_list()
+{
+    typetree_t *type;
+    symbol_t *sym;
+    var_t val;
+    int i;
+
+    i = 0;
+    type = type_init(INTEGER);
+
+    while (1) {
+        consume(IDENTIFIER);
+        sym = sym_add(&ns_ident, strval, type, STC_NONE);
+        if (peek() == '=') {
+            consume('=');
+            val = constant_expression();
+            if (val.type->type != type->type) {
+                error("Implicit conversion from non-integer type in enum declaration.");
+            }
+            i = val.value.integer;
+        }
+        sym->enum_value = i++;
+        if (peek() != '}') {
+            consume(',');
+            continue;
+        }
+        break;
+    }
+}
+
 /* Parse type, storage class and qualifiers. Assume integer type by default.
  * Storage class is returned as token value, and error is raised if there are
  * more than one storage class given.
@@ -372,7 +403,22 @@ declaration_specifiers(enum storage_class *stc)
                 consume('}');
                 break;
             case ENUM:
-                /* todo */
+                consume(ENUM);
+                type->type = INTEGER;
+                type->size = 4;
+                if (peek() == IDENTIFIER) {
+                    consume(IDENTIFIER);
+                    if (peek() == '{') { /* strval still on identifier */
+                        sym_add(&ns_tag, strval, type, STC_NONE);
+                    } else {
+                        done = 1;
+                        break;
+                    }
+                }
+                consume('{');
+                enumerator_list();
+                consume('}');
+                break;
             default:
                 done = 1;
         }
@@ -570,10 +616,12 @@ block(block_t *parent)
 {
     consume('{');
     push_scope(&ns_ident);
+    push_scope(&ns_tag);
     while (peek() != '}') {
         parent = statement(parent);
     }
     consume('}');
+    push_scope(&ns_tag);
     pop_scope(&ns_ident);
     return parent;
 }
