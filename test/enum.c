@@ -2,7 +2,7 @@ enum token {
 	FOO,
 	BAR = 23,
 	BAZ = BAR + 4
-} wat;
+};
 
 int foo(enum token tok)
 {

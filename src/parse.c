@@ -80,15 +80,16 @@ declaration(block_t *parent, const symbol_t **symbol)
 
         name = NULL;
         type = declarator(base, &name);
-        if (!name) {
-            error("Missing declarator name.");
-            exit(1);
+        if (name) {
+            if (type->type != FUNCTION && in_function) {
+                stc = STC_AUTO;
+            }
+            sym = sym_add(&ns_ident, name, type, stc);
+            free((void *) name);
+        } else {
+            consume(';');
+            return parent;
         }
-        if (type->type != FUNCTION && in_function) {
-            stc = STC_AUTO;
-        }
-        sym = sym_add(&ns_ident, name, type, stc);
-        free((void *) name);
 
         switch (peek()) {
             case ';':
