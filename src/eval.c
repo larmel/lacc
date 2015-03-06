@@ -149,9 +149,6 @@ eval_deref(block_t *block, var_t var)
  *     DIRECT and IMMEDIATE is ok. For DEREF, put in an explicit evaluation
  *     before the assignment, so that we don't get (*a') = (*b'), but instead
  *     t1 = *(b'); (*a') = t1;
- *     Use eval_deref, pretending to evaluate *(*a') and then override offset
- *     flag to make it a direct reference. This works because eval_deref
- *     returns an l-value that is not actually causing any ir ops to be added.
  * 
  * Resulting op_t always has a direct or immediate value as rhs. Return value
  * is the value of b.
@@ -167,10 +164,14 @@ eval_assign(block_t *block, var_t target, var_t var)
     }
 
     if (var.kind == DEREF) {
-        var = eval_deref(block, var);
-        var = var_direct(var.symbol);
+        const symbol_t *sym;
+
+        sym = sym_temp(&ns_ident, var.type);
+        var = var_direct(sym);
+
+        return eval_assign(block, target, var);
     }
-    
+
     /* NB: missing type checking! */
     op.type = IR_ASSIGN;
     op.a = target;
