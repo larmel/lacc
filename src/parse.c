@@ -219,6 +219,11 @@ struct_declaration_list(typetree_t *obj)
         typetree_t *base;
 
         base = declaration_specifiers(NULL);
+        if (!base) {
+            error("Missing type specifier in struct member declaration.");
+            exit(1);
+        }
+
         do {
             typetree_t *member;
             const char *name;
@@ -243,7 +248,6 @@ struct_declaration_list(typetree_t *obj)
                 consume(',');
                 continue;
             }
-
         } while (peek() != ';');
 
         consume(';');
