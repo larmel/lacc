@@ -2,16 +2,21 @@
 #include "util/map.h"
 #include "util/stack.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
 
+extern int VERBOSE;
+
 /* Expose global state to other components. */
 size_t line_number;
+
 const char *filename;
 
-extern int VERBOSE;
+/* Path of initial file, used for relative include paths. */
+static const char *directory;
 
 /* Keep stack of file descriptors as resolved by includes. Make helper
  * functions for pushing (#include) and popping (EOF) of files, keeping track
@@ -21,42 +26,76 @@ static stack_t sources;
 typedef struct {
     FILE *file;
     const char *name;
+    const char *directory;
     int line;
 } source_t;
-
-static void 
-push(const char* name)
-{
-    source_t *source;
-    FILE *file = fopen(name, "r");
-    if (file == NULL) {
-        error("could not open file %s, aborting", name);
-        exit(1);
-    }
-    source = malloc(sizeof(source_t));
-    source->file = file;
-    source->name = name;
-    source->line = 0;
-    stack_push(&sources, source);
-
-    filename = name;
-}
 
 static int
 pop()
 {
-    source_t *source = (source_t *)stack_pop(&sources);
+    source_t *source = (source_t *) stack_pop(&sources);
     if (source != NULL) {
-        if (source->file != stdin)
+        if (source->file != stdin) {
             fclose(source->file);
+        }
         free(source);
-        source = (source_t *)stack_peek(&sources);
+        source = (source_t *) stack_peek(&sources);
         if (source != NULL) {
             filename = source->name;
+            directory = source->directory;
             return 1;
         }
     }
     return EOF;
+}
+
+static char *
+create_path(const char *dir, const char *name)
+{
+    char *path;
+
+    path = malloc(strlen(dir) + 1 + strlen(name) + 1);
+    strcpy(path, dir);
+    strcat(path, "/");
+    strcat(path, name);
+
+    return path;
+}
+
+static void
+include_file(const char *name)
+{
+    source_t *source;
+    int i;
+
+    static const char *search_path[] = {
+        NULL,
+        "/usr/local/include",
+        "/usr/include"
+    };
+
+    source = calloc(1, sizeof(source_t));
+    search_path[0] = directory;
+    source->name = strdup(name);
+
+    for (i = 0; i < 3 && !source->file; ++i) {
+        char *path;
+
+        path = create_path(search_path[i], name);
+        source->directory = search_path[i];
+        source->file = fopen(path, "r");
+
+        free(path);
+    }
+
+    if (!source->file) {
+        error("Unable to resolve include file %s.", name);
+        exit(1);
+    }
+
+    filename = source->name;
+    directory = source->directory;
+    stack_push(&sources, source);
 }
 
 /* Map between defined symbols and values. Declaring as static handles
@@ -65,21 +104,6 @@ static map_t symbols;
 
 /* Keep track of nested #ifndef. */
 static stack_t conditions;
-
-/* Path of initial file, used for relative include paths. */
-static const char *directory;
-
-static char *
-mkpath(const char *filename)
-{
-    size_t dir_len = strlen(directory);
-    size_t fil_len = strlen(filename);
-    char *path = malloc(dir_len + 1 + fil_len + 1);
-    strcpy(path, directory);
-    strcat(path, "/");
-    strcat(path, filename);
-    return path;
-}
 
 /* Clean up all dynamically allocated resources. */
 static void
@@ -93,28 +117,42 @@ finalize()
 }
 
 /* Initialize with root file name, and store relative path to resolve later
- * includes. In case of NULL, default to stdin. */
+ * includes. Default to stdin. */
 void
-init(const char *path)
+init(char *path)
 {
-    char *dir = ".";
-    if (path != NULL) {
-        char *lastsep = strrchr(path, '/');
-        if (lastsep != NULL) {
-            dir = calloc(lastsep - path + 1, sizeof(char));
-            strncpy(dir, path, lastsep - path);
-        }
-        push(path);
-    } else {
-        source_t *source = malloc(sizeof(source_t));
-        source->file = stdin;
-        source->name = "<stdin>";
-        source->line = 0;
-        stack_push(&sources, source);
+    source_t *source;
 
-        filename = source->name;
+    source = calloc(1, sizeof(source_t));
+    source->file = stdin;
+    source->name = "<stdin>";
+    source->directory = ".";
+    source->line = 0;
+
+    if (path) {
+        char *sep;
+
+        source->name = path;
+        sep = strrchr(path, '/');
+        if (sep) {
+            *sep = '\0';
+            source->name = sep + 1;
+            source->directory = path;
+        }
+
+        path = create_path(source->directory, source->name);
+        source->file = fopen(path, "r");
+        if (!source->file) {
+            error("Unable to open file %s.", path);
+            exit(1);
+        }
+        free(path);
     }
-    directory = dir;
+
+    filename = source->name;
+    directory = source->directory;
+    stack_push(&sources, source);
+
     atexit(finalize);
 }
 
@@ -250,19 +288,19 @@ preprocess_line(char **linebuffer, size_t read)
         } else if (!strncmp("#include", directive, 8)) {
             char *token = strtok(&directive[8], " \n");
 
-            if (strlen(token) > 2 && 
-                token[0] == '"' && 
-                token[strlen(token)-1] == '"')
-            {
+            if (strlen(token) > 2 && token[0] == '"' && token[strlen(token)-1] == '"') {
                 token[strlen(token)-1] = '\0';
-                push(mkpath(token + 1));
-            } else if (strlen(token) > 2 && 
-                token[0] == '<' && 
-                token[strlen(token)-1] == '>') {
+                include_file(token + 1);
                 return 0;
-            } else {
-                return -1;
             }
+
+            if (strlen(token) > 2 && token[0] == '<' && token[strlen(token)-1] == '>') {
+                token[strlen(token)-1] = '\0';
+                include_file(token + 1);
+                return 0;
+            }
+
+            return -1;
 
         } else if (!strncmp("#define", directive, 7)) {
             char *symbol = strtok(&directive[7], " \n");
@@ -279,6 +317,7 @@ preprocess_line(char **linebuffer, size_t read)
                 stack_push(&conditions, value);
             }
         }
+
         return 0;
     }
 

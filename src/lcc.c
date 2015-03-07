@@ -13,14 +13,14 @@ void help()
     fprintf(stderr, "Usage: lcc [-S] [-v] [-o <file>] [file]\n");
 }
 
-extern void init(const char *);
+extern void init(char *);
 extern decl_t *parse();
 extern void fdotgen(FILE *, const decl_t *);
 extern void fassemble(FILE *, const decl_t *);
 
 int main(int argc, char* argv[])
 {
-    const char *input = NULL;
+    char *input = NULL;
     int c, assembly = 0;
     FILE *output = stdout;
 
