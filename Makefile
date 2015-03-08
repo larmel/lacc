@@ -3,7 +3,7 @@
 all: bin/lcc
 
 bin/lcc: src/*.c bin/libutil.a
-	cc -Wall -Wpedantic $+ -o $@ -L./bin/ -lutil
+	cc -Wall -Wpedantic -g $+ -o $@ -L./bin/ -lutil
 
 bin/libutil.a: bin/util/map.o bin/util/stack.o
 	ar -cvq $@ $+
