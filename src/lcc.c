@@ -52,6 +52,9 @@ int main(int argc, char* argv[])
 
     push_scope(&ns_ident);
     push_scope(&ns_tag);
+
+    register_builtin_types(&ns_ident);
+
     while (1) {
         decl_t *fun = parse();
         if (errors || !fun) {
@@ -69,6 +72,7 @@ int main(int argc, char* argv[])
             cfg_finalize(fun);
         }
     }
+
     pop_scope(&ns_tag);
     pop_scope(&ns_ident);
 

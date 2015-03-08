@@ -83,5 +83,7 @@ symbol_t *sym_add(namespace_t *, const char *, const typetree_t *, enum storage_
 const symbol_t *sym_temp(namespace_t *, const typetree_t *);
 const symbol_t *sym_temp_static(namespace_t *, const typetree_t *);
 
+void register_builtin_types(namespace_t *);
+
 
 #endif

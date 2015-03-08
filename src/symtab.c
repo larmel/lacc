@@ -212,6 +212,14 @@ sym_temp_static(namespace_t *ns, const typetree_t *type)
     return ns->symbol[idx];
 }
 
+/* Register compiler internal builtin symbols, that are assumed to exists by
+ * standard library headers. Use dummy types for now. */
+void
+register_builtin_types(namespace_t *ns)
+{
+    sym_add(ns, "__builtin_va_list", type_init(OBJECT), STC_TYPEDEF);
+}
+
 void
 dump_symtab(namespace_t *ns)
 {
