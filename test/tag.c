@@ -1,3 +1,5 @@
+typedef struct _IO_FILE FILE;
+
 struct token {
 	int x;
 	int y;

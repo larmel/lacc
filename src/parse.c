@@ -301,14 +301,14 @@ enumerator_list()
 static typetree_t *
 declaration_specifiers(enum storage_class *stc)
 {
-    int done;
+    int done, forward_decl;
     enum token stt;
     typetree_t *type;
 
     type = type_init(INTEGER);
     type->size = 0;
     stt  = '$';
-    done = 0;
+    done = forward_decl = 0;
 
     do {
         switch (peek()) {
@@ -402,6 +402,10 @@ declaration_specifiers(enum storage_class *stc)
                         break;
                     }
                     sym_add(&ns_tag, strval, type, STC_NONE);
+                    if (peek() != '{') {
+                        done = forward_decl = 1;
+                        break;
+                    }
                 }
                 consume('{');
                 struct_declaration_list(type);
@@ -435,7 +439,7 @@ declaration_specifiers(enum storage_class *stc)
                 (stt == TYPEDEF) ? STC_TYPEDEF : STC_EXTERN);
     }
 
-    return (type->size) ? type : NULL;
+    return (type->size || forward_decl) ? type : NULL;
 }
 
 static typetree_t *
