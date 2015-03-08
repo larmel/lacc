@@ -62,31 +62,32 @@ create_path(const char *dir, const char *name)
     return path;
 }
 
+static const char **search_path;
+static size_t search_path_count;
+
 static void
 include_file(const char *name)
 {
     source_t *source;
+    char *path;
     int i;
 
-    static const char *search_path[] = {
-        NULL,
-        "/usr/local/include",
-        "/usr/include"
-    };
-
     source = calloc(1, sizeof(source_t));
-    search_path[0] = directory;
     source->name = strdup(name);
+    source->directory = directory;
 
-    for (i = 0; i < 3 && !source->file; ++i) {
-        char *path;
-
-        path = create_path(search_path[i], name);
-        source->directory = search_path[i];
-        source->file = fopen(path, "r");
-
-        free(path);
+    /* First search current directory, then go through list of searh paths. */
+    path = create_path(directory, name);
+    if (!(source->file = fopen(path, "r"))) {
+        for (i = search_path_count - 1; i && !source->file; --i) {
+            free(path);
+            path = create_path(search_path[i], name);
+            source->directory = search_path[i];
+            source->file = fopen(path, "r");
+        }
     }
+
+    free(path);
 
     if (!source->file) {
         error("Unable to resolve include file %s.", name);
@@ -96,6 +97,21 @@ include_file(const char *name)
     filename = source->name;
     directory = source->directory;
     stack_push(&sources, source);
+}
+
+void
+add_include_search_path(const char *path)
+{
+    /* For the first time, add default search paths at the bottom. */
+    if (!search_path) {
+        search_path = malloc(3 * sizeof(char *));
+        add_include_search_path("/usr/include");
+        add_include_search_path("/usr/local/include");
+    }
+
+    search_path_count++;
+    search_path = realloc(search_path, search_path_count * sizeof(char *));
+    search_path[search_path_count - 1] = path;
 }
 
 /* Map between defined symbols and values. Declaring as static handles
@@ -152,6 +168,8 @@ init(char *path)
     filename = source->name;
     directory = source->directory;
     stack_push(&sources, source);
+
+    add_include_search_path(source->directory);
 
     atexit(finalize);
 }

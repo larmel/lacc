@@ -10,10 +10,11 @@ int VERBOSE = 0;
 
 void help()
 {
-    fprintf(stderr, "Usage: lcc [-S] [-v] [-o <file>] [file]\n");
+    fprintf(stderr, "Usage: lcc [-S] [-v] [-I <path>] [-o <file>] [file]\n");
 }
 
 extern void init(char *);
+extern void add_include_search_path(const char *);
 extern decl_t *parse();
 extern void fdotgen(FILE *, const decl_t *);
 extern void fassemble(FILE *, const decl_t *);
@@ -24,7 +25,7 @@ int main(int argc, char* argv[])
     int c, assembly = 0;
     FILE *output = stdout;
 
-    while ((c = getopt(argc, argv, "So:v")) != -1) {
+    while ((c = getopt(argc, argv, "So:vI:")) != -1) {
         switch (c) {
             case 'S':
                 assembly = 1;
@@ -34,6 +35,9 @@ int main(int argc, char* argv[])
                 break;
             case 'v':
                 VERBOSE = 1;
+                break;
+            case 'I':
+                add_include_search_path(optarg);
                 break;
             default:
                 help();
