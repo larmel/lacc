@@ -2,6 +2,7 @@
 #include "ir.h"
 #include "string.h"
 #include "symbol.h"
+#include "preprocess.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -13,8 +14,6 @@ void help()
     fprintf(stderr, "Usage: lcc [-S] [-v] [-I <path>] [-o <file>] [file]\n");
 }
 
-extern void init(char *);
-extern void add_include_search_path(const char *);
 extern decl_t *parse();
 extern void fdotgen(FILE *, const decl_t *);
 extern void fassemble(FILE *, const decl_t *);

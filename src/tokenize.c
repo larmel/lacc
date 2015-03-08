@@ -1,13 +1,11 @@
 #include "token.h"
 #include "error.h"
+#include "preprocess.h"
 
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-
-/* Import interface from preprocessor. */
-extern int getprepline(char **);
 
 
 /* Parse identifier. The C standard specifies a fixed lower limit on the
