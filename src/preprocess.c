@@ -1,343 +1,657 @@
 #include "error.h"
+#include "input.h"
+#include "preprocess.h"
 #include "util/map.h"
-#include "util/stack.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <string.h>
 
-extern int VERBOSE;
-
-/* Expose global state to other components. */
-size_t line_number;
-
-const char *filename;
-
-/* Path of initial file, used for relative include paths. */
-static const char *directory;
-
-/* Keep stack of file descriptors as resolved by includes. Make helper
- * functions for pushing (#include) and popping (EOF) of files, keeping track
- * of the file name and line number for diagnostics. */
-static stack_t sources;
+/* Hold current clean line to be tokenized. */
+static char *tok;
 
 typedef struct {
-    FILE *file;
-    const char *name;
-    const char *directory;
-    int line;
-} source_t;
+    token_t name;
+    token_t *subst;
+    size_t size;
+} macro_t;
 
-static int
-pop()
+/* Use one lookahead for preprocessing token. */
+static token_t prep_token_peek;
+static int has_prep_token_peek;
+
+static void debug_output_token(token_t t)
 {
-    source_t *source = (source_t *) stack_pop(&sources);
-    if (source != NULL) {
-        if (source->file != stdin) {
-            fclose(source->file);
-        }
-        free(source);
-        source = (source_t *) stack_peek(&sources);
-        if (source != NULL) {
-            filename = source->name;
-            directory = source->directory;
-            return 1;
-        }
+    switch (t.token) {
+        case IDENTIFIER:
+        case STRING:
+            printf("  token( %s, %d )\n", t.strval, (int)t.token);
+            break;
+        case INTEGER_CONSTANT:
+            printf("  token( %ld )\n", t.intval);
+            break;
+        default:
+            if (isprint(t.token)) {
+                printf("  token( %c, %d )\n", t.token, (int)t.token);
+            } else {
+                printf("  token( %s, %d )\n", t.strval, (int)t.token);
+            }
+            break;
     }
-    return EOF;
 }
 
-static char *
-create_path(const char *dir, const char *name)
+static token_t next_raw_token()
 {
-    char *path;
+    extern token_t get_token(char *, char **);
+    
+    token_t r;
+    char *end;
 
-    path = malloc(strlen(dir) + 1 + strlen(name) + 1);
-    strcpy(path, dir);
-    strcat(path, "/");
-    strcat(path, name);
-
-    return path;
-}
-
-static const char **search_path;
-static size_t search_path_count;
-
-static void
-include_file(const char *name)
-{
-    source_t *source;
-    char *path;
-    int i;
-
-    source = calloc(1, sizeof(source_t));
-    source->name = strdup(name);
-    source->directory = directory;
-
-    /* First search current directory, then go through list of searh paths. */
-    path = create_path(directory, name);
-    if (!(source->file = fopen(path, "r"))) {
-        for (i = search_path_count - 1; i && !source->file; --i) {
-            free(path);
-            path = create_path(search_path[i], name);
-            source->directory = search_path[i];
-            source->file = fopen(path, "r");
-        }
+    if (has_prep_token_peek) {
+        has_prep_token_peek = 0;
+        return prep_token_peek;
     }
 
-    free(path);
+    r = get_token(tok, &end);
+    tok = end;
+    /*debug_output_token(r); */
+    return r;
+}
 
-    if (!source->file) {
-        error("Unable to resolve include file %s.", name);
+static enum token peek_raw_token()
+{
+    if (has_prep_token_peek) {
+        return prep_token_peek.token;
+    }
+
+    prep_token_peek = next_raw_token();
+    has_prep_token_peek = 1;
+
+    /*debug_output_token(prep_token_peek); */
+
+    return prep_token_peek.token;
+}
+
+static void consume_raw_token(enum token t)
+{
+    token_t read = next_raw_token();
+
+    if (read.token != t) {
+        error("Unexpected preprocessing token.");
+        printf("  -> Token was:");
+        debug_output_token(read);
+        if (isprint((int) t)) {
+            printf("  -> Expected %c\n", (char) t);
+        }
         exit(1);
     }
-
-    filename = source->name;
-    directory = source->directory;
-    stack_push(&sources, source);
 }
 
-void
-add_include_search_path(const char *path)
+/* Store list of preprocessed tokens. Read next from list on call to token(),
+ * peek() or consume(), and start over after call to get_preprocessed_tokens().
+ */
+static struct {
+    token_t *tokens;
+    size_t length;
+    size_t cap;
+} toklist;
+
+static size_t add_token(token_t t)
 {
-    /* For the first time, add default search paths at the bottom. */
-    if (!search_path) {
-        search_path = malloc(3 * sizeof(char *));
-        add_include_search_path("/usr/include");
-        add_include_search_path("/usr/local/include");
+    toklist.length++;
+    if (toklist.length > toklist.cap) {
+        toklist.cap += 64;
+        toklist.tokens = realloc(toklist.tokens, toklist.cap * sizeof(token_t));
+    }
+    toklist.tokens[toklist.length - 1] = t;
+
+    /*debug_output_token(t);*/
+
+    return toklist.length;
+}
+
+/* 
+ * Push and pop branch conditions for #if, #elif and #endif.
+ */
+static struct {
+    int *condition;
+    size_t length;
+    size_t cap;
+} branch_stack;
+
+static void push_condition(int c) {
+    if (branch_stack.length == branch_stack.cap) {
+        branch_stack.cap += 16;
+        branch_stack.condition = realloc(branch_stack.condition, branch_stack.cap * sizeof(int));
+    }
+    branch_stack.condition[branch_stack.length++] = c;
+}
+
+static int peek_condition() {
+    return branch_stack.length ? branch_stack.condition[branch_stack.length - 1] : 1;
+}
+
+static int pop_condition() {
+    if (!branch_stack.length) {
+        error("Unmatched #endif directive.");
+    } else {
+        --branch_stack.length;
+    }
+    return peek_condition();
+}
+
+/* 
+ * Macro definitions.
+ */
+static map_t definitions;
+
+void define_macro(macro_t *macro)
+{
+    map_insert(&definitions, macro->name.strval, (void *) macro);
+}
+
+void define(token_t name, token_t subst)
+{
+    macro_t *macro;
+
+    assert(name.strval);
+
+    macro = map_lookup(&definitions, name.strval);
+    if (!macro) {
+        macro_t *p = malloc(sizeof(macro_t));
+        p->name = name;
+        p->subst = malloc(1 * sizeof(token_t));
+        p->subst[0] = subst;
+        p->size = 1;
+        map_insert(&definitions, name.strval, (void *) p);
+    }
+}
+
+void undef(token_t name)
+{
+    assert(name.strval);
+
+    /* No-op if name is not a macro. */
+    map_remove(&definitions, name.strval);
+}
+
+macro_t *definition(token_t name)
+{
+    if (!name.strval) {
+        return NULL;
+    }
+    return map_lookup(&definitions, name.strval);
+}
+
+/* Append token string representation at the end of provided buffer. If NULL is
+ * provided, a new buffer is allocated that must be free'd by caller. */
+static char *pastetok(char *buf, token_t t) {
+    size_t len;
+
+    if (!buf) {
+        buf = calloc(16, sizeof(char));
+        len = 0;
+    } else {
+        len = strlen(buf);
+        if (t.strval) {
+            buf = realloc(buf, len + strlen(t.strval) + 1);
+        } else {
+            buf = realloc(buf, len + 32);
+        }
     }
 
-    search_path_count++;
-    search_path = realloc(search_path, search_path_count * sizeof(char *));
-    search_path[search_path_count - 1] = path;
+    if (t.strval) {
+        strcat(buf, t.strval);
+    } else if (t.intval) {
+        sprintf(buf + len, "%ld", t.intval);
+    } else {
+        assert(isprint(t.token));
+        sprintf(buf + len, "%c", t.token);
+    }
+
+    return buf;
 }
 
-/* Map between defined symbols and values. Declaring as static handles
- * initialization to empty map. */
-static map_t symbols;
+static int expression();
 
-/* Keep track of nested #ifndef. */
-static stack_t conditions;
-
-/* Clean up all dynamically allocated resources. */
-static void
-finalize()
+static void preprocess_directive()
 {
-    while (pop() != EOF)
-        ;
-    map_finalize(&symbols);
-    stack_finalize(&sources);
-    stack_finalize(&conditions);
-}
+    token_t t = next_raw_token();
 
-/* Initialize with root file name, and store relative path to resolve later
- * includes. Default to stdin. */
-void
-init(char *path)
-{
-    source_t *source;
-
-    source = calloc(1, sizeof(source_t));
-    source->file = stdin;
-    source->name = "<stdin>";
-    source->directory = ".";
-    source->line = 0;
-
-    if (path) {
-        char *sep;
-
-        source->name = path;
-        sep = strrchr(path, '/');
-        if (sep) {
-            *sep = '\0';
-            source->name = sep + 1;
-            source->directory = path;
+    if (t.token == IF) {
+        int val = expression();
+        /*printf(" condition value = %d\n", val);*/
+        push_condition( peek_condition() ? val : 0 );
+    }
+    else if (t.token == IDENTIFIER && !strcmp("elif", t.strval)) {
+        int val = expression();
+        /*printf(" condition value = %d\n", val);*/
+        push_condition( !pop_condition() && peek_condition() ? val : 0 );
+    }
+    else if (t.token == ELSE) {
+        push_condition( !pop_condition() && peek_condition() );
+    }
+    else if (t.token == IDENTIFIER && !strcmp("endif", t.strval)) {
+        pop_condition();
+    }
+    else if (t.token == IDENTIFIER && !strcmp("ifndef", t.strval)) {
+        t = next_raw_token();
+        push_condition( definition(t) == NULL && peek_condition() );
+    }
+    else if (t.token == IDENTIFIER && !strcmp("ifdef", t.strval)) {
+        t = next_raw_token();
+        push_condition( definition(t) != NULL && peek_condition() );
+    }
+    else if (peek_condition()) {
+        if (t.token == IDENTIFIER && !strcmp("define", t.strval)) {
+            token_t name = next_raw_token(), subs;
+            if (name.token != IDENTIFIER) {
+                error("Definition must be identifier.");
+                exit(1);
+            }
+            if (peek_raw_token() == END) {
+                token_t one = { INTEGER_CONSTANT, NULL, 1 };
+                define(name, one);
+            } else {
+                macro_t *macro = calloc(1, sizeof(macro_t));
+                macro->name = name;
+                while (peek_raw_token() != END) {
+                    subs = next_raw_token();
+                    macro->size++;
+                    macro->subst = realloc(macro->subst, macro->size * sizeof(token_t));
+                    macro->subst[macro->size - 1] = subs;
+                }
+                assert(macro->size);
+                define_macro(macro);
+            }
         }
-
-        path = create_path(source->directory, source->name);
-        source->file = fopen(path, "r");
-        if (!source->file) {
-            error("Unable to open file %s.", path);
+        else if (t.token == IDENTIFIER && !strcmp("undef", t.strval)) {
+            token_t name = next_raw_token();
+            undef(name);
+        }
+        else if (t.token == IDENTIFIER && !strcmp("include", t.strval)) {
+            char *path = NULL;
+            if (peek_raw_token() == STRING) {
+                t = next_raw_token();
+                path = (char*) t.strval;
+            } else if (peek_raw_token() == '<') {
+                consume_raw_token('<');
+                while (peek_raw_token() != END) {
+                    if (peek_raw_token() == '>') {
+                        break;
+                    }
+                    t = next_raw_token();
+                    path = pastetok(path, t);
+                }
+                consume_raw_token('>');
+            }
+            if (!path) {
+                error("Invalid include directive.");
+                exit(1);
+            }
+            include_file(path);
+        }
+        else if (t.token == IDENTIFIER && !strcmp("error", t.strval)) {
+            error("%s", tok + 1);
             exit(1);
         }
-        free(path);
+    } else {
+        /* Skip the rest. */
+        return;
     }
-
-    filename = source->name;
-    directory = source->directory;
-    stack_push(&sources, source);
-
-    add_include_search_path(source->directory);
-
-    atexit(finalize);
+    consume_raw_token(END);
 }
 
-static ssize_t getcleanline(char **, size_t *, source_t *);
-static ssize_t preprocess_line(char **, size_t);
-
-/* Yield next preprocessed line. */
-int
-getprepline(char **buffer)
+/* Filter token stream and perform preprocessor tasks such as macro substitution,
+ * file inclusion etc. One line is processed at a time, putting the resulting
+ * parse-ready tokens in token_list. Iterate until the current line yields at
+ * least one token for parsing. */
+static int preprocess_line()
 {
-    static char *line;
-    static size_t size;
-    source_t *source;
-    ssize_t read, processed;
+    token_t t;
 
-    while (1) {
-        source = (source_t *)stack_peek(&sources);
-        read = getcleanline(&line, &size, source);
-        if (read == 0) {
-            if (pop() == EOF) {
-                return -1;
+    do {
+        /*assert(tok == NULL || *tok == '\0');*/
+
+        /* Get a new clean line, with comments and line continuations removed. */
+        if (getprepline(&tok) == -1)
+            return 0;
+
+        /* Reset list of preprocessed tokens. */
+        toklist.length = 0;
+        t = next_raw_token();
+
+        if (t.token == '#') {
+            preprocess_directive();
+            if (*tok != '\0') {
+                /*puts("skipped tokens"); */
             }
-            continue;
+        } else if (peek_condition()) {
+            while (t.token != END) {
+                macro_t *def = definition(t);
+                if (def) {
+                    int i;
+                    for (i = 0; i < def->size; ++i) {
+                        add_token(def->subst[i]);
+                    }
+                } else {
+                    add_token(t);
+                }
+                t = next_raw_token();
+            }
         }
 
-        processed = preprocess_line(&line, (size_t)read);
-        if (processed > 0) {
-            break;
-        }
-    }
+        has_prep_token_peek = 0;
+    } while (!toklist.length);
 
-    *buffer = line;
-    line_number = source->line;
-    if (VERBOSE)
-        printf("(%s, %d): `%s`\n", filename, (int)line_number, line);
-    return processed;
+    return toklist.length;
 }
 
-/* Read characters from stream and assemble a line. Keep track of and remove
- * comments, join lines ending with '\', and ignore all-whitespace lines. Trim
- * leading whitespace, guaranteeing that the first character is '#' for
- * preprocessor directives. Increment line counter in fnt struct for each line
- * consumed. */
-static ssize_t
-getcleanline(char **lineptr, size_t *n, source_t *fn)
-{
-    enum { NORMAL, COMMENT } state = 0;
-    int c, next; /* getc return values */
-    int i = 0, /* chars written to output buffer */
-        nonwhitespace = 0; /* non-whitespace characters written */
-    
-    FILE *stream = fn->file;
+/* Current position in list of tokens ready for parsing. */
+static size_t current = -1;
 
-    /* Need to have room for terminating \0 byte. */
-    if (!*n) {
-        *n = 1;
-        *lineptr = malloc(sizeof(char));
+/* 
+ * External interface.
+ */
+
+long intval;
+const char *strval;
+
+/* Move current pointer one step forward, returning the next token. */
+enum token token() {
+    if (current + 1 == toklist.length) {
+        if (!preprocess_line()) {
+            return END;
+        }
+        current = -1;
+    }
+    current++;
+
+    strval = toklist.tokens[current].strval;
+    intval = toklist.tokens[current].intval;
+    return toklist.tokens[current].token;
+}
+
+enum token peek() {
+    if (current + 1 == toklist.length) {
+        if (!preprocess_line()) {
+            return END;
+        }
+        current = -1;
     }
 
-    while ((c = getc(stream)) != EOF) {
-        /* line continuation */
-        if (c == '\\') {
-            next = getc(stream);
-            if (next == EOF) {
-                error("Invalid end of file after line continuation, aborting");
-                exit(0);
-            }
-            if (next == '\n') {
-                fn->line++;
-                continue;
-            }
-            ungetc(next, stream);
+    strval = toklist.tokens[current + 1].strval;
+    intval = toklist.tokens[current + 1].intval;
+    return toklist.tokens[current + 1].token;
+}
+
+void consume(enum token expected) {
+    enum token t = token();
+    if (t != expected) {
+        if (isprint(t)) {
+            if (isprint(expected))
+                error("Unexpected token `%c`, expected `%c`.", t, expected);
+            else
+                error("Unexpected token `%c`.", t);
+        } else {
+            if (isprint(expected))
+                error("Unexpected token `%s`, expected `%c`.", strval, expected);
+            else
+                error("Unexpected token `%s`.", strval);
         }
-        /* end of comment */
-        if (state == COMMENT) {
-            if (c == '*') {
-                next = getc(stream);
-                if (next == '/')
-                    state = NORMAL;
-                else
-                    ungetc(next, stream);
-            } else if (c == '\n')
-                fn->line++;
-            continue;
-        }
-        /* start of comment */
-        if (c == '/') {
-            next = getc(stream);
-            if (next == '*') {
-                state = COMMENT;
-                continue;
-            }
-            ungetc(next, stream);
-        }
-        /* end of line, return if we have some content */
-        if (c == '\n') {
-            fn->line++;
-            if (nonwhitespace > 0)
+        exit(1);
+    }
+}
+
+
+/* Parse and evaluate token stream corresponding to constant expression.
+ * Operators handled in preprocessing expressions are: 
+ *  * Integer constants.
+ *  * Character constants, which are interpreted as they would be in normal code.
+ *  * Arithmetic operators for addition, subtraction, multiplication, division,
+ *    bitwise operations, shifts, comparisons, and logical operations (&& and ||).
+ *    The latter two obey the usual short-circuiting rules of standard C.
+ *  * Macros. All macros in the expression are expanded before actual computation
+ *    of the expression's value begins.
+ *  * Uses of the defined operator, which lets you check whether macros are 
+ *    defined in the middle of an #if.
+ *  * Identifiers that are not macros, which are all considered to be the number
+ *    zero. This allows you to write #if MACRO instead of #ifdef MACRO, if you 
+ *    know that MACRO, when defined, will always have a nonzero value. Function-
+ *    like macros used without their function call parentheses are also treated
+ *    as zero.
+ *
+ * Source: http://tigcc.ticalc.org/doc/cpp.html
+ */
+static int eval_logical_or();
+static int eval_logical_and();
+static int eval_inclusive_or();
+static int eval_exclusive_or();
+static int eval_and();
+static int eval_equality();
+static int eval_relational();
+static int eval_shift();
+static int eval_additive();
+static int eval_multiplicative();
+static int eval_unary();
+static int eval_primary();
+static int expression() {
+    int a = eval_logical_or(), b, c;
+    if (peek_raw_token() == '?') {
+        consume_raw_token('?');
+        b = expression();
+        consume_raw_token(':');
+        c = expression();
+        return a ? b : c;
+    }
+    return a;
+}
+
+static int eval_logical_or() {
+    int val = eval_logical_and();
+    if (peek_raw_token() == LOGICAL_OR) {
+        next_raw_token();
+        val = eval_logical_or() || val;
+    }
+    return val;
+}
+
+static int eval_logical_and() {
+    int val = eval_inclusive_or();
+    if (peek_raw_token() == LOGICAL_AND) {
+        next_raw_token();
+        val = eval_logical_and() && val;
+    }
+    return val;
+}
+
+static int eval_inclusive_or() {
+    int val = eval_exclusive_or();
+    if (peek_raw_token() == '|') {
+        next_raw_token();
+        val = eval_inclusive_or() | val;
+    }
+    return val;
+}
+
+static int eval_exclusive_or() {
+    int val = eval_and();
+    if (peek_raw_token() == '^') {
+        next_raw_token();
+        val = eval_exclusive_or() ^ val;
+    }
+    return val;
+}
+
+static int eval_and()
+{
+    int val = eval_equality();
+    if (peek_raw_token() == '&') {
+        next_raw_token();
+        val = eval_and() & val;
+    }
+    return val;
+}
+
+static int eval_equality() {
+    int val = eval_relational();
+    if (peek_raw_token() == EQ) {
+        next_raw_token();
+        val = val == eval_equality();
+    } else if (peek_raw_token() == NEQ) {
+        next_raw_token();
+        val = val != eval_equality();
+    }
+    return val;
+}
+
+static int eval_relational() {
+    int val = eval_shift(), done = 0;
+    do {
+        switch (peek_raw_token()) {
+            case '<':
+                next_raw_token();
+                val = val < eval_shift();
+                break;
+            case '>':
+                next_raw_token();
+                val = val > eval_shift();
+                break;
+            case LEQ:
+                next_raw_token();
+                val = val <= eval_shift();
+                break;
+            case GEQ:
+                next_raw_token();
+                val = val >= eval_shift();
+                break;
+            default:
+                done = 1;
                 break;
         }
-        /* skip leading whitspace */
-        if (isspace(c)) {
-            if (nonwhitespace == 0)
-                continue;
-        } else
-            nonwhitespace++;
-
-        /* make sure we have room for trailing null byte, and copy character */
-        if (i + 1 >= *n) {
-            *n = (i + 1) * 2;
-            *lineptr = realloc(*lineptr, sizeof(char) * *n);
-        }
-        (*lineptr)[i++] = c;
-    }
-
-    (*lineptr)[i] = '\0';
-    return i;
+    } while (!done);
+    return val;
 }
 
-/* Return number of chars in resulting preprocessed line, which is stored
- * in linebuffer (possibly reallocated). Lines that are not part of the
- * translation unit, ex. #define, return 0. Invalid input return -1. */
-static ssize_t
-preprocess_line(char **linebuffer, size_t read)
-{
-    static char false = 'f', true = 't';
-
-    if ((*linebuffer)[0] == '#') {
-        char *directive = *linebuffer;
-
-        if (!strncmp("#endif", directive, 6)) {
-            stack_pop(&conditions);
-        } else if (!strncmp("#include", directive, 8)) {
-            char *token = strtok(&directive[8], " \n");
-
-            if (strlen(token) > 2 && token[0] == '"' && token[strlen(token)-1] == '"') {
-                token[strlen(token)-1] = '\0';
-                include_file(token + 1);
-                return 0;
-            }
-
-            if (strlen(token) > 2 && token[0] == '<' && token[strlen(token)-1] == '>') {
-                token[strlen(token)-1] = '\0';
-                include_file(token + 1);
-                return 0;
-            }
-
-            return -1;
-
-        } else if (!strncmp("#define", directive, 7)) {
-            char *symbol = strtok(&directive[7], " \n");
-            char *value = strtok(NULL, " \n");
-            map_insert(&symbols, symbol, (void*) value);
-
-        } else if (!strncmp("#ifndef", directive, 7)) {
-            char *symbol = strtok(&directive[7], " \n");
-            if (stack_peek(&conditions) == (void *)&false) {
-                stack_push(&conditions, (void*) &false);
-            } else {
-                void *value = (map_lookup(&symbols, symbol) == NULL) 
-                    ? (void *)&true : (void *)&false;
-                stack_push(&conditions, value);
-            }
+static int eval_shift() {
+    int val = eval_additive(), done = 0;
+    do {
+        switch (peek_raw_token()) {
+            case LSHIFT:
+                next_raw_token();
+                val = val << eval_additive();
+                break;
+            case RSHIFT:
+                next_raw_token();
+                val = val >> eval_additive();
+                break;
+            default:
+                done = 1;
+                break;
         }
+    } while (!done);
+    return val;
+}
 
-        return 0;
+static int eval_additive() {
+    int val = eval_multiplicative(), done = 0;
+    do {
+        switch (peek_raw_token()) {
+            case '+':
+                next_raw_token();
+                val = val + eval_multiplicative();
+                break;
+            case '-':
+                next_raw_token();
+                val = val - eval_multiplicative();
+                break;
+            default:
+                done = 1;
+                break;
+        }
+    } while (!done);
+    return val;
+}
+
+static int eval_multiplicative() {
+    int val = eval_unary(), done = 0;
+    do {
+        switch (peek_raw_token()) {
+            case '*':
+                next_raw_token();
+                val = val * eval_unary();
+                break;
+            case '/':
+                next_raw_token();
+                val = val / eval_unary();
+                break;
+            case '%':
+                next_raw_token();
+                val = val % eval_unary();
+                break;
+            default:
+                done = 1;
+                break;
+        }
+    } while (!done);
+    return val;
+}
+
+static int eval_unary() {
+    switch (peek_raw_token()) {
+        case '+':
+            next_raw_token();
+            return eval_unary();
+        case '-':
+            next_raw_token();
+            return - eval_unary();
+        case '~':
+            next_raw_token();
+            return ~ eval_unary();
+        case '!':
+            next_raw_token();
+            return ! eval_unary();
+        default:
+            return eval_primary();
     }
+}
 
-    return stack_pop(&conditions) == (void *)&false ? 0 : read;
+static int eval_primary() {
+    int value;
+    macro_t *def;
+    token_t t;
+
+    t = next_raw_token();
+    switch (t.token) {
+        case INTEGER_CONSTANT:
+            return t.intval;
+        case IDENTIFIER:
+            if (!strcmp("defined", t.strval)) {
+                t = next_raw_token();
+                if (t.token == '(') {
+                    t = next_raw_token();
+                    consume_raw_token(')');
+                }
+                if (t.token == IDENTIFIER) {
+                    def = definition(t);
+                    return def != NULL;
+                }
+                error("Invalid defined check.");
+                exit(1);
+            } else {
+                def = definition(t);
+                return def ? def->subst[0].intval : 0;
+            }
+            return 0;
+        case '(':
+            value = expression();
+            consume_raw_token(')');
+            return value;
+        default:
+            error("Invalid primary expression.");
+            exit(1);
+            return 0;
+    }
 }

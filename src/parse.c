@@ -2,7 +2,7 @@
 #include "ir.h"
 #include "type.h"
 #include "string.h"
-#include "token.h"
+#include "preprocess.h"
 #include "symbol.h"
 
 #include <stdio.h>
@@ -416,9 +416,10 @@ declaration_specifiers(enum storage_class *stc)
                 type->type = INTEGER;
                 type->size = 4;
                 if (peek() == IDENTIFIER) {
+                    const char *ident = strval;
                     consume(IDENTIFIER);
-                    if (peek() == '{') { /* strval still on identifier */
-                        sym_add(&ns_tag, strval, type, STC_NONE);
+                    if (peek() == '{') {
+                        sym_add(&ns_tag, ident, type, STC_NONE);
                     } else {
                         done = 1;
                         break;

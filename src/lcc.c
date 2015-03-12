@@ -2,7 +2,7 @@
 #include "ir.h"
 #include "string.h"
 #include "symbol.h"
-#include "preprocess.h"
+#include "input.h"
 
 #include <stdio.h>
 #include <unistd.h>

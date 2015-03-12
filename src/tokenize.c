@@ -1,12 +1,11 @@
-#include "token.h"
 #include "error.h"
 #include "preprocess.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-
 
 /* Parse identifier. The C standard specifies a fixed lower limit on the
  * length, which makes it possible to store identifiers in a static buffer.
@@ -130,16 +129,11 @@ static const char *strtostr(char *in, char **endptr)
     return start;
 }
 
-/* Parse and return next token from line buffer yielded by the preprocessor.
- * Create tokens from a preprocessed line at a time, no token can span multiple
- * lines. Invoke the preprocessor on demand. Iterate over all multi-character 
- * tokens and match using simple string comparison.
+/* Parse and return next preprocessing token, from char buffer where comments
+ * are removed and line continuations are applied.
  */
-static enum token
-get_token()
+token_t get_token(char *in, char **endptr)
 {
-    static char *tok;
-
     static struct {
         const char *value;
         enum token type;
@@ -203,112 +197,72 @@ get_token()
     };
 
     int n;
-    char *end;
+    token_t res = {END, NULL, 0};
 
-    while (tok && isspace(*tok))
-        tok++;
+    assert(endptr);
 
-    if (tok == NULL || *tok == '\0')
-        if (getprepline(&tok) == -1)
-            return END;
+    while (in && isspace(*in))
+        in++;
+
+    if (in == NULL || *in == '\0') {
+        *endptr = in;
+        return res;
+    }
 
     for (n = 0; n < 55; ++n) {
         int length = strlen(reserved[n].value);
-        if (!strncmp(tok, reserved[n].value, length)) {
-            if (n < 32 && isalnum(tok[length]))
+        if (!strncmp(in, reserved[n].value, length)) {
+            if (n < 32 && isalnum(in[length]))
                 break;
-            tok += length;
-            strval = reserved[n].value;
-            return reserved[n].type;
+            res.token = reserved[n].type;
+            res.strval = reserved[n].value;
+            *endptr = in + length;
+            return res;
         }
     }
 
-    if (isalpha(*tok) || *tok == '_') {
-        strval = strtoident(tok, &end);
-        if (end != tok) {
-            tok = end;
-            return IDENTIFIER;
+    if (isalpha(*in) || *in == '_') {
+        res.strval = strtoident(in, endptr);
+        if (*endptr != in) {
+            res.token = IDENTIFIER;
+            res.strval = strdup(res.strval);
+            return res;
         }
-        error("Invalid identifier: `%s`.", tok);
+        error("Invalid identifier: `%s`.", in);
         exit(1);
     }
 
-    if (isdigit(*tok)) {
-        intval = strtonum(tok, &end);
-        if (end != tok) {
-            tok = end;
-            return INTEGER_CONSTANT;
+    if (isdigit(*in)) {
+        res.intval = strtonum(in, endptr);
+        if (*endptr != in) {
+            res.token = INTEGER_CONSTANT;
+            return res;
         }
-        error("Invalid number literal: `%s`.", tok);
+        error("Invalid number literal: `%s`.", in);
         exit(1);
     }
 
-    switch (*tok) {
+    switch (*in) {
         case '"':
-            strval = strtostr(tok, &end);
-            if (end != tok) {
-                tok = end;
-                return STRING;
+            res.strval = strtostr(in, endptr);
+            if (*endptr != in) {
+                res.token = STRING;
+                res.strval = strdup(res.strval);
+                return res;
             }
-            error("Invalid string literal: `%s`.", tok);
+            error("Invalid string literal: `%s`.", in);
             exit(1);
         case '\'':
-            intval = strtochar(tok, &end);
-            if (end != tok) {
-                tok = end;
-                return INTEGER_CONSTANT;
+            res.intval = strtochar(in, endptr);
+            if (*endptr != in) {
+                res.token = INTEGER_CONSTANT;
+                return res;
             }
-            error("Invalid character literal: `%s`.", tok);
+            error("Invalid character literal: `%s`.", in);
             exit(1);
         default:
-            break;
-    }
-
-    return *tok++;
-}
-
-static enum token peek_value;
-static int has_value;
-
-/* 
- * External interface.
- */
-
-long intval;
-
-const char *strval;
-
-enum token token() {
-    if (has_value) {
-        if (peek_value != END)
-            has_value = 0;
-        return peek_value;
-    }
-    return get_token();
-}
-
-enum token peek() {
-    if (!has_value) {
-        peek_value = token();
-        has_value = 1;
-    }
-    return peek_value;
-}
-
-void consume(enum token expected) {
-    enum token t = token();
-    if (t != expected) {
-        if (isprint(t)) {
-            if (isprint(expected))
-                error("Unexpected token `%c`, expected `%c`.", t, expected);
-            else
-                error("Unexpected token `%c`.", t);
-        } else {
-            if (isprint(expected))
-                error("Unexpected token `%s`, expected `%c`.", strval, expected);
-            else
-                error("Unexpected token `%s`.", strval);
-        }
-        exit(1);
+            res.token = *in++;
+            *endptr = in;
+            return res;
     }
 }
