@@ -3,6 +3,7 @@
 #include "string.h"
 #include "symbol.h"
 #include "input.h"
+#include "preprocess.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -56,6 +57,7 @@ int main(int argc, char* argv[])
     push_scope(&ns_ident);
     push_scope(&ns_tag);
 
+    register_builtin_definitions();
     register_builtin_types(&ns_ident);
 
     while (1) {

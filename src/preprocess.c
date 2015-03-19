@@ -136,10 +136,8 @@ static int peek_condition() {
 static int pop_condition() {
     if (!branch_stack.length) {
         error("Unmatched #endif directive.");
-    } else {
-        --branch_stack.length;
     }
-    return peek_condition();
+    return branch_stack.condition[--branch_stack.length];
 }
 
 /* 
@@ -147,12 +145,12 @@ static int pop_condition() {
  */
 static map_t definitions;
 
-void define_macro(macro_t *macro)
+static void define_macro(macro_t *macro)
 {
     map_insert(&definitions, macro->name.strval, (void *) macro);
 }
 
-void define(token_t name, token_t subst)
+static void define(token_t name, token_t subst)
 {
     macro_t *macro;
 
@@ -169,7 +167,7 @@ void define(token_t name, token_t subst)
     }
 }
 
-void undef(token_t name)
+static void undef(token_t name)
 {
     assert(name.strval);
 
@@ -177,12 +175,31 @@ void undef(token_t name)
     map_remove(&definitions, name.strval);
 }
 
-macro_t *definition(token_t name)
+static macro_t *definition(token_t name)
 {
     if (!name.strval) {
         return NULL;
     }
     return map_lookup(&definitions, name.strval);
+}
+
+void register_builtin_definitions()
+{
+    token_t 
+        name = { IDENTIFIER, NULL, 0 },
+        valu = { INTEGER_CONSTANT, NULL, 0 };
+
+    name.strval = "__STDC_VERSION__";
+    valu.intval = 199409L;
+    define( name, valu );
+
+    name.strval = "__STDC__";
+    valu.intval = 1;
+    define( name, valu );
+
+    name.strval = "__STDC_HOSTED__";
+    valu.intval = 1;
+    define( name, valu );
 }
 
 /* Append token string representation at the end of provided buffer. If NULL is

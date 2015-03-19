@@ -78,6 +78,9 @@ typedef struct {
     long intval;
 } token_t;
 
+/* Define standard macros. */
+void register_builtin_definitions();
+
 /* Store textual or numerical value of last token read. */
 extern long intval;
 extern const char *strval;
