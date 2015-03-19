@@ -246,26 +246,26 @@ static void preprocess_directive()
     }
     else if (peek_condition()) {
         if (t.token == IDENTIFIER && !strcmp("define", t.strval)) {
-            token_t name = next_raw_token(), subs;
+            token_t name, subs;
+            macro_t *macro;
+
+            name = next_raw_token();
             if (name.token != IDENTIFIER) {
                 error("Definition must be identifier.");
                 exit(1);
             }
-            if (peek_raw_token() == END) {
-                token_t one = { INTEGER_CONSTANT, NULL, 1 };
-                define(name, one);
-            } else {
-                macro_t *macro = calloc(1, sizeof(macro_t));
-                macro->name = name;
-                while (peek_raw_token() != END) {
-                    subs = next_raw_token();
-                    macro->size++;
-                    macro->subst = realloc(macro->subst, macro->size * sizeof(token_t));
-                    macro->subst[macro->size - 1] = subs;
-                }
-                assert(macro->size);
-                define_macro(macro);
+
+            macro = calloc(1, sizeof(macro_t));
+            macro->name = name;
+
+            while (peek_raw_token() != END) {
+                subs = next_raw_token();
+                macro->size++;
+                macro->subst = realloc(macro->subst, macro->size * sizeof(token_t));
+                macro->subst[macro->size - 1] = subs;
             }
+
+            define_macro(macro);
         }
         else if (t.token == IDENTIFIER && !strcmp("undef", t.strval)) {
             token_t name = next_raw_token();
