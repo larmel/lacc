@@ -14,8 +14,17 @@ static char *tok;
 
 typedef struct {
     token_t name;
-    token_t *subst;
+    enum { OBJECT_LIKE, FUNCTION_LIKE } type;
+
+    size_t params;
     size_t size;
+
+    /* A substitution is either a token or a parameter. */
+    struct macro_subst_t {
+        token_t token;
+        int param;
+    } *replacement;
+
 } macro_t;
 
 /* Use one lookahead for preprocessing token. */
@@ -160,10 +169,13 @@ static void define(token_t name, token_t subst)
     if (!macro) {
         macro_t *p = malloc(sizeof(macro_t));
         p->name = name;
-        p->subst = malloc(1 * sizeof(token_t));
-        p->subst[0] = subst;
+        p->replacement = malloc(1 * sizeof(struct macro_subst_t));
+        p->replacement[0].token = subst;
+        p->replacement[0].param = 0;
         p->size = 1;
         map_insert(&definitions, name.strval, (void *) p);
+    } else {
+        error("Redefinition of macro %s.", name.strval);
     }
 }
 
@@ -263,7 +275,7 @@ static void preprocess_directive()
     }
     else if (peek_condition()) {
         if (t.token == IDENTIFIER && !strcmp("define", t.strval)) {
-            token_t name, subs;
+            token_t name, param, subs;
             macro_t *macro;
 
             name = next_raw_token();
@@ -274,12 +286,34 @@ static void preprocess_directive()
 
             macro = calloc(1, sizeof(macro_t));
             macro->name = name;
+            macro->type = OBJECT_LIKE;
+
+            /* Function-like macro iff parenthesis immediately after. */
+            if (*tok == '(') {
+                macro->type = FUNCTION_LIKE;
+                consume_raw_token('(');
+                while (peek_raw_token() != ')') {
+                    param = next_raw_token();
+                    macro->params++;
+                    if (peek_raw_token() == ',') {
+                        consume_raw_token(',');
+                        continue;
+                    }
+                    break;
+                }
+                consume_raw_token(')');
+            }
 
             while (peek_raw_token() != END) {
                 subs = next_raw_token();
                 macro->size++;
-                macro->subst = realloc(macro->subst, macro->size * sizeof(token_t));
-                macro->subst[macro->size - 1] = subs;
+                macro->replacement = 
+                    realloc(macro->replacement, macro->size * sizeof(struct macro_subst_t));
+                macro->replacement[macro->size - 1].token = subs;
+                macro->replacement[macro->size - 1].param = 0;
+                if (subs.token == IDENTIFIER && !strcmp(subs.strval, param.strval)) {
+                    macro->replacement[macro->size - 1].param = 1;
+                }
             }
 
             define_macro(macro);
@@ -350,8 +384,25 @@ static int preprocess_line()
                 macro_t *def = definition(t);
                 if (def) {
                     int i;
+                    token_t param;
+
+                    if (def->type == FUNCTION_LIKE) {
+                        /* Support only a single param, and one token per param. */
+                        consume_raw_token('(');
+                        for (i = 0; i < def->params; ++i) {
+                            param = next_raw_token();
+                            if (i < def->params - 1)
+                                consume_raw_token(',');
+                        }
+                        consume_raw_token(')');
+                    }
+
                     for (i = 0; i < def->size; ++i) {
-                        add_token(def->subst[i]);
+                        if (def->replacement[i].param) {
+                            add_token(param);
+                        } else {
+                            add_token(def->replacement[i].token);
+                        }
                     }
                 } else {
                     add_token(t);
@@ -421,7 +472,6 @@ void consume(enum token expected) {
         exit(1);
     }
 }
-
 
 /* Parse and evaluate token stream corresponding to constant expression.
  * Operators handled in preprocessing expressions are: 
@@ -659,7 +709,7 @@ static int eval_primary() {
                 exit(1);
             } else {
                 def = definition(t);
-                return def ? def->subst[0].intval : 0;
+                return def ? def->replacement[0].token.intval : 0;
             }
             return 0;
         case '(':
