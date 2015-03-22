@@ -994,7 +994,30 @@ multiplicative_expression(block_t *block)
 static var_t
 cast_expression(block_t *block)
 {
-    return unary_expression(block);
+    var_t expr;
+    typetree_t *type;
+
+    if (peek() == '(') {
+        consume('(');
+        /* specifier-qualifier-list [abstract-declarator] */
+        type = declaration_specifiers(NULL);
+        if (type) {
+            if (peek() != ')') {
+                type = declarator(type, NULL);
+            }
+            consume(')');
+            expr = cast_expression(block);
+            /* todo: Validate and convert. */
+            expr.type = type;
+        } else {
+            expr = expression(block);
+            consume(')');
+        }
+    } else {
+        expr = unary_expression(block);
+    }
+
+    return expr;
 }
 
 static var_t
