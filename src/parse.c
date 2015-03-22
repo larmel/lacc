@@ -345,6 +345,7 @@ declaration_specifiers(enum storage_class *stc)
                     *type = *(tdef->type);
                     type->flags.fvolatile |= flags.fvolatile;
                     type->flags.fconst |= flags.fconst;
+                    forward_decl = 1; /* hack, means "something was added". */
                 } else {
                     done = 1;   
                 }
