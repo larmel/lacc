@@ -260,6 +260,21 @@ fassembleop(FILE *stream, const op_t op)
             fprintf(stream, "\txorq\t%%rbx, %%rax\n");
             store(stream, AX, op.a);
             break;
+        case IR_OP_EQ:
+            load(stream, op.b, AX);
+            load(stream, op.c, BX);
+            fprintf(stream, "\tcmp\t%%rbx, %%rax\n");
+            fprintf(stream, "\tsetz\t%%al\n");
+            fprintf(stream, "\tmovzx\t%%al, %%rax\n");
+            store(stream, AX, op.a);
+            break;
+        case IR_OP_NOT:
+            load(stream, op.b, AX);
+            fprintf(stream, "\tcmp\t$0, %%rax\n");
+            fprintf(stream, "\tsetz\t%%al\n");
+            fprintf(stream, "\tmovzx\t%%al, %%rax\n");
+            store(stream, AX, op.a);
+            break;
         default:
             assert(0);
     }

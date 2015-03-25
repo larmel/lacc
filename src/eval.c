@@ -5,56 +5,92 @@
 #include "error.h"
 
 #include <assert.h>
+#include <stdarg.h>
 #include <stdlib.h>
 
-
-/* Evaluate a <op> b.
+/* Evaluate a = b <op> c, or unary expression a = <op> b
  *
  * Returns a DIRECT reference to a new temporary, or an immediate value.
  */
 var_t
-eval_expr(block_t *block, optype_t optype, var_t left, var_t right)
+eval_expr(block_t *block, optype_t optype, ...)
 {
+    va_list args;
+
     op_t op;
-    var_t res;
+    var_t res, left, right;
+    const typetree_t *type;
     const symbol_t *temp;
 
-    switch (optype) {
-        case IR_OP_LOGICAL_AND:
-        case IR_OP_LOGICAL_OR:
-        case IR_OP_BITWISE_OR:
-        case IR_OP_BITWISE_XOR:
-        case IR_OP_BITWISE_AND:
-        case IR_OP_ADD:
-            if (left.kind == IMMEDIATE && right.kind == IMMEDIATE &&
-                left.type->type == INTEGER && right.type->type == INTEGER) {
-
-                return var_long(left.value.integer + right.value.integer);
+    va_start(args, optype);
+    left = va_arg(args, var_t);
+    if (NOPERANDS(optype) == 2) {
+        right = va_arg(args, var_t);
+        if (left.kind == IMMEDIATE && right.kind == IMMEDIATE &&
+            left.type->type == INTEGER && right.type->type == INTEGER)
+        {
+            switch (optype) {
+                case IR_OP_LOGICAL_AND:
+                    return var_long(left.value.integer && right.value.integer);
+                case IR_OP_LOGICAL_OR:
+                    return var_long(left.value.integer || right.value.integer);
+                case IR_OP_BITWISE_OR:
+                    return var_long(left.value.integer | right.value.integer);
+                case IR_OP_BITWISE_XOR:
+                    return var_long(left.value.integer ^ right.value.integer);
+                case IR_OP_BITWISE_AND:
+                    return var_long(left.value.integer & right.value.integer);
+                case IR_OP_ADD:
+                    return var_long(left.value.integer + right.value.integer);
+                case IR_OP_SUB:
+                    return var_long(left.value.integer - right.value.integer);
+                case IR_OP_MUL:
+                    return var_long(left.value.integer * right.value.integer);
+                case IR_OP_DIV:
+                    return var_long(left.value.integer / right.value.integer);
+                case IR_OP_MOD:
+                    return var_long(left.value.integer % right.value.integer);
+                case IR_OP_EQ:
+                    return var_long(left.value.integer == right.value.integer);
+                default:
+                    assert(0);
             }
-        case IR_OP_SUB:
-        case IR_OP_MUL:
-            if (left.kind == IMMEDIATE && right.kind == IMMEDIATE &&
-                left.type->type == INTEGER && right.type->type == INTEGER) {
-
-                return var_long(left.value.integer * right.value.integer);
+        }
+        switch (optype) {
+            case IR_OP_EQ:
+            case IR_OP_LOGICAL_AND:
+            case IR_OP_LOGICAL_OR:
+                type = type_init(INTEGER);
+                break;
+            default:
+                type = type_combine(left.type, right.type);
+                break;
+        }
+    } else {
+        if (left.kind == IMMEDIATE &&
+            left.type->type == INTEGER)
+        {
+            switch (optype) {
+                case IR_OP_NOT:
+                    return var_long(!left.value.integer);
+                default:
+                    assert(0);
             }
-        case IR_OP_DIV:
-        case IR_OP_MOD:
-            temp = sym_temp(&ns_ident, type_combine(left.type, right.type));
-            res = var_direct(temp);
-            assert(res.kind != IMMEDIATE);
-            op.a = res;
-            op.b = left;
-            op.c = right;
-            break;
-        default:
-            error("Wrong call of evaluate for non-arithmetic expression.");
-            exit(1);
+        }
+        type = type_init(INTEGER);
     }
 
+    temp = sym_temp(&ns_ident, type);
+    res = var_direct(temp);
+    assert(res.kind != IMMEDIATE);
+
+    op.a = res;
+    op.b = left;
+    op.c = right;
     op.type = optype;
     cfg_ir_append(block, op);
 
+    va_end(args);
     return res;
 }
 

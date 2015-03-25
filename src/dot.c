@@ -115,6 +115,12 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
             case IR_OP_BITWISE_XOR:
                 fprintf(stream, " | %s = %s ^ %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
+            case IR_OP_EQ:
+                fprintf(stream, " | %s = %s == %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
+                break;
+            case IR_OP_NOT:
+                fprintf(stream, " | %s = !%s", vartostr(op.a), vartostr(op.b));
+                break;
         }
     }
     if (node->jump[0] == NULL && node->jump[1] == NULL) {

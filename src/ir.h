@@ -38,16 +38,17 @@ typedef struct variable
     int lvalue;
 } var_t;
 
-/* Three address code
+/* Three address code optypes. Use second least significant hex digit to mark
+ * number of operands. 
  */
 typedef enum optype
 {
-    IR_ASSIGN,      /* a = b */
-    IR_DEREF,       /* a = *b */
-    IR_ADDR,        /* a = &b */
+    IR_ASSIGN = 0,      /* a = b */
+    IR_DEREF,           /* a = *b */
+    IR_ADDR,            /* a = &b */
     IR_PARAM,
-    IR_CALL,        /* a = b() */
-    IR_OP_ADD,
+    IR_CALL,            /* a = b() */
+    IR_OP_ADD = 0x20,
     IR_OP_SUB,
     IR_OP_MUL,
     IR_OP_DIV,
@@ -56,8 +57,12 @@ typedef enum optype
     IR_OP_LOGICAL_OR,
     IR_OP_BITWISE_AND,
     IR_OP_BITWISE_OR,
-    IR_OP_BITWISE_XOR
+    IR_OP_BITWISE_XOR,
+    IR_OP_EQ,           /* a = b == c */
+    IR_OP_NOT = 0x10    /* a = !b */
 } optype_t;
+
+#define NOPERANDS(t) ((int)(t) & 0x20 ? 2 : 1)
 
 typedef struct op {
     enum optype type;
@@ -125,7 +130,7 @@ void cfg_finalize(decl_t *);
 
 /* Interface used in parser to evaluate expressions and add operations to the
  * control flow graph. */
-var_t eval_expr(block_t *, optype_t, var_t, var_t);
+var_t eval_expr(block_t *, optype_t, ...);
 var_t eval_addr(block_t *, var_t);
 var_t eval_deref(block_t *, var_t);
 var_t eval_assign(block_t *, var_t, var_t);

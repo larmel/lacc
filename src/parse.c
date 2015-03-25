@@ -945,7 +945,22 @@ and_expression(block_t *block)
 static var_t
 equality_expression(block_t *block)
 {
-    return relational_expression(block);
+    var_t l, r;
+
+    l = relational_expression(block);
+    while (1) {
+        if (peek() == EQ) {
+            consume(EQ);
+            r = relational_expression(block);
+            l = eval_expr(block, IR_OP_EQ, l, r);
+        } else if (peek() == NEQ) {
+            consume(NEQ);
+            r = relational_expression(block);
+            l = eval_expr(block, IR_OP_NOT, eval_expr(block, IR_OP_EQ, l, r));
+        } else break;
+    }
+
+    return l;
 }
 
 static var_t
@@ -1035,6 +1050,11 @@ unary_expression(block_t *block)
             consume('*');
             expr = cast_expression(block);
             expr = eval_deref(block, expr);
+            break;
+        case '!':
+            consume('!');
+            expr = cast_expression(block);
+            expr = eval_expr(block, IR_OP_NOT, expr);
             break;
         case SIZEOF:
             consume(SIZEOF);
