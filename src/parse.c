@@ -1056,6 +1056,16 @@ unary_expression(block_t *block)
             expr = cast_expression(block);
             expr = eval_expr(block, IR_OP_NOT, expr);
             break;
+        case '+':
+            consume('+');
+            expr = cast_expression(block);
+            expr.lvalue = 0;
+            break;
+        case '-':
+            consume('-');
+            expr = cast_expression(block);
+            expr = eval_expr(block, IR_OP_SUB, var_long(0), expr);
+            break;
         case SIZEOF:
             consume(SIZEOF);
             if (peek() == '(') {
