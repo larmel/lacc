@@ -43,11 +43,11 @@ typedef struct variable
  */
 typedef enum optype
 {
-    IR_ASSIGN = 0,      /* a = b */
-    IR_DEREF,           /* a = *b */
-    IR_ADDR,            /* a = &b */
+    IR_ASSIGN = 0,      /* a = b      */
+    IR_DEREF,           /* a = *b     */
+    IR_ADDR,            /* a = &b     */
     IR_PARAM,
-    IR_CALL,            /* a = b() */
+    IR_CALL,            /* a = b()    */
     IR_OP_ADD = 0x20,
     IR_OP_SUB,
     IR_OP_MUL,
@@ -59,7 +59,9 @@ typedef enum optype
     IR_OP_BITWISE_OR,
     IR_OP_BITWISE_XOR,
     IR_OP_EQ,           /* a = b == c */
-    IR_OP_NOT = 0x10    /* a = !b */
+    IR_OP_GE,           /* a = b >= c */
+    IR_OP_GT,           /* a = b > c  */
+    IR_OP_NOT = 0x10    /* a = !b     */
 } optype_t;
 
 #define NOPERANDS(t) ((int)(t) & 0x20 ? 2 : 1)

@@ -966,7 +966,35 @@ equality_expression(block_t *block)
 static var_t
 relational_expression(block_t *block)
 {
-    return shift_expression(block);
+    var_t l, r;
+
+    l = shift_expression(block);
+    while (1) {
+        switch (peek()) {
+            case '<':
+                consume('<');
+                r = shift_expression(block);
+                l = eval_expr(block, IR_OP_GT, r, l);
+                break;
+            case '>':
+                consume('>');
+                r = shift_expression(block);
+                l = eval_expr(block, IR_OP_GT, l, r);
+                break;
+            case LEQ:
+                consume(LEQ);
+                r = shift_expression(block);
+                l = eval_expr(block, IR_OP_GE, r, l);
+                break;
+            case GEQ:
+                consume(GEQ);
+                r = shift_expression(block);
+                l = eval_expr(block, IR_OP_GE, l, r);
+                break;
+            default:
+                return l;
+        }
+    }
 }
 
 static var_t

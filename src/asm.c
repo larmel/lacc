@@ -273,6 +273,22 @@ fassembleop(FILE *stream, const op_t op)
             fprintf(stream, "\tmovzx\t%%al, %%rax\n");
             store(stream, AX, op.a);
             break;
+        case IR_OP_GE:
+            load(stream, op.b, AX);
+            load(stream, op.c, BX);
+            fprintf(stream, "\tcmp\t%%rbx, %%rax\n");
+            fprintf(stream, "\tsetge\t%%al\n");
+            fprintf(stream, "\tmovzx\t%%al, %%rax\n");
+            store(stream, AX, op.a);
+            break;
+        case IR_OP_GT:
+            load(stream, op.b, AX);
+            load(stream, op.c, BX);
+            fprintf(stream, "\tcmp\t%%rbx, %%rax\n");
+            fprintf(stream, "\tsetg\t%%al\n");
+            fprintf(stream, "\tmovzx\t%%al, %%rax\n");
+            store(stream, AX, op.a);
+            break;
         case IR_OP_NOT:
             load(stream, op.b, AX);
             fprintf(stream, "\tcmp\t$0, %%rax\n");
