@@ -84,10 +84,12 @@ refer(const var_t var)
                     sprintf(str, "$%s", var.value.string);
                     break;
                 case INTEGER:
+                case POINTER:
                     sprintf(str, "$%ld", var.value.integer);
                     break;
                 default:
-                    assert(0);
+                    internal_error("Refer to symbol with type %s.", typetostr(var.type));
+                    exit(1);
             }
             break;
         default:
@@ -154,7 +156,8 @@ store(FILE *stream, reg_t source, var_t var)
             }
             break;
         default:
-            assert(0);
+            internal_error("Store immediate value with type %s.", typetostr(var.type));
+            exit(1);
     }
 }
 
@@ -212,7 +215,9 @@ fassembleop(FILE *stream, const op_t op)
             for (i = op.b.type->n_args - 1; i >= 0; --i) {
                 fprintf(stream, "\tpopq\t%%%s\t\t# restore\n", reg(pregs[i], 8));
             }
-            store(stream, AX, op.a);
+            if (op.a.type->type != NONE) {
+                store(stream, AX, op.a);
+            }
             break;
         case IR_ADDR:
             fprintf(stream, "\tleaq\t%s, %%rax\n", refer(op.b));
@@ -298,7 +303,9 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
     }
 
     if (block->jump[0] == NULL && block->jump[1] == NULL) {
-        load(stream, block->expr, AX);
+        if (block->expr.type->type != NONE) {
+            load(stream, block->expr, AX);
+        }
         fprintf(stream, "\tleaveq\n");
         fprintf(stream, "\tretq\n");
     } else if (block->jump[1] == NULL) {
