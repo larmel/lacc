@@ -56,7 +56,8 @@ static char *create_path(const char *dir, const char *name)
     return path;
 }
 
-void include_file(const char *name)
+/* First search current directory, then go through list of search paths. */
+static void include_file_internal(const char *name, int incurrent)
 {
     source_t *source;
     char *path;
@@ -64,17 +65,22 @@ void include_file(const char *name)
 
     source = calloc(1, sizeof(source_t));
     source->name = strdup(name);
-    source->directory = directory;
 
-    /* First search current directory, then go through list of searh paths. */
-    path = create_path(directory, name);
-    if (!(source->file = fopen(path, "r"))) {
-        for (i = search_path_count - 1; i >= 0 && !source->file; --i) {
+    if (incurrent) {
+        path = create_path(directory, name);
+        source->file = fopen(path, "r");
+        source->directory = directory;
+    }
+
+    for (i = search_path_count - 1; i >= 0 && !source->file; --i) {
+        if (incurrent) {
             free(path);
-            path = create_path(search_path[i], name);
-            source->directory = search_path[i];
-            source->file = fopen(path, "r");
+        } else {
+            i--; /* hack: skip invocation dir. */
         }
+        path = create_path(search_path[i], name);
+        source->directory = search_path[i];
+        source->file = fopen(path, "r");
     }
 
     free(path);
@@ -87,6 +93,16 @@ void include_file(const char *name)
     filename = source->name;
     directory = source->directory;
     stack_push(&sources, source);
+}
+
+void include_file(const char *name)
+{
+    include_file_internal(name, 1);
+}
+
+void include_system_file(const char *name)
+{
+    include_file_internal(name, 0);
 }
 
 /* Clean up all dynamically allocated resources. */

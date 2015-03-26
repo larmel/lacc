@@ -324,11 +324,13 @@ static void preprocess_directive()
         }
         else if (t.token == IDENTIFIER && !strcmp("include", t.strval)) {
             char *path = NULL;
+            int angles = 0;
             if (peek_raw_token() == STRING) {
                 t = next_raw_token();
                 path = (char*) t.strval;
             } else if (peek_raw_token() == '<') {
                 consume_raw_token('<');
+                angles = 1;
                 while (peek_raw_token() != END) {
                     if (peek_raw_token() == '>') {
                         break;
@@ -342,7 +344,11 @@ static void preprocess_directive()
                 error("Invalid include directive.");
                 exit(1);
             }
-            include_file(path);
+            if (angles) {
+                include_system_file(path);
+            } else {
+                include_file(path);
+            }
         }
         else if (t.token == IDENTIFIER && !strcmp("error", t.strval)) {
             error("%s", tok + 1);

@@ -13,6 +13,7 @@ void add_include_search_path(const char *);
 
 /* Push new include file. */
 void include_file(const char *);
+void include_system_file(const char *);
 
 /* Yield next line ready for further preprocessing. Comments and all-whitespace
  * lines are removed. */
