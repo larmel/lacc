@@ -573,9 +573,9 @@ static typetree_t *
 parameter_list(const typetree_t *base)
 {
     typetree_t *type;
-    const typetree_t **args = NULL;
-    const char **params = NULL;
-    int nargs = 0;
+
+    type = type_init(FUNCTION);
+    type->next = base;
 
     while (peek() != ')') {
         const char *name;
@@ -592,11 +592,11 @@ parameter_list(const typetree_t *base)
             decl = ptr;
         }
 
-        nargs++;
-        args   = realloc(args, sizeof(typetree_t *) * nargs);
-        params = realloc(params, sizeof(char *) * nargs);
-        args[nargs - 1]   = decl;
-        params[nargs - 1] = name;
+        type->n_args++;
+        type->args   = realloc(type->args, sizeof(typetree_t *) * type->n_args);
+        type->params = realloc(type->params, sizeof(char *) * type->n_args);
+        type->args[type->n_args - 1]   = decl;
+        type->params[type->n_args - 1] = name;
 
         if (peek() != ',')
             break;
@@ -606,16 +606,12 @@ parameter_list(const typetree_t *base)
             error("Unexpected trailing comma in parameter list.");
             exit(1);
         } else if (peek() == DOTS) {
-            consume(DOTS); /* todo: add vararg type */
+            consume(DOTS);
+            type->vararg = 1;
             break;
         }
     }
 
-    type = type_init(FUNCTION);
-    type->next = base;
-    type->n_args = nargs;
-    type->args = args;
-    type->params = params;
     return type;
 }
 
@@ -1152,7 +1148,7 @@ postfix_expression(block_t *block)
 
     do {
         var_t expr, copy, *arg;
-        int i;
+        int i, j;
 
         switch (peek()) {
             case '[':
@@ -1185,10 +1181,17 @@ postfix_expression(block_t *block)
                     if (i < root.type->n_args - 1)
                         consume(',');
                 }
+                while (root.type->vararg && peek() != ')') {
+                    consume(',');
+                    arg = realloc(arg, (i + 1) * sizeof(var_t));
+                    arg[i] = assignment_expression(block);
+                    i++;
+                }
                 consume(')');
 
-                for (i = 0; i < root.type->n_args; ++i)
-                    param(block, arg[i]);
+                for (j = 0; j < i; ++j)
+                    param(block, arg[j]);
+
                 root = eval_call(block, root);
 
                 free(arg);

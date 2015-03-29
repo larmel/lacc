@@ -33,6 +33,7 @@ typedef struct typetree
     const struct typetree **args;
     const char **params;
     unsigned n_args;
+    int vararg;
 
     /* Function return value, pointer target, or array base. */
     const struct typetree *next;
