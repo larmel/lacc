@@ -13,7 +13,9 @@ bin/util/%.o: src/util/%.c
 	cc -Wall -Wpedantic -c $< -o $@
 
 test: bin/lcc
-	./testrunner.sh
+	@for file in test/*.c; do \
+		./check.sh $$file ; \
+	done
 
 clean:
 	rm -rf bin/*
