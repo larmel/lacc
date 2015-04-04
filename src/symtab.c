@@ -130,7 +130,7 @@ sym_lookup(namespace_t *ns, const char *name)
  * variables. This is x86_64 specific, wrong if params cannot fit in registers.
  */
 symbol_t *
-sym_add(namespace_t *ns, const char *name, const typetree_t *type, enum storage_class stc)
+sym_add(namespace_t *ns, const char *name, const typetree_t *type)
 {
     symbol_t *symbol;
 
@@ -147,7 +147,11 @@ sym_add(namespace_t *ns, const char *name, const typetree_t *type, enum storage_
         symbol_t sym = {0};
         sym.name = strdup(name);
         sym.type = type;
-        sym.storage = stc;
+
+        /* External declarations are by default tentative. */
+        if (ns->depth == 0) {
+            sym.symtype = SYM_TENTATIVE;
+        }
 
         if (ns->depth == 1) {
             sym.param_n = ns->param_number++;
@@ -179,7 +183,6 @@ sym_temp(namespace_t *ns, const typetree_t *type)
     symbol_t sym = {0};
     sym.name = strdup( prefixed_temporary_name('t') );
     sym.type = type;
-    sym.storage = STC_AUTO;
 
     if (ns->depth == 1) {
         ns->var_stack_offset += type->size;
@@ -217,7 +220,10 @@ sym_temp_static(namespace_t *ns, const typetree_t *type)
 void
 register_builtin_types(namespace_t *ns)
 {
-    sym_add(ns, "__builtin_va_list", type_init(OBJECT), STC_TYPEDEF);
+    symbol_t *sym;
+
+    sym = sym_add(ns, "__builtin_va_list", type_init(OBJECT));
+    sym->symtype = SYM_TYPEDEF;
 }
 
 void
@@ -230,18 +236,22 @@ dump_symtab(namespace_t *ns)
         printf("namespace %s:\n", ns->name);
     }
     for (i = 0; i < ns->size; ++i) {
+        symtype_t st = ns->symbol[i]->symtype;
+
         printf("%*s", ns->symbol[i]->depth * 2, "");
-        if (ns->symbol[i]->storage != STC_NONE) {
-            enum storage_class stc = ns->symbol[i]->storage;
-            printf("%s ", 
-                (stc == STC_AUTO) ? "auto" : 
-                (stc == STC_STATIC) ? "static" :
-                (stc == STC_TYPEDEF) ? "typedef" : "extern");
+        if (ns->symbol[i]->linkage != LINK_NONE) {
+            printf("%s ", (ns->symbol[i]->linkage == LINK_INTERN) ? "internal" : "external");
         }
+        printf("%s ",
+            (st == SYM_TENTATIVE) ? "tentative" : 
+            (st == SYM_DEFINITION) ? "definition" :
+            (st == SYM_TYPEDEF) ? "typedef" : "enum");
+
         printf("%s :: ", ns->symbol[i]->name);
         tstr = typetostr(ns->symbol[i]->type);
         printf("%s", tstr);
         free(tstr);
+
         printf(", size=%d", ns->symbol[i]->type->size);
         if (ns->symbol[i]->param_n) {
             if (ns->symbol[i]->stack_offset > 0) {
@@ -253,7 +263,7 @@ dump_symtab(namespace_t *ns)
         if (ns->symbol[i]->stack_offset < 0) {
             printf(" (auto: %d)", ns->symbol[i]->stack_offset);
         }
-        if (ns->symbol[i]->storage == STC_NONE) {
+        if (ns->symbol[i]->symtype == SYM_ENUM) {
             printf(", value=%d", ns->symbol[i]->enum_value);
         }
         printf("\n");

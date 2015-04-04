@@ -369,7 +369,9 @@ assemble_immediate(FILE *stream, var_t target, var_t val)
     value = val.value;
 
     if (!target.offset) {
-        fprintf(stream, "\t.globl\t%s\n", symbol->name);
+        if (symbol->linkage == LINK_EXTERN) {
+            fprintf(stream, "\t.globl\t%s\n", symbol->name);
+        }
         fprintf(stream, "%s:\n", symbol->name);
     }
     switch (target.type->type) {
@@ -416,8 +418,9 @@ assemble_function(FILE *stream, const symbol_t *sym, block_t *body, int locals_s
     map_init(&memo);
 
     fprintf(stream, "\t.text\n");
-    fprintf(stream, "\t.globl\t%s\n", sym->name);
-
+    if (sym->linkage == LINK_EXTERN) {
+        fprintf(stream, "\t.globl\t%s\n", sym->name);
+    }
     fprintf(stream, "%s:\n", sym->name);
     fprintf(stream, "\tpushq\t%%rbp\n");
     fprintf(stream, "\tmovq\t%%rsp, %%rbp\n");

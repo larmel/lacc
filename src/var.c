@@ -9,7 +9,7 @@ var_direct(const symbol_t *symbol)
 {
     var_t var = {0};
     var.type = symbol->type;
-    if (symbol->storage == STC_NONE) {
+    if (symbol->symtype == SYM_ENUM) {
         var.kind = IMMEDIATE;
         var.value.integer = symbol->enum_value;
     } else {

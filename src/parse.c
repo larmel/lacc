@@ -11,7 +11,7 @@
 #include <string.h>
 
 static block_t *declaration(block_t *, const symbol_t **);
-static typetree_t *declaration_specifiers(enum storage_class *);
+static typetree_t *declaration_specifiers(enum token *);
 static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
 static typetree_t *direct_declarator(typetree_t *, const char **);
@@ -66,11 +66,10 @@ parse()
 static block_t *
 declaration(block_t *parent, const symbol_t **symbol)
 {
-    static int in_function;
-
     typetree_t *base;
-    enum storage_class stc;
+    enum token stc;
 
+    stc = (ns_ident.depth == 0) ? EXTERN : AUTO;
     base = declaration_specifiers(&stc);
 
     while (1) {
@@ -80,16 +79,26 @@ declaration(block_t *parent, const symbol_t **symbol)
 
         name = NULL;
         type = declarator(base, &name);
-        if (name) {
-            if (type->type != FUNCTION && in_function) {
-                stc = STC_AUTO;
-            }
-            sym = sym_add(&ns_ident, name, type, stc);
-            free((void *) name);
-        } else {
+        if (!name) {
             consume(';');
             return parent;
         }
+
+        sym = sym_add(&ns_ident, name, type);
+        switch (stc) {
+            case EXTERN:
+                sym->linkage = LINK_EXTERN;
+                break;
+            case STATIC:
+                sym->linkage = LINK_INTERN;
+                break;
+            case TYPEDEF:
+                sym->symtype = SYM_TYPEDEF;
+                break;
+            default:
+                break;
+        }
+        free((void *) name);
 
         switch (peek()) {
             case ';':
@@ -120,7 +129,6 @@ declaration(block_t *parent, const symbol_t **symbol)
                     error("Invalid function definition.");
                     exit(1);
                 }
-                in_function = 1;
 
                 push_scope(&ns_ident);
                 for (i = 0; i < type->n_args; ++i) {
@@ -128,13 +136,12 @@ declaration(block_t *parent, const symbol_t **symbol)
                         error("Missing parameter name at position %d.", i + 1);
                         exit(1);
                     }
-                    sym_add(&ns_ident, type->params[i], type->args[i], STC_AUTO);
+                    sym_add(&ns_ident, type->params[i], type->args[i]);
                 }
                 parent = block(parent);
                 *symbol = sym;
                 pop_scope(&ns_ident);
 
-                in_function = 0;
                 return parent;
             }
             default:
@@ -234,7 +241,7 @@ struct_declaration_list(typetree_t *obj)
                 error("Invalid struct member declarator.");
                 exit(1);
             }
-            sym_add(&ns, name, member, STC_NONE);
+            sym_add(&ns, name, member);
 
             obj->n_args++;
             obj->args = realloc(obj->args, sizeof(typetree_t *) * obj->n_args);
@@ -269,7 +276,8 @@ enumerator_list()
 
     while (1) {
         consume(IDENTIFIER);
-        sym = sym_add(&ns_ident, strval, type, STC_NONE);
+        sym = sym_add(&ns_ident, strval, type);
+        sym->symtype = SYM_ENUM;
         if (peek() == '=') {
             consume('=');
             val = constant_expression();
@@ -290,8 +298,6 @@ enumerator_list()
 /* Parse type, storage class and qualifiers. Assume integer type by default.
  * Storage class is returned as token value, and error is raised if there are
  * more than one storage class given.
- * At most one storage class can be specified, fallback to STC_EXTERN if none
- * is provided. This is correct in all cases except for automatic variables.
  * If stc is NULL, parse specifier_qualifier_list and give an error for any 
  * storage class present.
  *
@@ -299,15 +305,15 @@ enumerator_list()
  * specifier, NULL is returned.
  */
 static typetree_t *
-declaration_specifiers(enum storage_class *stc)
+declaration_specifiers(enum token *stc)
 {
     int done, forward_decl;
-    enum token stt;
+    enum token sttok;
     typetree_t *type;
 
     type = type_init(INTEGER);
     type->size = 0;
-    stt  = '$';
+    sttok = '$';
     done = forward_decl = 0;
 
     do {
@@ -325,11 +331,11 @@ declaration_specifiers(enum storage_class *stc)
             case STATIC:
             case EXTERN:
             case TYPEDEF:
-                if (stt != '$')
+                if (sttok != '$')
                     error("Only one storage class specifier allowed.");
                 if (!stc)
                     error("Storage class specifier not allowed in specifier-qualifier-list.");
-                stt = token();
+                sttok = token();
                 break;
             case IDENTIFIER:
             {
@@ -337,7 +343,7 @@ declaration_specifiers(enum storage_class *stc)
                 flags_t flags;
 
                 tdef = sym_lookup(&ns_ident, strval);
-                if (tdef && tdef->storage == STC_TYPEDEF) {
+                if (tdef && tdef->symtype == SYM_TYPEDEF) {
                     consume(IDENTIFIER);
                     if (type->size)
                         error("Cannot combine type definition %s with other type specifiers.", strval);
@@ -387,7 +393,6 @@ declaration_specifiers(enum storage_class *stc)
             case VOID:
                 consume(VOID);
                 type->type = NONE;
-                type->size = 8;
                 break;
             case STRUCT:
             case UNION:
@@ -402,7 +407,7 @@ declaration_specifiers(enum storage_class *stc)
                         done = 1;
                         break;
                     }
-                    sym_add(&ns_tag, strval, type, STC_NONE);
+                    sym_add(&ns_tag, strval, type);
                     if (peek() != '{') {
                         done = forward_decl = 1;
                         break;
@@ -420,7 +425,7 @@ declaration_specifiers(enum storage_class *stc)
                     const char *ident = strval;
                     consume(IDENTIFIER);
                     if (peek() == '{') {
-                        sym_add(&ns_tag, ident, type, STC_NONE);
+                        sym_add(&ns_tag, ident, type);
                     } else {
                         done = 1;
                         break;
@@ -435,12 +440,9 @@ declaration_specifiers(enum storage_class *stc)
         }
     } while (!done);
 
-    if (stc) {
-        *stc = ((stt == AUTO || stt == REGISTER) ? STC_AUTO :
-                (stt == STATIC) ? STC_STATIC :
-                (stt == TYPEDEF) ? STC_TYPEDEF : STC_EXTERN);
+    if (stc && sttok != '$') {
+        *stc = sttok;
     }
-
     return (type->size || forward_decl) ? type : NULL;
 }
 
@@ -579,7 +581,7 @@ parameter_list(const typetree_t *base)
 
     while (peek() != ')') {
         const char *name;
-        enum storage_class stc;
+        enum token stc;
         typetree_t *decl;
 
         name = NULL;
@@ -810,7 +812,7 @@ statement(block_t *parent)
         case IDENTIFIER:
         {
             const symbol_t *def;
-            if ((def = sym_lookup(&ns_ident, strval)) && def->storage == STC_TYPEDEF) {
+            if ((def = sym_lookup(&ns_ident, strval)) && def->symtype == SYM_TYPEDEF) {
                 node = declaration(parent, &def);
                 break;
             }

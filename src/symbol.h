@@ -4,26 +4,33 @@
 #include "type.h"
 
 
-/* Storage of a symbol, as specified with storage-class-specifier.
- */
-enum storage_class {
-    STC_NONE,
-    STC_AUTO,
-    STC_EXTERN,
-    STC_STATIC,
-    STC_TYPEDEF
-};
+typedef enum symtype {
+    SYM_DEFINITION = 0,
+    SYM_TENTATIVE,
+    SYM_TYPEDEF,
+    SYM_ENUM
+} symtype_t;
+
+/* Linkage is internal iff storage class is static, otherwise linkage is 
+ * external. */
+typedef enum linkage {
+    LINK_NONE = 0,
+    LINK_INTERN,
+    LINK_EXTERN
+} linkage_t;
 
 /* A symbol represents declarations that may have a storage location at runtime,
  * such as functions, static and local variables. Store offset to base pointer
- * for automatic variables and function arguments.
- */
+ * for automatic variables and function arguments. */
 typedef struct symbol {
+    symtype_t symtype;
+    linkage_t linkage;
+
     const char *name;
     const typetree_t *type;
 
     /* Enumeration constants live in the normal symbol table, and always have
-     * integer type. Denoted by storage class STC_NONE. */
+     * integer type. Denoted by symtype SYM_ENUM. */
     int enum_value;
 
     /* The n'th function argument. 1-indexed to keep 0 default. */
@@ -32,8 +39,8 @@ typedef struct symbol {
     /* Argument or local variable offset to base pointer. */
     int stack_offset;
 
+    /* Scope depth. */
     int depth;
-    enum storage_class storage;
 } symbol_t;
 
 
@@ -64,7 +71,7 @@ typedef struct namespace {
 
 } namespace_t;
 
-extern namespace_t ns_ident, ns_label, ns_tag;
+namespace_t ns_ident, ns_label, ns_tag;
 
 void push_scope(namespace_t *);
 
@@ -78,7 +85,7 @@ void dump_symtab(namespace_t *);
  * symbol and register it to current scope.
  */
 symbol_t *sym_lookup(namespace_t *, const char *);
-symbol_t *sym_add(namespace_t *, const char *, const typetree_t *, enum storage_class);
+symbol_t *sym_add(namespace_t *, const char *, const typetree_t *);
 
 const symbol_t *sym_temp(namespace_t *, const typetree_t *);
 const symbol_t *sym_temp_static(namespace_t *, const typetree_t *);
