@@ -256,13 +256,31 @@ fassembleop(FILE *stream, const op_t op)
         case IR_OP_BITWISE_AND:
             load(stream, op.b, AX);
             load(stream, op.c, BX);
-            fprintf(stream, "\tandq\t%%rbx, %%rax\n");
+            fprintf(stream, "\tand\t%%rbx, %%rax\n");
             store(stream, AX, op.a);
             break;
         case IR_OP_BITWISE_XOR:
             load(stream, op.b, AX);
             load(stream, op.c, BX);
-            fprintf(stream, "\txorq\t%%rbx, %%rax\n");
+            fprintf(stream, "\txor\t%%rbx, %%rax\n");
+            store(stream, AX, op.a);
+            break;
+        case IR_OP_LOGICAL_AND:
+            load(stream, op.b, AX);
+            load(stream, op.c, BX);
+            fprintf(stream, "\tand\t%%rbx, %%rax\n");
+            fprintf(stream, "\tcmp\t$0, %%rax\n");
+            fprintf(stream, "\tsetg\t%%al\n");
+            fprintf(stream, "\tmovzx\t%%al, %%rax\n");
+            store(stream, AX, op.a);
+            break;
+        case IR_OP_LOGICAL_OR:
+            load(stream, op.b, AX);
+            load(stream, op.c, BX);
+            fprintf(stream, "\tor\t%%rbx, %%rax\n");
+            fprintf(stream, "\tcmp\t$0, %%rax\n");
+            fprintf(stream, "\tsetg\t%%al\n");
+            fprintf(stream, "\tmovzx\t%%al, %%rax\n");
             store(stream, AX, op.a);
             break;
         case IR_OP_EQ:
@@ -297,7 +315,8 @@ fassembleop(FILE *stream, const op_t op)
             store(stream, AX, op.a);
             break;
         default:
-            assert(0);
+            internal_error("%s", "IR_OP not implemented.");
+            exit(1);
     }
 }
 

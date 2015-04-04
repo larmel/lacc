@@ -5,8 +5,9 @@ int main() {
 
 	int c = a == b == 2;
 	int d = c < 2 > c >= 1;
+	int e = d && c || 1;
 
 	c = !c + +a != -7;
 
-	return - -c + d;
+	return - -c + d + e;
 }
