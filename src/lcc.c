@@ -82,6 +82,7 @@ int main(int argc, char* argv[])
     pop_scope(&ns_ident);
 
     if (assembly) {
+        output_definitions(output);
         output_strings(output);
     }
 

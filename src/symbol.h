@@ -3,16 +3,18 @@
 
 #include "type.h"
 
+#include <stdio.h>
+
 
 typedef enum symtype {
     SYM_DEFINITION = 0,
     SYM_TENTATIVE,
+    SYM_DECLARATION,
     SYM_TYPEDEF,
     SYM_ENUM
 } symtype_t;
 
-/* Linkage is internal iff storage class is static, otherwise linkage is 
- * external. */
+/* Visibility of external declarations, or NONE for other symbols. */
 typedef enum linkage {
     LINK_NONE = 0,
     LINK_INTERN,
@@ -28,6 +30,9 @@ typedef struct symbol {
 
     const char *name;
     const typetree_t *type;
+
+    /* Tag to disambiguate differently scoped static variables with same name. */
+    int n;
 
     /* Enumeration constants live in the normal symbol table, and always have
      * integer type. Denoted by symtype SYM_ENUM. */
@@ -85,12 +90,14 @@ void dump_symtab(namespace_t *);
  * symbol and register it to current scope.
  */
 symbol_t *sym_lookup(namespace_t *, const char *);
-symbol_t *sym_add(namespace_t *, const char *, const typetree_t *);
+symbol_t *sym_add(namespace_t *, symbol_t);
 
 const symbol_t *sym_temp(namespace_t *, const typetree_t *);
 const symbol_t *sym_temp_static(namespace_t *, const typetree_t *);
 
 void register_builtin_types(namespace_t *);
+
+void output_definitions(FILE *);
 
 
 #endif

@@ -39,6 +39,8 @@ static decl_t *decl;
 decl_t *
 parse()
 {
+    static int done_last_iteration;
+
     decl = cfg_create();
     decl->head = cfg_block_init(decl);
     decl->body = cfg_block_init(decl);
@@ -55,6 +57,22 @@ parse()
         }
     }
 
+    if (!done_last_iteration) {
+        int i, found;
+        symbol_t *sym;
+        for (i = found = 0; i < ns_ident.size; ++i) {
+            sym = ns_ident.symbol[i];
+            if (sym->symtype == SYM_TENTATIVE && sym->linkage == LINK_INTERN) {
+                found = 1;
+                eval_assign(decl->head, var_direct(sym), var_long(0));
+            }
+        }
+
+        done_last_iteration = 1;
+        if (found)
+            return decl;
+    }
+
     cfg_finalize(decl);
     return NULL;
 }
@@ -67,51 +85,67 @@ static block_t *
 declaration(block_t *parent, const symbol_t **symbol)
 {
     typetree_t *base;
-    enum token stc;
+    symbol_t arg = {0};
+    enum token stc = '$';
 
-    stc = (ns_ident.depth == 0) ? EXTERN : AUTO;
     base = declaration_specifiers(&stc);
+    switch (stc) {
+        case EXTERN:
+            arg.symtype = SYM_DECLARATION;
+            arg.linkage = LINK_EXTERN;
+            break;
+        case STATIC:
+            arg.symtype = SYM_TENTATIVE;
+            arg.linkage = LINK_INTERN;
+            break;
+        case TYPEDEF:
+            arg.symtype = SYM_TYPEDEF;
+            break;
+        default:
+            if (!ns_ident.depth) {
+                arg.symtype = SYM_TENTATIVE;
+                arg.linkage = LINK_EXTERN;
+            } else {
+                arg.symtype = SYM_DEFINITION;
+                arg.linkage = LINK_NONE;
+            }
+            break;
+    }
 
     while (1) {
-        typetree_t *type;
         symbol_t *sym;
-        const char *name;
 
-        name = NULL;
-        type = declarator(base, &name);
-        if (!name) {
+        arg.name = NULL;
+        arg.type = declarator(base, &arg.name);
+        if (!arg.name) {
             consume(';');
             return parent;
         }
 
-        sym = sym_add(&ns_ident, name, type);
-        switch (stc) {
-            case EXTERN:
-                sym->linkage = LINK_EXTERN;
-                break;
-            case STATIC:
-                sym->linkage = LINK_INTERN;
-                break;
-            case TYPEDEF:
-                sym->symtype = SYM_TYPEDEF;
-                break;
-            default:
-                break;
-        }
-        free((void *) name);
+        sym = sym_add(&ns_ident, arg);
+        assert(sym->type);
 
         switch (peek()) {
             case ';':
                 consume(';');
                 return parent;
             case '=': {
-                const typetree_t *init_type;
+                const typetree_t *type;
 
+                if (sym->symtype == SYM_DECLARATION) {
+                    error("Symbol '%s' was declared extern and cannot be initialized.", sym->name);
+                }
+                if (!sym->depth && sym->symtype == SYM_DEFINITION) {
+                    error("Symbol '%s' was already defined.", sym->name);
+                    exit(1);
+                }
                 consume('=');
-                init_type = initializer((!sym->depth ? decl->head : parent), var_direct(sym));
-                if (!type->size) {
-                    sym->type = type_complete(sym->type, init_type);
-                    if (sym->depth > 1) {
+                sym->symtype = SYM_DEFINITION;
+                type = initializer(
+                    (!sym->depth || sym->n ? decl->head : parent), var_direct(sym));
+                if (!sym->type->size) {
+                    sym->type = type_complete(sym->type, type);
+                    if (sym->depth > 1) { /* can this happen? */
                         ns_ident.var_stack_offset -= sym->type->size;
                         sym->stack_offset = ns_ident.var_stack_offset;
                     }
@@ -125,18 +159,25 @@ declaration(block_t *parent, const symbol_t **symbol)
             }
             case '{': {
                 int i;
-                if (type->type != FUNCTION || sym->depth > 0) {
+                if (sym->type->type != FUNCTION || sym->depth) {
                     error("Invalid function definition.");
                     exit(1);
                 }
+                sym->symtype = SYM_DEFINITION;
 
                 push_scope(&ns_ident);
-                for (i = 0; i < type->n_args; ++i) {
-                    if (!type->params[i]) {
+                for (i = 0; i < sym->type->n_args; ++i) {
+                    symbol_t sarg = {
+                        SYM_DEFINITION,
+                        LINK_NONE,
+                    };
+                    sarg.name = sym->type->params[i];
+                    sarg.type = sym->type->args[i];
+                    if (!sym->type->params[i]) {
                         error("Missing parameter name at position %d.", i + 1);
                         exit(1);
                     }
-                    sym_add(&ns_ident, type->params[i], type->args[i]);
+                    sym_add(&ns_ident, sarg);
                 }
                 parent = block(parent);
                 *symbol = sym;
@@ -147,6 +188,7 @@ declaration(block_t *parent, const symbol_t **symbol)
             default:
                 break;
         }
+
         consume(',');
     }
 }
@@ -216,6 +258,8 @@ initializer(block_t *block, var_t target)
     return type;
 }
 
+/* Maybe a bit too clever here: overwriting existing typetree object already in
+ * symbol table. */
 static void
 struct_declaration_list(typetree_t *obj)
 {
@@ -232,24 +276,23 @@ struct_declaration_list(typetree_t *obj)
         }
 
         do {
-            typetree_t *member;
-            const char *name;
+            symbol_t member = {0};
 
-            name = NULL;
-            member = declarator(base, &name);
-            if (!name) {
+            member.type = declarator(base, &member.name);
+            if (!member.name) {
                 error("Invalid struct member declarator.");
                 exit(1);
             }
-            sym_add(&ns, name, member);
+
+            sym_add(&ns, member);
 
             obj->n_args++;
             obj->args = realloc(obj->args, sizeof(typetree_t *) * obj->n_args);
             obj->params = realloc(obj->params, sizeof(char *) * obj->n_args);
 
-            obj->args[obj->n_args - 1] = member;
-            obj->params[obj->n_args - 1] = name;
-            obj->size += member->size;
+            obj->args[obj->n_args - 1] = member.type;
+            obj->params[obj->n_args - 1] = member.name;
+            obj->size += member.type->size;
 
             if (peek() == ',') {
                 consume(',');
@@ -266,31 +309,31 @@ struct_declaration_list(typetree_t *obj)
 static void
 enumerator_list()
 {
-    typetree_t *type;
-    symbol_t *sym;
-    var_t val;
-    int i;
+    symbol_t arg = { SYM_ENUM };
 
-    i = 0;
-    type = type_init(INTEGER);
+    arg.type = type_init(INTEGER);
 
     while (1) {
         consume(IDENTIFIER);
-        sym = sym_add(&ns_ident, strval, type);
-        sym->symtype = SYM_ENUM;
+        arg.name = strdup(strval);
         if (peek() == '=') {
+            var_t val;
+
             consume('=');
             val = constant_expression();
-            if (val.type->type != type->type) {
+            if (val.type->type != INTEGER) {
                 error("Implicit conversion from non-integer type in enum declaration.");
             }
-            i = val.value.integer;
+            arg.enum_value = val.value.integer;
         }
-        sym->enum_value = i++;
+
+        sym_add(&ns_ident, arg);
+        arg.enum_value++;
         if (peek() != '}') {
             consume(',');
             continue;
         }
+
         break;
     }
 }
@@ -345,8 +388,9 @@ declaration_specifiers(enum token *stc)
                 tdef = sym_lookup(&ns_ident, strval);
                 if (tdef && tdef->symtype == SYM_TYPEDEF) {
                     consume(IDENTIFIER);
-                    if (type->size)
+                    if (type->size && !type_equal(type, tdef->type)) {
                         error("Cannot combine type definition %s with other type specifiers.", strval);
+                    }
                     flags = type->flags;
                     *type = *(tdef->type);
                     type->flags.fvolatile |= flags.fvolatile;
@@ -394,47 +438,77 @@ declaration_specifiers(enum token *stc)
                 consume(VOID);
                 type->type = NONE;
                 break;
-            case STRUCT:
             case UNION:
-                token();
+            case STRUCT: {
+                symbol_t *tag = NULL;
+
+                consume(STRUCT);
                 type->type = OBJECT;
                 if (peek() == IDENTIFIER) {
-                    symbol_t *tag;
                     consume(IDENTIFIER);
                     tag = sym_lookup(&ns_tag, strval);
-                    if (tag) {
-                        type = (typetree_t *) tag->type;
-                        done = 1;
-                        break;
+                    if (!tag) {
+                        symbol_t arg = { SYM_TYPEDEF };
+                        arg.name = strdup(strval);
+                        arg.type = type;
+                        tag = sym_add(&ns_tag, arg);
+                    } else if (tag->type->type == INTEGER) {
+                        error("Tag '%s' was previously defined as enum type.", tag->name);
+                        exit(1);
                     }
-                    sym_add(&ns_tag, strval, type);
+
+                    type = (typetree_t *) tag->type;
                     if (peek() != '{') {
                         done = forward_decl = 1;
                         break;
+                    } else if (type->size) {
+                        error("Redefiniton of object '%s'.", tag->name);
+                        exit(1);
                     }
                 }
                 consume('{');
                 struct_declaration_list(type);
                 consume('}');
                 break;
-            case ENUM:
+            }
+            case ENUM: {
+                symbol_t *tag = NULL;
+
                 consume(ENUM);
                 type->type = INTEGER;
                 type->size = 4;
                 if (peek() == IDENTIFIER) {
-                    const char *ident = strval;
+                    symbol_t arg = { SYM_TYPEDEF };
+                    arg.name = strdup(strval);
+                    arg.type = type;
+
                     consume(IDENTIFIER);
-                    if (peek() == '{') {
-                        sym_add(&ns_tag, ident, type);
-                    } else {
-                        done = 1;
+                    tag = sym_lookup(&ns_tag, strval);
+                    if (!tag || (tag->depth < ns_tag.depth && peek() == '{')) {
+                        tag = sym_add(&ns_tag, arg);
+                    } else if (tag->type->type != INTEGER) {
+                        error("Tag '%s' was previously defined as object type.", tag->name);
+                        exit(1);
+                    }
+
+                    type = (typetree_t *) tag->type;
+                    if (peek() != '{') {
+                        done = forward_decl = 1;
                         break;
+                    } else if (tag->enum_value) {
+                        error("Redefiniton of enum '%s'.", tag->name);
+                        exit(1);
                     }
                 }
                 consume('{');
                 enumerator_list();
+                if (tag) {
+                    /* use enum_value to mark definition. */
+                    tag->enum_value = 1;
+                }
                 consume('}');
-                break;
+                break;   
+            }
             default:
                 done = 1;
         }

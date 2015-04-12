@@ -58,6 +58,16 @@ static const char* reg(reg_t r, unsigned w)
 
 static reg_t pregs[] = {DI, SI, DX, CX, R8, R9};
 
+static const char *sym_name(const symbol_t *sym)
+{
+    static char name[128];
+    if (sym->n) {
+        snprintf(name, 127, "%s.%d", sym->name, sym->n);
+    } else {
+        snprintf(name, 127, "%s", sym->name);
+    }
+    return name;
+}
 
 static char *
 refer(const var_t var)
@@ -68,11 +78,11 @@ refer(const var_t var)
         case DIRECT:
             if (var.symbol->param_n && !var.symbol->stack_offset) {
                 sprintf(str, "%%%s", reg(pregs[var.symbol->param_n - 1], var.type->size));
-            } else if (!var.symbol->depth) {
+            } else if (!var.symbol->depth || var.symbol->linkage == LINK_INTERN) {
                 if (var.type->type == ARRAY) {
-                    sprintf(str, "$%s", var.symbol->name);
+                    sprintf(str, "$%s", sym_name(var.symbol));
                 } else {
-                    sprintf(str, "%s(%%rip)", var.symbol->name);
+                    sprintf(str, "%s(%%rip)", sym_name(var.symbol));
                 }
             } else {
                 sprintf(str, "%d(%%rbp)", var.symbol->stack_offset + var.offset);
@@ -370,9 +380,9 @@ assemble_immediate(FILE *stream, var_t target, var_t val)
 
     if (!target.offset) {
         if (symbol->linkage == LINK_EXTERN) {
-            fprintf(stream, "\t.globl\t%s\n", symbol->name);
+            fprintf(stream, "\t.globl\t%s\n", sym_name(symbol));
         }
-        fprintf(stream, "%s:\n", symbol->name);
+        fprintf(stream, "%s:\n", sym_name(symbol));
     }
     switch (target.type->type) {
         case INTEGER:
@@ -419,9 +429,9 @@ assemble_function(FILE *stream, const symbol_t *sym, block_t *body, int locals_s
 
     fprintf(stream, "\t.text\n");
     if (sym->linkage == LINK_EXTERN) {
-        fprintf(stream, "\t.globl\t%s\n", sym->name);
+        fprintf(stream, "\t.globl\t%s\n", sym_name(sym));
     }
-    fprintf(stream, "%s:\n", sym->name);
+    fprintf(stream, "%s:\n", sym_name(sym));
     fprintf(stream, "\tpushq\t%%rbp\n");
     fprintf(stream, "\tmovq\t%%rsp, %%rbp\n");
     if (locals_size)

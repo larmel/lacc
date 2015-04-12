@@ -2,6 +2,7 @@
 #include "input.h"
 #include "util/stack.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -181,8 +182,11 @@ getcleanline(char **lineptr, size_t *n, source_t *fn)
     int c, next; /* getc return values */
     int i = 0, /* chars written to output buffer */
         nonwhitespace = 0; /* non-whitespace characters written */
+    FILE *stream;
 
-    FILE *stream = fn->file;
+    assert(fn);
+
+    stream = fn->file;
 
     /* Need to have room for terminating \0 byte. */
     if (!*n) {
@@ -263,6 +267,10 @@ getprepline(char **buffer)
 
     while (1) {
         source = (source_t *)stack_peek(&sources);
+        if (!source) {
+            return -1;
+        }
+
         read = getcleanline(&line, &size, source);
         if (read == 0) {
             if (pop() == EOF) {

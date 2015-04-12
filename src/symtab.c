@@ -123,6 +123,17 @@ sym_lookup(namespace_t *ns, const char *name)
     return NULL;
 }
 
+void print_symbol(symbol_t *sym)
+{
+    printf("\t[type: %s", sym->symtype == SYM_DEFINITION ? "definition" : sym->symtype == SYM_TENTATIVE ? "tentative" : sym->symtype == SYM_DECLARATION ? "declaration" : sym->symtype == SYM_TYPEDEF ? "typedef" : "enum");
+    printf(", link: %s]\n", sym->linkage == LINK_INTERN ? "intern" : sym->linkage == LINK_EXTERN ? "extern" : "none");
+    printf("\t%s", sym->name);
+    if (sym->n) {
+        printf(".%d", sym->n);
+    }
+    printf(" :: %s\n", typetostr(sym->type));
+}
+
 /* Add symbol to current scope. If the symbol already exists in the same scope
  * and has incomplete type, the type is completed.
  *
@@ -130,45 +141,97 @@ sym_lookup(namespace_t *ns, const char *name)
  * variables. This is x86_64 specific, wrong if params cannot fit in registers.
  */
 symbol_t *
-sym_add(namespace_t *ns, const char *name, const typetree_t *type)
+sym_add(namespace_t *ns, symbol_t sym)
 {
+    int idx;
     symbol_t *symbol;
+    extern int VERBOSE;
 
-    symbol = sym_lookup(ns, name);
+    symbol = sym_lookup(ns, sym.name);
 
-    if (symbol && symbol->depth == ns->depth) {
-        if (symbol->type->size) {
-            error("Duplicate definition of symbol '%s'", name);
-            exit(0);
-        }
-        symbol->type = type_complete(symbol->type, type);
-    } else {
-        int idx;
-        symbol_t sym = {0};
-        sym.name = strdup(name);
-        sym.type = type;
+    if (symbol) {
 
-        /* External declarations are by default tentative. */
-        if (ns->depth == 0) {
-            sym.symtype = SYM_TENTATIVE;
+        /* Resolve extern declaration. */
+        if (sym.linkage == LINK_EXTERN && sym.symtype == SYM_DECLARATION &&
+            (symbol->symtype == SYM_TENTATIVE || symbol->symtype == SYM_DEFINITION))
+        {
+            if (!symbol->type->size) {
+                symbol->type = type_complete(symbol->type, sym.type);
+            }
+            return symbol;
         }
 
+        if (symbol->depth == ns->depth && ns->depth == 0) {
+            if (symbol->linkage == sym.linkage &&
+                ((symbol->symtype == SYM_TENTATIVE && sym.symtype == SYM_DEFINITION) || 
+                (symbol->symtype == SYM_DEFINITION && sym.symtype == SYM_TENTATIVE)))
+            {
+                if (!symbol->type->size) {
+                    symbol->type = type_complete(symbol->type, sym.type);
+                }
+                symbol->symtype = SYM_DEFINITION;
+            }
+            else if (symbol->linkage == sym.linkage &&
+                (symbol->symtype == SYM_DECLARATION && sym.symtype == SYM_TENTATIVE))
+            {
+                if (!symbol->type->size) {
+                    symbol->type = type_complete(symbol->type, sym.type);
+                }
+                symbol->symtype = SYM_TENTATIVE;
+            }
+            else if (symbol->symtype != sym.symtype || symbol->linkage != sym.linkage)
+            {
+                error("Declaration of symbol '%s' does not match previous declaration.", sym.name);
+                exit(1);
+            }
+            else
+            {
+                if (!symbol->type->size) {
+                    symbol->type = type_complete(symbol->type, sym.type);
+                }
+            }
+            return symbol;
+        }
+        else if (symbol->depth == ns->depth && ns->depth)
+        {
+            error("Duplicate definition of symbol '%s'", sym.name);
+            exit(1);
+        }
+
+    }
+
+    /* might not be needed. */
+    sym.name = strdup(sym.name);
+
+    /* Scoped static variable must get unique name to not collide with
+     * other external declarations. */
+    if (sym.linkage == LINK_INTERN && ns->depth)
+    {
+        static int svc;
+        sym.n = ++svc;
+    }
+    else if (!symbol)
+    {
+        /* Regular automatic variable. */
         if (ns->depth == 1) {
             sym.param_n = ns->param_number++;
-            ns->var_stack_offset += type->size;
+            ns->var_stack_offset += sym.type->size;
             if (sym.param_n > 6) {
                 sym.stack_offset = ns->var_stack_offset;
             }
         } else if (ns->depth > 1) {
-            ns->var_stack_offset -= type->size;
+            ns->var_stack_offset -= sym.type->size;
             sym.stack_offset = ns->var_stack_offset;
         }
-
-        idx = create_symbol(ns, sym);
-        register_in_scope(ns, idx);
-
-        symbol = ns->symbol[idx];
     }
+
+    idx = create_symbol(ns, sym);
+    register_in_scope(ns, idx);
+
+    symbol = ns->symbol[idx];
+
+    if (VERBOSE)
+        print_symbol(symbol);
 
     return symbol;
 }
@@ -220,10 +283,35 @@ sym_temp_static(namespace_t *ns, const typetree_t *type)
 void
 register_builtin_types(namespace_t *ns)
 {
+    symbol_t sym = {
+        SYM_TYPEDEF,
+        LINK_NONE,
+        "__builtin_va_list"
+    };
+    sym.type = type_init(OBJECT);
+    sym_add(ns, sym);
+}
+
+/* Output tentative definitions with external scope. Not assigned a value in
+ * this translation unit, and has special representation in GNU assembler. */
+void output_definitions(FILE *stream)
+{
+    extern namespace_t ns_ident;
+
+    int i, found;
     symbol_t *sym;
 
-    sym = sym_add(ns, "__builtin_va_list", type_init(OBJECT));
-    sym->symtype = SYM_TYPEDEF;
+    for (i = found = 0; i < ns_ident.size; ++i) {
+        sym = ns_ident.symbol[i];
+        if (sym->symtype == SYM_TENTATIVE && sym->linkage == LINK_EXTERN &&
+            sym->type->type != FUNCTION) {
+            if (!found) {
+                fprintf(stream, "\t.data\n");
+                found = 1;
+            }
+            fprintf(stream, "\t.comm %s, %d\n", sym->name, sym->type->size);
+        }
+    }
 }
 
 void
@@ -240,7 +328,7 @@ dump_symtab(namespace_t *ns)
 
         printf("%*s", ns->symbol[i]->depth * 2, "");
         if (ns->symbol[i]->linkage != LINK_NONE) {
-            printf("%s ", (ns->symbol[i]->linkage == LINK_INTERN) ? "internal" : "external");
+            printf("%s ", (ns->symbol[i]->linkage == LINK_INTERN) ? "static" : "global");
         }
         printf("%s ",
             (st == SYM_TENTATIVE) ? "tentative" : 

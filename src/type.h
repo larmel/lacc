@@ -42,6 +42,8 @@ typedef struct typetree
 
 typetree_t *type_init(enum tree_type);
 
+int type_equal(const typetree_t *, const typetree_t *);
+
 const typetree_t *type_combine(const typetree_t *, const typetree_t *);
 
 const typetree_t *type_deref(const typetree_t *);
