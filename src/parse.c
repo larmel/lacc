@@ -517,7 +517,7 @@ declaration_specifiers(enum token *stc)
     if (stc && sttok != '$') {
         *stc = sttok;
     }
-    return (type->size || forward_decl) ? type : NULL;
+    return (type->size || type->type == NONE || forward_decl) ? type : NULL;
 }
 
 static typetree_t *
@@ -661,6 +661,9 @@ parameter_list(const typetree_t *base)
         name = NULL;
         decl = declaration_specifiers(&stc);
         decl = declarator(decl, &name);
+        if (decl->type == NONE) {
+            break;
+        }
 
         if (decl->type == ARRAY) {
             typetree_t *ptr = type_init(POINTER);
@@ -673,9 +676,9 @@ parameter_list(const typetree_t *base)
         type->params = realloc(type->params, sizeof(char *) * type->n_args);
         type->args[type->n_args - 1]   = decl;
         type->params[type->n_args - 1] = name;
-
-        if (peek() != ',')
+        if (peek() != ',') {
             break;
+        }
 
         consume(',');
         if (peek() == ')') {
