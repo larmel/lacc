@@ -79,7 +79,7 @@ refer(const var_t var)
             if (var.symbol->param_n && !var.symbol->stack_offset) {
                 sprintf(str, "%%%s", reg(pregs[var.symbol->param_n - 1], var.type->size));
             } else if (!var.symbol->depth || var.symbol->linkage == LINK_INTERN) {
-                if (var.type->type == ARRAY) {
+                if (var.type->type == ARRAY || var.type->type == FUNCTION) {
                     sprintf(str, "$%s", sym_name(var.symbol));
                 } else {
                     sprintf(str, "%s(%%rip)", sym_name(var.symbol));
@@ -185,7 +185,7 @@ fassembleparams(FILE *stream, op_t *ops, int i)
         return 0;
 
     if (ops[i].a.type->type != INTEGER && ops[i].a.type->type != POINTER
-        && ops[i].a.type->type != ARRAY) {
+        && ops[i].a.type->type != ARRAY && ops[i].a.type->type != FUNCTION) {
         error("Parameter other than integer types are not supported.");
         exit(1);
     }

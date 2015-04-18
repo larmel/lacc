@@ -171,9 +171,9 @@ declaration(block_t *parent, const symbol_t **symbol)
                         SYM_DEFINITION,
                         LINK_NONE,
                     };
-                    sarg.name = sym->type->params[i];
+                    sarg.name = arg.type->params[i];
                     sarg.type = sym->type->args[i];
-                    if (!sym->type->params[i]) {
+                    if (!sarg.name) {
                         error("Missing parameter name at position %d.", i + 1);
                         exit(1);
                     }
@@ -350,14 +350,10 @@ enumerator_list()
 static typetree_t *
 declaration_specifiers(enum token *stc)
 {
-    int done, forward_decl;
-    enum token sttok;
-    typetree_t *type;
-
-    type = type_init(INTEGER);
-    type->size = 0;
-    sttok = '$';
-    done = forward_decl = 0;
+    int consumed = 0;
+    enum token sttok = '$';
+    typetree_t *type = type_init(INTEGER);
+    symbol_t *tag = NULL;
 
     do {
         switch (peek()) {
@@ -381,26 +377,19 @@ declaration_specifiers(enum token *stc)
                 sttok = token();
                 break;
             case IDENTIFIER:
-            {
-                const symbol_t *tdef;
-                flags_t flags;
-
-                tdef = sym_lookup(&ns_ident, strval);
-                if (tdef && tdef->symtype == SYM_TYPEDEF) {
+                tag = sym_lookup(&ns_ident, strval);
+                if (tag && tag->symtype == SYM_TYPEDEF) {
+                    flags_t flags;
+                    /* todo: validate */
                     consume(IDENTIFIER);
-                    if (type->size && !type_equal(type, tdef->type)) {
-                        error("Cannot combine type definition %s with other type specifiers.", strval);
-                    }
                     flags = type->flags;
-                    *type = *(tdef->type);
+                    *type = *(tag->type);
                     type->flags.fvolatile |= flags.fvolatile;
                     type->flags.fconst |= flags.fconst;
-                    forward_decl = 1; /* hack, means "something was added". */
                 } else {
-                    done = 1;   
+                    goto end;
                 }
                 break;
-            }
             case CHAR:
                 consume(CHAR);
                 type->size = 1;
@@ -439,11 +428,10 @@ declaration_specifiers(enum token *stc)
                 type->type = NONE;
                 break;
             case UNION:
-            case STRUCT: {
-                symbol_t *tag = NULL;
-
-                consume(STRUCT);
+            case STRUCT:
+                token();
                 type->type = OBJECT;
+                type->size = 0;
                 if (peek() == IDENTIFIER) {
                     consume(IDENTIFIER);
                     tag = sym_lookup(&ns_tag, strval);
@@ -459,7 +447,7 @@ declaration_specifiers(enum token *stc)
 
                     type = (typetree_t *) tag->type;
                     if (peek() != '{') {
-                        done = forward_decl = 1;
+                        /* Can still have volatile or const after. */
                         break;
                     } else if (type->size) {
                         error("Redefiniton of object '%s'.", tag->name);
@@ -470,10 +458,7 @@ declaration_specifiers(enum token *stc)
                 struct_declaration_list(type);
                 consume('}');
                 break;
-            }
-            case ENUM: {
-                symbol_t *tag = NULL;
-
+            case ENUM:
                 consume(ENUM);
                 type->type = INTEGER;
                 type->size = 4;
@@ -493,7 +478,6 @@ declaration_specifiers(enum token *stc)
 
                     type = (typetree_t *) tag->type;
                     if (peek() != '{') {
-                        done = forward_decl = 1;
                         break;
                     } else if (tag->enum_value) {
                         error("Redefiniton of enum '%s'.", tag->name);
@@ -503,21 +487,18 @@ declaration_specifiers(enum token *stc)
                 consume('{');
                 enumerator_list();
                 if (tag) {
-                    /* use enum_value to mark definition. */
+                    /* Use enum_value to represent definition. */
                     tag->enum_value = 1;
                 }
                 consume('}');
-                break;   
-            }
+                break;
             default:
-                done = 1;
+                goto end;
         }
-    } while (!done);
-
-    if (stc && sttok != '$') {
-        *stc = sttok;
-    }
-    return (type->size || type->type == NONE || forward_decl) ? type : NULL;
+    } while (++consumed);
+end:
+    if (stc && sttok != '$') *stc = sttok;
+    return consumed ? type : NULL;
 }
 
 static typetree_t *

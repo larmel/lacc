@@ -437,11 +437,14 @@ const char *strval;
 enum token token() {
     if (current + 1 == toklist.length) {
         if (!preprocess_line()) {
+            strval = "$";
             return END;
         }
         current = -1;
     }
     current++;
+
+    /*debug_output_token(toklist.tokens[current]);*/
 
     strval = toklist.tokens[current].strval;
     intval = toklist.tokens[current].intval;
@@ -451,10 +454,14 @@ enum token token() {
 enum token peek() {
     if (current + 1 == toklist.length) {
         if (!preprocess_line()) {
+            strval = "$";
             return END;
         }
         current = -1;
     }
+
+    /*printf("peek: ");
+    debug_output_token(toklist.tokens[current + 1]);*/
 
     strval = toklist.tokens[current + 1].strval;
     intval = toklist.tokens[current + 1].intval;
@@ -469,6 +476,11 @@ void consume(enum token expected) {
                 error("Unexpected token `%c`, expected `%c`.", t, expected);
             else
                 error("Unexpected token `%c`.", t);
+        } else if (t == INTEGER_CONSTANT) {
+            if (isprint(expected))
+                error("Unexpected token `%d`, expected `%c`.", intval, expected);
+            else
+                error("Unexpected token `%d`.", intval);
         } else {
             if (isprint(expected))
                 error("Unexpected token `%s`, expected `%c`.", strval, expected);
