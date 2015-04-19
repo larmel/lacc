@@ -1,6 +1,8 @@
 #ifndef TYPE_H
 #define TYPE_H
 
+#include <stdlib.h>
+
 enum tree_type
 {
     INTEGER,    /* char, short, int, long */ 
@@ -41,6 +43,8 @@ typedef struct typetree
 
 
 typetree_t *type_init(enum tree_type);
+
+const typetree_t *type_init_string(size_t);
 
 int type_equal(const typetree_t *, const typetree_t *);
 

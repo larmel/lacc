@@ -39,17 +39,9 @@ var_t
 var_string(const char *label, size_t length)
 {
     var_t var = {0};
-    typetree_t *type, *next;
-
-    next = type_init(INTEGER); /* char */
-    next->size = 1;
-
-    type = type_init(ARRAY);
-    type->next = next;
-    type->size = next->size * length;
 
     var.kind = IMMEDIATE;
-    var.type = type;
+    var.type = type_init_string(length);
     var.value.string = label;
 
     return var;

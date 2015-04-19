@@ -22,5 +22,6 @@ size_t getprepline(char **);
 /* Expose global state to other components. */
 extern size_t line_number;
 extern const char *filename;
+extern const char *fullpath;
 
 #endif

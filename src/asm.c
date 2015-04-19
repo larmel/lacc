@@ -129,7 +129,7 @@ load(FILE *stream, var_t var, reg_t dest)
             fprintf(stream, "\t%s\t%s, %%%s\n", mov, refer(var), reg(dest, w));
             break;
         case DIRECT:
-            if (var.type->type == ARRAY && var.symbol->depth) {
+            if (var.type->type == ARRAY && var.symbol->depth && var.symbol->linkage == LINK_NONE) {
                 fprintf(stream, "\tleaq\t%d(%%rbp), %%%s\t# load %s\n", var.symbol->stack_offset, reg(dest, w), var.symbol->name);
             } else {
                 fprintf(stream, "\t%s\t%s, %%%s\t# load %s\n", mov, refer(var), reg(dest, w), var.symbol->name);

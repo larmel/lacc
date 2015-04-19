@@ -1,5 +1,6 @@
 #include "error.h"
 #include "input.h"
+#include "macro.h"
 #include "preprocess.h"
 #include "util/map.h"
 
@@ -11,21 +12,6 @@
 
 /* Hold current clean line to be tokenized. */
 static char *tok;
-
-typedef struct {
-    token_t name;
-    enum { OBJECT_LIKE, FUNCTION_LIKE } type;
-
-    size_t params;
-    size_t size;
-
-    /* A substitution is either a token or a parameter. */
-    struct macro_subst_t {
-        token_t token;
-        int param;
-    } *replacement;
-
-} macro_t;
 
 /* Use one lookahead for preprocessing token. */
 static token_t prep_token_peek;
@@ -147,71 +133,6 @@ static int pop_condition() {
         error("Unmatched #endif directive.");
     }
     return branch_stack.condition[--branch_stack.length];
-}
-
-/* 
- * Macro definitions.
- */
-static map_t definitions;
-
-static void define_macro(macro_t *macro)
-{
-    map_insert(&definitions, macro->name.strval, (void *) macro);
-}
-
-static void define(token_t name, token_t subst)
-{
-    macro_t *macro;
-
-    assert(name.strval);
-
-    macro = map_lookup(&definitions, name.strval);
-    if (!macro) {
-        macro_t *p = malloc(sizeof(macro_t));
-        p->name = name;
-        p->replacement = malloc(1 * sizeof(struct macro_subst_t));
-        p->replacement[0].token = subst;
-        p->replacement[0].param = 0;
-        p->size = 1;
-        map_insert(&definitions, name.strval, (void *) p);
-    } else {
-        error("Redefinition of macro %s.", name.strval);
-    }
-}
-
-static void undef(token_t name)
-{
-    assert(name.strval);
-
-    /* No-op if name is not a macro. */
-    map_remove(&definitions, name.strval);
-}
-
-static macro_t *definition(token_t name)
-{
-    if (!name.strval) {
-        return NULL;
-    }
-    return map_lookup(&definitions, name.strval);
-}
-
-void register_builtin_definitions()
-{
-    token_t 
-        name = { IDENTIFIER, NULL, 0 },
-        valu = { INTEGER_CONSTANT, NULL, 0 };
-
-    name.strval = "__STDC_VERSION__";
-    valu.intval = 199409L;
-    define( name, valu );
-
-    name.strval = "__STDC__";
-    valu.intval = 1;
-    define( name, valu );
-
-    name.strval = "__STDC_HOSTED__";
-    valu.intval = 1;
-    define( name, valu );
 }
 
 /* Append token string representation at the end of provided buffer. If NULL is

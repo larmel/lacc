@@ -24,6 +24,7 @@ typedef struct {
     FILE *file;
     const char *name;
     const char *directory;
+    const char *path;
     int line;
 } source_t;
 
@@ -39,6 +40,7 @@ static int pop()
         if (source != NULL) {
             filename = source->name;
             directory = source->directory;
+            fullpath = source->path;
             return 1;
         }
     }
@@ -61,36 +63,39 @@ static char *create_path(const char *dir, const char *name)
 static void include_file_internal(const char *name, int incurrent)
 {
     source_t *source;
-    char *path;
     int i;
 
     source = calloc(1, sizeof(source_t));
     source->name = strdup(name);
 
     if (incurrent) {
-        path = create_path(directory, name);
-        source->file = fopen(path, "r");
+        source->path = create_path(directory, name);
+        source->file = fopen(source->path, "r");
         source->directory = directory;
     }
 
-    for (i = search_path_count - 1; i >= 0 && !source->file; --i) {
-        if (incurrent) {
-            free(path);
-        } else {
-            i--; /* hack: skip invocation dir. */
+    if (!source->file) {
+        i = search_path_count - 1;
+        if (!incurrent) {
+            i--; /* skip invocation dir for system files. */
         }
-        path = create_path(search_path[i], name);
-        source->directory = search_path[i];
-        source->file = fopen(path, "r");
+        for (; i >= 0 && !source->file; --i) {
+            if (source->path) {
+                free((void*) source->path);
+                source->path = NULL;
+            }
+            source->path = create_path(directory, name);
+            source->file = fopen(source->path, "r");
+            source->directory = directory;
+        }
     }
-
-    free(path);
 
     if (!source->file) {
         error("Unable to resolve include file %s.", name);
         exit(1);
     }
 
+    fullpath = source->path;
     filename = source->name;
     directory = source->directory;
     stack_push(&sources, source);
@@ -137,6 +142,7 @@ init(char *path)
 
     source = calloc(1, sizeof(source_t));
     source->file = stdin;
+    source->path = "<stdin>";
     source->name = "<stdin>";
     source->directory = ".";
     source->line = 0;
@@ -152,15 +158,15 @@ init(char *path)
             source->directory = path;
         }
 
-        path = create_path(source->directory, source->name);
-        source->file = fopen(path, "r");
+        source->path = create_path(source->directory, source->name);
+        source->file = fopen(source->path, "r");
         if (!source->file) {
-            error("Unable to open file %s.", path);
+            error("Unable to open file %s.", source->path);
             exit(1);
         }
-        free(path);
     }
 
+    fullpath = source->path;
     filename = source->name;
     directory = source->directory;
     stack_push(&sources, source);
@@ -296,3 +302,4 @@ getprepline(char **buffer)
 /* Store and expose current state. */
 size_t line_number;
 const char *filename;
+const char *fullpath;

@@ -77,6 +77,20 @@ parse()
     return NULL;
 }
 
+/* C99: Define __func__ as static const char __func__[] = sym->name; */
+static void define_builtin__func__(const char *name)
+{
+    symbol_t farg = { SYM_DEFINITION, LINK_INTERN }, *func;
+    var_t str = var_string(string_constant_label(name), strlen(name) + 1);
+
+    assert(ns_ident.depth == 1);
+
+    farg.name = "__func__";
+    farg.type = str.type;
+    func = sym_add(&ns_ident, farg);
+    eval_assign(decl->head, var_direct(func), str);
+}
+
 /* Cover both external declarations, functions, and local declarations (with
  * optional initialization code) inside functions. Symbol is bound to function
  * if encountered, otherwise not touched.
@@ -166,6 +180,7 @@ declaration(block_t *parent, const symbol_t **symbol)
                 sym->symtype = SYM_DEFINITION;
 
                 push_scope(&ns_ident);
+                define_builtin__func__(sym->name);
                 for (i = 0; i < sym->type->n_args; ++i) {
                     symbol_t sarg = {
                         SYM_DEFINITION,

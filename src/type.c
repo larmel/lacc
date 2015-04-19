@@ -26,6 +26,22 @@ type_init(enum tree_type type)
     return tree;
 }
 
+const typetree_t *type_init_string(size_t length)
+{
+    static typetree_t *base;
+    typetree_t *type;
+
+    if (!base) {
+        base = type_init(INTEGER);
+        base->size = 1;
+    }
+    type = type_init(ARRAY);
+    type->next = base;
+    type->size = base->size * length;
+
+    return type;
+}
+
 int
 type_equal(const typetree_t *a, const typetree_t *b)
 {
