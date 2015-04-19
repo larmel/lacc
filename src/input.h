@@ -1,7 +1,16 @@
 #ifndef INPUT_H
 #define INPUT_H
 
+#include <stdio.h>
 #include <stddef.h>
+
+typedef struct source {
+    FILE *file;
+    const char *name;
+    const char *directory;
+    const char *path;
+    int line;
+} source_t;
 
 /* Called by driver to initialize root directory, and set up required state in
  * the preprocessor. */
@@ -20,8 +29,6 @@ void include_system_file(const char *);
 size_t getprepline(char **);
 
 /* Expose global state to other components. */
-extern size_t line_number;
-extern const char *filename;
-extern const char *fullpath;
+extern struct source current_file;
 
 #endif

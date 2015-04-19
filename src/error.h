@@ -1,6 +1,8 @@
 #ifndef ERROR_H
 #define ERROR_H
 
+#include "input.h"
+
 #include <stddef.h>
 
 extern unsigned errors;
@@ -10,13 +12,10 @@ void error(const char *, ...);
 
 /* Variadic macros not supported in C89, assume always used with one arg. */
 #define internal_error(s, m) \
-	do { \
-		extern size_t line_number; \
-		extern const char *filename; \
-    	fprintf(stderr, "(%s, %ld) internal error in %s, line %d: ", filename, line_number, __FILE__, __LINE__); \
-    	fprintf(stderr, s, m); \
-    	fprintf(stderr, "\n"); \
-	} while (0);
-
+    do { \
+        fprintf(stderr, "(%s, %d) internal error in %s, line %d: ", current_file.name, current_file.line, __FILE__, __LINE__); \
+        fprintf(stderr, s, m); \
+        fprintf(stderr, "\n"); \
+    } while (0);
 
 #endif

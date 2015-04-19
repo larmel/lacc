@@ -1,10 +1,9 @@
+#include "error.h"
+
 #include <stdio.h>
 #include <stdarg.h>
 
 unsigned errors;
-
-extern size_t line_number;
-extern const char *filename;
 
 void error(const char *fmtmsg, ...)
 {
@@ -12,7 +11,7 @@ void error(const char *fmtmsg, ...)
 
     errors++;
     va_start(args, fmtmsg);
-    fprintf(stderr, "(%s, %ld) error: ", filename, line_number);
+    fprintf(stderr, "(%s, %d) error: ", current_file.name, current_file.line);
     vfprintf(stderr, fmtmsg, args);
     fprintf(stderr, "\n");
     va_end(args);

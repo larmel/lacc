@@ -1,5 +1,6 @@
 #include "macro.h"
 #include "error.h"
+#include "input.h"
 #include "util/map.h"
 
 #include <assert.h>
@@ -42,14 +43,13 @@ void undef(token_t name)
 
 macro_t *definition(token_t name)
 {
-    extern size_t line_number;
     macro_t *macro = NULL;
 
     if (name.strval) {
         macro = map_lookup(&definitions, name.strval);
         if (macro && macro->name.token == IDENTIFIER) {
             if (!strcmp(macro->name.strval, "__LINE__")) {
-                macro->replacement[0].token.intval = line_number;
+                macro->replacement[0].token.intval = current_file.line;
             }
         }
     }
@@ -58,8 +58,6 @@ macro_t *definition(token_t name)
 
 void register_builtin_definitions()
 {
-    extern const char *fullpath;
-
     token_t 
         name = { IDENTIFIER, NULL, 0 },
         valu = { INTEGER_CONSTANT, NULL, 0 };
@@ -82,6 +80,6 @@ void register_builtin_definitions()
 
     name.strval = "__FILE__";
     valu.token = STRING;
-    valu.strval = fullpath;
+    valu.strval = current_file.path;
     define( name, valu );
 }

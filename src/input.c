@@ -8,8 +8,8 @@
 #include <string.h>
 #include <ctype.h>
 
-/* Path of initial file, used for relative include paths. */
-static const char *directory;
+/* Globally exposed for diagnostics info and default macro values. */
+struct source current_file;
 
 /* List of directories to search on resolving include directives. */
 static const char **search_path;
@@ -19,14 +19,6 @@ static size_t search_path_count;
  * functions for pushing (#include) and popping (EOF) of files, keeping track
  * of the file name and line number for diagnostics. */
 static stack_t sources;
-
-typedef struct {
-    FILE *file;
-    const char *name;
-    const char *directory;
-    const char *path;
-    int line;
-} source_t;
 
 static int pop()
 {
@@ -38,9 +30,7 @@ static int pop()
         free(source);
         source = (source_t *) stack_peek(&sources);
         if (source != NULL) {
-            filename = source->name;
-            directory = source->directory;
-            fullpath = source->path;
+            current_file = *source;
             return 1;
         }
     }
@@ -49,13 +39,10 @@ static int pop()
 
 static char *create_path(const char *dir, const char *name)
 {
-    char *path;
-
-    path = malloc(strlen(dir) + 1 + strlen(name) + 1);
+    char *path = malloc(strlen(dir) + 1 + strlen(name) + 1);
     strcpy(path, dir);
     strcat(path, "/");
     strcat(path, name);
-
     return path;
 }
 
@@ -69,9 +56,9 @@ static void include_file_internal(const char *name, int incurrent)
     source->name = strdup(name);
 
     if (incurrent) {
-        source->path = create_path(directory, name);
+        source->path = create_path(current_file.directory, name);
         source->file = fopen(source->path, "r");
-        source->directory = directory;
+        source->directory = current_file.directory;
     }
 
     if (!source->file) {
@@ -81,12 +68,12 @@ static void include_file_internal(const char *name, int incurrent)
         }
         for (; i >= 0 && !source->file; --i) {
             if (source->path) {
-                free((void*) source->path);
+                free((void *) source->path);
                 source->path = NULL;
             }
-            source->path = create_path(directory, name);
+            source->path = create_path(search_path[i], name);
             source->file = fopen(source->path, "r");
-            source->directory = directory;
+            source->directory = search_path[i];
         }
     }
 
@@ -95,9 +82,7 @@ static void include_file_internal(const char *name, int incurrent)
         exit(1);
     }
 
-    fullpath = source->path;
-    filename = source->name;
-    directory = source->directory;
+    current_file = *source;
     stack_push(&sources, source);
 }
 
@@ -138,9 +123,7 @@ void add_include_search_path(const char *path)
 void
 init(char *path)
 {
-    source_t *source;
-
-    source = calloc(1, sizeof(source_t));
+    source_t *source = calloc(1, sizeof(source_t));
     source->file = stdin;
     source->path = "<stdin>";
     source->name = "<stdin>";
@@ -166,13 +149,9 @@ init(char *path)
         }
     }
 
-    fullpath = source->path;
-    filename = source->name;
-    directory = source->directory;
+    current_file = *source;
     stack_push(&sources, source);
-
     add_include_search_path(source->directory);
-
     atexit(finalize);
 }
 
@@ -290,16 +269,11 @@ getprepline(char **buffer)
     }
 
     *buffer = line;
-    line_number = source->line;
+    current_file = *source;
 
     if (VERBOSE) {
-        printf("(%s, %d): `%s`\n", filename, (int)line_number, line);
+        printf("(%s, %d): `%s`\n", current_file.name, current_file.line, line);
     }
 
     return processed;
 }
-
-/* Store and expose current state. */
-size_t line_number;
-const char *filename;
-const char *fullpath;
