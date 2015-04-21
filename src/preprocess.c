@@ -95,6 +95,8 @@ static struct {
 
 static size_t add_token(token_t t)
 {
+    extern int VERBOSE;
+
     toklist.length++;
     if (toklist.length > toklist.cap) {
         toklist.cap += 64;
@@ -102,7 +104,9 @@ static size_t add_token(token_t t)
     }
     toklist.tokens[toklist.length - 1] = t;
 
-    /*debug_output_token(t);*/
+    if (VERBOSE) {
+        debug_output_token(t);
+    }
 
     return toklist.length;
 }
@@ -196,8 +200,9 @@ static void preprocess_directive()
     }
     else if (peek_condition()) {
         if (t.token == IDENTIFIER && !strcmp("define", t.strval)) {
-            token_t name, param, subs;
+            token_t name, subs;
             macro_t *macro;
+            toklist_t *params;
 
             name = next_raw_token();
             if (name.token != IDENTIFIER) {
@@ -205,22 +210,28 @@ static void preprocess_directive()
                 exit(1);
             }
 
+            params = toklist_init();
+
             macro = calloc(1, sizeof(macro_t));
             macro->name = name;
             macro->type = OBJECT_LIKE;
 
-            /* Function-like macro iff parenthesis immediately after. */
+            /* Function-like macro iff parenthesis immediately after, access
+             * input buffer directly. */
             if (*tok == '(') {
                 macro->type = FUNCTION_LIKE;
                 consume_raw_token('(');
                 while (peek_raw_token() != ')') {
-                    param = next_raw_token();
-                    macro->params++;
-                    if (peek_raw_token() == ',') {
-                        consume_raw_token(',');
-                        continue;
+                    if (peek_raw_token() != IDENTIFIER) {
+                        error("Invalid macro parameter.");
+                        exit(1);
                     }
-                    break;
+                    toklist_push_back(params, next_raw_token());
+                    macro->params++;
+                    if (peek_raw_token() != ',') {
+                        break;
+                    }
+                    consume_raw_token(',');
                 }
                 consume_raw_token(')');
             }
@@ -232,8 +243,14 @@ static void preprocess_directive()
                     realloc(macro->replacement, macro->size * sizeof(struct macro_subst_t));
                 macro->replacement[macro->size - 1].token = subs;
                 macro->replacement[macro->size - 1].param = 0;
-                if (subs.token == IDENTIFIER && !strcmp(subs.strval, param.strval)) {
-                    macro->replacement[macro->size - 1].param = 1;
+                if (subs.token == IDENTIFIER) {
+                    int i;
+                    for (i = 0; i < params->length; ++i) {
+                        if (!strcmp(subs.strval, params->elem[i].strval)) {
+                            macro->replacement[macro->size - 1].param = i + 1;
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -282,6 +299,54 @@ static void preprocess_directive()
     consume_raw_token(END);
 }
 
+static void expand_token(token_t t)
+{
+    macro_t *def = definition(t);
+
+    if (def) {
+        int i;
+        toklist_t **args = NULL, *res = NULL;
+
+        if (def->type == FUNCTION_LIKE) {
+            if (def->params) {
+                args = malloc(sizeof(toklist_t *) * def->params);
+            }
+            consume_raw_token('(');
+            for (i = 0; i < def->params; ++i) {
+                args[i] = toklist_init();
+
+                do {
+                    t = next_raw_token();
+                    if (t.token == ',' || t.token == END) {
+                        error("Macro expansion does not match definition.");
+                        exit(1);
+                    }
+                    toklist_push_back(args[i], t);
+                } while (
+                    (i  < def->params - 1 && peek_raw_token() != ',') ||
+                    (i == def->params - 1 && peek_raw_token() != ')')
+                );
+
+                if (i < def->params - 1) {
+                    consume_raw_token(',');
+                }
+            }
+            consume_raw_token(')');
+        }
+
+        res = expand_macro(def, args);
+        for (i = 0; i < res->length; ++i) {
+            add_token(res->elem[i]);
+        }
+        for (i = 0; i < def->params; ++i) {
+            toklist_destroy(args[i]);
+        }
+        toklist_destroy(res);
+    } else {
+        add_token(t);
+    }
+}
+
 /* Filter token stream and perform preprocessor tasks such as macro substitution,
  * file inclusion etc. One line is processed at a time, putting the resulting
  * parse-ready tokens in token_list. Iterate until the current line yields at
@@ -308,32 +373,7 @@ static int preprocess_line()
             }
         } else if (peek_condition()) {
             while (t.token != END) {
-                macro_t *def = definition(t);
-                if (def) {
-                    int i;
-                    token_t param;
-
-                    if (def->type == FUNCTION_LIKE) {
-                        /* Support only a single param, and one token per param. */
-                        consume_raw_token('(');
-                        for (i = 0; i < def->params; ++i) {
-                            param = next_raw_token();
-                            if (i < def->params - 1)
-                                consume_raw_token(',');
-                        }
-                        consume_raw_token(')');
-                    }
-
-                    for (i = 0; i < def->size; ++i) {
-                        if (def->replacement[i].param) {
-                            add_token(param);
-                        } else {
-                            add_token(def->replacement[i].token);
-                        }
-                    }
-                } else {
-                    add_token(t);
-                }
+                expand_token(t);
                 t = next_raw_token();
             }
         }

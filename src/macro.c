@@ -56,6 +56,52 @@ macro_t *definition(token_t name)
     return macro;
 }
 
+toklist_t *toklist_init()
+{
+    return calloc(1, sizeof(toklist_t));
+}
+
+void toklist_destroy(toklist_t *tl)
+{
+    assert(tl);
+    if (tl->elem) {
+        free(tl->elem);
+        tl->elem = NULL;
+    }
+    free(tl);
+}
+
+void toklist_push_back(toklist_t *tl, token_t t)
+{
+    assert(tl);
+
+    tl->length++;
+    tl->elem = realloc(tl->elem, sizeof(token_t) * tl->length);
+    tl->elem[tl->length - 1] = t;
+}
+
+toklist_t *expand_macro(macro_t *def, toklist_t **args)
+{
+    int i, j, n;
+    toklist_t *res;
+
+    assert(def->type == FUNCTION_LIKE || !args);
+    res = toklist_init();
+
+    for (i = 0; i < def->size; ++i) {
+        n = def->replacement[i].param;
+        if (n) {
+            for (j = 0; j < args[n - 1]->length; ++j) {
+                toklist_push_back(res, args[n - 1]->elem[j]);
+            }
+        } else {
+            toklist_push_back(res, def->replacement[i].token);
+        }
+    }
+
+    return res;
+}
+
 void register_builtin_definitions()
 {
     token_t 
