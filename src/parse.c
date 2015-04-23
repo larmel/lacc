@@ -926,7 +926,12 @@ static var_t primary_expression(block_t *block);
 static var_t 
 expression(block_t *block)
 {
-    return assignment_expression(block);
+    var_t l = assignment_expression(block);
+    if (peek() == ',') {
+        consume(',');
+        l = expression(block);
+    }
+    return l;
 }
 
 static var_t 
