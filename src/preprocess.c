@@ -139,35 +139,6 @@ static int pop_condition() {
     return branch_stack.condition[--branch_stack.length];
 }
 
-/* Append token string representation at the end of provided buffer. If NULL is
- * provided, a new buffer is allocated that must be free'd by caller. */
-static char *pastetok(char *buf, token_t t) {
-    size_t len;
-
-    if (!buf) {
-        buf = calloc(16, sizeof(char));
-        len = 0;
-    } else {
-        len = strlen(buf);
-        if (t.strval) {
-            buf = realloc(buf, len + strlen(t.strval) + 1);
-        } else {
-            buf = realloc(buf, len + 32);
-        }
-    }
-
-    if (t.strval) {
-        strcat(buf, t.strval);
-    } else if (t.intval) {
-        sprintf(buf + len, "%ld", t.intval);
-    } else {
-        assert(isprint(t.token));
-        sprintf(buf + len, "%c", t.token);
-    }
-
-    return buf;
-}
-
 static int expression();
 
 static void preprocess_directive()

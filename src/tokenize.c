@@ -30,6 +30,7 @@ static const char *strtoident(char *in, char **endptr)
             *endptr = in - 1;
         }
     }
+
     return identifier;
 }
 
@@ -50,6 +51,7 @@ static long strtonum(char *in, char **endptr)
 
     if (endptr)
         *endptr = end;
+
     return value;
 }
 
@@ -83,6 +85,7 @@ static char escpchar(char *p, char **endptr)
                 error("Invalid escape sequence `\\%c`.", p[1]);
         }
     }
+
     *endptr = p + 1;
     return *p;
 }
@@ -102,6 +105,7 @@ static char strtochar(char *in, char **endptr)
             *endptr = in;
         }
     }
+
     return value;
 }
 
@@ -126,6 +130,7 @@ static const char *strtostr(char *in, char **endptr)
             *endptr = in;
         }
     }
+
     return start;
 }
 
@@ -193,7 +198,7 @@ token_t get_token(char *in, char **endptr)
         { "++", INCREMENT },
         { "--", DECREMENT },
         { "<<", LSHIFT },
-        { ">>", RSHIFT }, /* 54 */
+        { ">>", RSHIFT } /* 54 */
     };
 
     int n;
@@ -236,6 +241,7 @@ token_t get_token(char *in, char **endptr)
         res.intval = strtonum(in, endptr);
         if (*endptr != in) {
             res.token = INTEGER_CONSTANT;
+            res.strval = strndup(in, *endptr - in);
             return res;
         }
         error("Invalid number literal: `%s`.", in);
@@ -256,13 +262,40 @@ token_t get_token(char *in, char **endptr)
             res.intval = strtochar(in, endptr);
             if (*endptr != in) {
                 res.token = INTEGER_CONSTANT;
+                res.strval = strndup(in, *endptr - in);
                 return res;
             }
             error("Invalid character literal: `%s`.", in);
             exit(1);
+        case '|': res.strval = "|"; break;
+        case '&': res.strval = "&"; break;
+        case '^': res.strval = "^"; break;
+        case '%': res.strval = "%%"; break;
+        case '<': res.strval = "<"; break;
+        case '>': res.strval = ">"; break;
+        case '(': res.strval = "("; break;
+        case ')': res.strval = ")"; break;
+        case ';': res.strval = ";"; break;
+        case '{': res.strval = "{"; break;
+        case '}': res.strval = "}"; break;
+        case '[': res.strval = "["; break;
+        case ']': res.strval = "]"; break;
+        case ',': res.strval = ","; break;
+        case '.': res.strval = "."; break;
+        case '=': res.strval = "="; break;
+        case '*': res.strval = "*"; break;
+        case '/': res.strval = "/"; break;
+        case '+': res.strval = "+"; break;
+        case '-': res.strval = "-"; break;
+        case '!': res.strval = "!"; break;
+        case '~': res.strval = "~"; break;
+        case '#': res.strval = "#"; break;
         default:
-            res.token = *in++;
-            *endptr = in;
-            return res;
+            error("Invalid token '%c'.", *in);
+            exit(1);
     }
+
+    res.token = *in++;
+    *endptr = in;
+    return res;
 }

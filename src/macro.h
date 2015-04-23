@@ -30,6 +30,9 @@ typedef struct {
 toklist_t *toklist_init();
 void toklist_push_back(toklist_t *, token_t);
 void toklist_destroy(toklist_t *);
+token_t toklist_to_string(toklist_t *);
+
+char *pastetok(char *, token_t);
 
 void define_macro(macro_t *);
 

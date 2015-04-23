@@ -67,6 +67,7 @@ enum token
     MINUS = '-',
     NOT = '!',
     NEG = '~',
+    HASH = '#',
 
     END = '$'
 };

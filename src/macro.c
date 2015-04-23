@@ -4,6 +4,8 @@
 #include "util/map.h"
 
 #include <assert.h>
+#include <string.h>
+#include <ctype.h>
 
 
 static map_t definitions;
@@ -80,10 +82,92 @@ void toklist_push_back(toklist_t *tl, token_t t)
     tl->elem[tl->length - 1] = t;
 }
 
+void toklist_push_back_list(toklist_t *tl, toklist_t *tr)
+{
+    assert(tl && tr);
+
+    tl->elem = realloc(tl->elem, sizeof(token_t) * (tl->length + tr->length));
+    memcpy(tl->elem + tl->length, tr->elem, tr->length * sizeof(token_t));
+    tl->length += tr->length;
+}
+
+/* Stringify a list of tokens. */
+token_t toklist_to_string(toklist_t *tl)
+{
+    token_t t = {STRING, NULL, 0};
+    char *buf = calloc(1, sizeof *buf);
+    int i, len;
+
+    assert(tl);
+    for (i = len = 0; i < tl->length; ++i) {
+        assert(tl->elem[i].strval);
+
+        len = len + strlen(tl->elem[i].strval) + 1;
+        buf = realloc(buf, len);
+        strcat(buf, tl->elem[i].strval);
+    }
+
+    t.strval = buf;
+    return t;
+}
+
+/* Append token string representation at the end of provided buffer. If NULL is
+ * provided, a new buffer is allocated that must be free'd by caller. */
+char *pastetok(char *buf, token_t t) {
+    size_t len;
+
+    if (!buf) {
+        buf = calloc(16, sizeof(char));
+        len = 0;
+    } else {
+        len = strlen(buf);
+        if (t.strval) {
+            buf = realloc(buf, len + strlen(t.strval) + 1);
+        } else {
+            buf = realloc(buf, len + 32);
+        }
+    }
+
+    if (t.strval) {
+        strcat(buf, t.strval);
+    } else if (t.intval) {
+        sprintf(buf + len, "%ld", t.intval);
+    } else {
+        assert(isprint(t.token));
+        sprintf(buf + len, "%c", t.token);
+    }
+
+    return buf;
+}
+
+static toklist_t *expand_toklist(toklist_t *tl)
+{
+    toklist_t *res = toklist_init();
+    int i;
+
+    assert(tl);
+    for (i = 0; i < tl->length; ++i) {
+        macro_t *def = definition(tl->elem[i]);
+
+        /* todo: skip if macro already expanded in this context (depth). */
+        if (def) {
+            if (def->type == FUNCTION_LIKE) {
+                internal_error("%s.", "Unsupported macro type.");
+                exit(1);
+            }
+            toklist_push_back_list(res, expand_macro(def, NULL));
+        } else {
+            toklist_push_back(res, tl->elem[i]);
+        }
+    }
+
+    return res;
+}
+
 toklist_t *expand_macro(macro_t *def, toklist_t **args)
 {
-    int i, j, n;
-    toklist_t *res;
+    int i, n;
+    toklist_t *res, *prescanned;
 
     assert(def->type == FUNCTION_LIKE || !args);
     res = toklist_init();
@@ -91,11 +175,28 @@ toklist_t *expand_macro(macro_t *def, toklist_t **args)
     for (i = 0; i < def->size; ++i) {
         n = def->replacement[i].param;
         if (n) {
-            for (j = 0; j < args[n - 1]->length; ++j) {
-                toklist_push_back(res, args[n - 1]->elem[j]);
-            }
+            prescanned = expand_toklist(args[n - 1]);
+            toklist_push_back_list(res, prescanned);
+        } else if (
+            i < def->size - 1 &&
+            def->replacement[i].token.token == '#' &&
+            def->replacement[i + 1].param
+        ) {
+            i++;
+            n = def->replacement[i].param;
+            toklist_push_back(res, toklist_to_string(args[n - 1]));
         } else {
-            toklist_push_back(res, def->replacement[i].token);
+            macro_t *m = definition(def->replacement[i].token);
+
+            if (m) {
+                if (m->type == FUNCTION_LIKE) {
+                    internal_error("%s.", "Unsupported macro type.");
+                    exit(1);
+                }
+                toklist_push_back_list(res, expand_macro(m, NULL));
+            } else {
+                toklist_push_back(res, def->replacement[i].token);    
+            }
         }
     }
 
