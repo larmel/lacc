@@ -52,12 +52,18 @@ eval_expr(block_t *block, optype_t optype, ...)
                     return var_long(left.value.integer % right.value.integer);
                 case IR_OP_EQ:
                     return var_long(left.value.integer == right.value.integer);
+                case IR_OP_GE:
+                    return var_long(left.value.integer >= right.value.integer);
+                case IR_OP_GT:
+                    return var_long(left.value.integer > right.value.integer);
                 default:
                     assert(0);
             }
         }
         switch (optype) {
             case IR_OP_EQ:
+            case IR_OP_GE:
+            case IR_OP_GT:
             case IR_OP_LOGICAL_AND:
             case IR_OP_LOGICAL_OR:
                 type = type_init(INTEGER);
