@@ -330,7 +330,7 @@ enumerator_list()
 
     while (1) {
         consume(IDENTIFIER);
-        arg.name = strdup(strval);
+        arg.name = strdup(current_token.strval);
         if (peek() == '=') {
             var_t val;
 
@@ -389,10 +389,10 @@ declaration_specifiers(enum token *stc)
                     error("Only one storage class specifier allowed.");
                 if (!stc)
                     error("Storage class specifier not allowed in specifier-qualifier-list.");
-                sttok = token();
+                sttok = next();
                 break;
             case IDENTIFIER:
-                tag = sym_lookup(&ns_ident, strval);
+                tag = sym_lookup(&ns_ident, current_token.strval);
                 if (tag && tag->symtype == SYM_TYPEDEF) {
                     flags_t flags;
                     /* todo: validate */
@@ -415,7 +415,7 @@ declaration_specifiers(enum token *stc)
                 break;
             case INT:
             case SIGNED:
-                token();
+                next();
                 type->size = 4;
                 break;
             case LONG:
@@ -444,15 +444,15 @@ declaration_specifiers(enum token *stc)
                 break;
             case UNION:
             case STRUCT:
-                token();
+                next();
                 type->type = OBJECT;
                 type->size = 0;
                 if (peek() == IDENTIFIER) {
                     consume(IDENTIFIER);
-                    tag = sym_lookup(&ns_tag, strval);
+                    tag = sym_lookup(&ns_tag, current_token.strval);
                     if (!tag) {
                         symbol_t arg = { SYM_TYPEDEF };
-                        arg.name = strdup(strval);
+                        arg.name = strdup(current_token.strval);
                         arg.type = type;
                         tag = sym_add(&ns_tag, arg);
                     } else if (tag->type->type == INTEGER) {
@@ -479,11 +479,11 @@ declaration_specifiers(enum token *stc)
                 type->size = 4;
                 if (peek() == IDENTIFIER) {
                     symbol_t arg = { SYM_TYPEDEF };
-                    arg.name = strdup(strval);
+                    arg.name = strdup(current_token.strval);
                     arg.type = type;
 
                     consume(IDENTIFIER);
-                    tag = sym_lookup(&ns_tag, strval);
+                    tag = sym_lookup(&ns_tag, current_token.strval);
                     if (!tag || (tag->depth < ns_tag.depth && peek() == '{')) {
                         tag = sym_add(&ns_tag, arg);
                     } else if (tag->type->type != INTEGER) {
@@ -533,7 +533,7 @@ pointer(const typetree_t *base)
     base = type;
     consume('*');
     while (peek() == CONST || peek() == VOLATILE) {
-        if (token() == CONST)
+        if (next() == CONST)
             type->flags.fconst = 1;
         else
             type->flags.fvolatile = 1;
@@ -595,12 +595,12 @@ direct_declarator(typetree_t *base, const char **symbol)
 
     switch (peek()) {
         case IDENTIFIER:
-            token();
+            next();
             if (!symbol) {
                 error("Unexpected identifier in abstract declarator.");
                 exit(1);
             }
-            *symbol = strdup(strval);
+            *symbol = strdup(current_token.strval);
             break;
         case '(':
             consume('(');
@@ -885,7 +885,7 @@ statement(block_t *parent)
         case IDENTIFIER:
         {
             const symbol_t *def;
-            if ((def = sym_lookup(&ns_ident, strval)) && def->symtype == SYM_TYPEDEF) {
+            if ((def = sym_lookup(&ns_ident, current_token.strval)) && def->symtype == SYM_TYPEDEF) {
                 node = declaration(parent, &def);
                 break;
             }
@@ -980,7 +980,7 @@ logical_expression(block_t *block)
     var_t l, r;
     l = or_expression(block);
     while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
-        optype_t optype = (token() == LOGICAL_AND) 
+        optype_t optype = (next() == LOGICAL_AND) 
             ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
 
         r = and_expression(block);
@@ -996,7 +996,7 @@ or_expression(block_t *block)
     var_t l, r;
     l = and_expression(block);
     while (peek() == '|' || peek() == '^') {
-        optype_t optype = (token() == '|') 
+        optype_t optype = (next() == '|') 
             ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
 
         r = and_expression(block);
@@ -1085,7 +1085,7 @@ additive_expression(block_t *block)
     var_t l, r;
     l = multiplicative_expression(block);
     while (peek() == '+' || peek() == '-') {
-        optype_t optype = (token() == '+') ? IR_OP_ADD : IR_OP_SUB;
+        optype_t optype = (next() == '+') ? IR_OP_ADD : IR_OP_SUB;
 
         r = multiplicative_expression(block);
         l = eval_expr(block, optype, l, r);
@@ -1099,7 +1099,7 @@ multiplicative_expression(block_t *block)
     var_t l, r;
     l = cast_expression(block);
     while (peek() == '*' || peek() == '/' || peek() == '%') {
-        enum token tok = token();
+        enum token tok = next();
         optype_t optype = (tok == '*') ?
             IR_OP_MUL : (tok == '/') ?
                 IR_OP_DIV : IR_OP_MOD;
@@ -1279,7 +1279,7 @@ postfix_expression(block_t *block)
             case '.':
                 root = eval_addr(block, root);
             case ARROW:
-                token();
+                next();
                 consume(IDENTIFIER);
                 if (root.type->type == POINTER && 
                     root.type->next->type == OBJECT)
@@ -1288,14 +1288,14 @@ postfix_expression(block_t *block)
                     const typetree_t *field;
 
                     for (i = offset = 0; i < root.type->next->n_args; ++i) {
-                        if (!strcmp(strval, root.type->next->params[i])) {
+                        if (!strcmp(current_token.strval, root.type->next->params[i])) {
                             field = root.type->next->args[i];
                             break;
                         }
                         offset += root.type->next->args[i]->size;
                     }
                     if (i == root.type->next->n_args) {
-                        error("Invalid field access, no field named %s.", strval);
+                        error("Invalid field access, no field named %s.", current_token.strval);
                         exit(1);
                     }
 
@@ -1338,25 +1338,25 @@ primary_expression(block_t *block)
     const char *lbl;
     const symbol_t *sym;
 
-    switch (token()) {
+    switch (next()) {
         case IDENTIFIER:
-            sym = sym_lookup(&ns_ident, strval);
+            sym = sym_lookup(&ns_ident, current_token.strval);
             if (!sym) {
-                error("Undefined symbol '%s'.", strval);
+                error("Undefined symbol '%s'.", current_token.strval);
                 exit(1);
             }
             var = var_direct(sym);
             break;
         case INTEGER_CONSTANT:
-            var = var_long(intval);
+            var = var_long(current_token.intval);
             break;
         case '(':
             var = expression(block);
             consume(')');
             break;
         case STRING:
-            lbl = string_constant_label(strval);
-            var = var_string(lbl, strlen(strval) + 1);
+            lbl = string_constant_label(current_token.strval);
+            var = var_string(lbl, strlen(current_token.strval) + 1);
             break;
         default:
             error("Unexpected token, not a valid primary expression.");

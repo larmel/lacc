@@ -83,12 +83,11 @@ typedef struct {
 void register_builtin_definitions();
 
 /* Store textual or numerical value of last token read. */
-extern long intval;
-extern const char *strval;
+extern token_t current_token;
 
 /* Tokenizer interface exposed to the parser, return tokens where any macro 
  * substitution or preprocessing directives have been handled. */
-enum token token();
+enum token next();
 enum token peek();
 void consume(enum token);
 

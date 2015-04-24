@@ -361,15 +361,12 @@ static size_t current = -1;
 /* 
  * External interface.
  */
-
-long intval;
-const char *strval;
+token_t current_token;
 
 /* Move current pointer one step forward, returning the next token. */
-enum token token() {
+enum token next() {
     if (current + 1 == toklist.length) {
         if (!preprocess_line()) {
-            strval = "$";
             return END;
         }
         current = -1;
@@ -378,15 +375,13 @@ enum token token() {
 
     /*debug_output_token(toklist.tokens[current]);*/
 
-    strval = toklist.tokens[current].strval;
-    intval = toklist.tokens[current].intval;
-    return toklist.tokens[current].token;
+    current_token = toklist.tokens[current];
+    return current_token.token;
 }
 
 enum token peek() {
     if (current + 1 == toklist.length) {
         if (!preprocess_line()) {
-            strval = "$";
             return END;
         }
         current = -1;
@@ -395,29 +390,18 @@ enum token peek() {
     /*printf("peek: ");
     debug_output_token(toklist.tokens[current + 1]);*/
 
-    strval = toklist.tokens[current + 1].strval;
-    intval = toklist.tokens[current + 1].intval;
-    return toklist.tokens[current + 1].token;
+    current_token = toklist.tokens[current + 1];
+    return current_token.token;
 }
 
 void consume(enum token expected) {
-    enum token t = token();
+    enum token t = next();
     if (t != expected) {
-        if (isprint(t)) {
-            if (isprint(expected))
-                error("Unexpected token `%c`, expected `%c`.", t, expected);
-            else
-                error("Unexpected token `%c`.", t);
-        } else if (t == INTEGER_CONSTANT) {
-            if (isprint(expected))
-                error("Unexpected token `%d`, expected `%c`.", intval, expected);
-            else
-                error("Unexpected token `%d`.", intval);
+        if (isprint(expected)) {
+            error("Unexpected token `%s`, expected `%c`.",
+                current_token.strval, expected);
         } else {
-            if (isprint(expected))
-                error("Unexpected token `%s`, expected `%c`.", strval, expected);
-            else
-                error("Unexpected token `%s`.", strval);
+            error("Unexpected token `%s`.", current_token.strval);
         }
         exit(1);
     }
