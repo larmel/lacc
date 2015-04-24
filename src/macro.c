@@ -188,7 +188,8 @@ toklist_t *expand_macro(macro_t *def, toklist_t **args)
         } else {
             macro_t *m = definition(def->replacement[i].token);
 
-            if (m) {
+            /* Handle only direct self-referencing macros. */
+            if (m && strcmp(m->name.strval, def->name.strval)) {
                 if (m->type == FUNCTION_LIKE) {
                     internal_error("%s.", "Unsupported macro type.");
                     exit(1);
