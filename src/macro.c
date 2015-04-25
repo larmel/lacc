@@ -172,6 +172,8 @@ toklist_t *expand_macro(macro_t *def, toklist_t **args)
     assert(def->type == FUNCTION_LIKE || !args);
     res = toklist_init();
 
+    /* Rewrite this: First prescan all the params and put into one big replacement
+     * list. Then do regular expand_list on that. No more duplication. */
     for (i = 0; i < def->size; ++i) {
         n = def->replacement[i].param;
         if (n) {

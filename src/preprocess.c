@@ -10,82 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Hold current clean line to be tokenized. */
-static char *tok;
-
-/* Use one lookahead for preprocessing token. */
-static token_t prep_token_peek;
-static int has_prep_token_peek;
-
-static void debug_output_token(token_t t)
-{
-    switch (t.token) {
-        case IDENTIFIER:
-        case STRING:
-            printf("  token( %s, %d )\n", t.strval, (int)t.token);
-            break;
-        case INTEGER_CONSTANT:
-            printf("  token( %ld )\n", t.intval);
-            break;
-        default:
-            if (isprint(t.token)) {
-                printf("  token( %c, %d )\n", t.token, (int)t.token);
-            } else {
-                printf("  token( %s, %d )\n", t.strval, (int)t.token);
-            }
-            break;
-    }
-}
-
-static token_t next_raw_token()
-{
-    extern token_t get_token(char *, char **);
-    
-    token_t r;
-    char *end;
-
-    if (has_prep_token_peek) {
-        has_prep_token_peek = 0;
-        return prep_token_peek;
-    }
-
-    r = get_token(tok, &end);
-    tok = end;
-    /*debug_output_token(r); */
-    return r;
-}
-
-static enum token peek_raw_token()
-{
-    if (has_prep_token_peek) {
-        return prep_token_peek.token;
-    }
-
-    prep_token_peek = next_raw_token();
-    has_prep_token_peek = 1;
-
-    /*debug_output_token(prep_token_peek); */
-
-    return prep_token_peek.token;
-}
-
-static void consume_raw_token(enum token t)
-{
-    token_t read = next_raw_token();
-
-    if (read.token != t) {
-        error("Unexpected preprocessing token.");
-        printf("  -> Token was:");
-        debug_output_token(read);
-        if (isprint((int) t)) {
-            printf("  -> Expected %c\n", (char) t);
-        }
-        exit(1);
-    }
-}
-
-/* Store list of preprocessed tokens. Read next from list on call to token(),
- * peek() or consume(), and start over after call to get_preprocessed_tokens().
+/* Buffer of preprocessed tokens, ready to be consumed by the parser.
  */
 static struct {
     token_t *tokens;
@@ -111,8 +36,7 @@ static size_t add_token(token_t t)
     return toklist.length;
 }
 
-/* 
- * Push and pop branch conditions for #if, #elif and #endif.
+/* Push and pop branch conditions for #if, #elif and #endif.
  */
 static struct {
     int *condition;
@@ -189,7 +113,8 @@ static void preprocess_directive()
 
             /* Function-like macro iff parenthesis immediately after, access
              * input buffer directly. */
-            if (*tok == '(') {
+            /*if (*tok == '(') {*/
+            if (peek_raw_token() == '(') {
                 macro->type = FUNCTION_LIKE;
                 consume_raw_token('(');
                 while (peek_raw_token() != ')') {
@@ -207,7 +132,7 @@ static void preprocess_directive()
                 consume_raw_token(')');
             }
 
-            while (peek_raw_token() != END) {
+            while (peek_raw_token() != NEWLINE) {
                 subs = next_raw_token();
                 macro->size++;
                 macro->replacement = 
@@ -240,7 +165,7 @@ static void preprocess_directive()
             } else if (peek_raw_token() == '<') {
                 consume_raw_token('<');
                 angles = 1;
-                while (peek_raw_token() != END) {
+                while (peek_raw_token() != NEWLINE) {
                     if (peek_raw_token() == '>') {
                         break;
                     }
@@ -260,14 +185,16 @@ static void preprocess_directive()
             }
         }
         else if (t.token == IDENTIFIER && !strcmp("error", t.strval)) {
-            error("%s", tok + 1);
+            extern char *line;
+
+            error("%s", line + 1);
             exit(1);
         }
     } else {
         /* Skip the rest. */
         return;
     }
-    consume_raw_token(END);
+    consume_raw_token(NEWLINE);
 }
 
 static void expand_token(token_t t)
@@ -288,7 +215,7 @@ static void expand_token(token_t t)
 
                 do {
                     t = next_raw_token();
-                    if (t.token == ',' || t.token == END) {
+                    if (t.token == ',' || t.token == NEWLINE) {
                         error("Macro expansion does not match definition.");
                         exit(1);
                     }
@@ -326,31 +253,20 @@ static int preprocess_line()
 {
     token_t t;
 
+    toklist.length = 0;
+
     do {
-        /*assert(tok == NULL || *tok == '\0');*/
-
-        /* Get a new clean line, with comments and line continuations removed. */
-        if (getprepline(&tok) == -1)
-            return 0;
-
-        /* Reset list of preprocessed tokens. */
-        toklist.length = 0;
         t = next_raw_token();
 
         if (t.token == '#') {
             preprocess_directive();
-            if (*tok != '\0') {
-                /*puts("skipped tokens"); */
-            }
         } else if (peek_condition()) {
-            while (t.token != END) {
+            while (t.token != NEWLINE && t.token != END) {
                 expand_token(t);
                 t = next_raw_token();
             }
         }
-
-        has_prep_token_peek = 0;
-    } while (!toklist.length);
+    } while (!toklist.length && t.token != END);
 
     return toklist.length;
 }
@@ -366,14 +282,15 @@ token_t current_token;
 /* Move current pointer one step forward, returning the next token. */
 enum token next() {
     if (current + 1 == toklist.length) {
+        current = -1;
         if (!preprocess_line()) {
             return END;
         }
-        current = -1;
     }
     current++;
 
-    /*debug_output_token(toklist.tokens[current]);*/
+    /*printf("next {%ld, %ld}:", toklist.length, current);
+    debug_output_token(toklist.tokens[current]);*/
 
     current_token = toklist.tokens[current];
     return current_token.token;
@@ -381,13 +298,13 @@ enum token next() {
 
 enum token peek() {
     if (current + 1 == toklist.length) {
+        current = -1;
         if (!preprocess_line()) {
             return END;
         }
-        current = -1;
     }
 
-    /*printf("peek: ");
+    /*printf("peek {%ld, %ld}:", toklist.length, current);
     debug_output_token(toklist.tokens[current + 1]);*/
 
     current_token = toklist.tokens[current + 1];

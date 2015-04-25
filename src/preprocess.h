@@ -67,7 +67,11 @@ enum token
     MINUS = '-',
     NOT = '!',
     NEG = '~',
+
     HASH = '#',
+    NEWLINE = '\n',
+    SPACE = ' ',
+    TAB = '\t',
 
     END = '$'
 };
@@ -79,13 +83,26 @@ typedef struct {
     long intval;
 } token_t;
 
+#define debug_output_token(t) \
+    do {\
+        if (t.token == INTEGER_CONSTANT) \
+            printf("   token( %ld )\n", t.intval); \
+        else \
+            printf("   token( %s )\n", t.strval); \
+    } while (0);
+
 /* Define standard macros. */
 void register_builtin_definitions();
+
+/* Lexer exposed to preprocessor. */
+token_t next_raw_token();
+enum token peek_raw_token();
+void consume_raw_token(enum token);
 
 /* Store textual or numerical value of last token read. */
 extern token_t current_token;
 
-/* Tokenizer interface exposed to the parser, return tokens where any macro 
+/* Preprocessor interface exposed to the parser, return tokens where any macro 
  * substitution or preprocessing directives have been handled. */
 enum token next();
 enum token peek();

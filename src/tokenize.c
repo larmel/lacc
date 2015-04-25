@@ -137,7 +137,7 @@ static const char *strtostr(char *in, char **endptr)
 /* Parse and return next preprocessing token, from char buffer where comments
  * are removed and line continuations are applied.
  */
-token_t get_token(char *in, char **endptr)
+static token_t tokenize(char *in, char **endptr)
 {
     static struct {
         const char *value;
@@ -205,16 +205,14 @@ token_t get_token(char *in, char **endptr)
     token_t res = {END, NULL, 0};
 
     assert(endptr);
-
-    while (in && isspace(*in))
-        in++;
+    assert(in && *in != '\0');
 
     if (in == NULL || *in == '\0') {
         *endptr = in;
         return res;
     }
 
-    for (n = 0; n < 55; ++n) {
+    for (n = 0; n < 54; ++n) {
         int length = strlen(reserved[n].value);
         if (!strncmp(in, reserved[n].value, length)) {
             if (n < 32 && isalnum(in[length]))
@@ -290,6 +288,8 @@ token_t get_token(char *in, char **endptr)
         case '!': res.strval = "!"; break;
         case '~': res.strval = "~"; break;
         case '#': res.strval = "#"; break;
+        case ' ': res.strval = " "; break;
+        case '\t': res.strval = "\\t"; break;
         default:
             error("Invalid token '%c'.", *in);
             exit(1);
@@ -298,4 +298,70 @@ token_t get_token(char *in, char **endptr)
     res.token = *in++;
     *endptr = in;
     return res;
+}
+
+/* Hold current clean line to be tokenized. */
+char *line;
+
+/* Use one lookahead for preprocessing token. */
+static token_t prep_token_peek;
+static int has_prep_token_peek;
+
+token_t next_raw_token()
+{
+    static token_t
+        tok_end = {END, NULL, 0},
+        tok_nl = {NEWLINE, NULL, 0};
+
+    token_t r;
+    char *end;
+
+    if (has_prep_token_peek) {
+        has_prep_token_peek = 0;
+        return prep_token_peek;
+    }
+
+    do {
+        if (line == NULL && getprepline(&line) == -1) {
+            r = tok_end;
+        } else if (*line == '\0') {
+            line = NULL;
+            r = tok_nl;
+        } else {
+            r = tokenize(line, &end);
+            line = end;
+        }
+
+    } while (r.token == ' ' || r.token == '\t');
+    /*debug_output_token(r); */
+    return r;
+}
+
+enum token peek_raw_token()
+{
+    if (has_prep_token_peek) {
+        return prep_token_peek.token;
+    }
+
+    prep_token_peek = next_raw_token();
+    has_prep_token_peek = 1;
+
+    /*debug_output_token(prep_token_peek); */
+
+    return prep_token_peek.token;
+}
+
+void consume_raw_token(enum token t)
+{
+    token_t read = next_raw_token();
+
+    if (read.token != t) {
+        error("Unexpected preprocessing token.");
+        printf("  -> Token was:");
+        debug_output_token(read);
+        if (isprint((int) t)) {
+            printf("  -> Expected %c\n", (char) t);
+        }
+        exit(1);
+    }
 }
