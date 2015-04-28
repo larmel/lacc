@@ -10,30 +10,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Buffer of preprocessed tokens, ready to be consumed by the parser.
- */
-static struct {
-    token_t *tokens;
-    size_t length;
-    size_t cap;
-} toklist;
+/* Buffer of preprocessed tokens, ready to be consumed by the parser. Configured
+ * to hold at least K tokens, enabling LL(K) parsing. For the K&R grammar, it is
+ * sufficient to have K = 2. */
+static struct toklist lookahead;
+static const int K = 2;
 
-static size_t add_token(token_t t)
+static void add_token(token_t t)
 {
     extern int VERBOSE;
 
-    toklist.length++;
-    if (toklist.length > toklist.cap) {
-        toklist.cap += 64;
-        toklist.tokens = realloc(toklist.tokens, toklist.cap * sizeof(token_t));
-    }
-    toklist.tokens[toklist.length - 1] = t;
+    toklist_push_back(&lookahead, t);
 
     if (VERBOSE) {
         debug_output_token(t);
     }
-
-    return toklist.length;
 }
 
 /* Push and pop branch conditions for #if, #elif and #endif.
@@ -236,6 +227,7 @@ static void expand_token(token_t t)
         }
 
         res = expand_macro(def, args);
+
         for (i = 0; i < res->length; ++i) {
             add_token(res->elem[i]);
         }
@@ -248,15 +240,24 @@ static void expand_token(token_t t)
     }
 }
 
-/* Filter token stream and perform preprocessor tasks such as macro substitution,
- * file inclusion etc. One line is processed at a time, putting the resulting
- * parse-ready tokens in token_list. Iterate until the current line yields at
- * least one token for parsing. */
-static int preprocess_line()
+/* Current position in list of tokens ready for parsing, pointing to next token
+ * to be returned by next(). */
+static size_t cursor;
+
+/* Consume at least one line, up until the final newline or end of file. */
+static void preprocess_line()
 {
     token_t t;
+    size_t remaining;
 
-    toklist.length = 0;
+    remaining = lookahead.length - cursor;
+    if (remaining) {
+        memmove(lookahead.elem, lookahead.elem + cursor, 
+            remaining * sizeof(*lookahead.elem));
+    }
+
+    lookahead.length = remaining;
+    cursor = 0;
 
     do {
         t = next_raw_token();
@@ -269,13 +270,13 @@ static int preprocess_line()
                 t = next_raw_token();
             }
         }
-    } while (!toklist.length && t.token != END);
+    } while (lookahead.length < K && t.token != END);
 
-    return toklist.length;
+    while (lookahead.length < K) {
+        assert(t.token == END);
+        add_token(t);
+    }
 }
-
-/* Current position in list of tokens ready for parsing. */
-static size_t current = -1;
 
 /* 
  * External interface.
@@ -284,33 +285,24 @@ token_t current_token;
 
 /* Move current pointer one step forward, returning the next token. */
 enum token next() {
-    if (current + 1 == toklist.length) {
-        current = -1;
-        if (!preprocess_line()) {
-            return END;
-        }
+    if (cursor + K >= lookahead.length) {
+        preprocess_line();
     }
-    current++;
-
     /*printf("next {%ld, %ld}:", toklist.length, current);
     debug_output_token(toklist.tokens[current]);*/
 
-    current_token = toklist.tokens[current];
+    current_token = lookahead.elem[cursor++];
     return current_token.token;
 }
 
 enum token peek() {
-    if (current + 1 == toklist.length) {
-        current = -1;
-        if (!preprocess_line()) {
-            return END;
-        }
+    if (!lookahead.length) {
+        preprocess_line();
     }
-
     /*printf("peek {%ld, %ld}:", toklist.length, current);
     debug_output_token(toklist.tokens[current + 1]);*/
 
-    current_token = toklist.tokens[current + 1];
+    current_token = lookahead.elem[cursor];
     return current_token.token;
 }
 

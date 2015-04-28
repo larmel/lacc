@@ -21,7 +21,7 @@ typedef struct {
 
 } macro_t;
 
-typedef struct {
+typedef struct toklist {
     token_t *elem;
     size_t length;
     size_t cap;
