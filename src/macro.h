@@ -7,7 +7,7 @@
 
 
 typedef struct {
-    token_t name;
+    struct token name;
     enum { OBJECT_LIKE, FUNCTION_LIKE } type;
 
     size_t params;
@@ -15,32 +15,32 @@ typedef struct {
 
     /* A substitution is either a token or a parameter. */
     struct macro_subst_t {
-        token_t token;
+        struct token token;
         int param;
     } *replacement;
 
 } macro_t;
 
 typedef struct toklist {
-    token_t *elem;
+    struct token *elem;
     size_t length;
     size_t cap;
 } toklist_t;
 
 toklist_t *toklist_init();
-void toklist_push_back(toklist_t *, token_t);
+void toklist_push_back(toklist_t *, struct token);
 void toklist_destroy(toklist_t *);
-token_t toklist_to_string(toklist_t *);
+struct token toklist_to_string(toklist_t *);
 
-char *pastetok(char *, token_t);
+char *pastetok(char *, struct token);
 
 void define_macro(macro_t *);
 
-void define(token_t, token_t);
+void define(struct token, struct token);
 
-void undef(token_t name);
+void undef(struct token name);
 
-macro_t *definition(token_t);
+macro_t *definition(struct token);
 
 toklist_t *expand_macro(macro_t *, toklist_t **);
 

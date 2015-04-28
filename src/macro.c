@@ -15,7 +15,7 @@ void define_macro(macro_t *macro)
     map_insert(&definitions, macro->name.strval, (void *) macro);
 }
 
-void define(token_t name, token_t subst)
+void define(struct token name, struct token subst)
 {
     macro_t *macro;
 
@@ -35,7 +35,7 @@ void define(token_t name, token_t subst)
     }
 }
 
-void undef(token_t name)
+void undef(struct token name)
 {
     assert(name.strval);
 
@@ -43,7 +43,7 @@ void undef(token_t name)
     map_remove(&definitions, name.strval);
 }
 
-macro_t *definition(token_t name)
+macro_t *definition(struct token name)
 {
     macro_t *macro = NULL;
 
@@ -73,12 +73,12 @@ void toklist_destroy(toklist_t *tl)
     free(tl);
 }
 
-void toklist_push_back(toklist_t *tl, token_t t)
+void toklist_push_back(toklist_t *tl, struct token t)
 {
     assert(tl);
 
     tl->length++;
-    tl->elem = realloc(tl->elem, sizeof(token_t) * tl->length);
+    tl->elem = realloc(tl->elem, sizeof(struct token) * tl->length);
     tl->elem[tl->length - 1] = t;
 }
 
@@ -86,15 +86,16 @@ void toklist_push_back_list(toklist_t *tl, toklist_t *tr)
 {
     assert(tl && tr);
 
-    tl->elem = realloc(tl->elem, sizeof(token_t) * (tl->length + tr->length));
-    memcpy(tl->elem + tl->length, tr->elem, tr->length * sizeof(token_t));
+    tl->elem = 
+        realloc(tl->elem, sizeof(struct token) * (tl->length + tr->length));
+    memcpy(tl->elem + tl->length, tr->elem, tr->length * sizeof(struct token));
     tl->length += tr->length;
 }
 
 /* Stringify a list of tokens. */
-token_t toklist_to_string(toklist_t *tl)
+struct token toklist_to_string(toklist_t *tl)
 {
-    token_t t = {STRING, NULL, 0};
+    struct token t = {STRING, NULL, 0};
     char *buf = calloc(1, sizeof *buf);
     int i, len;
 
@@ -113,7 +114,7 @@ token_t toklist_to_string(toklist_t *tl)
 
 /* Append token string representation at the end of provided buffer. If NULL is
  * provided, a new buffer is allocated that must be free'd by caller. */
-char *pastetok(char *buf, token_t t) {
+char *pastetok(char *buf, struct token t) {
     size_t len;
 
     if (!buf) {
@@ -208,7 +209,7 @@ toklist_t *expand_macro(macro_t *def, toklist_t **args)
 
 void register_builtin_definitions()
 {
-    token_t 
+    struct token 
         name = { IDENTIFIER, NULL, 0 },
         valu = { INTEGER_CONSTANT, NULL, 0 };
 

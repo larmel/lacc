@@ -137,11 +137,11 @@ static const char *strtostr(char *in, char **endptr)
 /* Parse and return next preprocessing token, from char buffer where comments
  * are removed and line continuations are applied.
  */
-static token_t tokenize(char *in, char **endptr)
+static struct token tokenize(char *in, char **endptr)
 {
     static struct {
         const char *value;
-        enum token type;
+        enum token_type type;
     } reserved[] = {
         { "auto", AUTO },
         { "break", BREAK },
@@ -202,12 +202,18 @@ static token_t tokenize(char *in, char **endptr)
     };
 
     int n;
-    token_t res = {END, NULL, 0};
+    struct token res = {END, NULL, 0};
 
     assert(endptr);
     assert(in && *in != '\0');
 
-    if (in == NULL || *in == '\0') {
+    if (isspace(*in)) {
+        res.token = SPACE;
+        res.strval = " ";
+        while (isspace(*in)) {
+            in++;
+            res.intval++;
+        }
         *endptr = in;
         return res;
     }
@@ -288,8 +294,6 @@ static token_t tokenize(char *in, char **endptr)
         case '!': res.strval = "!"; break;
         case '~': res.strval = "~"; break;
         case '#': res.strval = "#"; break;
-        case ' ': res.strval = " "; break;
-        case '\t': res.strval = "\\t"; break;
         default:
             error("Invalid token '%c'.", *in);
             exit(1);
@@ -304,16 +308,16 @@ static token_t tokenize(char *in, char **endptr)
 char *line;
 
 /* Use one lookahead for preprocessing token. */
-static token_t prep_token_peek;
+static struct token prep_token_peek;
 static int has_prep_token_peek;
 
-token_t next_raw_token()
+struct token next_raw_token()
 {
-    static token_t
+    static struct token
         tok_end = {END, NULL, 0},
         tok_nl = {NEWLINE, NULL, 0};
 
-    token_t r;
+    struct token r;
     char *end;
 
     if (has_prep_token_peek) {
@@ -337,7 +341,7 @@ token_t next_raw_token()
     return r;
 }
 
-enum token peek_raw_token()
+enum token_type peek_raw_token()
 {
     if (has_prep_token_peek) {
         return prep_token_peek.token;
@@ -351,9 +355,9 @@ enum token peek_raw_token()
     return prep_token_peek.token;
 }
 
-void consume_raw_token(enum token t)
+void consume_raw_token(enum token_type t)
 {
-    token_t read = next_raw_token();
+    struct token read = next_raw_token();
 
     if (read.token != t) {
         error("Unexpected preprocessing token.");
@@ -361,6 +365,8 @@ void consume_raw_token(enum token t)
         debug_output_token(read);
         if (isprint((int) t)) {
             printf("  -> Expected %c\n", (char) t);
+        } else {
+            printf("  -> Expected %d\n", (int) t);
         }
         exit(1);
     }

@@ -16,7 +16,7 @@
 static struct toklist lookahead;
 static const int K = 2;
 
-static void add_token(token_t t)
+static void add_token(struct token t)
 {
     extern int VERBOSE;
 
@@ -38,13 +38,15 @@ static struct {
 static void push_condition(int c) {
     if (branch_stack.length == branch_stack.cap) {
         branch_stack.cap += 16;
-        branch_stack.condition = realloc(branch_stack.condition, branch_stack.cap * sizeof(int));
+        branch_stack.condition = 
+            realloc(branch_stack.condition, branch_stack.cap * sizeof(int));
     }
     branch_stack.condition[branch_stack.length++] = c;
 }
 
 static int peek_condition() {
-    return branch_stack.length ? branch_stack.condition[branch_stack.length - 1] : 1;
+    return branch_stack.length ? 
+        branch_stack.condition[branch_stack.length - 1] : 1;
 }
 
 static int pop_condition() {
@@ -58,7 +60,7 @@ static int expression();
 
 static void preprocess_directive()
 {
-    token_t t = next_raw_token();
+    struct token t = next_raw_token();
 
     if (t.token == IF) {
         int val = expression();
@@ -86,7 +88,9 @@ static void preprocess_directive()
     }
     else if (peek_condition()) {
         if (t.token == IDENTIFIER && !strcmp("define", t.strval)) {
-            token_t name, subs;
+            extern char *line;
+
+            struct token name, subs;
             macro_t *macro;
             toklist_t *params;
 
@@ -104,8 +108,7 @@ static void preprocess_directive()
 
             /* Function-like macro iff parenthesis immediately after, access
              * input buffer directly. */
-            /*if (*tok == '(') {*/
-            if (peek_raw_token() == '(') {
+            if (*line == '(') {
                 macro->type = FUNCTION_LIKE;
                 consume_raw_token('(');
                 while (peek_raw_token() != ')') {
@@ -127,7 +130,8 @@ static void preprocess_directive()
                 subs = next_raw_token();
                 macro->size++;
                 macro->replacement = 
-                    realloc(macro->replacement, macro->size * sizeof(struct macro_subst_t));
+                    realloc(macro->replacement, 
+                        macro->size * sizeof(struct macro_subst_t));
                 macro->replacement[macro->size - 1].token = subs;
                 macro->replacement[macro->size - 1].param = 0;
                 if (subs.token == IDENTIFIER) {
@@ -144,7 +148,7 @@ static void preprocess_directive()
             define_macro(macro);
         }
         else if (t.token == IDENTIFIER && !strcmp("undef", t.strval)) {
-            token_t name = next_raw_token();
+            struct token name = next_raw_token();
             undef(name);
         }
         else if (t.token == IDENTIFIER && !strcmp("include", t.strval)) {
@@ -182,13 +186,15 @@ static void preprocess_directive()
             exit(1);
         }
     } else {
-        /* Skip the rest. */
-        return;
+        /* Skip dead code. */
+        while (peek_raw_token() != NEWLINE) {
+            next_raw_token();
+        }
     }
     consume_raw_token(NEWLINE);
 }
 
-static void expand_token(token_t t)
+static void expand_token(struct token t)
 {
     macro_t *def = definition(t);
 
@@ -247,7 +253,7 @@ static size_t cursor;
 /* Consume at least one line, up until the final newline or end of file. */
 static void preprocess_line()
 {
-    token_t t;
+    struct token t;
     size_t remaining;
 
     remaining = lookahead.length - cursor;
@@ -278,45 +284,44 @@ static void preprocess_line()
     }
 }
 
-/* 
- * External interface.
- */
-token_t current_token;
-
-/* Move current pointer one step forward, returning the next token. */
-enum token next() {
+struct token next() {
     if (cursor + K >= lookahead.length) {
         preprocess_line();
     }
-    /*printf("next {%ld, %ld}:", toklist.length, current);
-    debug_output_token(toklist.tokens[current]);*/
-
-    current_token = lookahead.elem[cursor++];
-    return current_token.token;
+    return lookahead.elem[cursor++];
 }
 
-enum token peek() {
+struct token peek() {
+    if (!lookahead.length) {
+        /* If peek() is the first call made, make sure there is an initial call
+         * to populate the lookahead buffer. */
+        preprocess_line();
+    }
+    return lookahead.elem[cursor];
+}
+
+struct token peekn(unsigned n) {
+    assert(n && n <= K);
+
     if (!lookahead.length) {
         preprocess_line();
     }
-    /*printf("peek {%ld, %ld}:", toklist.length, current);
-    debug_output_token(toklist.tokens[current + 1]);*/
-
-    current_token = lookahead.elem[cursor];
-    return current_token.token;
+    return lookahead.elem[cursor + n - 1];
 }
 
-void consume(enum token expected) {
-    enum token t = next();
-    if (t != expected) {
+struct token consume(enum token_type expected) {
+    struct token t = next();
+
+    if (t.token != expected) {
         if (isprint(expected)) {
-            error("Unexpected token `%s`, expected `%c`.",
-                current_token.strval, expected);
+            error("Unexpected token '%s', expected '%c'.", t.strval, expected);
         } else {
-            error("Unexpected token `%s`.", current_token.strval);
+            error("Unexpected token '%s'.", t.strval);
         }
         exit(1);
     }
+
+    return t;
 }
 
 /* Parse and evaluate token stream corresponding to constant expression.
@@ -534,7 +539,7 @@ static int eval_unary() {
 static int eval_primary() {
     int value;
     macro_t *def;
-    token_t t;
+    struct token t;
 
     t = next_raw_token();
     switch (t.token) {

@@ -11,7 +11,7 @@
 #include <string.h>
 
 static block_t *declaration(block_t *, const symbol_t **);
-static typetree_t *declaration_specifiers(enum token *);
+static typetree_t *declaration_specifiers(enum token_type *);
 static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
 static typetree_t *direct_declarator(typetree_t *, const char **);
@@ -45,7 +45,7 @@ parse()
     decl->head = cfg_block_init(decl);
     decl->body = cfg_block_init(decl);
 
-    while (peek() != '$') {
+    while (peek().token != '$') {
         decl->fun = NULL;
         declaration(decl->body, &decl->fun);
 
@@ -100,7 +100,7 @@ declaration(block_t *parent, const symbol_t **symbol)
 {
     typetree_t *base;
     symbol_t arg = {0};
-    enum token stc = '$';
+    enum token_type stc = '$';
 
     base = declaration_specifiers(&stc);
     switch (stc) {
@@ -139,7 +139,7 @@ declaration(block_t *parent, const symbol_t **symbol)
         sym = sym_add(&ns_ident, arg);
         assert(sym->type);
 
-        switch (peek()) {
+        switch (peek().token) {
             case ';':
                 consume(';');
                 return parent;
@@ -165,7 +165,7 @@ declaration(block_t *parent, const symbol_t **symbol)
                     }
                 }
                 assert(sym->type->size);
-                if (peek() != ',') {
+                if (peek().token != ',') {
                     consume(';');
                     return parent;
                 }
@@ -219,7 +219,7 @@ initializer(block_t *block, var_t target)
     var_t var;
     int i;
 
-    if (peek() == '{') {
+    if (peek().token == '{') {
         assert(target.kind == DIRECT);
         type = target.type;
         target.lvalue = 1;
@@ -229,7 +229,7 @@ initializer(block_t *block, var_t target)
                 target.type = type->args[i];
                 initializer(block, target);
                 target.offset += type->args[i]->size;
-                if (peek() == '}')
+                if (peek().token == '}')
                     break;
                 consume(',');
             }
@@ -238,7 +238,7 @@ initializer(block_t *block, var_t target)
             for (i = 0; !type->size || i < type->size / type->next->size; ++i) {
                 initializer(block, target);
                 target.offset += type->next->size;
-                if (peek() == '}')
+                if (peek().token == '}')
                     break;
                 consume(',');
             }
@@ -309,14 +309,14 @@ struct_declaration_list(typetree_t *obj)
             obj->params[obj->n_args - 1] = member.name;
             obj->size += member.type->size;
 
-            if (peek() == ',') {
+            if (peek().token == ',') {
                 consume(',');
                 continue;
             }
-        } while (peek() != ';');
+        } while (peek().token != ';');
 
         consume(';');
-    } while (peek() != '}');
+    } while (peek().token != '}');
 
     pop_scope(&ns);
 }
@@ -324,14 +324,15 @@ struct_declaration_list(typetree_t *obj)
 static void
 enumerator_list()
 {
+    struct token tok;
     symbol_t arg = { SYM_ENUM };
 
     arg.type = type_init(INTEGER);
 
     while (1) {
-        consume(IDENTIFIER);
-        arg.name = strdup(current_token.strval);
-        if (peek() == '=') {
+        tok = consume(IDENTIFIER);
+        arg.name = strdup(tok.strval);
+        if (peek().token == '=') {
             var_t val;
 
             consume('=');
@@ -344,7 +345,7 @@ enumerator_list()
 
         sym_add(&ns_ident, arg);
         arg.enum_value++;
-        if (peek() != '}') {
+        if (peek().token != '}') {
             consume(',');
             continue;
         }
@@ -363,15 +364,17 @@ enumerator_list()
  * specifier, NULL is returned.
  */
 static typetree_t *
-declaration_specifiers(enum token *stc)
+declaration_specifiers(enum token_type *stc)
 {
     int consumed = 0;
-    enum token sttok = '$';
+    enum token_type sttok = '$';
     typetree_t *type = type_init(INTEGER);
     symbol_t *tag = NULL;
 
     do {
-        switch (peek()) {
+        struct token tok = peek();
+
+        switch (tok.token) {
             case CONST:
                 consume(CONST);
                 type->flags.fconst = 1;
@@ -389,10 +392,10 @@ declaration_specifiers(enum token *stc)
                     error("Only one storage class specifier allowed.");
                 if (!stc)
                     error("Storage class specifier not allowed in specifier-qualifier-list.");
-                sttok = next();
+                sttok = next().token;
                 break;
             case IDENTIFIER:
-                tag = sym_lookup(&ns_ident, current_token.strval);
+                tag = sym_lookup(&ns_ident, tok.strval);
                 if (tag && tag->symtype == SYM_TYPEDEF) {
                     flags_t flags;
                     /* todo: validate */
@@ -447,12 +450,12 @@ declaration_specifiers(enum token *stc)
                 next();
                 type->type = OBJECT;
                 type->size = 0;
-                if (peek() == IDENTIFIER) {
-                    consume(IDENTIFIER);
-                    tag = sym_lookup(&ns_tag, current_token.strval);
+                if (peek().token == IDENTIFIER) {
+                    struct token ident = consume(IDENTIFIER);
+                    tag = sym_lookup(&ns_tag, ident.strval);
                     if (!tag) {
                         symbol_t arg = { SYM_TYPEDEF };
-                        arg.name = strdup(current_token.strval);
+                        arg.name = strdup(ident.strval);
                         arg.type = type;
                         tag = sym_add(&ns_tag, arg);
                     } else if (tag->type->type == INTEGER) {
@@ -461,7 +464,7 @@ declaration_specifiers(enum token *stc)
                     }
 
                     type = (typetree_t *) tag->type;
-                    if (peek() != '{') {
+                    if (peek().token != '{') {
                         /* Can still have volatile or const after. */
                         break;
                     } else if (type->size) {
@@ -477,14 +480,15 @@ declaration_specifiers(enum token *stc)
                 consume(ENUM);
                 type->type = INTEGER;
                 type->size = 4;
-                if (peek() == IDENTIFIER) {
+                if (peek().token == IDENTIFIER) {
+                    struct token ident;
                     symbol_t arg = { SYM_TYPEDEF };
-                    arg.name = strdup(current_token.strval);
-                    arg.type = type;
 
-                    consume(IDENTIFIER);
-                    tag = sym_lookup(&ns_tag, current_token.strval);
-                    if (!tag || (tag->depth < ns_tag.depth && peek() == '{')) {
+                    ident = consume(IDENTIFIER);
+                    arg.name = strdup(ident.strval);
+                    arg.type = type;
+                    tag = sym_lookup(&ns_tag, ident.strval);
+                    if (!tag || (tag->depth < ns_tag.depth && peek().token == '{')) {
                         tag = sym_add(&ns_tag, arg);
                     } else if (tag->type->type != INTEGER) {
                         error("Tag '%s' was previously defined as object type.", tag->name);
@@ -492,7 +496,7 @@ declaration_specifiers(enum token *stc)
                     }
 
                     type = (typetree_t *) tag->type;
-                    if (peek() != '{') {
+                    if (peek().token != '{') {
                         break;
                     } else if (tag->enum_value) {
                         error("Redefiniton of enum '%s'.", tag->name);
@@ -519,7 +523,7 @@ end:
 static typetree_t *
 declarator(typetree_t *base, const char **symbol)
 {
-    while (peek() == '*') {
+    while (peek().token == '*') {
         base = pointer(base);
     }
     return direct_declarator(base, symbol);
@@ -532,8 +536,8 @@ pointer(const typetree_t *base)
     type->next = base;
     base = type;
     consume('*');
-    while (peek() == CONST || peek() == VOLATILE) {
-        if (next() == CONST)
+    while (peek().token == CONST || peek().token == VOLATILE) {
+        if (next().token == CONST)
             type->flags.fconst = 1;
         else
             type->flags.fvolatile = 1;
@@ -550,12 +554,12 @@ pointer(const typetree_t *base)
 static typetree_t *
 direct_declarator_array(typetree_t *base)
 {
-    if (peek() == '[') {
+    if (peek().token == '[') {
         typetree_t *root;
         long length = 0;
 
         consume('[');
-        if (peek() != ']') {
+        if (peek().token != ']') {
             var_t expr = constant_expression();
             assert(expr.kind == IMMEDIATE);
             if (expr.type->type != INTEGER || expr.value.integer < 1) {
@@ -592,15 +596,16 @@ direct_declarator(typetree_t *base, const char **symbol)
 {
     typetree_t *type = base;
     typetree_t *head, *tail = NULL;
+    struct token ident;
 
-    switch (peek()) {
+    switch (peek().token) {
         case IDENTIFIER:
-            next();
+            ident = consume(IDENTIFIER);
             if (!symbol) {
                 error("Unexpected identifier in abstract declarator.");
                 exit(1);
             }
-            *symbol = strdup(current_token.strval);
+            *symbol = strdup(ident.strval);
             break;
         case '(':
             consume('(');
@@ -614,8 +619,8 @@ direct_declarator(typetree_t *base, const char **symbol)
             break;
     }
 
-    while (peek() == '[' || peek() == '(') {
-        switch (peek()) {
+    while (peek().token == '[' || peek().token == '(') {
+        switch (peek().token) {
             case '[':
                 type = direct_declarator_array(base);
                 break;
@@ -649,9 +654,9 @@ parameter_list(const typetree_t *base)
     type = type_init(FUNCTION);
     type->next = base;
 
-    while (peek() != ')') {
+    while (peek().token != ')') {
         const char *name;
-        enum token stc;
+        enum token_type stc;
         typetree_t *decl;
 
         name = NULL;
@@ -672,15 +677,15 @@ parameter_list(const typetree_t *base)
         type->params = realloc(type->params, sizeof(char *) * type->n_args);
         type->args[type->n_args - 1]   = decl;
         type->params[type->n_args - 1] = name;
-        if (peek() != ',') {
+        if (peek().token != ',') {
             break;
         }
 
         consume(',');
-        if (peek() == ')') {
+        if (peek().token == ')') {
             error("Unexpected trailing comma in parameter list.");
             exit(1);
-        } else if (peek() == DOTS) {
+        } else if (peek().token == DOTS) {
             consume(DOTS);
             type->vararg = 1;
             break;
@@ -699,7 +704,7 @@ block(block_t *parent)
     consume('{');
     push_scope(&ns_ident);
     push_scope(&ns_tag);
-    while (peek() != '}') {
+    while (peek().token != '}') {
         parent = statement(parent);
     }
     consume('}');
@@ -717,15 +722,16 @@ static block_t *
 statement(block_t *parent)
 {
     block_t *node;
+    struct token tok;
 
     /* Store reference to top of loop, for resolving break and continue. Use
      * call stack to keep track of depth, backtracking to the old value. */
     static block_t *break_target, *continue_target;
     block_t *old_break_target, *old_continue_target;
 
-    enum token t = peek();
+    tok = peek();
 
-    switch (t) {
+    switch (tok.token) {
         case ';':
             consume(';');
             node = parent;
@@ -737,7 +743,7 @@ statement(block_t *parent)
         case IF:
         {
             block_t *right = cfg_block_init(decl), *next = cfg_block_init(decl);
-            consume(t);
+            consume(tok.token);
             consume('(');
 
             /* node becomes a branch, store the expression as condition
@@ -754,7 +760,7 @@ statement(block_t *parent)
             right = statement(right);
             right->jump[0] = next;
 
-            if (peek() == ELSE) {
+            if (peek().token == ELSE) {
                 block_t *left = cfg_block_init(decl);
                 consume(ELSE);
 
@@ -781,9 +787,9 @@ statement(block_t *parent)
             break_target = next;
             continue_target = top;
 
-            consume(t);
+            consume(tok.token);
 
-            if (t == WHILE) {
+            if (tok.token == WHILE) {
                 consume('(');
                 top->expr = expression(top);
                 consume(')');
@@ -793,7 +799,7 @@ statement(block_t *parent)
                 /* Generate statement, and get tail end of body to loop back */
                 body = statement(body);
                 body->jump[0] = top;
-            } else if (t == DO) {
+            } else if (tok.token == DO) {
 
                 /* Generate statement, and get tail end of body */
                 body = statement(top);
@@ -824,11 +830,11 @@ statement(block_t *parent)
 
             consume(FOR);
             consume('(');
-            if (peek() != ';') {
+            if (peek().token != ';') {
                 expression(parent);
             }
             consume(';');
-            if (peek() != ';') {
+            if (peek().token != ';') {
                 parent->jump[0] = top;
                 top->expr = expression(top);
                 top->jump[0] = next;
@@ -839,7 +845,7 @@ statement(block_t *parent)
                 top = body;
             }
             consume(';');
-            if (peek() != ')') {
+            if (peek().token != ')') {
                 expression(increment);
                 increment->jump[0] = top;
             }
@@ -862,8 +868,8 @@ statement(block_t *parent)
             break;
         case CONTINUE:
         case BREAK:
-            consume(t);
-            parent->jump[0] = (t == CONTINUE) ? 
+            consume(tok.token);
+            parent->jump[0] = (tok.token == CONTINUE) ? 
                 continue_target :
                 break_target;
             consume(';');
@@ -873,7 +879,7 @@ statement(block_t *parent)
             break;
         case RETURN:
             consume(RETURN);
-            if (peek() != ';')
+            if (peek().token != ';')
                 parent->expr = expression(parent);
             consume(';');
             node = cfg_block_init(decl); /* orphan */
@@ -885,7 +891,10 @@ statement(block_t *parent)
         case IDENTIFIER:
         {
             const symbol_t *def;
-            if ((def = sym_lookup(&ns_ident, current_token.strval)) && def->symtype == SYM_TYPEDEF) {
+            if ((
+                def = sym_lookup(&ns_ident, tok.strval)) 
+                && def->symtype == SYM_TYPEDEF
+            ) {
                 node = declaration(parent, &def);
                 break;
             }
@@ -927,7 +936,7 @@ static var_t
 expression(block_t *block)
 {
     var_t l = assignment_expression(block);
-    if (peek() == ',') {
+    if (peek().token == ',') {
         consume(',');
         l = expression(block);
     }
@@ -938,7 +947,7 @@ static var_t
 assignment_expression(block_t *block)
 {
     var_t l = conditional_expression(block), r;
-    if (peek() == '=') {
+    if (peek().token == '=') {
         consume('=');
         /* todo: node must be unary-expression or lower (l-value) */
         r = assignment_expression(block);
@@ -964,7 +973,7 @@ static var_t
 conditional_expression(block_t *block)
 {
     var_t v = logical_expression(block);
-    if (peek() == '?') {
+    if (peek().token == '?') {
         consume('?');
         expression(block);
         consume(':');
@@ -979,8 +988,8 @@ logical_expression(block_t *block)
 {
     var_t l, r;
     l = or_expression(block);
-    while (peek() == LOGICAL_OR || peek() == LOGICAL_AND) {
-        optype_t optype = (next() == LOGICAL_AND) 
+    while (peek().token == LOGICAL_OR || peek().token == LOGICAL_AND) {
+        optype_t optype = (next().token == LOGICAL_AND) 
             ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
 
         r = and_expression(block);
@@ -995,8 +1004,8 @@ or_expression(block_t *block)
 {
     var_t l, r;
     l = and_expression(block);
-    while (peek() == '|' || peek() == '^') {
-        optype_t optype = (next() == '|') 
+    while (peek().token == '|' || peek().token == '^') {
+        optype_t optype = (next().token == '|') 
             ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
 
         r = and_expression(block);
@@ -1010,7 +1019,7 @@ and_expression(block_t *block)
 {
     var_t l, r;
     l = equality_expression(block);
-    while (peek() == '&') {
+    while (peek().token == '&') {
         consume('&');
         r = and_expression(block);
         l = eval_expr(block, IR_OP_BITWISE_AND, l, r);
@@ -1025,11 +1034,11 @@ equality_expression(block_t *block)
 
     l = relational_expression(block);
     while (1) {
-        if (peek() == EQ) {
+        if (peek().token == EQ) {
             consume(EQ);
             r = relational_expression(block);
             l = eval_expr(block, IR_OP_EQ, l, r);
-        } else if (peek() == NEQ) {
+        } else if (peek().token == NEQ) {
             consume(NEQ);
             r = relational_expression(block);
             l = eval_expr(block, IR_OP_NOT, eval_expr(block, IR_OP_EQ, l, r));
@@ -1046,7 +1055,7 @@ relational_expression(block_t *block)
 
     l = shift_expression(block);
     while (1) {
-        switch (peek()) {
+        switch (peek().token) {
             case '<':
                 consume('<');
                 r = shift_expression(block);
@@ -1084,8 +1093,8 @@ additive_expression(block_t *block)
 {
     var_t l, r;
     l = multiplicative_expression(block);
-    while (peek() == '+' || peek() == '-') {
-        optype_t optype = (next() == '+') ? IR_OP_ADD : IR_OP_SUB;
+    while (peek().token == '+' || peek().token == '-') {
+        optype_t optype = (next().token == '+') ? IR_OP_ADD : IR_OP_SUB;
 
         r = multiplicative_expression(block);
         l = eval_expr(block, optype, l, r);
@@ -1098,8 +1107,8 @@ multiplicative_expression(block_t *block)
 {
     var_t l, r;
     l = cast_expression(block);
-    while (peek() == '*' || peek() == '/' || peek() == '%') {
-        enum token tok = next();
+    while (peek().token == '*' || peek().token == '/' || peek().token == '%') {
+        enum token_type tok = next().token;
         optype_t optype = (tok == '*') ?
             IR_OP_MUL : (tok == '/') ?
                 IR_OP_DIV : IR_OP_MOD;
@@ -1116,12 +1125,12 @@ cast_expression(block_t *block)
     var_t expr;
     typetree_t *type;
 
-    if (peek() == '(') {
+    if (peek().token == '(') {
         consume('(');
         /* specifier-qualifier-list [abstract-declarator] */
         type = declaration_specifiers(NULL);
         if (type) {
-            if (peek() != ')') {
+            if (peek().token != ')') {
                 type = declarator(type, NULL);
             }
             consume(')');
@@ -1144,7 +1153,7 @@ unary_expression(block_t *block)
 {
     var_t expr, temp;
 
-    switch (peek()) {
+    switch (peek().token) {
         case '&':
             consume('&');
             expr = cast_expression(block);
@@ -1172,7 +1181,7 @@ unary_expression(block_t *block)
             break;
         case SIZEOF:
             consume(SIZEOF);
-            if (peek() == '(') {
+            if (peek().token == '(') {
                 typetree_t *type;
 
                 consume('(');
@@ -1180,7 +1189,7 @@ unary_expression(block_t *block)
                 if (!type) {
                     expr = expression(NULL);
                 } else {
-                    if (peek() != ')') {
+                    if (peek().token != ')') {
                         type = declarator(type, NULL);
                     }
                     expr.type = type;
@@ -1228,12 +1237,15 @@ postfix_expression(block_t *block)
 
     do {
         var_t expr, copy, *arg;
+        struct token tok;
         int i, j;
 
-        switch (peek()) {
+        tok = peek();
+
+        switch (tok.token) {
             case '[':
                 /* Evaluate a[b] = *(a + b). */
-                while (peek() == '[') {
+                while (peek().token == '[') {
                     consume('[');
                     expr = expression(block);
                     expr = eval_expr(block, IR_OP_MUL, expr, var_long(root.type->next->size));
@@ -1252,7 +1264,7 @@ postfix_expression(block_t *block)
 
                 consume('(');
                 for (i = 0; i < root.type->n_args; ++i) {
-                    if (peek() == ')') {
+                    if (peek().token == ')') {
                         error("Too few arguments to function %s, expected %d but got %d.", root.symbol->name, root.type->n_args, i);
                         exit(1);
                     }
@@ -1261,7 +1273,7 @@ postfix_expression(block_t *block)
                     if (i < root.type->n_args - 1)
                         consume(',');
                 }
-                while (root.type->vararg && peek() != ')') {
+                while (root.type->vararg && peek().token != ')') {
                     consume(',');
                     arg = realloc(arg, (i + 1) * sizeof(var_t));
                     arg[i] = assignment_expression(block);
@@ -1280,7 +1292,7 @@ postfix_expression(block_t *block)
                 root = eval_addr(block, root);
             case ARROW:
                 next();
-                consume(IDENTIFIER);
+                tok = consume(IDENTIFIER);
                 if (root.type->type == POINTER && 
                     root.type->next->type == OBJECT)
                 {
@@ -1288,14 +1300,15 @@ postfix_expression(block_t *block)
                     const typetree_t *field;
 
                     for (i = offset = 0; i < root.type->next->n_args; ++i) {
-                        if (!strcmp(current_token.strval, root.type->next->params[i])) {
+                        if (!strcmp(tok.strval, root.type->next->params[i])) {
                             field = root.type->next->args[i];
                             break;
                         }
                         offset += root.type->next->args[i]->size;
                     }
                     if (i == root.type->next->n_args) {
-                        error("Invalid field access, no field named %s.", current_token.strval);
+                        error("Invalid field access, no field named %s.", 
+                            tok.strval);
                         exit(1);
                     }
 
@@ -1337,26 +1350,29 @@ primary_expression(block_t *block)
     var_t var;
     const char *lbl;
     const symbol_t *sym;
+    struct token tok;
 
-    switch (next()) {
+    tok = next();
+
+    switch (tok.token) {
         case IDENTIFIER:
-            sym = sym_lookup(&ns_ident, current_token.strval);
+            sym = sym_lookup(&ns_ident, tok.strval);
             if (!sym) {
-                error("Undefined symbol '%s'.", current_token.strval);
+                error("Undefined symbol '%s'.", tok.strval);
                 exit(1);
             }
             var = var_direct(sym);
             break;
         case INTEGER_CONSTANT:
-            var = var_long(current_token.intval);
+            var = var_long(tok.intval);
             break;
         case '(':
             var = expression(block);
             consume(')');
             break;
         case STRING:
-            lbl = string_constant_label(current_token.strval);
-            var = var_string(lbl, strlen(current_token.strval) + 1);
+            lbl = string_constant_label(tok.strval);
+            var = var_string(lbl, strlen(tok.strval) + 1);
             break;
         default:
             error("Unexpected token, not a valid primary expression.");

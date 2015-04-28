@@ -6,7 +6,7 @@
  * character tokens. This lets us refer to f.ex the PLUS token type as literal
  * '+', which makes the parser more elegant. 
  * A sentinel value '$' is used to denote end of file. */
-enum token
+enum token_type
 {
     AUTO = 256, BREAK, CASE, CHAR,
     CONST, CONTINUE, DEFAULT, DO,
@@ -75,12 +75,11 @@ enum token
     END = '$'
 };
 
-/* Preprocessing token. */
-typedef struct {
-    enum token token;
+struct token {
+    enum token_type token;
     const char *strval;
     long intval;
-} token_t;
+};
 
 #define debug_output_token(t) \
     do {\
@@ -94,17 +93,15 @@ typedef struct {
 void register_builtin_definitions();
 
 /* Lexer exposed to preprocessor. */
-token_t next_raw_token();
-enum token peek_raw_token();
-void consume_raw_token(enum token);
-
-/* Store textual or numerical value of last token read. */
-extern token_t current_token;
+struct token next_raw_token();
+enum token_type peek_raw_token();
+void consume_raw_token(enum token_type);
 
 /* Preprocessor interface exposed to the parser, return tokens where any macro 
  * substitution or preprocessing directives have been handled. */
-enum token next();
-enum token peek();
-void consume(enum token);
+struct token next();
+struct token peek();
+struct token peekn(unsigned);
+struct token consume(enum token_type);
 
 #endif
