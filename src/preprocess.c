@@ -215,9 +215,12 @@ static void expand_token(token_t t)
 
                 do {
                     t = next_raw_token();
-                    if (t.token == ',' || t.token == NEWLINE) {
+                    if (t.token == ',') {
                         error("Macro expansion does not match definition.");
                         exit(1);
+                    }
+                    if (t.token == NEWLINE) {
+                        continue;
                     }
                     toklist_push_back(args[i], t);
                 } while (

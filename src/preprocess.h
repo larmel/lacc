@@ -71,7 +71,6 @@ enum token
     HASH = '#',
     NEWLINE = '\n',
     SPACE = ' ',
-    TAB = '\t',
 
     END = '$'
 };

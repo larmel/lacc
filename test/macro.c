@@ -6,7 +6,9 @@ int puts(const char *);
 
 int main() {
 	int a = 42;
-	char *c = BAR(__LINE__)
+	char *c = BAR(
+		__LINE__
+	)
 
 	puts(c);
 	puts(d);

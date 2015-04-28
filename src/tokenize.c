@@ -322,7 +322,7 @@ token_t next_raw_token()
     }
 
     do {
-        if (line == NULL && getprepline(&line) == -1) {
+        if (!line && getprepline(&line) == -1) {
             r = tok_end;
         } else if (*line == '\0') {
             line = NULL;
@@ -332,7 +332,7 @@ token_t next_raw_token()
             line = end;
         }
 
-    } while (r.token == ' ' || r.token == '\t');
+    } while (r.token == SPACE);
     /*debug_output_token(r); */
     return r;
 }
