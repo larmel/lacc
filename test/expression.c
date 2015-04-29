@@ -8,7 +8,10 @@ int main() {
 	int e = d && c || 1;
 	int f = (1, 2);
 
+	int g[2];
+
 	c = !c + +a != -7;
+	(g)[b - 1] = 1;
 
 	return - -c + d + e + f;
 }

@@ -1119,31 +1119,57 @@ multiplicative_expression(block_t *block)
     return l;
 }
 
+#define FIRST_type_qualifier \
+    CONST: case VOLATILE
+
+#define FIRST_type_specifier \
+    VOID: case CHAR: case SHORT: case INT: case LONG: case FLOAT: case DOUBLE: \
+    case SIGNED: case UNSIGNED: case STRUCT: case UNION: case ENUM
+
+#define FIRST_type_name \
+    FIRST_type_qualifier: \
+    case FIRST_type_specifier
+
+#define FIRST(s) FIRST_ ## s
+
 static var_t
 cast_expression(block_t *block)
 {
     var_t expr;
     typetree_t *type;
+    struct token tok;
+    struct symbol *sym;
 
+    /* This rule needs two lookahead, to see beyond the initial parenthesis if
+     * it is actually a cast or an expression. */
     if (peek().token == '(') {
-        consume('(');
-        /* specifier-qualifier-list [abstract-declarator] */
-        type = declaration_specifiers(NULL);
-        if (type) {
-            if (peek().token != ')') {
-                type = declarator(type, NULL);
-            }
-            consume(')');
-            expr = cast_expression(block);
-            /* todo: Validate and convert. */
-            expr.type = type;
-        } else {
-            expr = expression(block);
-            consume(')');
+        tok = peekn(2);
+        switch (tok.token) {
+            case IDENTIFIER:
+                sym = sym_lookup(&ns_ident, tok.strval);
+                if (!sym || sym->symtype != SYM_TYPEDEF)
+                    break;
+            case FIRST(type_name):
+                consume('(');
+                type = declaration_specifiers(NULL);
+                if (!type) {
+                    error("Invalid cast expression, expected type-name.");
+                    exit(1);
+                }
+                if (peek().token != ')') {
+                    type = declarator(type, NULL);
+                }
+                consume(')');
+                expr = cast_expression(block);
+                /* todo: Validate and convert. */
+                expr.type = type;
+                return expr;
+            default:
+                break;
         }
-    } else {
-        expr = unary_expression(block);
     }
+
+    expr = unary_expression(block);
 
     return expr;
 }

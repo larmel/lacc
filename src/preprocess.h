@@ -53,6 +53,7 @@ enum token_type
     GT = '>',
     OPEN_PAREN = '(',
     CLOSE_PAREN = ')',
+    COLON = ':',
     SEMICOLON = ';',
     OPEN_CURLY = '{',
     CLOSE_CURLY = '}',
