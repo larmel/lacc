@@ -14,6 +14,7 @@
  * int is 'l' and quadword (long) is 'q'. */
 static char asmsuffix(const typetree_t *type)
 {
+    if (type->type == ARRAY) return 'q';
     if (type->size == 1) return 'b';
     if (type->size == 2) return 'w';
     if (type->size == 4) return 'l';
@@ -113,7 +114,7 @@ static void
 load(FILE *stream, var_t var, reg_t dest)
 {
     char suffix = asmsuffix(var.type);
-    unsigned w = var.type->size;
+    unsigned w = (var.type->type == ARRAY) ? 8 : var.type->size;
     char mov[] = { 'm', 'o', 'v', 'x', '\0', '\0' };
 
     mov[3] = suffix;
@@ -151,7 +152,7 @@ static void
 store(FILE *stream, reg_t source, var_t var)
 {
     char suffix = asmsuffix(var.type);
-    unsigned w = var.type->size;
+    unsigned w = (var.type->type == ARRAY) ? 8 : var.type->size;
 
     switch (var.kind) {
         case DIRECT:
@@ -255,7 +256,7 @@ fassembleop(FILE *stream, const op_t op)
             break;
         case IR_OP_MUL:
             load(stream, op.c, AX);
-            if (op.b.kind == DIRECT || op.b.kind == IMMEDIATE) {
+            if (op.b.kind == DIRECT) {
                 fprintf(stream, "\tmul%c\t%s\n", asmsuffix(op.b.type), refer(op.b));
             } else {
                 load(stream, op.b, BX);
@@ -404,9 +405,13 @@ assemble_immediate(FILE *stream, var_t target, var_t val)
             }
             break;
         case POINTER:
-            assert(target.type->next->type == INTEGER && target.type->next->size == 1);
             fprintf(stream, "\t.quad\t");
-            fprintf(stream, "%s", value.string);
+            if (target.type->next->type == INTEGER && target.type->next->size == 1 &&
+                value.string) {
+                fprintf(stream, "%s", value.string);
+            } else {
+                fprintf(stream, "%ld", value.integer);
+            }
             fprintf(stream, "\n");
             break;
         case ARRAY:
@@ -414,6 +419,11 @@ assemble_immediate(FILE *stream, var_t target, var_t val)
             fprintf(stream, "\t.string\t\"");
             output_string(stream, value.string);
             fprintf(stream, "\"\n");
+            break;
+        case OBJECT:
+            /* Only way this happens is static initialization to zero. */
+            assert(val.type->type == INTEGER && val.value.integer == 0);
+            fprintf(stream, "\t.skip %d, 0\n", target.type->size);
             break;
         default:
             assert(0);
