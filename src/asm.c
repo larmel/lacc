@@ -222,11 +222,17 @@ fassembleop(FILE *stream, const op_t op)
                 error("Only supports call by name directly.");
                 exit(1);
             }
+            if (op.b.type->vararg) {
+                /* Reset flag over number of vector registers used for variable
+                 * argument list. */
+                fprintf(stream, "\tmovq\t$0, %%rax\n");
+            }
             fprintf(stream, "\tcall\t%s\n", op.b.symbol->name);
             for (i = op.b.type->n_args - 1; i >= 0; --i) {
                 fprintf(stream, "\tpopq\t%%%s\t\t# restore\n", reg(pregs[i], 8));
             }
             if (op.a.type->type != NONE) {
+                /* No result for void function. */
                 store(stream, AX, op.a);
             }
             break;
@@ -415,14 +421,24 @@ assemble_immediate(FILE *stream, var_t target, var_t val)
             fprintf(stream, "\n");
             break;
         case ARRAY:
-            assert(target.type->next->type == INTEGER && target.type->next->size == 1);
-            fprintf(stream, "\t.string\t\"");
-            output_string(stream, value.string);
-            fprintf(stream, "\"\n");
+            if (
+                target.type->next->type == INTEGER && 
+                target.type->next->size == 1 &&
+                value.string
+            ) {
+                /* Special handling for string type. */
+                fprintf(stream, "\t.string\t\"");
+                output_string(stream, value.string);
+                fprintf(stream, "\"\n");
+            } else {
+                /* Default to this for static initialization. */
+                assert(val.type->type == INTEGER && !val.value.integer);
+                fprintf(stream, "\t.skip %d, 0\n", target.type->size);
+            }
             break;
         case OBJECT:
             /* Only way this happens is static initialization to zero. */
-            assert(val.type->type == INTEGER && val.value.integer == 0);
+            assert(val.type->type == INTEGER && !val.value.integer);
             fprintf(stream, "\t.skip %d, 0\n", target.type->size);
             break;
         default:
@@ -441,6 +457,7 @@ assemble_function(FILE *stream, const symbol_t *sym, block_t *body, int locals_s
     if (sym->linkage == LINK_EXTERN) {
         fprintf(stream, "\t.globl\t%s\n", sym_name(sym));
     }
+    fprintf(stream, "\t.type\t%s, @function\n", sym_name(sym));
     fprintf(stream, "%s:\n", sym_name(sym));
     fprintf(stream, "\tpushq\t%%rbp\n");
     fprintf(stream, "\tmovq\t%%rsp, %%rbp\n");
@@ -448,6 +465,9 @@ assemble_function(FILE *stream, const symbol_t *sym, block_t *body, int locals_s
         fprintf(stream, "\tsubq\t$%d, %%rsp\n", locals_size);
 
     fassembleblock(stream, &memo, body);
+
+    /* This is required to see function names in valgrind. */
+    fprintf(stream, "\t.size\t%s, .-%s\n", sym_name(sym), sym_name(sym));
 
     map_finalize(&memo);
 }

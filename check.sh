@@ -16,7 +16,7 @@ fi
 answer="$?"
 
 # Compile with lcc, and assemble with gcc
-bin/lcc -S $file -o ${file}.out.s
+bin/lcc -S -I /usr/include/x86_64-linux-musl/ $file -o ${file}.out.s
 if [ "$?" -ne "0" ]; then
 	echo "${file}: $(tput setaf 1)Compilation failed!$(tput sgr 0)"
 	exit

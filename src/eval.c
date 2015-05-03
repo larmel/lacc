@@ -187,13 +187,9 @@ eval_deref(block_t *block, var_t var)
 
 /* Evaluate a = b.
  * Restrictions on a: DEREF or DIRECT lvalue, not temporary.
- * Restrictions on b:
- *     DIRECT and IMMEDIATE is ok. For DEREF, put in an explicit evaluation
- *     before the assignment, so that we don't get (*a') = (*b'), but instead
- *     t1 = *(b'); (*a') = t1;
+ * Restrictions on b: None
  * 
- * Resulting op_t always has a direct or immediate value as rhs. Return value
- * is the value of b.
+ * Return value is the value of b.
  */
 var_t
 eval_assign(block_t *block, var_t target, var_t var)
@@ -203,15 +199,6 @@ eval_assign(block_t *block, var_t target, var_t var)
     if (!target.lvalue) {
         error("Target of assignment must be l-value.");
         exit(1);
-    }
-
-    if (var.kind == DEREF) {
-        const symbol_t *sym;
-
-        sym = sym_temp(&ns_ident, var.type);
-        var = var_direct(sym);
-
-        return eval_assign(block, target, var);
     }
 
     /* NB: missing type checking! */

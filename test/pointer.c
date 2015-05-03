@@ -5,6 +5,7 @@ int main()
     int *b = &a;
 
     *b = 2;
+    a = *b;
 
-    return a;
+    return a + *b;
 }

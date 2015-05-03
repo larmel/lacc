@@ -49,9 +49,11 @@ vartostr(const var_t var)
             break;
         case DEREF:
             if (!var.offset)
-                sprintf(buffer, "*%s", var.symbol->name);
+                sprintf(buffer, "*(%s)", var.symbol->name);
+            else if (var.offset > 0)
+                sprintf(buffer, "*(%s + %d)", var.symbol->name, var.offset);
             else
-                sprintf(buffer, "%s[%d]", var.symbol->name, var.offset);
+                sprintf(buffer, "*(%s - %d)", var.symbol->name, -var.offset);
             break;
     }
     return buffer;
@@ -83,7 +85,11 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
                 fprintf(stream, " | param %s", vartostr(op.a));
                 break;
             case IR_CALL:
-                fprintf(stream, " | %s = call %s", vartostr(op.a), vartostr(op.b));
+                if (op.a.type->type == NONE) {
+                    fprintf(stream, " | call %s", vartostr(op.b));    
+                } else {
+                    fprintf(stream, " | %s = call %s", vartostr(op.a), vartostr(op.b));
+                }
                 break;
             case IR_OP_ADD:
                 fprintf(stream, " | %s = %s + %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
@@ -119,10 +125,10 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
                 fprintf(stream, " | %s = %s == %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_GT:
-                fprintf(stream, " | %s = %s > %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
+                fprintf(stream, " | %s = %s \\> %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_GE:
-                fprintf(stream, " | %s = %s >= %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
+                fprintf(stream, " | %s = %s \\>= %s", vartostr(op.a), vartostr(op.b), vartostr(op.c));
                 break;
             case IR_OP_NOT:
                 fprintf(stream, " | %s = !%s", vartostr(op.a), vartostr(op.b));
@@ -136,16 +142,20 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
         }
         fprintf(stream, " }\"];\n");
     } else if (node->jump[1] != NULL) {
-        fprintf(stream, " | if %s goto %s", vartostr(node->expr), escape(node->jump[1]->label));
+        fprintf(stream, " | if %s goto %s",
+            vartostr(node->expr), escape(node->jump[1]->label));
         fprintf(stream, " }\"];\n");
         foutputnode(stream, memo, node->jump[0]);
         foutputnode(stream, memo, node->jump[1]);
-        fprintf(stream, "\t%s:s -> %s:n;\n", sanitize(node->label), sanitize(node->jump[0]->label));
-        fprintf(stream, "\t%s:s -> %s:n;\n", sanitize(node->label), sanitize(node->jump[1]->label));
+        fprintf(stream, "\t%s:s -> %s:n;\n",
+            sanitize(node->label), sanitize(node->jump[0]->label));
+        fprintf(stream, "\t%s:s -> %s:n;\n",
+            sanitize(node->label), sanitize(node->jump[1]->label));
     } else {
         fprintf(stream, " }\"];\n");
         foutputnode(stream, memo, node->jump[0]);
-        fprintf(stream, "\t%s:s -> %s:n;\n", sanitize(node->label), sanitize(node->jump[0]->label));
+        fprintf(stream, "\t%s:s -> %s:n;\n",
+            sanitize(node->label), sanitize(node->jump[0]->label));
     }
 }
 
@@ -159,6 +169,11 @@ fdotgen(FILE *stream, const decl_t *cfg)
         fprintf(stream, "digraph {\n");
         fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\",shape=record];\n");
         fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,style=\"setlinewidth(0.1)\"];\n");
+
+        if (cfg->fun) {
+            fprintf(stream, "\tlabel=\"%s\"\n", cfg->fun->name);
+            fprintf(stream, "\tlabelloc=\"t\"\n");
+        }
 
         foutputnode(stream, &memo, cfg->body);
 
