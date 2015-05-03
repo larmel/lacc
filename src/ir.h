@@ -1,10 +1,13 @@
 #ifndef IR_H
 #define IR_H
 
+#include "util.h"
 #include "type.h"
 #include "symbol.h"
 
 #include <stddef.h>
+
+DECLARE_LIST_IMPLEMENTATION(sym_list, struct symbol *)
 
 /* Immediate value.
  */
@@ -107,6 +110,10 @@ typedef struct decl
 
     /* Number of bytes to allocate to local variables on stack. */
     int locals_size;
+
+    /* Store all symbols associated with a function declaration. */
+    struct sym_list params;
+    struct sym_list locals;
 
     /* Store all associated nodes in a list to simplify deallocation. */
     block_t **nodes;

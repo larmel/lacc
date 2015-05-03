@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static block_t *declaration(block_t *, const symbol_t **);
+static block_t *declaration(block_t *);
 static typetree_t *declaration_specifiers(enum token_type *);
 static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
@@ -20,12 +20,12 @@ static const typetree_t *initializer(block_t *block, var_t target);
 static block_t *block(block_t *);
 static block_t *statement(block_t *);
 
-/* expression nodes that are called in high level rules */
+/* Expression nodes that are called in high level rules */
 static var_t expression(block_t *);
 static var_t constant_expression();
 static var_t assignment_expression(block_t *);
 
-/* Scopes. */
+/* Namespaces. */
 namespace_t
     ns_ident = {"identifiers"},
     ns_label = {"labels"},
@@ -34,10 +34,10 @@ namespace_t
 
 /* Current declaration, accessed for creating new blocks or adding init code
  * in head block. */
-static decl_t *decl;
+decl_t *decl;
 
-decl_t *
-parse()
+/* Parse the next external declaration. */
+decl_t *parse()
 {
     static int done_last_iteration;
 
@@ -47,12 +47,9 @@ parse()
 
     while (peek().token != '$') {
         decl->fun = NULL;
-        declaration(decl->body, &decl->fun);
+        declaration(decl->body);
 
         if (decl->head->n || decl->fun) {
-            if (decl->fun) {
-                decl->locals_size = (-1) * ns_ident.var_stack_offset;
-            }
             return decl;
         }
     }
@@ -69,8 +66,9 @@ parse()
         }
 
         done_last_iteration = 1;
-        if (found)
+        if (found) {
             return decl;
+        }
     }
 
     cfg_finalize(decl);
@@ -92,11 +90,9 @@ static void define_builtin__func__(const char *name)
 }
 
 /* Cover both external declarations, functions, and local declarations (with
- * optional initialization code) inside functions. Symbol is bound to function
- * if encountered, otherwise not touched.
- */
+ * optional initialization code) inside functions. */
 static block_t *
-declaration(block_t *parent, const symbol_t **symbol)
+declaration(block_t *parent)
 {
     typetree_t *base;
     symbol_t arg = {0};
@@ -138,6 +134,10 @@ declaration(block_t *parent, const symbol_t **symbol)
 
         sym = sym_add(&ns_ident, arg);
         assert(sym->type);
+        if (ns_ident.depth) {
+            assert(ns_ident.depth > 1);
+            sym_list_push_back(&decl->locals, sym);
+        }
 
         switch (peek().token) {
             case ';':
@@ -147,7 +147,8 @@ declaration(block_t *parent, const symbol_t **symbol)
                 const typetree_t *type;
 
                 if (sym->symtype == SYM_DECLARATION) {
-                    error("Symbol '%s' was declared extern and cannot be initialized.", sym->name);
+                    error("Symbol '%s' was declared extern and "
+                          "cannot be initialized.", sym->name);
                 }
                 if (!sym->depth && sym->symtype == SYM_DEFINITION) {
                     error("Symbol '%s' was already defined.", sym->name);
@@ -156,13 +157,10 @@ declaration(block_t *parent, const symbol_t **symbol)
                 consume('=');
                 sym->symtype = SYM_DEFINITION;
                 type = initializer(
-                    (!sym->depth || sym->n ? decl->head : parent), var_direct(sym));
+                    (!sym->depth || sym->n ? decl->head : parent), 
+                    var_direct(sym));
                 if (!sym->type->size) {
                     sym->type = type_complete(sym->type, type);
-                    if (sym->depth > 1) { /* can this happen? */
-                        ns_ident.var_stack_offset -= sym->type->size;
-                        sym->stack_offset = ns_ident.var_stack_offset;
-                    }
                 }
                 assert(sym->type->size);
                 if (peek().token != ',') {
@@ -178,6 +176,7 @@ declaration(block_t *parent, const symbol_t **symbol)
                     exit(1);
                 }
                 sym->symtype = SYM_DEFINITION;
+                decl->fun = sym;
 
                 push_scope(&ns_ident);
                 define_builtin__func__(sym->name);
@@ -192,10 +191,9 @@ declaration(block_t *parent, const symbol_t **symbol)
                         error("Missing parameter name at position %d.", i + 1);
                         exit(1);
                     }
-                    sym_add(&ns_ident, sarg);
+                    sym_list_push_back(&decl->params, sym_add(&ns_ident, sarg));
                 }
                 parent = block(parent);
-                *symbol = sym;
                 pop_scope(&ns_ident);
 
                 return parent;
@@ -203,7 +201,6 @@ declaration(block_t *parent, const symbol_t **symbol)
             default:
                 break;
         }
-
         consume(',');
     }
 }
@@ -895,7 +892,7 @@ statement(block_t *parent)
                 def = sym_lookup(&ns_ident, tok.strval)) 
                 && def->symtype == SYM_TYPEDEF
             ) {
-                node = declaration(parent, &def);
+                node = declaration(parent);
                 break;
             }
             /* todo: handle label statement. */
@@ -909,11 +906,8 @@ statement(block_t *parent)
             node = parent;
             break;
         default:
-        {
-            const symbol_t *decl;
-            node = declaration(parent, &decl);
+            node = declaration(parent);
             break;
-        }
     }
     return node;
 }

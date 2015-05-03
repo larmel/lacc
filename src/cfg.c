@@ -6,6 +6,8 @@
 #include <stdio.h>
 
 
+DEFINE_LIST_IMPLEMENTATION(sym_list, struct symbol *)
+
 static const char *
 mklabel()
 {

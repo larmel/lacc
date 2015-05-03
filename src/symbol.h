@@ -2,6 +2,7 @@
 #define SYMBOL_H
 
 #include "type.h"
+#include "util.h"
 
 #include <stdio.h>
 
@@ -31,23 +32,21 @@ typedef struct symbol {
     const char *name;
     const typetree_t *type;
 
-    /* Tag to disambiguate differently scoped static variables with same name. */
+    /* Tag to disambiguate differently scoped static variables with the
+     * same name. */
     int n;
 
     /* Enumeration constants live in the normal symbol table, and always have
      * integer type. Denoted by symtype SYM_ENUM. */
     int enum_value;
 
-    /* The n'th function argument. 1-indexed to keep 0 default. */
-    int param_n;
-
-    /* Argument or local variable offset to base pointer. */
+    /* Parameter or local variable offset to base pointer. This is kept as 0
+     * during parsing, but assigned when passed to back-end. */
     int stack_offset;
 
     /* Scope depth. */
     int depth;
 } symbol_t;
-
 
 /* Hold symbols and manage scopes in a namespace. There are three different 
  * types of namespaces in C (A11.1):
@@ -70,10 +69,6 @@ typedef struct namespace {
 
     struct scope *scope;
     int depth;
-
-    int var_stack_offset;
-    int param_number;
-
 } namespace_t;
 
 namespace_t ns_ident, ns_label, ns_tag;
@@ -92,7 +87,7 @@ void dump_symtab(namespace_t *);
 symbol_t *sym_lookup(namespace_t *, const char *);
 symbol_t *sym_add(namespace_t *, symbol_t);
 
-const symbol_t *sym_temp(namespace_t *, const typetree_t *);
+symbol_t *sym_temp(namespace_t *, const typetree_t *);
 const symbol_t *sym_temp_static(namespace_t *, const typetree_t *);
 
 void register_builtin_types(namespace_t *);

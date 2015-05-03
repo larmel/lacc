@@ -8,6 +8,10 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
+/* Current declaration from parser. Need to add symbols to list whenever new
+ * ones are created with sym_temp. And no, that should no be in symtab.c. */
+extern decl_t *decl;
+
 /* Evaluate a = b <op> c, or unary expression a = <op> b
  *
  * Returns a DIRECT reference to a new temporary, or an immediate value.
@@ -18,9 +22,9 @@ eval_expr(block_t *block, optype_t optype, ...)
     va_list args;
 
     op_t op;
+    symbol_t *temp;
     var_t res, left, right;
     const typetree_t *type;
-    const symbol_t *temp;
 
     va_start(args, optype);
     left = va_arg(args, var_t);
@@ -90,6 +94,8 @@ eval_expr(block_t *block, optype_t optype, ...)
     res = var_direct(temp);
     assert(res.kind != IMMEDIATE);
 
+    sym_list_push_back(&decl->locals, temp);
+
     op.a = res;
     op.b = left;
     op.c = right;
@@ -114,7 +120,7 @@ eval_addr(block_t *block, var_t right)
 {
     op_t op;
     var_t res;
-    const symbol_t *temp;
+    symbol_t *temp;
     typetree_t *type;
 
     type = type_init(POINTER);
@@ -124,6 +130,8 @@ eval_addr(block_t *block, var_t right)
         case DIRECT:
             temp = sym_temp(&ns_ident, type);
             res = var_direct(temp);
+
+            sym_list_push_back(&decl->locals, temp);
 
             op.type = IR_ADDR;
             op.a = res;
@@ -156,7 +164,7 @@ eval_deref(block_t *block, var_t var)
 {
     op_t op;
     var_t res;
-    const symbol_t *temp;
+    symbol_t *temp;
 
     switch (var.kind) {
         case DIRECT:
@@ -170,6 +178,8 @@ eval_deref(block_t *block, var_t var)
             }
             temp = sym_temp(&ns_ident, type_deref(var.symbol->type));
             res = var_deref(temp, 0);
+
+            sym_list_push_back(&decl->locals, temp);
 
             op.type = IR_DEREF;
             op.a = res;
@@ -186,7 +196,7 @@ eval_deref(block_t *block, var_t var)
 }
 
 /* Evaluate a = b.
- * Restrictions on a: DEREF or DIRECT lvalue, not temporary.
+ * Restrictions on a: DEREF or DIRECT l-value, not temporary.
  * Restrictions on b: None
  * 
  * Return value is the value of b.
@@ -217,12 +227,14 @@ var_t
 eval_copy(block_t *block, var_t var)
 {
     var_t res;
-    const symbol_t *sym;
+    symbol_t *temp;
 
-    sym = sym_temp(&ns_ident, var.type);
-    res = var_direct(sym);
+    temp = sym_temp(&ns_ident, var.type);
+    res = var_direct(temp);
     assert(res.kind != IMMEDIATE);
     res.lvalue = 1;
+
+    sym_list_push_back(&decl->locals, temp);
 
     eval_assign(block, res, var);
 
@@ -235,13 +247,15 @@ eval_call(block_t *block, var_t func)
 {
     op_t op;
     var_t res;
-    const symbol_t *temp;
+    symbol_t *temp;
 
     if (func.type->next->type == NONE) {
         res = var_void();
     } else {
         temp = sym_temp(&ns_ident, func.type->next);
         res = var_direct(temp);
+
+        sym_list_push_back(&decl->locals, temp);
     }
 
     op.type = IR_CALL;
