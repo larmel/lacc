@@ -197,6 +197,7 @@ fassembleop(FILE *stream, const op_t *op)
 
     switch (op->type) {
         case IR_ASSIGN:
+        case IR_CAST:
             load(stream, op->b, AX);
             store(stream, AX, op->a);
             break;

@@ -266,6 +266,31 @@ eval_call(block_t *block, var_t func)
     return res;
 }
 
+var_t
+eval_cast(block_t *block, var_t var, const typetree_t *type)
+{
+    op_t op;
+    var_t res;
+    symbol_t *temp;
+
+    if (var.type->size == type->size) {
+        var.type = type;
+        res = var;
+    } else {
+        temp = sym_temp(&ns_ident, type);
+        res = var_direct(temp);
+
+        op.type = IR_CAST;
+        op.a = res;
+        op.b = var;
+        cfg_ir_append(block, op);
+
+        sym_list_push_back(&decl->locals, temp);
+    }
+
+    return res;
+}
+
 void
 param(block_t *block, var_t p)
 {

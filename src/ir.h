@@ -46,11 +46,12 @@ typedef struct variable
  */
 typedef enum optype
 {
-    IR_PARAM = 0,       /* param a    */
+    IR_PARAM = 0x00,    /* param a    */
     IR_ASSIGN = 0x10,   /* a = b      */
     IR_DEREF,           /* a = *b     */
     IR_ADDR,            /* a = &b     */
     IR_CALL,            /* a = b()    */
+    IR_CAST,            /* a = (T) b  */
     IR_OP_NOT,          /* a = !b     */
     IR_OP_ADD = 0x20,   /* a = b + c  */
     IR_OP_SUB,
@@ -145,6 +146,7 @@ var_t eval_deref(block_t *, var_t);
 var_t eval_assign(block_t *, var_t, var_t);
 var_t eval_copy(block_t *, var_t);
 var_t eval_call(block_t *, var_t);
+var_t eval_cast(block_t *, var_t, const typetree_t *);
 void param(block_t *, var_t);
 
 /* Expression variables. */

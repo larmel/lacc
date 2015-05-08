@@ -1155,8 +1155,7 @@ cast_expression(block_t *block)
                 }
                 consume(')');
                 expr = cast_expression(block);
-                /* todo: Validate and convert. */
-                expr.type = type;
+                expr = eval_cast(block, expr, type);
                 return expr;
             default:
                 break;
