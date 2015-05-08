@@ -48,13 +48,12 @@ var_string(const char *label, size_t length)
 }
 
 var_t
-var_long(long value)
+var_int(int value)
 {
     var_t var = {0};
     typetree_t *type;
 
     type = type_init(INTEGER);
-    type->size = 8;
 
     var.kind = IMMEDIATE;
     var.type = type;

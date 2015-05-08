@@ -35,31 +35,31 @@ eval_expr(block_t *block, optype_t optype, ...)
         {
             switch (optype) {
                 case IR_OP_LOGICAL_AND:
-                    return var_long(left.value.integer && right.value.integer);
+                    return var_int(left.value.integer && right.value.integer);
                 case IR_OP_LOGICAL_OR:
-                    return var_long(left.value.integer || right.value.integer);
+                    return var_int(left.value.integer || right.value.integer);
                 case IR_OP_BITWISE_OR:
-                    return var_long(left.value.integer | right.value.integer);
+                    return var_int(left.value.integer | right.value.integer);
                 case IR_OP_BITWISE_XOR:
-                    return var_long(left.value.integer ^ right.value.integer);
+                    return var_int(left.value.integer ^ right.value.integer);
                 case IR_OP_BITWISE_AND:
-                    return var_long(left.value.integer & right.value.integer);
+                    return var_int(left.value.integer & right.value.integer);
                 case IR_OP_ADD:
-                    return var_long(left.value.integer + right.value.integer);
+                    return var_int(left.value.integer + right.value.integer);
                 case IR_OP_SUB:
-                    return var_long(left.value.integer - right.value.integer);
+                    return var_int(left.value.integer - right.value.integer);
                 case IR_OP_MUL:
-                    return var_long(left.value.integer * right.value.integer);
+                    return var_int(left.value.integer * right.value.integer);
                 case IR_OP_DIV:
-                    return var_long(left.value.integer / right.value.integer);
+                    return var_int(left.value.integer / right.value.integer);
                 case IR_OP_MOD:
-                    return var_long(left.value.integer % right.value.integer);
+                    return var_int(left.value.integer % right.value.integer);
                 case IR_OP_EQ:
-                    return var_long(left.value.integer == right.value.integer);
+                    return var_int(left.value.integer == right.value.integer);
                 case IR_OP_GE:
-                    return var_long(left.value.integer >= right.value.integer);
+                    return var_int(left.value.integer >= right.value.integer);
                 case IR_OP_GT:
-                    return var_long(left.value.integer > right.value.integer);
+                    return var_int(left.value.integer > right.value.integer);
                 default:
                     assert(0);
             }
@@ -82,7 +82,7 @@ eval_expr(block_t *block, optype_t optype, ...)
         {
             switch (optype) {
                 case IR_OP_NOT:
-                    return var_long(!left.value.integer);
+                    return var_int(!left.value.integer);
                 default:
                     assert(0);
             }
@@ -142,7 +142,7 @@ eval_addr(block_t *block, var_t right)
         case DEREF:
             res = var_direct(right.symbol);
             if (right.offset) {
-                res = eval_expr(block, IR_OP_SUB, res, var_long((long) right.offset));
+                res = eval_expr(block, IR_OP_SUB, res, var_int((long) right.offset));
             }
             res.type = type;
             break;
@@ -174,7 +174,7 @@ eval_deref(block_t *block, var_t var)
             if (var.offset) {
                 var = eval_expr(block, IR_OP_SUB, 
                     var_direct(var.symbol),
-                    var_long((long) var.offset));
+                    var_int((long) var.offset));
             }
             temp = sym_temp(&ns_ident, type_deref(var.symbol->type));
             res = var_deref(temp, 0);

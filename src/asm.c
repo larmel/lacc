@@ -40,6 +40,9 @@ typedef enum {
     R15
 } reg_t;
 
+/* Promote all operands to 32 bit, to not have to worry about partial register
+ * not being zeroed properly. On 64-bit, the upper half will be zeroed auto-
+ * matically. */
 static const char* reg(reg_t r, unsigned w)
 {
     const char *x86_64_regs[] = {
@@ -116,14 +119,15 @@ load(FILE *stream, var_t var, reg_t dest)
 {
     char suffix = asmsuffix(var.type);
     unsigned w = (var.type->type == ARRAY) ? 8 : var.type->size;
-    char mov[] = { 'm', 'o', 'v', 'x', '\0', '\0' };
+    char mov[] = { 'm', 'o', 'v', 'x', '\0', '\0', '\0' };
 
     mov[3] = suffix;
 
-    /* Special write to registers that do not have byte resolution. */
-    if (w == 1 && dest > 3) {
+    if (w == 1) {
         mov[3] = 'z';
         mov[4] = 'b';
+        mov[5] = 'l';
+        w = 4;
     }
 
     switch (var.kind) {
@@ -259,22 +263,18 @@ fassembleop(FILE *stream, const op_t *op)
             break;
         case IR_OP_ADD:
             load(stream, op->b, AX);
-            if (op->c.kind == DIRECT || op->c.kind == IMMEDIATE) {
-                fprintf(stream, "\taddq\t%s, %%rax\n", refer(op->c));
-            } else {
-                load(stream, op->c, BX);
-                fprintf(stream, "\taddq\t%%rbx, %%rax\n");
-            }
+            load(stream, op->c, BX);
+            fprintf(stream, "\tadd%c\t%%%s, %%%s\n",
+                asmsuffix(op->a.type), reg(BX, op->a.type->size),
+                reg(AX, op->a.type->size));
             store(stream, AX, op->a);
             break;
         case IR_OP_SUB:
             load(stream, op->b, AX);
-            if (op->c.kind == DIRECT || op->c.kind == IMMEDIATE) {
-                fprintf(stream, "\tsubq\t%s, %%rax\n", refer(op->c));
-            } else {
-                load(stream, op->c, BX);
-                fprintf(stream, "\tsubq\t%%rbx, %%rax\n");
-            }
+            load(stream, op->c, BX);
+            fprintf(stream, "\tsub%c\t%%%s, %%%s\n",
+                asmsuffix(op->a.type), reg(BX, op->a.type->size),
+                reg(AX, op->a.type->size));
             store(stream, AX, op->a);
             break;
         case IR_OP_MUL:

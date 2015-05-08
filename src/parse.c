@@ -61,7 +61,7 @@ decl_t *parse()
             sym = ns_ident.symbol[i];
             if (sym->symtype == SYM_TENTATIVE && sym->linkage == LINK_INTERN) {
                 found = 1;
-                eval_assign(decl->head, var_direct(sym), var_long(0));
+                eval_assign(decl->head, var_direct(sym), var_int(0));
             }
         }
 
@@ -1197,7 +1197,7 @@ unary_expression(block_t *block)
         case '-':
             consume('-');
             expr = cast_expression(block);
-            expr = eval_expr(block, IR_OP_SUB, var_long(0), expr);
+            expr = eval_expr(block, IR_OP_SUB, var_int(0), expr);
             break;
         case SIZEOF:
             consume(SIZEOF);
@@ -1224,18 +1224,18 @@ unary_expression(block_t *block)
             if (!expr.type->size) {
                 error("Cannot apply 'sizeof' to incomplete type.");
             }
-            expr = var_long(expr.type->size);
+            expr = var_int(expr.type->size);
             break;
         case INCREMENT:
             consume(INCREMENT);
             temp = unary_expression(block);
-            expr = eval_expr(block, IR_OP_ADD, temp, var_long(1));
+            expr = eval_expr(block, IR_OP_ADD, temp, var_int(1));
             expr = eval_assign(block, temp, expr);
             break;
         case DECREMENT:
             consume(DECREMENT);
             temp = unary_expression(block);
-            expr = eval_expr(block, IR_OP_SUB, temp, var_long(1));
+            expr = eval_expr(block, IR_OP_SUB, temp, var_int(1));
             expr = eval_assign(block, temp, expr);
             break;
         default:
@@ -1268,7 +1268,7 @@ postfix_expression(block_t *block)
                 while (peek().token == '[') {
                     consume('[');
                     expr = expression(block);
-                    expr = eval_expr(block, IR_OP_MUL, expr, var_long(root.type->next->size));
+                    expr = eval_expr(block, IR_OP_MUL, expr, var_int(root.type->next->size));
                     expr = eval_expr(block, IR_OP_ADD, root, expr);
                     root = eval_deref(block, expr);
                     consume(']');
@@ -1344,14 +1344,14 @@ postfix_expression(block_t *block)
             case INCREMENT:
                 consume(INCREMENT);
                 copy = eval_copy(block, root);
-                expr = eval_expr(block, IR_OP_ADD, root, var_long(1));
+                expr = eval_expr(block, IR_OP_ADD, root, var_int(1));
                 eval_assign(block, root, expr);
                 root = copy;
                 break;
             case DECREMENT:
                 consume(DECREMENT);
                 copy = eval_copy(block, root);
-                expr = eval_expr(block, IR_OP_SUB, root, var_long(1));
+                expr = eval_expr(block, IR_OP_SUB, root, var_int(1));
                 eval_assign(block, root, expr);
                 root = copy;
                 break;
@@ -1384,7 +1384,7 @@ primary_expression(block_t *block)
             var = var_direct(sym);
             break;
         case INTEGER_CONSTANT:
-            var = var_long(tok.intval);
+            var = var_int(tok.intval);
             break;
         case '(':
             var = expression(block);
