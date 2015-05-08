@@ -1,8 +1,9 @@
 #!/bin/bash
 
-file="$1"
+compiler="$1"
+file="$2"
 if [[ -z "$file" || ! -f "$file" ]]; then
-	echo "Usage: $0 file"
+	echo "Usage: $0 compiler file"
 	exit
 fi
 
@@ -16,7 +17,7 @@ fi
 answer="$?"
 
 # Compile with lcc, and assemble with gcc
-bin/lcc -S -I /usr/include/x86_64-linux-musl/ $file -o ${file}.out.s
+$compiler -S -I /usr/include/x86_64-linux-musl/ $file -o ${file}.out.s
 if [ "$?" -ne "0" ]; then
 	echo "${file}: $(tput setaf 1)Compilation failed!$(tput sgr 0)"
 	exit

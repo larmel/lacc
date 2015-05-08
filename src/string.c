@@ -42,7 +42,7 @@ getoradd(const char *s)
     }
 
     if (count == capacity) {
-        capacity += 16;
+        capacity = capacity + 16;
         strings = realloc(strings, sizeof(struct strmap) * capacity);
     }
 
@@ -60,7 +60,7 @@ getoradd(const char *s)
 const char *
 string_constant_label(const char *s)
 {
-    assert(s);
+    /*assert(s);*/
     return getoradd(s);
 }
 
