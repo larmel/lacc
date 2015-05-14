@@ -60,7 +60,7 @@ getoradd(const char *s)
 const char *
 string_constant_label(const char *s)
 {
-    /*assert(s);*/
+    assert(s);
     return getoradd(s);
 }
 

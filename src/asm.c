@@ -381,16 +381,17 @@ fassembleblock(FILE *stream, map_t *memo, const block_t *block)
         fprintf(stream, "\tleaveq\n");
         fprintf(stream, "\tretq\n");
     } else if (block->jump[1] == NULL) {
-        if (map_lookup(memo, block->jump[0]->label) != NULL)
+        if (map_lookup(memo, block->jump[0]->label) != NULL) {
             fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
+        }
         fassembleblock(stream, memo, block->jump[0]);
     } else {
         load(stream, block->expr, AX);
         fprintf(stream, "\tcmpq\t$0, %%rax\n");
         fprintf(stream, "\tje\t%s\n", block->jump[0]->label);
-        
-        if (map_lookup(memo, block->jump[1]->label) != NULL)
-            fprintf(stream, "\tjmpq\t%s\n", block->jump[1]->label);
+        if (map_lookup(memo, block->jump[1]->label) != NULL) {
+            fprintf(stream, "\tjmp\t%s\n", block->jump[1]->label);
+        }
         fassembleblock(stream, memo, block->jump[1]);
         fassembleblock(stream, memo, block->jump[0]);
     }

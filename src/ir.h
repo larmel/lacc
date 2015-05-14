@@ -82,20 +82,23 @@ typedef struct op {
  */
 typedef struct block
 {
-    /* A unique jump target label */
+    /* A unique jump target label. */
     const char *label;
 
-    /* realloc-able list of 3-address code operations */
+    /* realloc-able list of 3-address code operations. */
     op_t *code;
     unsigned n;
 
-    /* Value to evaluate in branch conditions, or return value */
+    /* Value to evaluate in branch conditions, or return value. Also used for
+     * return value from expression parsing rules, as a convenience. The
+     * decision on whether this block is a branch or not is done purely based
+     * on the jump target list. */
     var_t expr;
 
     /* Branch targets.
      * - (NULL, NULL): Terminal node, return expr from function.
      * - (x, NULL)   : Unconditional jump, f.ex break, goto, or bottom of loop.
-     * - (x, y)      : Branch, false and true targets respectively, from evaluating expr.
+     * - (x, y)      : False and true branch targets, respectively.
      */
     const struct block *jump[2];
 } block_t;

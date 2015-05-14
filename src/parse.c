@@ -16,14 +16,29 @@ static typetree_t *declarator(typetree_t *, const char **);
 static typetree_t *pointer(const typetree_t *);
 static typetree_t *direct_declarator(typetree_t *, const char **);
 static typetree_t *parameter_list(const typetree_t *);
-static const typetree_t *initializer(block_t *block, var_t target);
+static block_t *initializer(block_t *block, var_t target);
 static block_t *block(block_t *);
 static block_t *statement(block_t *);
 
-/* Expression nodes that are called in high level rules */
-static var_t expression(block_t *);
+static block_t *expression(block_t *);
+static block_t *assignment_expression(block_t *);
+static block_t *conditional_expression(block_t *);
+static block_t *logical_and_expression(block_t *);
+static block_t *logical_or_expression(block_t *);
+static block_t *inclusive_or_expression(block_t *);
+static block_t *exclusive_or_expression(block_t *);
+static block_t *and_expression(block_t *block);
+static block_t *equality_expression(block_t *block);
+static block_t *relational_expression(block_t *block);
+static block_t *shift_expression(block_t *block);
+static block_t *additive_expression(block_t *block);
+static block_t *multiplicative_expression(block_t *block);
+static block_t *cast_expression(block_t *block);
+static block_t *postfix_expression(block_t *block);
+static block_t *unary_expression(block_t *block);
+static block_t *primary_expression(block_t *block);
+
 static var_t constant_expression();
-static var_t assignment_expression(block_t *);
 
 /* Namespaces. */
 namespace_t
@@ -143,9 +158,7 @@ declaration(block_t *parent)
             case ';':
                 consume(';');
                 return parent;
-            case '=': {
-                const typetree_t *type;
-
+            case '=': 
                 if (sym->symtype == SYM_DECLARATION) {
                     error("Symbol '%s' was declared extern and "
                           "cannot be initialized.", sym->name);
@@ -156,11 +169,10 @@ declaration(block_t *parent)
                 }
                 consume('=');
                 sym->symtype = SYM_DEFINITION;
-                type = initializer(
-                    (!sym->depth || sym->n ? decl->head : parent), 
-                    var_direct(sym));
-                if (!sym->type->size) {
-                    sym->type = type_complete(sym->type, type);
+                if (!sym->depth || sym->n) {
+                    decl->head = initializer(decl->head, var_direct(sym));
+                } else {
+                    parent = initializer(parent, var_direct(sym));
                 }
                 assert(sym->type->size);
                 if (peek().token != ',') {
@@ -168,7 +180,6 @@ declaration(block_t *parent)
                     return parent;
                 }
                 break;
-            }
             case '{': {
                 int i;
                 if (sym->type->type != FUNCTION || sym->depth) {
@@ -209,22 +220,23 @@ declaration(block_t *parent)
  * int b[] = {0, 1, 2, 3} will emit a series of assignment operations on
  * references to symbol b.
  */
-static const typetree_t *
-initializer(block_t *block, var_t target)
+static block_t *initializer(block_t *block, var_t target)
 {
     const typetree_t *type;
-    var_t var;
+    symbol_t *symbol;
     int i;
 
+    assert(target.kind == DIRECT);
+    symbol = (symbol_t *) target.symbol;
+
     if (peek().token == '{') {
-        assert(target.kind == DIRECT);
         type = target.type;
         target.lvalue = 1;
         consume('{');
         if (type->type == OBJECT) {
             for (i = 0; i < type->n_args; ++i) {
                 target.type = type->args[i];
-                initializer(block, target);
+                block = initializer(block, target);
                 target.offset += type->args[i]->size;
                 if (peek().token == '}')
                     break;
@@ -233,22 +245,26 @@ initializer(block_t *block, var_t target)
         } else if (type->type == ARRAY) {
             target.type = type->next;
             for (i = 0; !type->size || i < type->size / type->next->size; ++i) {
-                initializer(block, target);
+                block = initializer(block, target);
                 target.offset += type->next->size;
-                if (peek().token == '}')
+                if (peek().token == '}') {
                     break;
+                }
                 consume(',');
             }
             if (!type->size) {
                 typetree_t *newtype;
 
+                assert(target.symbol->type->type == ARRAY);
+
                 newtype = type_init(ARRAY);
                 newtype->size = target.offset;
                 newtype->next = type->next;
+                symbol->type = type_complete(symbol->type, newtype);
                 type = newtype;
             }
         } else {
-            error("Braces around initializer must represent array or object type.");
+            error("Block initializer only apply to array or object type.");
             exit(1);
         }
         if (target.offset < type->size) {
@@ -256,18 +272,20 @@ initializer(block_t *block, var_t target)
         }
         consume('}');
     } else {
-        var = assignment_expression(block);
-        if (var.kind != IMMEDIATE) {
+        block = assignment_expression(block);
+        if (block->expr.kind != IMMEDIATE) {
             /*
             error("Initializer must be computable at load time.");
             exit(1);
             */
         }
-        eval_assign(block, target, var);
-        type = var.type;
+        if (target.kind == DIRECT && !target.type->size) {
+            symbol->type = type_complete(symbol->type, block->expr.type);
+        }
+        eval_assign(block, target, block->expr);
     }
 
-    return type;
+    return block;
 }
 
 /* Maybe a bit too clever here: overwriting existing typetree object already in
@@ -739,13 +757,16 @@ statement(block_t *parent)
         case SWITCH:
         case IF:
         {
-            block_t *right = cfg_block_init(decl), *next = cfg_block_init(decl);
+            block_t *right = cfg_block_init(decl),
+                    *next  = cfg_block_init(decl);
+
             consume(tok.token);
             consume('(');
 
-            /* node becomes a branch, store the expression as condition
-             * variable and append code to compute the value. */
-            parent->expr = expression(parent);
+            /* Node becomes a branch, store the expression as condition variable
+             * and append code to compute the value. parent->expr holds the
+             * result automatically. */
+            parent = expression(parent);
             consume(')');
 
             parent->jump[0] = next;
@@ -788,7 +809,7 @@ statement(block_t *parent)
 
             if (tok.token == WHILE) {
                 consume('(');
-                top->expr = expression(top);
+                top = expression(top);
                 consume(')');
                 top->jump[0] = next;
                 top->jump[1] = body;
@@ -802,7 +823,7 @@ statement(block_t *parent)
                 body = statement(top);
                 consume(WHILE);
                 consume('(');
-                body->expr = expression(body); /* Tail becomes branch. (nb: wrong if tail is return?!) */
+                body = expression(body); /* Tail becomes branch. (nb: wrong if tail is return?!) */
                 body->jump[0] = next;
                 body->jump[1] = top;
                 consume(')');
@@ -828,12 +849,12 @@ statement(block_t *parent)
             consume(FOR);
             consume('(');
             if (peek().token != ';') {
-                expression(parent);
+                parent = expression(parent);
             }
             consume(';');
             if (peek().token != ';') {
                 parent->jump[0] = top;
-                top->expr = expression(top);
+                top = expression(top);
                 top->jump[0] = next;
                 top->jump[1] = body;
             } else {
@@ -843,7 +864,7 @@ statement(block_t *parent)
             }
             consume(';');
             if (peek().token != ')') {
-                expression(increment);
+                increment = expression(increment);
                 increment->jump[0] = top;
             }
             consume(')');
@@ -876,8 +897,9 @@ statement(block_t *parent)
             break;
         case RETURN:
             consume(RETURN);
-            if (peek().token != ';')
-                parent->expr = expression(parent);
+            if (peek().token != ';') {
+                parent = expression(parent);
+            }
             consume(';');
             node = cfg_block_init(decl); /* orphan */
             break;
@@ -901,9 +923,8 @@ statement(block_t *parent)
         case STRING:
         case '*':
         case '(':
-            expression(parent);
+            node = expression(parent);
             consume(';');
-            node = parent;
             break;
         default:
             node = declaration(parent);
@@ -912,205 +933,291 @@ statement(block_t *parent)
     return node;
 }
 
-static var_t conditional_expression(block_t *block);
-static var_t logical_expression(block_t *block);
-static var_t or_expression(block_t *block);
-static var_t and_expression(block_t *block);
-static var_t equality_expression(block_t *block);
-static var_t relational_expression(block_t *block);
-static var_t shift_expression(block_t *block);
-static var_t additive_expression(block_t *block);
-static var_t multiplicative_expression(block_t *block);
-static var_t cast_expression(block_t *block);
-static var_t postfix_expression(block_t *block);
-static var_t unary_expression(block_t *block);
-static var_t primary_expression(block_t *block);
-
-static var_t 
-expression(block_t *block)
+static block_t *expression(block_t *block)
 {
-    var_t l = assignment_expression(block);
-    if (peek().token == ',') {
+    block = assignment_expression(block);
+    while (peek().token == ',') {
         consume(',');
-        l = expression(block);
+        block = assignment_expression(block);
     }
-    return l;
+
+    return block;
 }
 
-static var_t 
-assignment_expression(block_t *block)
+/* todo: Fix this rule (a lot more complicated than this...) */
+static block_t *assignment_expression(block_t *block)
 {
-    var_t l = conditional_expression(block), r;
+    var_t target;
+
+    block = conditional_expression(block);
     if (peek().token == '=') {
         consume('=');
-        /* todo: node must be unary-expression or lower (l-value) */
-        r = assignment_expression(block);
-        l = eval_assign(block, l, r);
+        target = block->expr;
+        block = assignment_expression(block);
+        block->expr = eval_assign(block, target, block->expr);
     }
-    return l;
+
+    return block;
 }
 
-static var_t 
-constant_expression()
+static var_t constant_expression()
 {
-    var_t expr;
+    block_t *head = cfg_block_init(decl),
+            *tail;
 
-    expr = conditional_expression(NULL);
-    if (expr.kind != IMMEDIATE) {
+    tail = conditional_expression(head);
+    if (tail != head || tail->expr.kind != IMMEDIATE) {
         error("Constant expression must be computable at compile time.");
         exit(1);
     }
-    return expr;
+
+    return tail->expr;
 }
 
-static var_t 
-conditional_expression(block_t *block)
+static block_t *conditional_expression(block_t *block)
 {
-    var_t v = logical_expression(block);
-    if (peek().token == '?') {
-        consume('?');
-        expression(block);
-        consume(':');
-        conditional_expression(block);
+    return logical_or_expression(block);
+}
+
+static block_t *logical_or_expression(block_t *block)
+{
+    var_t res;
+    block_t *next,
+            *last = NULL;
+
+    block = logical_and_expression(block);
+
+    if (peek().token == LOGICAL_OR) {
+        symbol_t *sym = sym_temp(&ns_ident, type_init(INTEGER));
+        res = var_direct(sym);
+        sym_list_push_back(&decl->locals, sym);
+        res.lvalue = 1;
+
+        eval_assign(block, res, block->expr);
+
+        last = cfg_block_init(decl);
     }
-    return v;
-}
 
-/* merge AND/OR */
-static var_t 
-logical_expression(block_t *block)
-{
-    var_t l, r;
-    l = or_expression(block);
-    while (peek().token == LOGICAL_OR || peek().token == LOGICAL_AND) {
-        optype_t optype = (next().token == LOGICAL_AND) 
-            ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR;
+    while (peek().token == LOGICAL_OR) {
+        next = cfg_block_init(decl);
 
-        r = and_expression(block);
-        l = eval_expr(block, optype, l, r);
+        consume(LOGICAL_OR);
+
+        block->jump[1] = last;
+        block->jump[0] = next;
+
+        next = logical_and_expression(next);
+        next->expr =
+            eval_expr(next, IR_OP_LOGICAL_OR, block->expr, next->expr);
+        eval_assign(next, res, next->expr);
+
+        block = next;
     }
-    return l;
-}
 
-/* merge OR/XOR */
-static var_t
-or_expression(block_t *block)
-{
-    var_t l, r;
-    l = and_expression(block);
-    while (peek().token == '|' || peek().token == '^') {
-        optype_t optype = (next().token == '|') 
-            ? IR_OP_BITWISE_OR : IR_OP_BITWISE_XOR;
-
-        r = and_expression(block);
-        l = eval_expr(block, optype, l, r);
+    if (last) {
+        block->jump[0] = last;
+        block = last;
+        block->expr = res;
     }
-    return l;
+
+    return block;
 }
 
-static var_t
-and_expression(block_t *block)
+static block_t *logical_and_expression(block_t *block)
 {
-    var_t l, r;
-    l = equality_expression(block);
+    var_t res;
+    block_t *next,
+            *last = NULL;
+
+    block = inclusive_or_expression(block);
+
+    if (peek().token == LOGICAL_AND) {
+        symbol_t *sym = sym_temp(&ns_ident, type_init(INTEGER));
+        res = var_direct(sym);
+        sym_list_push_back(&decl->locals, sym);
+        res.lvalue = 1;
+
+        eval_assign(block, res, block->expr);
+
+        last = cfg_block_init(decl);
+    }
+
+    while (peek().token == LOGICAL_AND) {
+        next = cfg_block_init(decl);
+
+        consume(LOGICAL_AND);
+
+        block->jump[0] = last;
+        block->jump[1] = next;
+
+        next = inclusive_or_expression(next);
+        next->expr =
+            eval_expr(next, IR_OP_LOGICAL_AND, block->expr, next->expr);
+        eval_assign(next, res, next->expr);
+
+        block = next;
+    }
+
+    if (last) {
+        block->jump[0] = last;
+        block = last;
+        block->expr = res;
+    }
+
+    return block;
+}
+
+static block_t *inclusive_or_expression(block_t *block)
+{
+    var_t value;
+
+    block = exclusive_or_expression(block);
+    while (peek().token == '|') {
+        consume('|');
+        value = block->expr;
+        block = exclusive_or_expression(block);
+        block->expr = eval_expr(block, IR_OP_BITWISE_OR, value, block->expr);
+    }
+
+    return block;
+}
+
+static block_t *exclusive_or_expression(block_t *block)
+{
+    var_t value;
+
+    block = and_expression(block);
+    while (peek().token == '^') {
+        consume('^');
+        value = block->expr;
+        block = and_expression(block);
+        block->expr = eval_expr(block, IR_OP_BITWISE_XOR, value, block->expr);
+    }
+
+    return block;
+}
+
+static block_t *and_expression(block_t *block)
+{
+    var_t value;
+
+    block = equality_expression(block);
     while (peek().token == '&') {
         consume('&');
-        r = and_expression(block);
-        l = eval_expr(block, IR_OP_BITWISE_AND, l, r);
+        value = block->expr;
+        block = equality_expression(block);
+        block->expr = eval_expr(block, IR_OP_BITWISE_AND, value, block->expr);
     }
-    return l;
+
+    return block;
 }
 
-static var_t
-equality_expression(block_t *block)
+static block_t *equality_expression(block_t *block)
 {
-    var_t l, r;
+    var_t value;
 
-    l = relational_expression(block);
+    block = relational_expression(block);
     while (1) {
+        value = block->expr;
         if (peek().token == EQ) {
             consume(EQ);
-            r = relational_expression(block);
-            l = eval_expr(block, IR_OP_EQ, l, r);
+            block = relational_expression(block);
+            block->expr = eval_expr(block, IR_OP_EQ, value, block->expr);
         } else if (peek().token == NEQ) {
             consume(NEQ);
-            r = relational_expression(block);
-            l = eval_expr(block, IR_OP_NOT, eval_expr(block, IR_OP_EQ, l, r));
+            block = relational_expression(block);
+            block->expr = 
+                eval_expr(block, IR_OP_NOT,
+                    eval_expr(block, IR_OP_EQ, value, block->expr));
         } else break;
     }
 
-    return l;
+    return block;
 }
 
-static var_t
-relational_expression(block_t *block)
+static block_t *relational_expression(block_t *block)
 {
-    var_t l, r;
+    var_t value;
 
-    l = shift_expression(block);
+    block = shift_expression(block);
     while (1) {
+        value = block->expr;
         switch (peek().token) {
-            case '<':
-                consume('<');
-                r = shift_expression(block);
-                l = eval_expr(block, IR_OP_GT, r, l);
-                break;
-            case '>':
-                consume('>');
-                r = shift_expression(block);
-                l = eval_expr(block, IR_OP_GT, l, r);
-                break;
-            case LEQ:
-                consume(LEQ);
-                r = shift_expression(block);
-                l = eval_expr(block, IR_OP_GE, r, l);
-                break;
-            case GEQ:
-                consume(GEQ);
-                r = shift_expression(block);
-                l = eval_expr(block, IR_OP_GE, l, r);
-                break;
-            default:
-                return l;
+        case '<':
+            consume('<');
+            block = shift_expression(block);
+            block->expr = eval_expr(block, IR_OP_GT, block->expr, value);
+            break;
+        case '>':
+            consume('>');
+            block = shift_expression(block);
+            block->expr = eval_expr(block, IR_OP_GT, value, block->expr);
+            break;
+        case LEQ:
+            consume(LEQ);
+            block = shift_expression(block);
+            block->expr = eval_expr(block, IR_OP_GE, block->expr, value);
+            break;
+        case GEQ:
+            consume(GEQ);
+            block = shift_expression(block);
+            block->expr = eval_expr(block, IR_OP_GE, value, block->expr);
+            break;
+        default:
+            return block;
         }
     }
 }
 
-static var_t
-shift_expression(block_t *block)
+static block_t *shift_expression(block_t *block)
 {
     return additive_expression(block);
 }
 
-static var_t
-additive_expression(block_t *block)
+static block_t *additive_expression(block_t *block)
 {
-    var_t l, r;
-    l = multiplicative_expression(block);
-    while (peek().token == '+' || peek().token == '-') {
-        optype_t optype = (next().token == '+') ? IR_OP_ADD : IR_OP_SUB;
+    var_t value;
 
-        r = multiplicative_expression(block);
-        l = eval_expr(block, optype, l, r);
+    block = multiplicative_expression(block);
+    while (1) {
+        value = block->expr;
+        if (peek().token == '+') {
+            consume('+');
+            block = multiplicative_expression(block);
+            block->expr = eval_expr(block, IR_OP_ADD, value, block->expr);
+        } else if (peek().token == '-') {
+            consume('-');
+            block = multiplicative_expression(block);
+            block->expr = eval_expr(block, IR_OP_SUB, value, block->expr);
+        } else break;
     }
-    return l;
+
+    return block;
 }
 
-static var_t
-multiplicative_expression(block_t *block)
+static block_t *multiplicative_expression(block_t *block)
 {
-    var_t l, r;
-    l = cast_expression(block);
-    while (peek().token == '*' || peek().token == '/' || peek().token == '%') {
-        enum token_type tok = next().token;
-        optype_t optype = (tok == '*') ?
-            IR_OP_MUL : (tok == '/') ?
-                IR_OP_DIV : IR_OP_MOD;
+    var_t value;
 
-        r = cast_expression(block);
-        l = eval_expr(block, optype, l, r);
+    block = cast_expression(block);
+    while (1) {
+        value = block->expr;
+        if (peek().token == '*') {
+            consume('*');
+            block = cast_expression(block);
+            block->expr = eval_expr(block, IR_OP_MUL, value, block->expr);
+        } else if (peek().token == '/') {
+            consume('/');
+            block = cast_expression(block);
+            block->expr = eval_expr(block, IR_OP_DIV, value, block->expr);
+        } else if (peek().token == '%') {
+            consume('%');
+            block = cast_expression(block);
+            block->expr = eval_expr(block, IR_OP_MOD, value, block->expr);
+        } else break;
     }
-    return l;
+
+    return block;
 }
 
 #define FIRST_type_qualifier \
@@ -1126,10 +1233,8 @@ multiplicative_expression(block_t *block)
 
 #define FIRST(s) FIRST_ ## s
 
-static var_t
-cast_expression(block_t *block)
+static block_t *cast_expression(block_t *block)
 {
-    var_t expr;
     typetree_t *type;
     struct token tok;
     struct symbol *sym;
@@ -1139,264 +1244,271 @@ cast_expression(block_t *block)
     if (peek().token == '(') {
         tok = peekn(2);
         switch (tok.token) {
-            case IDENTIFIER:
-                sym = sym_lookup(&ns_ident, tok.strval);
-                if (!sym || sym->symtype != SYM_TYPEDEF)
-                    break;
+        case IDENTIFIER:
+            sym = sym_lookup(&ns_ident, tok.strval);
+            if (!sym || sym->symtype != SYM_TYPEDEF)
+                break;
+        case FIRST(type_name):
+            consume('(');
+            type = declaration_specifiers(NULL);
+            if (!type) {
+                error("Invalid cast expression, expected type-name.");
+                exit(1);
+            }
+            if (peek().token != ')') {
+                type = declarator(type, NULL);
+            }
+            consume(')');
+            block = cast_expression(block);
+            block->expr = eval_cast(block, block->expr, type);
+            return block;
+        default:
+            break;
+        }
+    }
+
+    return unary_expression(block);
+}
+
+static block_t *unary_expression(block_t *block)
+{
+    var_t value;
+
+    switch (peek().token) {
+    case '&':
+        consume('&');
+        block = cast_expression(block);
+        block->expr = eval_addr(block, block->expr);
+        break;
+    case '*':
+        consume('*');
+        block = cast_expression(block);
+        block->expr = eval_deref(block, block->expr);
+        break;
+    case '!':
+        consume('!');
+        block = cast_expression(block);
+        block->expr = eval_expr(block, IR_OP_NOT, block->expr);
+        break;
+    case '+':
+        consume('+');
+        block = cast_expression(block);
+        block->expr.lvalue = 0;
+        break;
+    case '-':
+        consume('-');
+        block = cast_expression(block);
+        block->expr = eval_expr(block, IR_OP_SUB, var_int(0), block->expr);
+        break;
+    case SIZEOF: {
+        typetree_t *type;
+        block_t *head = cfg_block_init(decl),
+                *tail;
+
+        consume(SIZEOF);
+        if (peek().token == '(') {
+
+            switch (peekn(2).token) {
             case FIRST(type_name):
                 consume('(');
                 type = declaration_specifiers(NULL);
                 if (!type) {
-                    error("Invalid cast expression, expected type-name.");
+                    error("Expected type-name.");
                     exit(1);
                 }
                 if (peek().token != ')') {
                     type = declarator(type, NULL);
                 }
                 consume(')');
-                expr = cast_expression(block);
-                expr = eval_cast(block, expr, type);
-                return expr;
-            default:
                 break;
+            default:
+                tail = unary_expression(head);
+                type = (typetree_t *) tail->expr.type;
+                break;
+            }
+        } else {
+            tail = unary_expression(head);
+            type = (typetree_t *) tail->expr.type;
         }
+        if (type->type == FUNCTION) {
+            error("Cannot apply 'sizeof' to function type.");
+        }
+        if (!type->size) {
+            error("Cannot apply 'sizeof' to incomplete type.");
+        }
+        block->expr = var_int(type->size);
+        break;
+    }
+    case INCREMENT:
+        consume(INCREMENT);
+        block = unary_expression(block);
+        value = block->expr;
+        block->expr = eval_expr(block, IR_OP_ADD, value, var_int(1));
+        block->expr = eval_assign(block, value, block->expr);
+        break;
+    case DECREMENT:
+        consume(DECREMENT);
+        block = unary_expression(block);
+        value = block->expr;
+        block->expr = eval_expr(block, IR_OP_SUB, value, var_int(1));
+        block->expr = eval_assign(block, value, block->expr);
+        break;
+    default:
+        block = postfix_expression(block);
+        break;
     }
 
-    expr = unary_expression(block);
-
-    return expr;
+    return block;
 }
 
-static var_t
-unary_expression(block_t *block)
+static block_t *postfix_expression(block_t *block)
 {
-    var_t expr, temp;
+    var_t root, value;
 
-    switch (peek().token) {
-        case '&':
-            consume('&');
-            expr = cast_expression(block);
-            expr = eval_addr(block, expr);
-            break;
-        case '*':
-            consume('*');
-            expr = cast_expression(block);
-            expr = eval_deref(block, expr);
-            break;
-        case '!':
-            consume('!');
-            expr = cast_expression(block);
-            expr = eval_expr(block, IR_OP_NOT, expr);
-            break;
-        case '+':
-            consume('+');
-            expr = cast_expression(block);
-            expr.lvalue = 0;
-            break;
-        case '-':
-            consume('-');
-            expr = cast_expression(block);
-            expr = eval_expr(block, IR_OP_SUB, var_int(0), expr);
-            break;
-        case SIZEOF:
-            consume(SIZEOF);
-            if (peek().token == '(') {
-                typetree_t *type;
+    block = primary_expression(block);
+    root = block->expr;
 
-                consume('(');
-                type = declaration_specifiers(NULL);
-                if (!type) {
-                    expr = expression(NULL);
-                } else {
-                    if (peek().token != ')') {
-                        type = declarator(type, NULL);
-                    }
-                    expr.type = type;
-                }
-                consume(')');
-            } else {
-                expr = unary_expression(block);
-            }
-            if (expr.type->type == FUNCTION) {
-                error("Cannot apply 'sizeof' to function type.");
-            }
-            if (!expr.type->size) {
-                error("Cannot apply 'sizeof' to incomplete type.");
-            }
-            expr = var_int(expr.type->size);
-            break;
-        case INCREMENT:
-            consume(INCREMENT);
-            temp = unary_expression(block);
-            expr = eval_expr(block, IR_OP_ADD, temp, var_int(1));
-            expr = eval_assign(block, temp, expr);
-            break;
-        case DECREMENT:
-            consume(DECREMENT);
-            temp = unary_expression(block);
-            expr = eval_expr(block, IR_OP_SUB, temp, var_int(1));
-            expr = eval_assign(block, temp, expr);
-            break;
-        default:
-            expr = postfix_expression(block);
-    }
-    return expr;
-}
-
-/* This rule is left recursive, build tree bottom up
- */
-static var_t
-postfix_expression(block_t *block)
-{
-    var_t root;
-    int done;
-
-    root = primary_expression(block);
-    done = 0;
-
-    do {
+    while (1) {
         var_t expr, copy, *arg;
         struct token tok;
         int i, j;
 
-        tok = peek();
+        switch ((tok = peek()).token) {
+        case '[':
+            /* Evaluate a[b] = *(a + b). */
+            do {
+                consume('[');
+                block = expression(block);
+                value = eval_expr(block, IR_OP_MUL,
+                    block->expr,
+                    var_int(root.type->next->size));
+                value = eval_expr(block, IR_OP_ADD, root, value);
+                root = eval_deref(block, value);
+                consume(']');
+            } while (peek().token == '[');
+            break;
+        case '(':
+            /* Evaluation function call. */
+            if (root.type->type != FUNCTION) {
+                error("Calling non-function symbol.");
+                exit(1);
+            }
+            arg = malloc(sizeof(var_t) * root.type->n_args);
 
-        switch (tok.token) {
-            case '[':
-                /* Evaluate a[b] = *(a + b). */
-                while (peek().token == '[') {
-                    consume('[');
-                    expr = expression(block);
-                    expr = eval_expr(block, IR_OP_MUL, expr, var_int(root.type->next->size));
-                    expr = eval_expr(block, IR_OP_ADD, root, expr);
-                    root = eval_deref(block, expr);
-                    consume(']');
-                }
-                break;
-            case '(':
-                /* Evaluation function call. */
-                if (root.type->type != FUNCTION) {
-                    error("Calling non-function symbol.");
+            consume('(');
+            for (i = 0; i < root.type->n_args; ++i) {
+                if (peek().token == ')') {
+                    error("Too few arguments to %s, expected %d but got %d.",
+                        root.symbol->name, root.type->n_args, i);
                     exit(1);
                 }
-                arg = malloc(sizeof(var_t) * root.type->n_args);
-
-                consume('(');
-                for (i = 0; i < root.type->n_args; ++i) {
-                    if (peek().token == ')') {
-                        error("Too few arguments to function %s, expected %d but got %d.", root.symbol->name, root.type->n_args, i);
-                        exit(1);
-                    }
-                    arg[i] = assignment_expression(block);
-                    /* todo: type check here. */
-                    if (i < root.type->n_args - 1)
-                        consume(',');
-                }
-                while (root.type->vararg && peek().token != ')') {
+                block = assignment_expression(block);
+                arg[i] = block->expr;
+                /* todo: type check here. */
+                if (i < root.type->n_args - 1)
                     consume(',');
-                    arg = realloc(arg, (i + 1) * sizeof(var_t));
-                    arg[i] = assignment_expression(block);
-                    i++;
+            }
+            while (root.type->vararg && peek().token != ')') {
+                consume(',');
+                arg = realloc(arg, (i + 1) * sizeof(var_t));
+                block = assignment_expression(block);
+                arg[i] = block->expr;
+                i++;
+            }
+            consume(')');
+
+            for (j = 0; j < i; ++j) {
+                param(block, arg[j]);
+            }
+            root = eval_call(block, root);
+            free(arg);
+            break;
+        case '.':
+            root = eval_addr(block, root);
+        case ARROW:
+            next();
+            tok = consume(IDENTIFIER);
+            if (root.type->type == POINTER && 
+                root.type->next->type == OBJECT)
+            {
+                int i, offset;
+                const typetree_t *field;
+
+                for (i = offset = 0; i < root.type->next->n_args; ++i) {
+                    if (!strcmp(tok.strval, root.type->next->params[i])) {
+                        field = root.type->next->args[i];
+                        break;
+                    }
+                    offset += root.type->next->args[i]->size;
                 }
-                consume(')');
-
-                for (j = 0; j < i; ++j)
-                    param(block, arg[j]);
-
-                root = eval_call(block, root);
-
-                free(arg);
-                break;
-            case '.':
-                root = eval_addr(block, root);
-            case ARROW:
-                next();
-                tok = consume(IDENTIFIER);
-                if (root.type->type == POINTER && 
-                    root.type->next->type == OBJECT)
-                {
-                    int i, offset;
-                    const typetree_t *field;
-
-                    for (i = offset = 0; i < root.type->next->n_args; ++i) {
-                        if (!strcmp(tok.strval, root.type->next->params[i])) {
-                            field = root.type->next->args[i];
-                            break;
-                        }
-                        offset += root.type->next->args[i]->size;
-                    }
-                    if (i == root.type->next->n_args) {
-                        error("Invalid field access, no field named %s.", 
-                            tok.strval);
-                        exit(1);
-                    }
-
-                    root.kind = DEREF;
-                    root.type = field;
-                    root.offset += offset;
-                    root.lvalue = 1;
-                } else {
-                    error("Cannot access field of non-object type.");
+                if (i == root.type->next->n_args) {
+                    error("Invalid field access, no field named %s.", 
+                        tok.strval);
                     exit(1);
                 }
-                break;
-            case INCREMENT:
-                consume(INCREMENT);
-                copy = eval_copy(block, root);
-                expr = eval_expr(block, IR_OP_ADD, root, var_int(1));
-                eval_assign(block, root, expr);
-                root = copy;
-                break;
-            case DECREMENT:
-                consume(DECREMENT);
-                copy = eval_copy(block, root);
-                expr = eval_expr(block, IR_OP_SUB, root, var_int(1));
-                eval_assign(block, root, expr);
-                root = copy;
-                break;
-            default:
-                done = 1;
-                break;
-        }
-    } while (!done);
 
-    return root;
+                root.kind = DEREF;
+                root.type = field;
+                root.offset += offset;
+                root.lvalue = 1;
+            } else {
+                error("Cannot access field of non-object type.");
+                exit(1);
+            }
+            break;
+        case INCREMENT:
+            consume(INCREMENT);
+            copy = eval_copy(block, root);
+            expr = eval_expr(block, IR_OP_ADD, root, var_int(1));
+            eval_assign(block, root, expr);
+            root = copy;
+            break;
+        case DECREMENT:
+            consume(DECREMENT);
+            copy = eval_copy(block, root);
+            expr = eval_expr(block, IR_OP_SUB, root, var_int(1));
+            eval_assign(block, root, expr);
+            root = copy;
+            break;
+        default:
+            block->expr = root;
+            return block;
+        }
+    }
 }
 
-static var_t
-primary_expression(block_t *block)
+static block_t *primary_expression(block_t *block)
 {
-    var_t var;
-    const char *lbl;
     const symbol_t *sym;
     struct token tok;
 
-    tok = next();
-
-    switch (tok.token) {
-        case IDENTIFIER:
-            sym = sym_lookup(&ns_ident, tok.strval);
-            if (!sym) {
-                error("Undefined symbol '%s'.", tok.strval);
-                exit(1);
-            }
-            var = var_direct(sym);
-            break;
-        case INTEGER_CONSTANT:
-            var = var_int(tok.intval);
-            break;
-        case '(':
-            var = expression(block);
-            consume(')');
-            break;
-        case STRING:
-            lbl = string_constant_label(tok.strval);
-            var = var_string(lbl, strlen(tok.strval) + 1);
-            break;
-        default:
-            error("Unexpected token, not a valid primary expression.");
+    switch ((tok = next()).token) {
+    case IDENTIFIER:
+        sym = sym_lookup(&ns_ident, tok.strval);
+        if (!sym) {
+            error("Undefined symbol '%s'.", tok.strval);
             exit(1);
+        }
+        block->expr = var_direct(sym);
+        break;
+    case INTEGER_CONSTANT:
+        block->expr = var_int(tok.intval);
+        break;
+    case '(':
+        block = expression(block);
+        consume(')');
+        break;
+    case STRING:
+        block->expr = 
+            var_string(
+                string_constant_label(tok.strval),
+                strlen(tok.strval) + 1);
+        break;
+    default:
+        error("Unexpected token '%s', not a valid primary expression.",
+            tok.strval);
+        exit(1);
     }
 
-    return var;
+    return block;
 }
