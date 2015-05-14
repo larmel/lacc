@@ -115,26 +115,26 @@ declaration(block_t *parent)
 
     base = declaration_specifiers(&stc);
     switch (stc) {
-        case EXTERN:
-            arg.symtype = SYM_DECLARATION;
-            arg.linkage = LINK_EXTERN;
-            break;
-        case STATIC:
+    case EXTERN:
+        arg.symtype = SYM_DECLARATION;
+        arg.linkage = LINK_EXTERN;
+        break;
+    case STATIC:
+        arg.symtype = SYM_TENTATIVE;
+        arg.linkage = LINK_INTERN;
+        break;
+    case TYPEDEF:
+        arg.symtype = SYM_TYPEDEF;
+        break;
+    default:
+        if (!ns_ident.depth) {
             arg.symtype = SYM_TENTATIVE;
-            arg.linkage = LINK_INTERN;
-            break;
-        case TYPEDEF:
-            arg.symtype = SYM_TYPEDEF;
-            break;
-        default:
-            if (!ns_ident.depth) {
-                arg.symtype = SYM_TENTATIVE;
-                arg.linkage = LINK_EXTERN;
-            } else {
-                arg.symtype = SYM_DEFINITION;
-                arg.linkage = LINK_NONE;
-            }
-            break;
+            arg.linkage = LINK_EXTERN;
+        } else {
+            arg.symtype = SYM_DEFINITION;
+            arg.linkage = LINK_NONE;
+        }
+        break;
     }
 
     while (1) {
@@ -155,62 +155,61 @@ declaration(block_t *parent)
         }
 
         switch (peek().token) {
-            case ';':
+        case ';':
+            consume(';');
+            return parent;
+        case '=': 
+            if (sym->symtype == SYM_DECLARATION) {
+                error("Extern symbol '%s' cannot be initialized.", sym->name);
+            }
+            if (!sym->depth && sym->symtype == SYM_DEFINITION) {
+                error("Symbol '%s' was already defined.", sym->name);
+                exit(1);
+            }
+            consume('=');
+            sym->symtype = SYM_DEFINITION;
+            if (!sym->depth || sym->n) {
+                decl->head = initializer(decl->head, var_direct(sym));
+            } else {
+                parent = initializer(parent, var_direct(sym));
+            }
+            assert(sym->type->size);
+            if (peek().token != ',') {
                 consume(';');
                 return parent;
-            case '=': 
-                if (sym->symtype == SYM_DECLARATION) {
-                    error("Symbol '%s' was declared extern and "
-                          "cannot be initialized.", sym->name);
-                }
-                if (!sym->depth && sym->symtype == SYM_DEFINITION) {
-                    error("Symbol '%s' was already defined.", sym->name);
-                    exit(1);
-                }
-                consume('=');
-                sym->symtype = SYM_DEFINITION;
-                if (!sym->depth || sym->n) {
-                    decl->head = initializer(decl->head, var_direct(sym));
-                } else {
-                    parent = initializer(parent, var_direct(sym));
-                }
-                assert(sym->type->size);
-                if (peek().token != ',') {
-                    consume(';');
-                    return parent;
-                }
-                break;
-            case '{': {
-                int i;
-                if (sym->type->type != FUNCTION || sym->depth) {
-                    error("Invalid function definition.");
-                    exit(1);
-                }
-                sym->symtype = SYM_DEFINITION;
-                decl->fun = sym;
-
-                push_scope(&ns_ident);
-                define_builtin__func__(sym->name);
-                for (i = 0; i < sym->type->n_args; ++i) {
-                    symbol_t sarg = {
-                        SYM_DEFINITION,
-                        LINK_NONE,
-                    };
-                    sarg.name = arg.type->params[i];
-                    sarg.type = sym->type->args[i];
-                    if (!sarg.name) {
-                        error("Missing parameter name at position %d.", i + 1);
-                        exit(1);
-                    }
-                    sym_list_push_back(&decl->params, sym_add(&ns_ident, sarg));
-                }
-                parent = block(parent);
-                pop_scope(&ns_ident);
-
-                return parent;
             }
-            default:
-                break;
+            break;
+        case '{': {
+            int i;
+            if (sym->type->type != FUNCTION || sym->depth) {
+                error("Invalid function definition.");
+                exit(1);
+            }
+            sym->symtype = SYM_DEFINITION;
+            decl->fun = sym;
+
+            push_scope(&ns_ident);
+            define_builtin__func__(sym->name);
+            for (i = 0; i < sym->type->n_args; ++i) {
+                symbol_t sarg = {
+                    SYM_DEFINITION,
+                    LINK_NONE,
+                };
+                sarg.name = arg.type->params[i];
+                sarg.type = sym->type->args[i];
+                if (!sarg.name) {
+                    error("Missing parameter name at position %d.", i + 1);
+                    exit(1);
+                }
+                sym_list_push_back(&decl->params, sym_add(&ns_ident, sarg));
+            }
+            parent = block(parent);
+            pop_scope(&ns_ident);
+
+            return parent;
+        }
+        default:
+            break;
         }
         consume(',');
     }
@@ -353,7 +352,7 @@ enumerator_list()
             consume('=');
             val = constant_expression();
             if (val.type->type != INTEGER) {
-                error("Implicit conversion from non-integer type in enum declaration.");
+                error("Implicit conversion from non-integer type in enum.");
             }
             arg.enum_value = val.value.integer;
         }
@@ -376,8 +375,7 @@ enumerator_list()
  * storage class present.
  *
  * This rule can be used to backtrack, i.e. if there is no valid declaration
- * specifier, NULL is returned.
- */
+ * specifier, NULL is returned. */
 static typetree_t *
 declaration_specifiers(enum token_type *stc)
 {
@@ -390,144 +388,150 @@ declaration_specifiers(enum token_type *stc)
         struct token tok = peek();
 
         switch (tok.token) {
-            case CONST:
-                consume(CONST);
-                type->flags.fconst = 1;
-                break;
-            case VOLATILE:
-                consume(VOLATILE);
-                type->flags.fvolatile = 1;
-                break;
-            case AUTO:
-            case REGISTER:
-            case STATIC:
-            case EXTERN:
-            case TYPEDEF:
-                if (sttok != '$')
-                    error("Only one storage class specifier allowed.");
-                if (!stc)
-                    error("Storage class specifier not allowed in specifier-qualifier-list.");
-                sttok = next().token;
-                break;
-            case IDENTIFIER:
-                tag = sym_lookup(&ns_ident, tok.strval);
-                if (tag && tag->symtype == SYM_TYPEDEF) {
-                    flags_t flags;
-                    /* todo: validate */
-                    consume(IDENTIFIER);
-                    flags = type->flags;
-                    *type = *(tag->type);
-                    type->flags.fvolatile |= flags.fvolatile;
-                    type->flags.fconst |= flags.fconst;
-                } else {
-                    goto end;
-                }
-                break;
-            case CHAR:
-                consume(CHAR);
-                type->size = 1;
-                break;
-            case SHORT:
-                consume(SHORT);
-                type->size = 2;
-                break;
-            case INT:
-            case SIGNED:
-                next();
+        case CONST:
+            consume(CONST);
+            type->flags.fconst = 1;
+            break;
+        case VOLATILE:
+            consume(VOLATILE);
+            type->flags.fvolatile = 1;
+            break;
+        case AUTO:
+        case REGISTER:
+        case STATIC:
+        case EXTERN:
+        case TYPEDEF:
+            if (sttok != '$') {
+                error("Only one storage class specifier allowed.");
+            }
+            if (!stc) {
+                error("Storage class specifier not allowed in qualifier list.");
+            }
+            sttok = next().token;
+            break;
+        case IDENTIFIER:
+            tag = sym_lookup(&ns_ident, tok.strval);
+            if (tag && tag->symtype == SYM_TYPEDEF) {
+                flags_t flags;
+                /* todo: validate */
+                consume(IDENTIFIER);
+                flags = type->flags;
+                *type = *(tag->type);
+                type->flags.fvolatile |= flags.fvolatile;
+                type->flags.fconst |= flags.fconst;
+            } else {
+                goto end;
+            }
+            break;
+        case CHAR:
+            consume(CHAR);
+            type->size = 1;
+            break;
+        case SHORT:
+            consume(SHORT);
+            type->size = 2;
+            break;
+        case INT:
+        case SIGNED:
+            next();
+            type->size = 4;
+            break;
+        case LONG:
+            consume(LONG);
+            type->size = 8;
+            break;
+        case UNSIGNED:
+            consume(UNSIGNED);
+            if (!type->size)
                 type->size = 4;
-                break;
-            case LONG:
-                consume(LONG);
-                type->size = 8;
-                break;
-            case UNSIGNED:
-                consume(UNSIGNED);
-                if (!type->size)
-                    type->size = 4;
-                type->flags.funsigned = 1;
-                break;
-            case FLOAT:
-                consume(FLOAT);
-                type->type = REAL;
-                type->size = 4;
-                break;
-            case DOUBLE:
-                consume(DOUBLE);
-                type->type = REAL;
-                type->size = 8;
-                break;
-            case VOID:
-                consume(VOID);
-                type->type = NONE;
-                break;
-            case UNION:
-            case STRUCT:
-                next();
-                type->type = OBJECT;
-                type->size = 0;
-                if (peek().token == IDENTIFIER) {
-                    struct token ident = consume(IDENTIFIER);
-                    tag = sym_lookup(&ns_tag, ident.strval);
-                    if (!tag) {
-                        symbol_t arg = { SYM_TYPEDEF };
-                        arg.name = strdup(ident.strval);
-                        arg.type = type;
-                        tag = sym_add(&ns_tag, arg);
-                    } else if (tag->type->type == INTEGER) {
-                        error("Tag '%s' was previously defined as enum type.", tag->name);
-                        exit(1);
-                    }
-
-                    type = (typetree_t *) tag->type;
-                    if (peek().token != '{') {
-                        /* Can still have volatile or const after. */
-                        break;
-                    } else if (type->size) {
-                        error("Redefiniton of object '%s'.", tag->name);
-                        exit(1);
-                    }
-                }
-                consume('{');
-                struct_declaration_list(type);
-                consume('}');
-                break;
-            case ENUM:
-                consume(ENUM);
-                type->type = INTEGER;
-                type->size = 4;
-                if (peek().token == IDENTIFIER) {
-                    struct token ident;
+            type->flags.funsigned = 1;
+            break;
+        case FLOAT:
+            consume(FLOAT);
+            type->type = REAL;
+            type->size = 4;
+            break;
+        case DOUBLE:
+            consume(DOUBLE);
+            type->type = REAL;
+            type->size = 8;
+            break;
+        case VOID:
+            consume(VOID);
+            type->type = NONE;
+            break;
+        case UNION:
+        case STRUCT:
+            next();
+            type->type = OBJECT;
+            type->size = 0;
+            if (peek().token == IDENTIFIER) {
+                struct token ident = consume(IDENTIFIER);
+                tag = sym_lookup(&ns_tag, ident.strval);
+                if (!tag) {
                     symbol_t arg = { SYM_TYPEDEF };
-
-                    ident = consume(IDENTIFIER);
                     arg.name = strdup(ident.strval);
                     arg.type = type;
-                    tag = sym_lookup(&ns_tag, ident.strval);
-                    if (!tag || (tag->depth < ns_tag.depth && peek().token == '{')) {
-                        tag = sym_add(&ns_tag, arg);
-                    } else if (tag->type->type != INTEGER) {
-                        error("Tag '%s' was previously defined as object type.", tag->name);
-                        exit(1);
-                    }
+                    tag = sym_add(&ns_tag, arg);
+                } else if (tag->type->type == INTEGER) {
+                    error("Tag '%s' was previously defined as enum type.",
+                        tag->name);
+                    exit(1);
+                }
 
-                    type = (typetree_t *) tag->type;
-                    if (peek().token != '{') {
-                        break;
-                    } else if (tag->enum_value) {
-                        error("Redefiniton of enum '%s'.", tag->name);
-                        exit(1);
-                    }
+                type = (typetree_t *) tag->type;
+                if (peek().token != '{') {
+                    /* Can still have volatile or const after. */
+                    break;
+                } else if (type->size) {
+                    error("Redefiniton of object '%s'.", tag->name);
+                    exit(1);
                 }
-                consume('{');
-                enumerator_list();
-                if (tag) {
-                    /* Use enum_value to represent definition. */
-                    tag->enum_value = 1;
+            }
+            consume('{');
+            struct_declaration_list(type);
+            consume('}');
+            break;
+        case ENUM:
+            consume(ENUM);
+            type->type = INTEGER;
+            type->size = 4;
+            if (peek().token == IDENTIFIER) {
+                struct token ident;
+                symbol_t arg = { SYM_TYPEDEF };
+
+                ident = consume(IDENTIFIER);
+                arg.name = strdup(ident.strval);
+                arg.type = type;
+                tag = sym_lookup(&ns_tag, ident.strval);
+                if (!tag ||
+                    (tag->depth < ns_tag.depth && peek().token == '{')
+                ) {
+                    tag = sym_add(&ns_tag, arg);
+                } else if (tag->type->type != INTEGER) {
+                    error("Tag '%s' was previously defined as object type.",
+                        tag->name);
+                    exit(1);
                 }
-                consume('}');
-                break;
-            default:
-                goto end;
+
+                type = (typetree_t *) tag->type;
+                if (peek().token != '{') {
+                    break;
+                } else if (tag->enum_value) {
+                    error("Redefiniton of enum '%s'.", tag->name);
+                    exit(1);
+                }
+            }
+            consume('{');
+            enumerator_list();
+            if (tag) {
+                /* Use enum_value to represent definition. */
+                tag->enum_value = 1;
+            }
+            consume('}');
+            break;
+        default:
+            goto end;
         }
     } while (++consumed);
 end:
@@ -614,38 +618,38 @@ direct_declarator(typetree_t *base, const char **symbol)
     struct token ident;
 
     switch (peek().token) {
-        case IDENTIFIER:
-            ident = consume(IDENTIFIER);
-            if (!symbol) {
-                error("Unexpected identifier in abstract declarator.");
-                exit(1);
-            }
-            *symbol = strdup(ident.strval);
-            break;
-        case '(':
-            consume('(');
-            type = head = tail = declarator(NULL, symbol);
-            while (tail->next) {
-                tail = (typetree_t *) tail->next;
-            }
-            consume(')');
-            break;
-        default:
-            break;
+    case IDENTIFIER:
+        ident = consume(IDENTIFIER);
+        if (!symbol) {
+            error("Unexpected identifier in abstract declarator.");
+            exit(1);
+        }
+        *symbol = strdup(ident.strval);
+        break;
+    case '(':
+        consume('(');
+        type = head = tail = declarator(NULL, symbol);
+        while (tail->next) {
+            tail = (typetree_t *) tail->next;
+        }
+        consume(')');
+        break;
+    default:
+        break;
     }
 
     while (peek().token == '[' || peek().token == '(') {
         switch (peek().token) {
-            case '[':
-                type = direct_declarator_array(base);
-                break;
-            case '(':
-                consume('(');
-                type = parameter_list(base);
-                consume(')');
-                break;
-            default:
-                assert(0);
+        case '[':
+            type = direct_declarator_array(base);
+            break;
+        case '(':
+            consume('(');
+            type = parameter_list(base);
+            consume(')');
+            break;
+        default:
+            assert(0);
         }
         if (tail) {
             tail->next = type;
@@ -723,7 +727,7 @@ block(block_t *parent)
         parent = statement(parent);
     }
     consume('}');
-    push_scope(&ns_tag);
+    pop_scope(&ns_tag);
     pop_scope(&ns_ident);
     return parent;
 }
@@ -744,18 +748,16 @@ statement(block_t *parent)
     static block_t *break_target, *continue_target;
     block_t *old_break_target, *old_continue_target;
 
-    tok = peek();
-
-    switch (tok.token) {
-        case ';':
-            consume(';');
-            node = parent;
-            break;
-        case '{':
-            node = block(parent); /* execution continues  */
-            break;
-        case SWITCH:
-        case IF:
+    switch ((tok = peek()).token) {
+    case ';':
+        consume(';');
+        node = parent;
+        break;
+    case '{':
+        node = block(parent); /* execution continues  */
+        break;
+    case SWITCH:
+    case IF:
         {
             block_t *right = cfg_block_init(decl),
                     *next  = cfg_block_init(decl);
@@ -793,13 +795,15 @@ statement(block_t *parent)
             node = next;
             break;
         }
-        case WHILE:
-        case DO:
+    case WHILE:
+    case DO:
         {
-            block_t *top = cfg_block_init(decl), *body = cfg_block_init(decl), *next = cfg_block_init(decl);
+            block_t *top = cfg_block_init(decl),
+                    *body = cfg_block_init(decl),
+                    *next = cfg_block_init(decl);
             parent->jump[0] = top; /* Parent becomes unconditional jump. */
 
-            /* Enter a new loop, store reference for break and continue target. */
+            /* Enter a new loop, remember old break and continue target. */
             old_break_target = break_target;
             old_continue_target = continue_target;
             break_target = next;
@@ -814,7 +818,7 @@ statement(block_t *parent)
                 top->jump[0] = next;
                 top->jump[1] = body;
 
-                /* Generate statement, and get tail end of body to loop back */
+                /* Generate statement, and get tail end of body to loop back. */
                 body = statement(body);
                 body->jump[0] = top;
             } else if (tok.token == DO) {
@@ -823,7 +827,8 @@ statement(block_t *parent)
                 body = statement(top);
                 consume(WHILE);
                 consume('(');
-                body = expression(body); /* Tail becomes branch. (nb: wrong if tail is return?!) */
+                /* Tail becomes branch. (nb: wrong if tail is return?!) */
+                body = expression(body);
                 body->jump[0] = next;
                 body->jump[1] = top;
                 consume(')');
@@ -836,11 +841,14 @@ statement(block_t *parent)
             node = next;
             break;
         }
-        case FOR:
+    case FOR:
         {
-            block_t *top = cfg_block_init(decl), *body = cfg_block_init(decl), *increment = cfg_block_init(decl), *next = cfg_block_init(decl);
+            block_t *top = cfg_block_init(decl),
+                    *body = cfg_block_init(decl),
+                    *increment = cfg_block_init(decl),
+                    *next = cfg_block_init(decl);
 
-            /* Enter a new loop, store reference for break and continue target. */
+            /* Enter a new loop, remember old break and continue target. */
             old_break_target = break_target;
             old_continue_target = continue_target;
             break_target = next;
@@ -878,36 +886,36 @@ statement(block_t *parent)
             node = next;
             break;
         }
-        case GOTO:
-            consume(GOTO);
-            consume(IDENTIFIER);
-            /* todo */
-            consume(';');
-            break;
-        case CONTINUE:
-        case BREAK:
-            consume(tok.token);
-            parent->jump[0] = (tok.token == CONTINUE) ? 
-                continue_target :
-                break_target;
-            consume(';');
-            /* Return orphan node, which is dead code unless there is a label
-             * and a goto statement. */
-            node = cfg_block_init(decl); 
-            break;
-        case RETURN:
-            consume(RETURN);
-            if (peek().token != ';') {
-                parent = expression(parent);
-            }
-            consume(';');
-            node = cfg_block_init(decl); /* orphan */
-            break;
-        case CASE:
-        case DEFAULT:
-            /* todo */
-            break;
-        case IDENTIFIER:
+    case GOTO:
+        consume(GOTO);
+        consume(IDENTIFIER);
+        /* todo */
+        consume(';');
+        break;
+    case CONTINUE:
+    case BREAK:
+        consume(tok.token);
+        parent->jump[0] = (tok.token == CONTINUE) ? 
+            continue_target :
+            break_target;
+        consume(';');
+        /* Return orphan node, which is dead code unless there is a label
+         * and a goto statement. */
+        node = cfg_block_init(decl); 
+        break;
+    case RETURN:
+        consume(RETURN);
+        if (peek().token != ';') {
+            parent = expression(parent);
+        }
+        consume(';');
+        node = cfg_block_init(decl); /* orphan */
+        break;
+    case CASE:
+    case DEFAULT:
+        /* todo */
+        break;
+    case IDENTIFIER:
         {
             const symbol_t *def;
             if ((
@@ -919,16 +927,16 @@ statement(block_t *parent)
             }
             /* todo: handle label statement. */
         }
-        case INTEGER_CONSTANT: /* todo: any constant value */
-        case STRING:
-        case '*':
-        case '(':
-            node = expression(parent);
-            consume(';');
-            break;
-        default:
-            node = declaration(parent);
-            break;
+    case INTEGER_CONSTANT: /* todo: any constant value */
+    case STRING:
+    case '*':
+    case '(':
+        node = expression(parent);
+        consume(';');
+        break;
+    default:
+        node = declaration(parent);
+        break;
     }
     return node;
 }
