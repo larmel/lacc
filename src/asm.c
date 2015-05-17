@@ -95,7 +95,7 @@ static char * refer(const var_t var)
         }
         break;
     case DIRECT:
-        if (!var.symbol->depth || var.symbol->linkage == LINK_INTERN) {
+        if (var.symbol->linkage != LINK_NONE) {
             if (var.type->type == ARRAY || var.type->type == FUNCTION) {
                 sprintf(str, "$%s", sym_name(var.symbol));
             } else {
@@ -510,16 +510,19 @@ static int assign_storage(const decl_t *fun)
         sym = fun->params.elem[i];
 
         assert(!sym->stack_offset);
+        assert(sym->linkage == LINK_NONE);
         offset -= sym->type->size;
         sym->stack_offset = offset;
     }
 
     for (i = 0; i < fun->locals.length; ++i) {
         sym = fun->locals.elem[i];
-
         assert(!sym->stack_offset);
-        offset -= sym->type->size;
-        sym->stack_offset = offset;
+
+        if (sym->linkage == LINK_NONE) {
+            offset -= sym->type->size;
+            sym->stack_offset = offset;
+        }
     }
 
     return -offset;

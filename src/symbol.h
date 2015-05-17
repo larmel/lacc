@@ -6,7 +6,6 @@
 
 #include <stdio.h>
 
-
 typedef enum symtype {
     SYM_DEFINITION = 0,
     SYM_TENTATIVE,

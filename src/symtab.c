@@ -300,6 +300,7 @@ dump_symtab(namespace_t *ns)
         printf("%s ",
             (st == SYM_TENTATIVE) ? "tentative" : 
             (st == SYM_DEFINITION) ? "definition" :
+            (st == SYM_DECLARATION) ? "declaration" :
             (st == SYM_TYPEDEF) ? "typedef" : "enum");
 
         printf("%s :: ", ns->symbol[i]->name);
