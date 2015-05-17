@@ -64,7 +64,8 @@ int main(int argc, char* argv[])
         decl_t *fun = parse();
         if (errors || !fun) {
             if (errors) {
-                error("Aborting because of previous %s.", (errors > 1) ? "errors" : "error");
+                error("Aborting because of previous %s.",
+                    (errors > 1) ? "errors" : "error");
             }
             break;
         }

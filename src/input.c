@@ -9,16 +9,19 @@
 #include <ctype.h>
 #include <unistd.h>
 
-/* Globally exposed for diagnostics info and default macro values. */
+/* Globally exposed for diagnostics info and default macro values.
+ */
 struct source current_file;
 
-/* List of directories to search on resolving include directives. */
+/* List of directories to search on resolving include directives.
+ */
 static const char **search_path;
 static size_t search_path_count;
 
 /* Keep stack of file descriptors as resolved by includes. Make helper
  * functions for pushing (#include) and popping (EOF) of files, keeping track
- * of the file name and line number for diagnostics. */
+ * of the file name and line number for diagnostics.
+ */
 static stack_t sources;
 
 static int pop()
@@ -47,7 +50,8 @@ static char *create_path(const char *dir, const char *name)
     return path;
 }
 
-/* First search current directory, then go through list of search paths. */
+/* First search current directory, then go through list of search paths.
+ */
 static void include_file_internal(const char *name, int incurrent)
 {
     source_t *source;
@@ -97,7 +101,8 @@ void include_system_file(const char *name)
     include_file_internal(name, 0);
 }
 
-/* Clean up all dynamically allocated resources. */
+/* Clean up all dynamically allocated resources.
+ */
 static void finalize()
 {
     while (pop() != EOF)
@@ -120,9 +125,9 @@ void add_include_search_path(const char *path)
 }
 
 /* Initialize with root file name, and store relative path to resolve later
- * includes. Default to stdin. */
-void
-init(char *path)
+ * includes. Default to stdin.
+ */
+void init(char *path)
 {
     source_t *source = calloc(1, sizeof(source_t));
     source->file = stdin;
@@ -160,9 +165,9 @@ init(char *path)
  * comments, join lines ending with '\', and ignore all-whitespace lines. Trim
  * leading whitespace, guaranteeing that the first character is '#' for
  * preprocessor directives. Increment line counter in fnt struct for each line
- * consumed. */
-static ssize_t
-getcleanline(char **lineptr, size_t *n, source_t *fn)
+ * consumed.
+ */
+static int getcleanline(char **lineptr, size_t *n, source_t *fn)
 {
     enum { NORMAL, COMMENT } state = 0;
     int c, next; /* getc return values */
@@ -185,8 +190,8 @@ getcleanline(char **lineptr, size_t *n, source_t *fn)
         if (c == '\\') {
             next = getc(stream);
             if (next == EOF) {
-                error("Invalid end of file after line continuation, aborting");
-                exit(0);
+                error("Invalid end of file after line continuation.");
+                exit(1);
             }
             if (next == '\n') {
                 fn->line++;
@@ -240,16 +245,16 @@ getcleanline(char **lineptr, size_t *n, source_t *fn)
     return i;
 }
 
-/* Yield next clean line. */
-size_t
-getprepline(char **buffer)
+/* Yield next clean line.
+ */
+int getprepline(char **buffer)
 {
     extern int VERBOSE;
 
     static char *line;
     static size_t size;
     source_t *source;
-    ssize_t read, processed;
+    int read, processed;
 
     while (1) {
         source = (source_t *)stack_peek(&sources);
