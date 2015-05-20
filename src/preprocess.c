@@ -203,11 +203,17 @@ static void expand_token(struct token t)
         toklist_t **args = NULL, *res = NULL;
 
         if (def->type == FUNCTION_LIKE) {
+
+            /* Keep track of the nesting depth of macro arguments. For example
+             * MAX( MAX(10, 12), 20 ) should ignore the first comma inside a
+             * nested parenthesis. */
+            int nesting;
+
             if (def->params) {
                 args = malloc(sizeof(toklist_t *) * def->params);
             }
             consume_raw_token('(');
-            for (i = 0; i < def->params; ++i) {
+            for (i = nesting = 0; i < def->params; ++i) {
                 args[i] = toklist_init();
 
                 do {
@@ -216,11 +222,17 @@ static void expand_token(struct token t)
                         error("Macro expansion does not match definition.");
                         exit(1);
                     }
-                    if (t.token == NEWLINE) {
+                    if (t.token == '(') {
+                        nesting++;
+                    } else if (t.token == ')') {
+                        assert(nesting);
+                        nesting--;
+                    } else if (t.token == NEWLINE) {
                         continue;
                     }
                     toklist_push_back(args[i], t);
                 } while (
+                    nesting ||
                     (i  < def->params - 1 && peek_raw_token() != ',') ||
                     (i == def->params - 1 && peek_raw_token() != ')')
                 );
