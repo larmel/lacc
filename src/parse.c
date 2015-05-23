@@ -190,13 +190,13 @@ declaration(block_t *parent)
 
             push_scope(&ns_ident);
             define_builtin__func__(sym->name);
-            for (i = 0; i < sym->type->n_args; ++i) {
+            for (i = 0; i < sym->type->n; ++i) {
                 symbol_t sarg = {
                     SYM_DEFINITION,
                     LINK_NONE,
                 };
-                sarg.name = arg.type->params[i];
-                sarg.type = sym->type->args[i];
+                sarg.name = arg.type->member[i].name;
+                sarg.type = sym->type->member[i].type;;
                 if (!sarg.name) {
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
@@ -215,71 +215,68 @@ declaration(block_t *parent)
     }
 }
 
-/* Parse an emit initializer code for target variable.
- * int b[] = {0, 1, 2, 3} will emit a series of assignment operations on
- * references to symbol b.
+/* Parse and emit initializer code for target variable in statements such as
+ * int b[] = {0, 1, 2, 3}. Generate a series of assignment operations on
+ * references to target variable.
  */
 static block_t *initializer(block_t *block, var_t target)
 {
-    const typetree_t *type;
-    symbol_t *symbol;
     int i;
+    const typetree_t *type;
 
     assert(target.kind == DIRECT);
-    symbol = (symbol_t *) target.symbol;
 
     if (peek().token == '{') {
         type = target.type;
         target.lvalue = 1;
         consume('{');
-        if (type->type == OBJECT) {
-            for (i = 0; i < type->n_args; ++i) {
-                target.type = type->args[i];
+        switch (type->type) {
+        case OBJECT:
+            for (i = 0; i < type->n; ++i) {
+                target.type = type->member[i].type;
+                target.offset = type->member[i].offset;
                 block = initializer(block, target);
-                target.offset += type->args[i]->size;
-                if (peek().token == '}')
-                    break;
-                consume(',');
+                if (i < type->n - 1) {
+                    consume(',');
+                }
             }
-        } else if (type->type == ARRAY) {
+            break;
+        case ARRAY:
             target.type = type->next;
             for (i = 0; !type->size || i < type->size / type->next->size; ++i) {
                 block = initializer(block, target);
                 target.offset += type->next->size;
-                if (peek().token == '}') {
+                if (peek().token != ',') {
                     break;
                 }
                 consume(',');
             }
+            /* Incomplete array type can only be in the root level of target
+             * type tree, thus safe to overwrite type directly in symbol. */
             if (!type->size) {
-                typetree_t *newtype;
-
+                assert(!target.symbol->type->size);
                 assert(target.symbol->type->type == ARRAY);
 
-                newtype = type_init(ARRAY);
-                newtype->size = target.offset;
-                newtype->next = type->next;
-                symbol->type = type_complete(symbol->type, newtype);
-                type = newtype;
+                ((struct typetree *) target.symbol->type)->size = target.offset;
             }
-        } else {
+            if (target.offset < type->size) {
+                error("Incomplete array initializer is not yet supported.");
+            }
+            break;
+        default:
             error("Block initializer only apply to array or object type.");
             exit(1);
-        }
-        if (target.offset < type->size) {
-            error("Incomplete initializer is not yet supported.");
         }
         consume('}');
     } else {
         block = assignment_expression(block);
-        if (block->expr.kind != IMMEDIATE) {
-            /*
+        if (!target.symbol->depth && block->expr.kind != IMMEDIATE) {
             error("Initializer must be computable at load time.");
             exit(1);
-            */
         }
         if (target.kind == DIRECT && !target.type->size) {
-            symbol->type = type_complete(symbol->type, block->expr.type);
+            ((struct symbol *) target.symbol)->type =
+                type_complete(target.symbol->type, block->expr.type);
         }
         eval_assign(block, target, block->expr);
     }
@@ -288,49 +285,43 @@ static block_t *initializer(block_t *block, var_t target)
 }
 
 /* Maybe a bit too clever here: overwriting existing typetree object already in
- * symbol table. */
-static void
-struct_declaration_list(typetree_t *obj)
+ * symbol table.
+ */
+static void struct_declaration_list(typetree_t *obj)
 {
     namespace_t ns = {0};
     push_scope(&ns);
 
     do {
-        typetree_t *base;
-
-        base = declaration_specifiers(NULL);
+        typetree_t *base = declaration_specifiers(NULL);
         if (!base) {
             error("Missing type specifier in struct member declaration.");
             exit(1);
         }
 
         do {
-            symbol_t member = {0};
+            symbol_t sym = {0};
 
-            member.type = declarator(base, &member.name);
-            if (!member.name) {
+            sym.type = declarator(base, &sym.name);
+            if (!sym.name) {
                 error("Invalid struct member declarator.");
                 exit(1);
             }
 
-            sym_add(&ns, member);
-
-            obj->n_args++;
-            obj->args = realloc(obj->args, sizeof(typetree_t *) * obj->n_args);
-            obj->params = realloc(obj->params, sizeof(char *) * obj->n_args);
-
-            obj->args[obj->n_args - 1] = member.type;
-            obj->params[obj->n_args - 1] = member.name;
-            obj->size += member.type->size;
+            sym_add(&ns, sym);
+            type_add_member(obj, sym.type, sym.name);
 
             if (peek().token == ',') {
                 consume(',');
                 continue;
             }
+
         } while (peek().token != ';');
 
         consume(';');
     } while (peek().token != '}');
+
+    type_align_struct_members(obj);
 
     pop_scope(&ns);
 }
@@ -661,12 +652,11 @@ direct_declarator(typetree_t *base, const char **symbol)
     return type;
 }
 
-/* FOLLOW(parameter-list) = { ')' }, peek to return empty list;
- * even though K&R require at least specifier: (void)
+/* FOLLOW(parameter-list) = { ')' }, peek to return empty list; even though K&R
+ * require at least specifier: (void)
  * Set parameter-type-list = parameter-list, including the , ...
  */
-static typetree_t *
-parameter_list(const typetree_t *base)
+static typetree_t *parameter_list(const typetree_t *base)
 {
     typetree_t *type;
 
@@ -691,11 +681,8 @@ parameter_list(const typetree_t *base)
             decl = ptr;
         }
 
-        type->n_args++;
-        type->args   = realloc(type->args, sizeof(typetree_t *) * type->n_args);
-        type->params = realloc(type->params, sizeof(char *) * type->n_args);
-        type->args[type->n_args - 1]   = decl;
-        type->params[type->n_args - 1] = name;
+        type_add_member(type, decl, name);
+
         if (peek().token != ',') {
             break;
         }
@@ -1401,20 +1388,21 @@ static block_t *postfix_expression(block_t *block)
                 error("Calling non-function symbol.");
                 exit(1);
             }
-            arg = malloc(sizeof(var_t) * root.type->n_args);
+            arg = malloc(sizeof(var_t) * root.type->n);
 
             consume('(');
-            for (i = 0; i < root.type->n_args; ++i) {
+            for (i = 0; i < root.type->n; ++i) {
                 if (peek().token == ')') {
                     error("Too few arguments to %s, expected %d but got %d.",
-                        root.symbol->name, root.type->n_args, i);
+                        root.symbol->name, root.type->n, i);
                     exit(1);
                 }
                 block = assignment_expression(block);
                 arg[i] = block->expr;
                 /* todo: type check here. */
-                if (i < root.type->n_args - 1)
+                if (i < root.type->n - 1) {
                     consume(',');
+                }
             }
             while (root.type->vararg && peek().token != ')') {
                 consume(',');
@@ -1439,25 +1427,24 @@ static block_t *postfix_expression(block_t *block)
             if (root.type->type == POINTER && 
                 root.type->next->type == OBJECT)
             {
-                int i, offset;
-                const typetree_t *field;
+                int i;
+                struct member *field;
 
-                for (i = offset = 0; i < root.type->next->n_args; ++i) {
-                    if (!strcmp(tok.strval, root.type->next->params[i])) {
-                        field = root.type->next->args[i];
+                for (i = 0; i < root.type->next->n; ++i) {
+                    field = &root.type->next->member[i];
+                    if (!strcmp(tok.strval, field->name)) {
                         break;
                     }
-                    offset += root.type->next->args[i]->size;
                 }
-                if (i == root.type->next->n_args) {
-                    error("Invalid field access, no field named %s.", 
+                if (i == root.type->next->n) {
+                    error("Invalid field access, no field named %s.",
                         tok.strval);
                     exit(1);
                 }
 
                 root.kind = DEREF;
-                root.type = field;
-                root.offset += offset;
+                root.type = field->type;
+                root.offset += field->offset;
                 root.lvalue = 1;
             } else {
                 error("Cannot access field of non-object type.");

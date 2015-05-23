@@ -21,7 +21,9 @@ typedef struct flags
     unsigned funsigned: 1;
 } flags_t;
 
-/* Recursive structure representing a type.
+struct member;
+
+/* Internal representation of a type.
  */
 typedef struct typetree
 {
@@ -32,15 +34,37 @@ typedef struct typetree
     unsigned size;
 
     /* Function parameters or struct/union members. */
-    const struct typetree **args;
+    /* todo: add offset array, and make 
+     * type_add_subtree(struct typetree *t, struct typetree *c);
+     */
+    struct member *member;
+
+    /* Number of function parameters or object members. */
+    int n;
+
+    /*const struct typetree **args;
     const char **params;
-    unsigned n_args;
+    unsigned n_args; */
+
+    /* Function accepts variable argument list (...) */
     int vararg;
 
     /* Function return value, pointer target, or array base. */
     const struct typetree *next;
 } typetree_t;
 
+struct member
+{
+    const struct typetree *type;
+    const char *name;
+
+    /* Byte offset into struct. */
+    int offset;
+};
+
+void type_add_member(struct typetree *, const struct typetree *, const char *);
+
+void type_align_struct_members(struct typetree *);
 
 typetree_t *type_init(enum tree_type);
 

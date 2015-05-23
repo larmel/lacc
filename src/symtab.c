@@ -275,7 +275,10 @@ void output_definitions(FILE *stream)
                 fprintf(stream, "\t.data\n");
                 found = 1;
             }
-            fprintf(stream, "\t.comm %s, %d\n", sym->name, sym->type->size);
+
+            fprintf(stream, "\t.comm %s, %d, %d\n",
+                sym->name, sym->type->size,
+                (sym->type->size < 32) ? sym->type->size : 32);
         }
     }
 }
