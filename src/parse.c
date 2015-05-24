@@ -799,11 +799,13 @@ statement(block_t *parent)
             consume(tok.token);
 
             if (tok.token == WHILE) {
+                struct block *cond;
+
                 consume('(');
-                top = expression(top);
+                cond = expression(top);
                 consume(')');
-                top->jump[0] = next;
-                top->jump[1] = body;
+                cond->jump[0] = next;
+                cond->jump[1] = body;
 
                 /* Generate statement, and get tail end of body to loop back. */
                 body = statement(body);
@@ -852,6 +854,7 @@ statement(block_t *parent)
                 top = expression(top);
                 top->jump[0] = next;
                 top->jump[1] = body;
+                top = (struct block *) parent->jump[0];
             } else {
                 /* Infinite loop */
                 parent->jump[0] = body;
@@ -859,8 +862,7 @@ statement(block_t *parent)
             }
             consume(';');
             if (peek().token != ')') {
-                increment = expression(increment);
-                increment->jump[0] = top;
+                expression(increment)->jump[0] = top;
             }
             consume(')');
             body = statement(body);
