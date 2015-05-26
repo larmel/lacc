@@ -73,9 +73,9 @@ typedef enum optype
 typedef struct op {
     enum optype type;
 
-    var_t a;
-    var_t b;
-    var_t c;
+    struct variable a;
+    struct variable b;
+    struct variable c;
 } op_t;
 
 /* CFG block
@@ -107,7 +107,7 @@ typedef struct block
  */
 typedef struct decl
 {
-    /* Function symbol and control flow graph, or NULL if list of declarations. */
+    /* Function symbol or NULL if list of declarations. */
     const symbol_t *fun;
     block_t *head;
     block_t *body;

@@ -34,17 +34,10 @@ typedef struct typetree
     unsigned size;
 
     /* Function parameters or struct/union members. */
-    /* todo: add offset array, and make 
-     * type_add_subtree(struct typetree *t, struct typetree *c);
-     */
     struct member *member;
 
     /* Number of function parameters or object members. */
     int n;
-
-    /*const struct typetree **args;
-    const char **params;
-    unsigned n_args; */
 
     /* Function accepts variable argument list (...) */
     int vararg;

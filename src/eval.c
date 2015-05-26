@@ -1,12 +1,71 @@
-/* Construct op_t operations and temp variables based on symbols and optypes. */
-
 #include "ir.h"
-#include "type.h"
 #include "error.h"
 
 #include <assert.h>
 #include <stdarg.h>
 #include <stdlib.h>
+
+var_t var_direct(const symbol_t *symbol)
+{
+    var_t var = {0};
+    var.type = symbol->type;
+    if (symbol->symtype == SYM_ENUM) {
+        var.kind = IMMEDIATE;
+        var.value.integer = symbol->enum_value;
+    } else {
+        var.kind = DIRECT;
+        var.symbol = symbol;
+        var.lvalue = symbol->name[0] != '.';
+    }
+    return var;
+}
+
+var_t var_deref(const symbol_t *symbol, int offset)
+{
+    var_t var = {0};
+    assert(symbol->type->type == POINTER);
+
+    var.kind = DEREF;
+    var.symbol = symbol;
+    var.type = type_deref(symbol->type);
+    var.offset = offset;
+    var.lvalue = 1;
+
+    return var;
+}
+
+var_t var_string(const char *label, size_t length)
+{
+    var_t var = {0};
+
+    var.kind = IMMEDIATE;
+    var.type = type_init_string(length);
+    var.value.string = label;
+
+    return var;
+}
+
+var_t var_int(int value)
+{
+    var_t var = {0};
+    typetree_t *type;
+
+    type = type_init(INTEGER);
+
+    var.kind = IMMEDIATE;
+    var.type = type;
+    var.value.integer = value;
+    return var;
+}
+
+var_t var_void()
+{
+    var_t var = {0};
+
+    var.kind = IMMEDIATE;
+    var.type = type_init(NONE);
+    return var;
+}
 
 /* Current declaration from parser. Need to add symbols to list whenever new
  * ones are created with sym_temp. And no, that should no be in symtab.c. */
@@ -16,8 +75,7 @@ extern decl_t *decl;
  *
  * Returns a DIRECT reference to a new temporary, or an immediate value.
  */
-var_t
-eval_expr(block_t *block, optype_t optype, ...)
+var_t eval_expr(block_t *block, optype_t optype, ...)
 {
     va_list args;
 
@@ -34,57 +92,57 @@ eval_expr(block_t *block, optype_t optype, ...)
             left.type->type == INTEGER && right.type->type == INTEGER)
         {
             switch (optype) {
-                case IR_OP_LOGICAL_AND:
-                    return var_int(left.value.integer && right.value.integer);
-                case IR_OP_LOGICAL_OR:
-                    return var_int(left.value.integer || right.value.integer);
-                case IR_OP_BITWISE_OR:
-                    return var_int(left.value.integer | right.value.integer);
-                case IR_OP_BITWISE_XOR:
-                    return var_int(left.value.integer ^ right.value.integer);
-                case IR_OP_BITWISE_AND:
-                    return var_int(left.value.integer & right.value.integer);
-                case IR_OP_ADD:
-                    return var_int(left.value.integer + right.value.integer);
-                case IR_OP_SUB:
-                    return var_int(left.value.integer - right.value.integer);
-                case IR_OP_MUL:
-                    return var_int(left.value.integer * right.value.integer);
-                case IR_OP_DIV:
-                    return var_int(left.value.integer / right.value.integer);
-                case IR_OP_MOD:
-                    return var_int(left.value.integer % right.value.integer);
-                case IR_OP_EQ:
-                    return var_int(left.value.integer == right.value.integer);
-                case IR_OP_GE:
-                    return var_int(left.value.integer >= right.value.integer);
-                case IR_OP_GT:
-                    return var_int(left.value.integer > right.value.integer);
-                default:
-                    assert(0);
+            case IR_OP_LOGICAL_AND:
+                return var_int(left.value.integer && right.value.integer);
+            case IR_OP_LOGICAL_OR:
+                return var_int(left.value.integer || right.value.integer);
+            case IR_OP_BITWISE_OR:
+                return var_int(left.value.integer | right.value.integer);
+            case IR_OP_BITWISE_XOR:
+                return var_int(left.value.integer ^ right.value.integer);
+            case IR_OP_BITWISE_AND:
+                return var_int(left.value.integer & right.value.integer);
+            case IR_OP_ADD:
+                return var_int(left.value.integer + right.value.integer);
+            case IR_OP_SUB:
+                return var_int(left.value.integer - right.value.integer);
+            case IR_OP_MUL:
+                return var_int(left.value.integer * right.value.integer);
+            case IR_OP_DIV:
+                return var_int(left.value.integer / right.value.integer);
+            case IR_OP_MOD:
+                return var_int(left.value.integer % right.value.integer);
+            case IR_OP_EQ:
+                return var_int(left.value.integer == right.value.integer);
+            case IR_OP_GE:
+                return var_int(left.value.integer >= right.value.integer);
+            case IR_OP_GT:
+                return var_int(left.value.integer > right.value.integer);
+            default:
+                assert(0);
             }
         }
         switch (optype) {
-            case IR_OP_EQ:
-            case IR_OP_GE:
-            case IR_OP_GT:
-            case IR_OP_LOGICAL_AND:
-            case IR_OP_LOGICAL_OR:
-                type = type_init(INTEGER);
-                break;
-            default:
-                type = type_combine(left.type, right.type);
-                break;
+        case IR_OP_EQ:
+        case IR_OP_GE:
+        case IR_OP_GT:
+        case IR_OP_LOGICAL_AND:
+        case IR_OP_LOGICAL_OR:
+            type = type_init(INTEGER);
+            break;
+        default:
+            type = type_combine(left.type, right.type);
+            break;
         }
     } else {
         if (left.kind == IMMEDIATE &&
             left.type->type == INTEGER)
         {
             switch (optype) {
-                case IR_OP_NOT:
-                    return var_int(!left.value.integer);
-                default:
-                    assert(0);
+            case IR_OP_NOT:
+                return var_int(!left.value.integer);
+            default:
+                assert(0);
             }
         }
         type = type_init(INTEGER);
@@ -115,8 +173,7 @@ eval_expr(block_t *block, optype_t optype, ...)
  *
  * Result is always DIRECT.
  */
-var_t
-eval_addr(block_t *block, var_t right)
+var_t eval_addr(block_t *block, var_t right)
 {
     op_t op;
     var_t res;
@@ -159,8 +216,7 @@ eval_addr(block_t *block, var_t right)
  * If DIRECT: Create a new deref variable, no evaluation.
  * If IMMEDIATE: not implemented.
  */
-var_t
-eval_deref(block_t *block, var_t var)
+var_t eval_deref(block_t *block, var_t var)
 {
     op_t op;
     var_t res;
@@ -201,8 +257,7 @@ eval_deref(block_t *block, var_t var)
  * 
  * Return value is the value of b.
  */
-var_t
-eval_assign(block_t *block, var_t target, var_t var)
+var_t eval_assign(block_t *block, var_t target, var_t var)
 {
     op_t op;
 
@@ -223,8 +278,7 @@ eval_assign(block_t *block, var_t target, var_t var)
 /* Evaluate a = copy(b). Create a new temporary variable to hold the result,
  * circumventing the l-value restriction for temporaries to do the assignment.
  */
-var_t
-eval_copy(block_t *block, var_t var)
+var_t eval_copy(block_t *block, var_t var)
 {
     var_t res;
     symbol_t *temp;
@@ -242,8 +296,7 @@ eval_copy(block_t *block, var_t var)
     return res;
 }
 
-var_t
-eval_call(block_t *block, var_t func)
+var_t eval_call(block_t *block, var_t func)
 {
     op_t op;
     var_t res;
@@ -266,8 +319,7 @@ eval_call(block_t *block, var_t func)
     return res;
 }
 
-var_t
-eval_cast(block_t *block, var_t var, const typetree_t *type)
+var_t eval_cast(block_t *block, var_t var, const typetree_t *type)
 {
     op_t op;
     var_t res;
@@ -291,8 +343,7 @@ eval_cast(block_t *block, var_t var, const typetree_t *type)
     return res;
 }
 
-void
-param(block_t *block, var_t p)
+void param(block_t *block, var_t p)
 {
     op_t op;
     op.type = IR_PARAM;
