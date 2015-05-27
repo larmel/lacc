@@ -3,77 +3,61 @@
 
 #include <stdlib.h>
 
-enum tree_type
-{
-    INTEGER,    /* char, short, int, long */ 
-    REAL,       /* float, double */
-    POINTER,
-    FUNCTION,
-    ARRAY,
-    OBJECT,     /* struct, union */
-    NONE        /* void */
-};
-
-typedef struct flags
-{
-    unsigned fconst : 1;
-    unsigned fvolatile : 1;
-    unsigned funsigned: 1;
-} flags_t;
-
-struct member;
-
 /* Internal representation of a type.
  */
-typedef struct typetree
+struct typetree
 {
-    enum tree_type type;
-    flags_t flags;
+    enum {
+        INTEGER,    /* (unsigned) char, short, int, long */ 
+        REAL,       /* float, double */
+        POINTER,
+        FUNCTION,
+        ARRAY,
+        OBJECT,     /* struct, union */
+        NONE        /* void */
+    } type;
 
-    /* Total storage size in bytes, returned for sizeof( ). */
-    unsigned size;
+    int is_const;
+    int is_volatile;
+    int is_unsigned;
+    int is_vararg;  /* Function takes variable argument list, ... */
+
+    int size;       /* Total storage size in bytes, returned for sizeof( ). */
+    int n;          /* Number of function parameters or object members. */
 
     /* Function parameters or struct/union members. */
-    struct member *member;
-
-    /* Number of function parameters or object members. */
-    int n;
-
-    /* Function accepts variable argument list (...) */
-    int vararg;
+    struct member {
+        const struct typetree *type;
+        const char *name;
+        int offset;
+    } *member;
 
     /* Function return value, pointer target, or array base. */
     const struct typetree *next;
-} typetree_t;
-
-struct member
-{
-    const struct typetree *type;
-    const char *name;
-
-    /* Byte offset into struct. */
-    int offset;
 };
 
-void type_add_member(struct typetree *, const struct typetree *, const char *);
+typedef struct typetree typetree_t;
 
+struct typetree *type_init_integer(int);
+struct typetree *type_init_pointer(const struct typetree *);
+struct typetree *type_init_array(const struct typetree *, int);
+struct typetree *type_init_function(void);
+struct typetree *type_init_object(void);
+struct typetree *type_init_void(void);
+
+const struct typetree *type_init_string(size_t);
+
+void type_add_member(struct typetree *, const struct typetree *, const char *);
 void type_align_struct_members(struct typetree *);
 
-typetree_t *type_init(enum tree_type);
+int type_equal(const struct typetree *, const struct typetree *);
 
-const typetree_t *type_init_string(size_t);
+const struct typetree *type_combine(const struct typetree *,
+                                    const struct typetree *);
+const struct typetree *type_deref(const struct typetree *);
+const struct typetree *type_complete(const struct typetree *,
+                                     const struct typetree *);
 
-int type_equal(const typetree_t *, const typetree_t *);
-
-const typetree_t *type_combine(const typetree_t *, const typetree_t *);
-
-const typetree_t *type_deref(const typetree_t *);
-
-const typetree_t *init_type_basic(enum tree_type);
-
-const typetree_t *type_complete(const typetree_t *, const typetree_t *);
-
-char *typetostr(const typetree_t *);
-
+char *typetostr(const struct typetree *);
 
 #endif

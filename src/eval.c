@@ -48,12 +48,8 @@ var_t var_string(const char *label, size_t length)
 var_t var_int(int value)
 {
     var_t var = {0};
-    typetree_t *type;
-
-    type = type_init(INTEGER);
-
     var.kind = IMMEDIATE;
-    var.type = type;
+    var.type = type_init_integer(4);
     var.value.integer = value;
     return var;
 }
@@ -63,7 +59,7 @@ var_t var_void()
     var_t var = {0};
 
     var.kind = IMMEDIATE;
-    var.type = type_init(NONE);
+    var.type = type_init_void();
     return var;
 }
 
@@ -128,7 +124,7 @@ var_t eval_expr(block_t *block, optype_t optype, ...)
         case IR_OP_GT:
         case IR_OP_LOGICAL_AND:
         case IR_OP_LOGICAL_OR:
-            type = type_init(INTEGER);
+            type = type_init_integer(4);
             break;
         default:
             type = type_combine(left.type, right.type);
@@ -145,7 +141,7 @@ var_t eval_expr(block_t *block, optype_t optype, ...)
                 assert(0);
             }
         }
-        type = type_init(INTEGER);
+        type = type_init_integer(4);
     }
 
     temp = sym_temp(&ns_ident, type);
@@ -178,10 +174,7 @@ var_t eval_addr(block_t *block, var_t right)
     op_t op;
     var_t res;
     symbol_t *temp;
-    typetree_t *type;
-
-    type = type_init(POINTER);
-    type->next = right.type;
+    typetree_t *type = type_init_pointer(right.type);
 
     switch (right.kind) {
         case DIRECT:
@@ -207,6 +200,7 @@ var_t eval_addr(block_t *block, var_t right)
             error("Address of immediate is not supported.");
             exit(1);
     }
+
     return res;
 }
 

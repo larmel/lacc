@@ -254,7 +254,7 @@ register_builtin_types(namespace_t *ns)
         LINK_NONE,
         "__builtin_va_list"
     };
-    sym.type = type_init(OBJECT);
+    sym.type = type_init_object();
     sym_add(ns, sym);
 }
 

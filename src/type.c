@@ -5,39 +5,62 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-typetree_t *type_init(enum tree_type type)
+struct typetree *type_init_integer(int width)
 {
-    typetree_t *tree = calloc(1, sizeof(typetree_t));
-    tree->type = type;
-    switch (type) {
-        case INTEGER:
-        case REAL:
-            tree->size = 4;
-            break;
-        case FUNCTION:
-        case ARRAY:
-        case POINTER:
-        case OBJECT:
-        case NONE:
-            tree->size = 8;
-    }
-    return tree;
+    struct typetree *type = calloc(1, sizeof(*type));
+    type->type = INTEGER;
+    type->size = width;
+    return type;
+}
+
+struct typetree *type_init_pointer(const struct typetree *to)
+{
+    struct typetree *type = calloc(1, sizeof(*type));
+    type->type = POINTER;
+    type->size = 8;
+    type->next = to;
+    return type;
+}
+
+struct typetree *type_init_array(const struct typetree *of, int n)
+{
+    struct typetree *type = calloc(1, sizeof(*type));
+    type->type = ARRAY;
+    type->size = n * of->size;
+    type->next = of;
+    return type;
+}
+
+struct typetree *type_init_function(void)
+{
+    struct typetree *type = calloc(1, sizeof(*type));
+    type->type = FUNCTION;
+    return type;
+}
+
+struct typetree *type_init_object(void)
+{
+    struct typetree *type = calloc(1, sizeof(*type));
+    type->type = OBJECT;
+    return type;
+}
+
+struct typetree *type_init_void(void)
+{
+    struct typetree *type = calloc(1, sizeof(*type));
+    type->type = NONE;
+    return type;
 }
 
 const typetree_t *type_init_string(size_t length)
 {
     static typetree_t *base;
-    typetree_t *type;
 
     if (!base) {
-        base = type_init(INTEGER);
-        base->size = 1;
+        base = type_init_integer(1);
     }
-    type = type_init(ARRAY);
-    type->next = base;
-    type->size = base->size * length;
 
-    return type;
+    return type_init_array(base, length);
 }
 
 void type_add_member(
@@ -52,8 +75,8 @@ void type_add_member(
 
 void type_align_struct_members(struct typetree *type)
 {
-    int i = 0,
-        m = 1;
+    int i = 0, m = 1;
+
     assert(type->type == OBJECT && type->n);
 
     for ( ; i < type->n; ++i) {
@@ -117,14 +140,10 @@ const typetree_t *type_combine(const typetree_t *a, const typetree_t *b)
 
     /* Arrays decay into pointer */
     if (a->type == ARRAY) {
-        typetree_t *ptr = type_init(POINTER);
-        ptr->next = a->next;
-        a = ptr;
+        a = type_init_pointer(a->next);
     }
     if (b->type == ARRAY) {
-        typetree_t *ptr = type_init(POINTER);
-        ptr->next = b->next;
-        b = ptr;
+        b = type_init_pointer(b->next);
     }
 
     /* Pointer arithmetic */
@@ -165,7 +184,7 @@ const typetree_t *type_deref(const typetree_t *t)
 const typetree_t *type_complete(const typetree_t *p, const typetree_t *q)
 {
     assert(!p->size && q->size);
-    
+
     if (p->type != q->type || !type_equal(p->next, q->next)) {
         error("Incompatible specification of incomplete type.");
         exit(1);
@@ -182,11 +201,11 @@ static int snprinttype(const typetree_t *tree, char *s, int size)
     if (!tree)
         return w;
 
-    if (tree->flags.funsigned)
+    if (tree->is_unsigned)
         w += snprintf(s + w, size - w, "unsigned ");
-    if (tree->flags.fconst)
+    if (tree->is_const)
         w += snprintf(s + w, size - w, "const ");
-    if (tree->flags.fvolatile)
+    if (tree->is_volatile)
         w += snprintf(s + w, size - w, "volatile ");
 
     switch (tree->type) {

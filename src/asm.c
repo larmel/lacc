@@ -294,7 +294,7 @@ static int fassembleop(FILE *stream, const op_t *op)
             error("Only supports call by name directly.");
             exit(1);
         }
-        if (op->b.type->vararg) {
+        if (op->b.type->is_vararg) {
             /* Reset flag over number of vector registers used for variable
              * argument list. */
             fprintf(stream, "\tmovq\t$0, %%rax\n");
@@ -396,7 +396,7 @@ static int fassembleop(FILE *stream, const op_t *op)
         load(stream, op->b, AX, width);
         load(stream, op->c, BX, width);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n", reg(BX, width), reg(AX, width));
-        if (op->b.type->flags.funsigned || op->c.type->flags.funsigned) {
+        if (op->b.type->is_unsigned || op->c.type->is_unsigned) {
             /* When one or more operand is unsigned, compare without considering
              * overflow; CF=0 && ZF=0. Fix only for this instance for now, as
              * one of the tests depend on this code path. Proper handling of

@@ -332,7 +332,7 @@ enumerator_list()
     struct token tok;
     symbol_t arg = { SYM_ENUM };
 
-    arg.type = type_init(INTEGER);
+    arg.type = type_init_integer(4);
 
     while (1) {
         tok = consume(IDENTIFIER);
@@ -372,7 +372,7 @@ declaration_specifiers(enum token_type *stc)
 {
     int consumed = 0;
     enum token_type sttok = '$';
-    typetree_t *type = type_init(INTEGER);
+    struct typetree *type = type_init_integer(4);
     symbol_t *tag = NULL;
 
     do {
@@ -381,11 +381,11 @@ declaration_specifiers(enum token_type *stc)
         switch (tok.token) {
         case CONST:
             consume(CONST);
-            type->flags.fconst = 1;
+            type->is_const = 1;
             break;
         case VOLATILE:
             consume(VOLATILE);
-            type->flags.fvolatile = 1;
+            type->is_volatile = 1;
             break;
         case AUTO:
         case REGISTER:
@@ -403,13 +403,12 @@ declaration_specifiers(enum token_type *stc)
         case IDENTIFIER:
             tag = sym_lookup(&ns_ident, tok.strval);
             if (tag && tag->symtype == SYM_TYPEDEF) {
-                flags_t flags;
+                struct typetree nt = *(tag->type);
                 /* todo: validate */
                 consume(IDENTIFIER);
-                flags = type->flags;
-                *type = *(tag->type);
-                type->flags.fvolatile |= flags.fvolatile;
-                type->flags.fconst |= flags.fconst;
+                nt.is_volatile |= type->is_volatile;
+                nt.is_const |= type->is_const;
+                *type = nt;
             } else {
                 goto end;
             }
@@ -435,7 +434,7 @@ declaration_specifiers(enum token_type *stc)
             consume(UNSIGNED);
             if (!type->size)
                 type->size = 4;
-            type->flags.funsigned = 1;
+            type->is_unsigned = 1;
             break;
         case FLOAT:
             consume(FLOAT);
@@ -542,16 +541,17 @@ declarator(typetree_t *base, const char **symbol)
 static typetree_t *
 pointer(const typetree_t *base)
 {
-    typetree_t *type = type_init(POINTER);
-    type->next = base;
-    base = type;
+    typetree_t *type = type_init_pointer(base);
+
     consume('*');
     while (peek().token == CONST || peek().token == VOLATILE) {
-        if (next().token == CONST)
-            type->flags.fconst = 1;
-        else
-            type->flags.fvolatile = 1;
+        if (next().token == CONST) {
+            type->is_const = 1;
+        } else {
+            type->is_volatile = 1;
+        }
     }
+
     return type;
 }
 
@@ -565,7 +565,6 @@ static typetree_t *
 direct_declarator_array(typetree_t *base)
 {
     if (peek().token == '[') {
-        typetree_t *root;
         long length = 0;
 
         consume('[');
@@ -586,11 +585,9 @@ direct_declarator_array(typetree_t *base)
             exit(1);
         }
 
-        root = type_init(ARRAY);
-        root->next = base;
-        root->size = length * base->size;
-        base = root;
+        base = type_init_array(base, length);
     }
+
     return base;
 }
 
@@ -660,7 +657,7 @@ static typetree_t *parameter_list(const typetree_t *base)
 {
     typetree_t *type;
 
-    type = type_init(FUNCTION);
+    type = type_init_function();
     type->next = base;
 
     while (peek().token != ')') {
@@ -676,9 +673,7 @@ static typetree_t *parameter_list(const typetree_t *base)
         }
 
         if (decl->type == ARRAY) {
-            typetree_t *ptr = type_init(POINTER);
-            ptr->next = decl->next;
-            decl = ptr;
+            decl = type_init_pointer(decl->next);
         }
 
         type_add_member(type, decl, name);
@@ -693,7 +688,7 @@ static typetree_t *parameter_list(const typetree_t *base)
             exit(1);
         } else if (peek().token == DOTS) {
             consume(DOTS);
-            type->vararg = 1;
+            type->is_vararg = 1;
             break;
         }
     }
@@ -985,7 +980,7 @@ static block_t *logical_or_expression(block_t *block)
     block = logical_and_expression(block);
 
     if (peek().token == LOGICAL_OR) {
-        symbol_t *sym = sym_temp(&ns_ident, type_init(INTEGER));
+        symbol_t *sym = sym_temp(&ns_ident, type_init_integer(4));
         res = var_direct(sym);
         sym_list_push_back(&decl->locals, sym);
         res.lvalue = 1;
@@ -1029,7 +1024,7 @@ static block_t *logical_and_expression(block_t *block)
     block = inclusive_or_expression(block);
 
     if (peek().token == LOGICAL_AND) {
-        symbol_t *sym = sym_temp(&ns_ident, type_init(INTEGER));
+        symbol_t *sym = sym_temp(&ns_ident, type_init_integer(4));
         res = var_direct(sym);
         sym_list_push_back(&decl->locals, sym);
         res.lvalue = 1;
@@ -1406,7 +1401,7 @@ static block_t *postfix_expression(block_t *block)
                     consume(',');
                 }
             }
-            while (root.type->vararg && peek().token != ')') {
+            while (root.type->is_vararg && peek().token != ')') {
                 consume(',');
                 arg = realloc(arg, (i + 1) * sizeof(var_t));
                 block = assignment_expression(block);
