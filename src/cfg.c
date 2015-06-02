@@ -35,7 +35,6 @@ cfg_block_init(decl_t *decl)
     assert(decl);
     block = calloc(1, sizeof(block_t));
     block->label = mklabel();
-    block->expr = var_void();
 
     if (decl->size == decl->capacity) {
         decl->capacity += 16;

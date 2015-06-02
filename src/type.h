@@ -36,6 +36,13 @@ struct typetree
     const struct typetree *next;
 };
 
+/* 6.2.5 Types */
+#define is_integer(t) (t->type == INTEGER)
+#define is_pointer(t) (t->type == POINTER)
+#define is_arithmetic(t) (is_integer(t) || t->type == REAL)
+#define is_scalar(t) (is_arithmetic(t) || t->type == POINTER)
+#define is_aggregate(t) (t->type == ARRAY || t->type == OBJECT)
+
 typedef struct typetree typetree_t;
 
 struct typetree *type_init_integer(int);
@@ -52,11 +59,14 @@ void type_align_struct_members(struct typetree *);
 
 int type_equal(const struct typetree *, const struct typetree *);
 
-const struct typetree *type_combine(const struct typetree *,
-                                    const struct typetree *);
+int is_compatible(const struct typetree *, const struct typetree *);
+
 const struct typetree *type_deref(const struct typetree *);
 const struct typetree *type_complete(const struct typetree *,
                                      const struct typetree *);
+
+const struct typetree *usual_arithmetic_conversion(const struct typetree *l,
+                                                   const struct typetree *r);
 
 char *typetostr(const struct typetree *);
 

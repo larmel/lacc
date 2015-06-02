@@ -1,5 +1,5 @@
 #include "error.h"
-#include "ir.h"
+#include "eval.h"
 #include "type.h"
 #include "string.h"
 #include "preprocess.h"
@@ -1119,7 +1119,7 @@ static block_t *equality_expression(block_t *block)
             consume(NEQ);
             block = relational_expression(block);
             block->expr = 
-                eval_expr(block, IR_OP_NOT,
+                eval_expr(block, IR_OP_EQ, var_int(0),
                     eval_expr(block, IR_OP_EQ, value, block->expr));
         } else break;
     }
@@ -1280,7 +1280,7 @@ static block_t *unary_expression(block_t *block)
     case '!':
         consume('!');
         block = cast_expression(block);
-        block->expr = eval_expr(block, IR_OP_NOT, block->expr);
+        block->expr = eval_expr(block, IR_OP_EQ, var_int(0), block->expr);
         break;
     case '+':
         consume('+');
@@ -1355,7 +1355,7 @@ static block_t *unary_expression(block_t *block)
 
 static block_t *postfix_expression(block_t *block)
 {
-    var_t root, value;
+    var_t root;
 
     block = primary_expression(block);
     root = block->expr;
@@ -1371,11 +1371,8 @@ static block_t *postfix_expression(block_t *block)
             do {
                 consume('[');
                 block = expression(block);
-                value = eval_expr(block, IR_OP_MUL,
-                    block->expr,
-                    var_int(root.type->next->size));
-                value = eval_expr(block, IR_OP_ADD, root, value);
-                root = eval_deref(block, value);
+                root = eval_expr(block, IR_OP_ADD, root, block->expr);
+                root = eval_deref(block, root);
                 consume(']');
             } while (peek().token == '[');
             break;

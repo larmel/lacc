@@ -117,6 +117,7 @@ int type_equal(const typetree_t *a, const typetree_t *b)
     if (a->type == b->type
         && a->size == b->size
         && a->n == b->n
+        && a->is_unsigned == b->is_unsigned
         && type_equal(a->next, b->next))
     {
         int i;
@@ -130,46 +131,49 @@ int type_equal(const typetree_t *a, const typetree_t *b)
     return 0;
 }
 
-/* Resulting type of a <op> b */
-const typetree_t *type_combine(const typetree_t *a, const typetree_t *b)
+/* 6.3.1.8 Usual Arithmetic Conversion. Find a common real type between the
+ * operands. Each operand is converted to common type, and unless otherwise
+ * specified this is also the result type.
+ */
+const struct typetree *
+usual_arithmetic_conversion(const struct typetree *l, const struct typetree *r)
 {
-    if (!a || !b) {
-        error("Cannot combine NULL type.");
-        exit(1);
+    assert(is_arithmetic(l) && is_arithmetic(r));
+
+    /* Skip everything dealing with floating point types. */
+
+    if (type_equal(l, r)) return l;
+    if (l->is_unsigned == r->is_unsigned) return (l->size > r->size) ? l : r;
+
+    /* Make sure l is signed and r is unsigned */
+    if (l->is_unsigned && !r->is_unsigned) {
+        return usual_arithmetic_conversion(r, l);
     }
 
-    /* Arrays decay into pointer */
-    if (a->type == ARRAY) {
-        a = type_init_pointer(a->next);
-    }
-    if (b->type == ARRAY) {
-        b = type_init_pointer(b->next);
-    }
+    assert(!l->is_unsigned && r->is_unsigned);
 
-    /* Pointer arithmetic */
-    if (a->type == POINTER && b->type == INTEGER)
-        return a;
-    if (b->type == POINTER && a->type == INTEGER)
-        return b;
+    /* Integer promotion. This could be separated out, as it is not only 
+     * performed for usual arithmetic conversion. This may also need to be in 
+     * eval.c, as it can generate temporaries (i.e. if a char is promoted to
+     * int). */
+    if (l->size > r->size) return l;
+    if (l->size == r->size) return r;
 
-    /* Integer promotion */
-    if (a->type == INTEGER && b->type == INTEGER) {
-        if (a->size > b->size) b = a;
-        if (a->size < b->size) a = b;
-    }
+    return r;
+}
 
-    if (!type_equal(a, b)) {
-        error("Cannot combine types `%s` and `%s`.",
-            typetostr(a), typetostr(b));
-        exit(1);
-    }
+/* 6.2.7 Compatible types. Simplified rules.
+ */
+int is_compatible(const struct typetree *l, const struct typetree *r)
+{
+    assert( is_pointer(l) && is_pointer(r) );
 
-    return a;
+    return (type_equal(l, r) || (l->next->size == r->next->size));
 }
 
 const typetree_t *type_deref(const typetree_t *t)
 {
-    if (t->type != POINTER && t->type != ARRAY) {
+    if (t->type != POINTER) {
         char *str = typetostr(t);
         error("Cannot dereference non-pointer type `%s`.", str);
         free(str);

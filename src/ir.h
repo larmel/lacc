@@ -11,35 +11,37 @@ DECLARE_LIST_IMPLEMENTATION(sym_list, struct symbol *)
 
 /* Immediate value.
  */
-typedef union value
+union value
 {
     long integer;
     double real;
     const char *string;
-} value_t;
+};
+
+typedef union value value_t;
 
 /* A reference to some storage location or direct value, used in intermediate
  * representation of expressions. There are three modes:
  *
- * DIRECT: l-value or r-value reference to symbol, which must have some
- *         storage location. For array or function types, a direct reference
- *         means the corresponding memory address of the symbol.
- *         Direct references can have offsets, which evaluates to 
- *         *(&symbol + offset).
- * DEREF:  l-value or r-value reference to *(symbol + offset). Symbol must 
- *         have pointer type.
+ * DIRECT: l-value or r-value reference to symbol, which must have some storage
+ *         location. Offset evaluate to *(&symbol + offset). Offset in bytes,
+ *         not pointer arithmetic.
+ * DEREF:  l-value or r-value reference to *(symbol + offset). Symbol must have
+ *         pointer type. Offset in bytes, not pointer arithmetic.
  * IMMEDIATE:
  *         r-value immediate value, with the type specified. Symbol is NULL.
  */
-typedef struct variable
+struct var
 {
     enum { DIRECT, DEREF, IMMEDIATE } kind;
     const typetree_t *type;
     const symbol_t *symbol;
-    value_t value;
+    union value value;
     int offset;
     int lvalue;
-} var_t;
+};
+
+typedef struct var var_t;
 
 /* Three address code optypes. Use second least significant hex digit to mark
  * number of operands. 
@@ -52,7 +54,6 @@ typedef enum optype
     IR_ADDR,            /* a = &b     */
     IR_CALL,            /* a = b()    */
     IR_CAST,            /* a = (T) b  */
-    IR_OP_NOT,          /* a = !b     */
     IR_OP_ADD = 0x20,   /* a = b + c  */
     IR_OP_SUB,
     IR_OP_MUL,
@@ -70,13 +71,15 @@ typedef enum optype
 
 #define NOPERANDS(t) ((int)(t) & 0x20 ? 2 : 1)
 
-typedef struct op {
+struct op {
     enum optype type;
 
-    struct variable a;
-    struct variable b;
-    struct variable c;
-} op_t;
+    struct var a;
+    struct var b;
+    struct var c;
+};
+
+typedef struct op op_t;
 
 /* CFG block
  */
@@ -140,23 +143,5 @@ void cfg_ir_append(block_t *, op_t);
 /* Release all resources related to the control flow graph. Calls free on all
  * blocks and their labels, and finally the decl_t object itself. */
 void cfg_finalize(decl_t *);
-
-/* Interface used in parser to evaluate expressions and add operations to the
- * control flow graph. */
-var_t eval_expr(block_t *, optype_t, ...);
-var_t eval_addr(block_t *, var_t);
-var_t eval_deref(block_t *, var_t);
-var_t eval_assign(block_t *, var_t, var_t);
-var_t eval_copy(block_t *, var_t);
-var_t eval_call(block_t *, var_t);
-var_t eval_cast(block_t *, var_t, const typetree_t *);
-void param(block_t *, var_t);
-
-/* Expression variables. */
-var_t var_direct(const symbol_t *);
-var_t var_deref(const symbol_t *, int);
-var_t var_string(const char *, size_t);
-var_t var_int(int);
-var_t var_void();
 
 #endif

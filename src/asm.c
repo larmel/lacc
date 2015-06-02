@@ -9,14 +9,6 @@
 #include <stdio.h>
 #include <ctype.h>
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define REG(t) (\
-    (t)->type == ARRAY ? 8 :\
-    (t)->size == 1 ? 1 :\
-    (t)->size == 2 ? 2 :\
-    (t)->size == 4 ? 4 :\
-    8)
-
 /* Assembly instruction suffix based on value size. Char is 'b', short is 'w',
  * int is 'l' and quadword (long) is 'q'. */
 static char asmsuffix(const typetree_t *type)
@@ -123,23 +115,28 @@ static char *refer(const var_t var)
 
 static void load_address(FILE *stream, var_t var, reg_t dest)
 {
-    switch (var.kind) {
-    case IMMEDIATE:
-        internal_error("%s", "Cannot load address of immediate value.");
-        exit(1);
-    case DIRECT:
-        fprintf(stream, "\tleaq\t%s, %%%s\t#load &%s\n",
-            refer(var), reg(dest, 8), var.symbol->name);
-        break;
-    case DEREF:
-        fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\n",
-            var.symbol->stack_offset);
-        fprintf(stream, "\tleaq\t%d(%%r10), %%%s\t# load &%s\n",
-            var.offset, reg(dest, 8), var.symbol->name);
-        break;
+    /* Address of immediate makes little sense. Address of dereferenced variable
+     * is removed by evaluation. */
+    assert(var.kind == DIRECT);
+
+    /* Similar to refer() */
+    if (var.symbol->linkage != LINK_NONE) {
+        if (var.type->type == ARRAY || var.type->type == FUNCTION) {
+            fprintf(stream, "\tmovq\t$%s, %%%s\t# load &%s\n",
+                sym_name(var.symbol), reg(dest, 8), var.symbol->name);
+        } else {
+            fprintf(stream, "\tleaq\t%s(%%rip), %%%s\t# load &%s\n",
+                sym_name(var.symbol), reg(dest, 8), var.symbol->name);
+        }
+    } else {
+        fprintf(stream, "leaq\t%d(%%rbp), %%%s\t# load &%s\n",
+            var.symbol->stack_offset + var.offset, reg(dest, 8),
+            var.symbol->name);
     }
 }
 
+/* Load with sign- or zero extension to register.
+ */
 static void load(FILE *stream, var_t var, reg_t dest, unsigned width)
 {
     unsigned from = var.type->size;
@@ -312,7 +309,7 @@ static int fassembleop(FILE *stream, const op_t *op)
         }
         break;
     case IR_ADDR:
-        fprintf(stream, "\tleaq\t%s, %%rax\n", refer(op->b));
+        load_address(stream, op->b, AX);
         store(stream, AX, op->a);
         break;
     case IR_OP_ADD:
@@ -374,7 +371,7 @@ static int fassembleop(FILE *stream, const op_t *op)
         store(stream, AX, op->a);
         break;
     case IR_OP_EQ:
-        width = MAX(REG(op->a.type), MAX(REG(op->b.type), REG(op->c.type)));
+        width = op->a.type->size;
         load(stream, op->b, AX, width);
         load(stream, op->c, BX, width);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n", reg(BX, width), reg(AX, width));
@@ -383,7 +380,7 @@ static int fassembleop(FILE *stream, const op_t *op)
         store(stream, AX, op->a);
         break;
     case IR_OP_GE:
-        width = MAX(REG(op->a.type), MAX(REG(op->b.type), REG(op->c.type)));
+        width = op->a.type->size;
         load(stream, op->b, AX, width);
         load(stream, op->c, BX, width);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n", reg(BX, width), reg(AX, width));
@@ -392,7 +389,7 @@ static int fassembleop(FILE *stream, const op_t *op)
         store(stream, AX, op->a);
         break;
     case IR_OP_GT:
-        width = MAX(REG(op->a.type), MAX(REG(op->b.type), REG(op->c.type)));
+        width = op->a.type->size;
         load(stream, op->b, AX, width);
         load(stream, op->c, BX, width);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n", reg(BX, width), reg(AX, width));
@@ -406,13 +403,6 @@ static int fassembleop(FILE *stream, const op_t *op)
             fprintf(stream, "\tsetg\t%%al\n");
         }
         fprintf(stream, "\tmovzbl\t%%al, %%eax\n");
-        store(stream, AX, op->a);
-        break;
-    case IR_OP_NOT:
-        load(stream, op->b, AX, op->a.type->size);
-        fprintf(stream, "\tcmp\t$0, %%rax\n");
-        fprintf(stream, "\tsetz\t%%al\n");
-        fprintf(stream, "\tmovzx\t%%al, %%rax\n");
         store(stream, AX, op->a);
         break;
     default:
@@ -438,9 +428,11 @@ static void fassembleblock(FILE *stream, map_t *memo, const block_t *block)
     }
 
     if (block->jump[0] == NULL && block->jump[1] == NULL) {
-        if (block->expr.type->type != NONE && block->expr.type->size <= 8) {
-            /* By default return the last expression evaluated in the block.
-             * Check size <= 8 to avoid returning object types by accident. */
+        /* By default return the last expression evaluated in the block.
+         * Check size <= 8 to avoid returning object types by accident. */
+        if (block->expr.type && block->expr.type->type != NONE
+            && block->expr.type->size <= 8)
+        {
             load(stream, block->expr, AX, block->expr.type->size);
         }
         fprintf(stream, "\tleaveq\n");
