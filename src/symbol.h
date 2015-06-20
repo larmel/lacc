@@ -76,20 +76,13 @@ extern struct namespace
 
 void push_scope(struct namespace *);
 void pop_scope(struct namespace *);
-void dump_symtab(struct namespace *);
 
-/* Resolve symbol in current scope, or NULL if not found. Add new symbol based
- * on identifier name, or error if it is a duplicate. Create a new temporary 
- * symbol and register it to current scope.
- */
 struct symbol *sym_lookup(struct namespace *, const char *);
 struct symbol *sym_add(struct namespace *, struct symbol);
-
 struct symbol *sym_temp(struct namespace *, const struct typetree *);
-const struct symbol *
-sym_temp_static(struct namespace *, const struct typetree *);
 
 void register_builtin_types(struct namespace *);
 void output_definitions(FILE *);
+void output_symbols(FILE *, struct namespace *);
 
 #endif

@@ -27,21 +27,21 @@ int main(int argc, char* argv[])
 
     while ((c = getopt(argc, argv, "So:vI:")) != -1) {
         switch (c) {
-            case 'S':
-                assembly = 1;
-                break;
-            case 'o':
-                output = fopen(optarg, "w");
-                break;
-            case 'v':
-                VERBOSE = 1;
-                break;
-            case 'I':
-                add_include_search_path(optarg);
-                break;
-            default:
-                help();
-                return 1;
+        case 'S':
+            assembly = 1;
+            break;
+        case 'o':
+            output = fopen(optarg, "w");
+            break;
+        case 'v':
+            VERBOSE = 1;
+            break;
+        case 'I':
+            add_include_search_path(optarg);
+            break;
+        default:
+            help();
+            return 1;
         }
     }
 
@@ -88,8 +88,8 @@ int main(int argc, char* argv[])
     }
 
     if (VERBOSE) {
-        dump_symtab(&ns_ident);
-        dump_symtab(&ns_tag);
+        output_symbols(stdout, &ns_ident);
+        output_symbols(stdout, &ns_tag);
     }
 
     return errors;
