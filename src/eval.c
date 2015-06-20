@@ -34,7 +34,7 @@ struct var var_direct_ref(struct block *block, const struct symbol *symbol)
     return eval_addr(block, var);
 }
 
-struct var var_deref(const symbol_t *symbol, int offset)
+struct var var_deref(const struct symbol *symbol, int offset)
 {
     struct var var = {0};
     assert(symbol->type->type == POINTER);
@@ -79,7 +79,7 @@ struct var var_void()
 
 /* Current declaration from parser. Need to add symbols to list whenever new
  * ones are created with sym_temp. And no, that should not be in symtab.c. */
-extern decl_t *decl;
+extern struct decl *decl;
 
 static struct var
 eval(   struct block *block, enum optype optype, const struct typetree *type,
@@ -352,7 +352,7 @@ array_or_func_to_addr(struct block *block, struct var var)
  *
  * Returns a DIRECT reference to a new temporary, or an immediate value.
  */
-struct var eval_expr(struct block *block, optype_t optype, ...)
+struct var eval_expr(struct block *block, enum optype optype, ...)
 {
     va_list args;
     struct var l, r;
@@ -395,9 +395,9 @@ struct var eval_expr(struct block *block, optype_t optype, ...)
     return l;
 }
 
-/* Evaluate &a. Depending on var_t a:
- * If DEREF, create a new var_t with a DIRECT reference to the same symbol_t.
- *     Not even necessary to add any code for cases like &(*foo).
+/* Evaluate &a. Depending on var a:
+ * If DEREF, create a new var with a DIRECT reference to the same symbol. Not
+ *     even necessary to add any code for cases like &(*foo).
  * If DIRECT, create a temporary symbol with type pointer to a::type, and add
  *     an operation to the current block.
  * If IMMEDIATE: not implemented

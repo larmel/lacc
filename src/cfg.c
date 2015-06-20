@@ -5,11 +5,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-
 DEFINE_LIST_IMPLEMENTATION(sym_list, struct symbol *)
 
-static const char *
-mklabel()
+static const char *mklabel()
 {
     static int n;
 
@@ -19,40 +17,38 @@ mklabel()
     return name;
 }
 
-decl_t *
-cfg_create()
+struct decl *cfg_create()
 {
-    decl_t *decl = calloc(1, sizeof(decl_t));
+    struct decl *decl = calloc(1, sizeof(*decl));
     assert(decl);
     return decl;
 }
 
-block_t *
-cfg_block_init(decl_t *decl)
+struct block *cfg_block_init(struct decl *decl)
 {
-    block_t *block;
+    struct block *block;
 
     assert(decl);
-    block = calloc(1, sizeof(block_t));
+    block = calloc(1, sizeof(*block));
     block->label = mklabel();
 
     if (decl->size == decl->capacity) {
         decl->capacity += 16;
-        decl->nodes = realloc(decl->nodes, decl->capacity * sizeof(block_t*));
+        decl->nodes =
+            realloc(decl->nodes, decl->capacity * sizeof(*decl->nodes));
     }
     decl->nodes[decl->size++] = block;
 
     return block;
 }
 
-void
-cfg_finalize(decl_t *decl)
+void cfg_finalize(struct decl *decl)
 {
     assert(decl);
     if (decl->capacity) {
         int i;
         for (i = 0; i < decl->size; ++i) {
-            block_t *block = decl->nodes[i];
+            struct block *block = decl->nodes[i];
             if (block->n) free(block->code);
             if (block->label) free((void *) block->label);
             free(block);
@@ -62,12 +58,11 @@ cfg_finalize(decl_t *decl)
     free(decl);
 }
 
-void
-cfg_ir_append(block_t *block, op_t op)
+void cfg_ir_append(struct block *block, struct op op)
 {
     if (block) {
         block->n += 1;
-        block->code = realloc(block->code, sizeof(op_t) * block->n);
+        block->code = realloc(block->code, sizeof(struct op) * block->n);
         block->code[block->n - 1] = op;
     }
 }

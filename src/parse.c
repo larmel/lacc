@@ -10,38 +10,38 @@
 #include <stdlib.h>
 #include <string.h>
 
-static block_t *declaration(block_t *);
-static typetree_t *declaration_specifiers(enum token_type *);
-static typetree_t *declarator(typetree_t *, const char **);
-static typetree_t *pointer(const typetree_t *);
-static typetree_t *direct_declarator(typetree_t *, const char **);
-static typetree_t *parameter_list(const typetree_t *);
-static block_t *initializer(block_t *block, var_t target);
-static block_t *block(block_t *);
-static block_t *statement(block_t *);
+static struct block *declaration(struct block *);
+static struct typetree *declaration_specifiers(enum token_type *);
+static struct typetree *declarator(struct typetree *, const char **);
+static struct typetree *pointer(const struct typetree *);
+static struct typetree *direct_declarator(struct typetree *, const char **);
+static struct typetree *parameter_list(const struct typetree *);
+static struct block *initializer(struct block *block, struct var target);
+static struct block *block(struct block *);
+static struct block *statement(struct block *);
 
-static block_t *expression(block_t *);
-static block_t *assignment_expression(block_t *);
-static block_t *conditional_expression(block_t *);
-static block_t *logical_and_expression(block_t *);
-static block_t *logical_or_expression(block_t *);
-static block_t *inclusive_or_expression(block_t *);
-static block_t *exclusive_or_expression(block_t *);
-static block_t *and_expression(block_t *block);
-static block_t *equality_expression(block_t *block);
-static block_t *relational_expression(block_t *block);
-static block_t *shift_expression(block_t *block);
-static block_t *additive_expression(block_t *block);
-static block_t *multiplicative_expression(block_t *block);
-static block_t *cast_expression(block_t *block);
-static block_t *postfix_expression(block_t *block);
-static block_t *unary_expression(block_t *block);
-static block_t *primary_expression(block_t *block);
+static struct block *expression(struct block *);
+static struct block *assignment_expression(struct block *);
+static struct block *conditional_expression(struct block *);
+static struct block *logical_and_expression(struct block *);
+static struct block *logical_or_expression(struct block *);
+static struct block *inclusive_or_expression(struct block *);
+static struct block *exclusive_or_expression(struct block *);
+static struct block *and_expression(struct block *block);
+static struct block *equality_expression(struct block *block);
+static struct block *relational_expression(struct block *block);
+static struct block *shift_expression(struct block *block);
+static struct block *additive_expression(struct block *block);
+static struct block *multiplicative_expression(struct block *block);
+static struct block *cast_expression(struct block *block);
+static struct block *postfix_expression(struct block *block);
+static struct block *unary_expression(struct block *block);
+static struct block *primary_expression(struct block *block);
 
-static var_t constant_expression();
+static struct var constant_expression();
 
 /* Namespaces. */
-namespace_t
+struct namespace
     ns_ident = {"identifiers"},
     ns_label = {"labels"},
     ns_tag = {"tags"}
@@ -49,10 +49,10 @@ namespace_t
 
 /* Current declaration, accessed for creating new blocks or adding init code
  * in head block. */
-decl_t *decl;
+struct decl *decl;
 
 /* Parse the next external declaration. */
-decl_t *parse()
+struct decl *parse()
 {
     static int done_last_iteration;
 
@@ -71,7 +71,7 @@ decl_t *parse()
 
     if (!done_last_iteration) {
         int i, found;
-        symbol_t *sym;
+        struct symbol *sym;
         for (i = found = 0; i < ns_ident.size; ++i) {
             sym = ns_ident.symbol[i];
             if (sym->symtype == SYM_TENTATIVE && sym->linkage == LINK_INTERN) {
@@ -93,12 +93,13 @@ decl_t *parse()
 /* C99: Define __func__ as static const char __func__[] = sym->name; */
 static void define_builtin__func__(const char *name)
 {
-    symbol_t farg = { SYM_DEFINITION, LINK_INTERN }, *func;
-    var_t str = var_string(string_constant_label(name), strlen(name) + 1);
+    struct var str = var_string(string_constant_label(name), strlen(name) + 1);
+    struct symbol
+         farg = { "__func__", NULL, SYM_DEFINITION, LINK_INTERN },
+        *func;
 
     assert(ns_ident.depth == 1);
 
-    farg.name = "__func__";
     farg.type = str.type;
     func = sym_add(&ns_ident, farg);
     eval_assign(decl->head, var_direct(func), str);
@@ -106,11 +107,11 @@ static void define_builtin__func__(const char *name)
 
 /* Cover both external declarations, functions, and local declarations (with
  * optional initialization code) inside functions. */
-static block_t *
-declaration(block_t *parent)
+static struct block *
+declaration(struct block *parent)
 {
-    typetree_t *base;
-    symbol_t arg = {0};
+    struct typetree *base;
+    struct symbol arg = {0};
     enum token_type stc = '$';
 
     base = declaration_specifiers(&stc);
@@ -138,7 +139,7 @@ declaration(block_t *parent)
     }
 
     while (1) {
-        symbol_t *sym;
+        struct symbol *sym;
 
         arg.name = NULL;
         arg.type = declarator(base, &arg.name);
@@ -191,7 +192,7 @@ declaration(block_t *parent)
             push_scope(&ns_ident);
             define_builtin__func__(sym->name);
             for (i = 0; i < sym->type->n; ++i) {
-                symbol_t sarg = {
+                struct symbol sarg = {
                     SYM_DEFINITION,
                     LINK_NONE,
                 };
@@ -219,10 +220,10 @@ declaration(block_t *parent)
  * int b[] = {0, 1, 2, 3}. Generate a series of assignment operations on
  * references to target variable.
  */
-static block_t *initializer(block_t *block, var_t target)
+static struct block *initializer(struct block *block, struct var target)
 {
     int i;
-    const typetree_t *type;
+    const struct typetree *type;
 
     assert(target.kind == DIRECT);
 
@@ -287,20 +288,20 @@ static block_t *initializer(block_t *block, var_t target)
 /* Maybe a bit too clever here: overwriting existing typetree object already in
  * symbol table.
  */
-static void struct_declaration_list(typetree_t *obj)
+static void struct_declaration_list(struct typetree *obj)
 {
-    namespace_t ns = {0};
+    struct namespace ns = {0};
     push_scope(&ns);
 
     do {
-        typetree_t *base = declaration_specifiers(NULL);
+        struct typetree *base = declaration_specifiers(NULL);
         if (!base) {
             error("Missing type specifier in struct member declaration.");
             exit(1);
         }
 
         do {
-            symbol_t sym = {0};
+            struct symbol sym = {0};
 
             sym.type = declarator(base, &sym.name);
             if (!sym.name) {
@@ -330,7 +331,7 @@ static void
 enumerator_list()
 {
     struct token tok;
-    symbol_t arg = { SYM_ENUM };
+    struct symbol arg = { NULL, NULL, SYM_ENUM };
 
     arg.type = type_init_integer(4);
 
@@ -338,7 +339,7 @@ enumerator_list()
         tok = consume(IDENTIFIER);
         arg.name = strdup(tok.strval);
         if (peek().token == '=') {
-            var_t val;
+            struct var val;
 
             consume('=');
             val = constant_expression();
@@ -367,13 +368,13 @@ enumerator_list()
  *
  * This rule can be used to backtrack, i.e. if there is no valid declaration
  * specifier, NULL is returned. */
-static typetree_t *
+static struct typetree *
 declaration_specifiers(enum token_type *stc)
 {
     int consumed = 0;
     enum token_type sttok = '$';
     struct typetree *type = type_init_integer(4);
-    symbol_t *tag = NULL;
+    struct symbol *tag = NULL;
 
     do {
         struct token tok = peek();
@@ -459,7 +460,7 @@ declaration_specifiers(enum token_type *stc)
                 struct token ident = consume(IDENTIFIER);
                 tag = sym_lookup(&ns_tag, ident.strval);
                 if (!tag) {
-                    symbol_t arg = { SYM_TYPEDEF };
+                    struct symbol arg = { NULL, NULL, SYM_TYPEDEF };
                     arg.name = strdup(ident.strval);
                     arg.type = type;
                     tag = sym_add(&ns_tag, arg);
@@ -469,7 +470,7 @@ declaration_specifiers(enum token_type *stc)
                     exit(1);
                 }
 
-                type = (typetree_t *) tag->type;
+                type = (struct typetree *) tag->type;
                 if (peek().token != '{') {
                     /* Can still have volatile or const after. */
                     break;
@@ -488,7 +489,7 @@ declaration_specifiers(enum token_type *stc)
             type->size = 4;
             if (peek().token == IDENTIFIER) {
                 struct token ident;
-                symbol_t arg = { SYM_TYPEDEF };
+                struct symbol arg = { NULL, NULL, SYM_TYPEDEF };
 
                 ident = consume(IDENTIFIER);
                 arg.name = strdup(ident.strval);
@@ -504,7 +505,7 @@ declaration_specifiers(enum token_type *stc)
                     exit(1);
                 }
 
-                type = (typetree_t *) tag->type;
+                type = (struct typetree *) tag->type;
                 if (peek().token != '{') {
                     break;
                 } else if (tag->enum_value) {
@@ -529,8 +530,8 @@ end:
     return consumed ? type : NULL;
 }
 
-static typetree_t *
-declarator(typetree_t *base, const char **symbol)
+static struct typetree *
+declarator(struct typetree *base, const char **symbol)
 {
     while (peek().token == '*') {
         base = pointer(base);
@@ -538,10 +539,10 @@ declarator(typetree_t *base, const char **symbol)
     return direct_declarator(base, symbol);
 }
 
-static typetree_t *
-pointer(const typetree_t *base)
+static struct typetree *
+pointer(const struct typetree *base)
 {
-    typetree_t *type = type_init_pointer(base);
+    struct typetree *type = type_init_pointer(base);
 
     consume('*');
     while (peek().token == CONST || peek().token == VOLATILE) {
@@ -561,15 +562,15 @@ pointer(const typetree_t *base)
  * Only the first dimension s0 can be unspecified, yielding an incomplete type.
  * Incomplete types are represented by having size of zero.
  */
-static typetree_t *
-direct_declarator_array(typetree_t *base)
+static struct typetree *
+direct_declarator_array(struct typetree *base)
 {
     if (peek().token == '[') {
         long length = 0;
 
         consume('[');
         if (peek().token != ']') {
-            var_t expr = constant_expression();
+            struct var expr = constant_expression();
             assert(expr.kind == IMMEDIATE);
             if (expr.type->type != INTEGER || expr.value.integer < 1) {
                 error("Array dimension must be a natural number.");
@@ -598,11 +599,11 @@ direct_declarator_array(typetree_t *base)
  * The type returned from declarator has to be either array, function or
  * pointer, thus only need to check for type->next to find inner tail.
  */
-static typetree_t *
-direct_declarator(typetree_t *base, const char **symbol)
+static struct typetree *
+direct_declarator(struct typetree *base, const char **symbol)
 {
-    typetree_t *type = base;
-    typetree_t *head, *tail = NULL;
+    struct typetree *type = base;
+    struct typetree *head, *tail = NULL;
     struct token ident;
 
     switch (peek().token) {
@@ -618,7 +619,7 @@ direct_declarator(typetree_t *base, const char **symbol)
         consume('(');
         type = head = tail = declarator(NULL, symbol);
         while (tail->next) {
-            tail = (typetree_t *) tail->next;
+            tail = (struct typetree *) tail->next;
         }
         consume(')');
         break;
@@ -653,9 +654,9 @@ direct_declarator(typetree_t *base, const char **symbol)
  * require at least specifier: (void)
  * Set parameter-type-list = parameter-list, including the , ...
  */
-static typetree_t *parameter_list(const typetree_t *base)
+static struct typetree *parameter_list(const struct typetree *base)
 {
-    typetree_t *type;
+    struct typetree *type;
 
     type = type_init_function();
     type->next = base;
@@ -663,7 +664,7 @@ static typetree_t *parameter_list(const typetree_t *base)
     while (peek().token != ')') {
         const char *name;
         enum token_type stc;
-        typetree_t *decl;
+        struct typetree *decl;
 
         name = NULL;
         decl = declaration_specifiers(&stc);
@@ -699,8 +700,8 @@ static typetree_t *parameter_list(const typetree_t *base)
 /* Treat statements and declarations equally, allowing declarations in between
  * statements as in modern C. Called compound-statement in K&R.
  */
-static block_t *
-block(block_t *parent)
+static struct block *
+block(struct block *parent)
 {
     consume('{');
     push_scope(&ns_ident);
@@ -719,16 +720,16 @@ block(block_t *parent)
  * generate new blocks. Returns the current block of execution after the
  * statement is done. For ex: after an if statement, the empty fallback is
  * returned. Caller must keep handles to roots, only the tail is returned. */
-static block_t *
-statement(block_t *parent)
+static struct block *
+statement(struct block *parent)
 {
-    block_t *node;
+    struct block *node;
     struct token tok;
 
     /* Store reference to top of loop, for resolving break and continue. Use
      * call stack to keep track of depth, backtracking to the old value. */
-    static block_t *break_target, *continue_target;
-    block_t *old_break_target, *old_continue_target;
+    static struct block *break_target, *continue_target;
+    struct block *old_break_target, *old_continue_target;
 
     switch ((tok = peek()).token) {
     case ';':
@@ -741,7 +742,7 @@ statement(block_t *parent)
     case SWITCH:
     case IF:
         {
-            block_t *right = cfg_block_init(decl),
+            struct block *right = cfg_block_init(decl),
                     *next  = cfg_block_init(decl);
 
             consume(tok.token);
@@ -763,7 +764,7 @@ statement(block_t *parent)
             right->jump[0] = next;
 
             if (peek().token == ELSE) {
-                block_t *left = cfg_block_init(decl);
+                struct block *left = cfg_block_init(decl);
                 consume(ELSE);
 
                 /* Again, order is important: Set left as new jump target for
@@ -780,7 +781,7 @@ statement(block_t *parent)
     case WHILE:
     case DO:
         {
-            block_t *top = cfg_block_init(decl),
+            struct block *top = cfg_block_init(decl),
                     *body = cfg_block_init(decl),
                     *next = cfg_block_init(decl);
             parent->jump[0] = top; /* Parent becomes unconditional jump. */
@@ -827,7 +828,7 @@ statement(block_t *parent)
         }
     case FOR:
         {
-            block_t *top = cfg_block_init(decl),
+            struct block *top = cfg_block_init(decl),
                     *body = cfg_block_init(decl),
                     *increment = cfg_block_init(decl),
                     *next = cfg_block_init(decl);
@@ -901,7 +902,7 @@ statement(block_t *parent)
         break;
     case IDENTIFIER:
         {
-            const symbol_t *def;
+            const struct symbol *def;
             if ((
                 def = sym_lookup(&ns_ident, tok.strval)) 
                 && def->symtype == SYM_TYPEDEF
@@ -925,7 +926,7 @@ statement(block_t *parent)
     return node;
 }
 
-static block_t *expression(block_t *block)
+static struct block *expression(struct block *block)
 {
     block = assignment_expression(block);
     while (peek().token == ',') {
@@ -937,9 +938,9 @@ static block_t *expression(block_t *block)
 }
 
 /* todo: Fix this rule (a lot more complicated than this...) */
-static block_t *assignment_expression(block_t *block)
+static struct block *assignment_expression(struct block *block)
 {
-    var_t target;
+    struct var target;
 
     block = conditional_expression(block);
     if (peek().token == '=') {
@@ -952,9 +953,9 @@ static block_t *assignment_expression(block_t *block)
     return block;
 }
 
-static var_t constant_expression()
+static struct var constant_expression()
 {
-    block_t *head = cfg_block_init(decl),
+    struct block *head = cfg_block_init(decl),
             *tail;
 
     tail = conditional_expression(head);
@@ -966,21 +967,21 @@ static var_t constant_expression()
     return tail->expr;
 }
 
-static block_t *conditional_expression(block_t *block)
+static struct block *conditional_expression(struct block *block)
 {
     return logical_or_expression(block);
 }
 
-static block_t *logical_or_expression(block_t *block)
+static struct block *logical_or_expression(struct block *block)
 {
-    var_t res;
-    block_t *next,
+    struct var res;
+    struct block *next,
             *last = NULL;
 
     block = logical_and_expression(block);
 
     if (peek().token == LOGICAL_OR) {
-        symbol_t *sym = sym_temp(&ns_ident, type_init_integer(4));
+        struct symbol *sym = sym_temp(&ns_ident, type_init_integer(4));
         res = var_direct(sym);
         sym_list_push_back(&decl->locals, sym);
         res.lvalue = 1;
@@ -1015,16 +1016,16 @@ static block_t *logical_or_expression(block_t *block)
     return block;
 }
 
-static block_t *logical_and_expression(block_t *block)
+static struct block *logical_and_expression(struct block *block)
 {
-    var_t res;
-    block_t *next,
+    struct var res;
+    struct block *next,
             *last = NULL;
 
     block = inclusive_or_expression(block);
 
     if (peek().token == LOGICAL_AND) {
-        symbol_t *sym = sym_temp(&ns_ident, type_init_integer(4));
+        struct symbol *sym = sym_temp(&ns_ident, type_init_integer(4));
         res = var_direct(sym);
         sym_list_push_back(&decl->locals, sym);
         res.lvalue = 1;
@@ -1059,9 +1060,9 @@ static block_t *logical_and_expression(block_t *block)
     return block;
 }
 
-static block_t *inclusive_or_expression(block_t *block)
+static struct block *inclusive_or_expression(struct block *block)
 {
-    var_t value;
+    struct var value;
 
     block = exclusive_or_expression(block);
     while (peek().token == '|') {
@@ -1074,9 +1075,9 @@ static block_t *inclusive_or_expression(block_t *block)
     return block;
 }
 
-static block_t *exclusive_or_expression(block_t *block)
+static struct block *exclusive_or_expression(struct block *block)
 {
-    var_t value;
+    struct var value;
 
     block = and_expression(block);
     while (peek().token == '^') {
@@ -1089,9 +1090,9 @@ static block_t *exclusive_or_expression(block_t *block)
     return block;
 }
 
-static block_t *and_expression(block_t *block)
+static struct block *and_expression(struct block *block)
 {
-    var_t value;
+    struct var value;
 
     block = equality_expression(block);
     while (peek().token == '&') {
@@ -1104,9 +1105,9 @@ static block_t *and_expression(block_t *block)
     return block;
 }
 
-static block_t *equality_expression(block_t *block)
+static struct block *equality_expression(struct block *block)
 {
-    var_t value;
+    struct var value;
 
     block = relational_expression(block);
     while (1) {
@@ -1127,9 +1128,9 @@ static block_t *equality_expression(block_t *block)
     return block;
 }
 
-static block_t *relational_expression(block_t *block)
+static struct block *relational_expression(struct block *block)
 {
-    var_t value;
+    struct var value;
 
     block = shift_expression(block);
     while (1) {
@@ -1161,14 +1162,14 @@ static block_t *relational_expression(block_t *block)
     }
 }
 
-static block_t *shift_expression(block_t *block)
+static struct block *shift_expression(struct block *block)
 {
     return additive_expression(block);
 }
 
-static block_t *additive_expression(block_t *block)
+static struct block *additive_expression(struct block *block)
 {
-    var_t value;
+    struct var value;
 
     block = multiplicative_expression(block);
     while (1) {
@@ -1187,9 +1188,9 @@ static block_t *additive_expression(block_t *block)
     return block;
 }
 
-static block_t *multiplicative_expression(block_t *block)
+static struct block *multiplicative_expression(struct block *block)
 {
-    var_t value;
+    struct var value;
 
     block = cast_expression(block);
     while (1) {
@@ -1225,9 +1226,9 @@ static block_t *multiplicative_expression(block_t *block)
 
 #define FIRST(s) FIRST_ ## s
 
-static block_t *cast_expression(block_t *block)
+static struct block *cast_expression(struct block *block)
 {
-    typetree_t *type;
+    struct typetree *type;
     struct token tok;
     struct symbol *sym;
 
@@ -1262,9 +1263,9 @@ static block_t *cast_expression(block_t *block)
     return unary_expression(block);
 }
 
-static block_t *unary_expression(block_t *block)
+static struct block *unary_expression(struct block *block)
 {
-    var_t value;
+    struct var value;
 
     switch (peek().token) {
     case '&':
@@ -1293,13 +1294,10 @@ static block_t *unary_expression(block_t *block)
         block->expr = eval_expr(block, IR_OP_SUB, var_int(0), block->expr);
         break;
     case SIZEOF: {
-        typetree_t *type;
-        block_t *head = cfg_block_init(decl),
-                *tail;
-
+        struct typetree *type;
+        struct block *head = cfg_block_init(decl), *tail;
         consume(SIZEOF);
         if (peek().token == '(') {
-
             switch (peekn(2).token) {
             case FIRST(type_name):
                 consume('(');
@@ -1315,12 +1313,12 @@ static block_t *unary_expression(block_t *block)
                 break;
             default:
                 tail = unary_expression(head);
-                type = (typetree_t *) tail->expr.type;
+                type = (struct typetree *) tail->expr.type;
                 break;
             }
         } else {
             tail = unary_expression(head);
-            type = (typetree_t *) tail->expr.type;
+            type = (struct typetree *) tail->expr.type;
         }
         if (type->type == FUNCTION) {
             error("Cannot apply 'sizeof' to function type.");
@@ -1353,22 +1351,23 @@ static block_t *unary_expression(block_t *block)
     return block;
 }
 
-static block_t *postfix_expression(block_t *block)
+static struct block *postfix_expression(struct block *block)
 {
-    var_t root;
+    struct var root;
 
     block = primary_expression(block);
     root = block->expr;
 
     while (1) {
-        var_t expr, copy, *arg;
+        struct var expr, copy, *arg;
         struct token tok;
         int i, j;
 
         switch ((tok = peek()).token) {
         case '[':
-            /* Evaluate a[b] = *(a + b). */
             do {
+                /* Evaluate a[b] = *(a + b). The semantics of pointer arithmetic
+                 * takes care of multiplying b with the correct width. */
                 consume('[');
                 block = expression(block);
                 root = eval_expr(block, IR_OP_ADD, root, block->expr);
@@ -1382,7 +1381,7 @@ static block_t *postfix_expression(block_t *block)
                 error("Calling non-function symbol.");
                 exit(1);
             }
-            arg = malloc(sizeof(var_t) * root.type->n);
+            arg = malloc(sizeof(struct var) * root.type->n);
 
             consume('(');
             for (i = 0; i < root.type->n; ++i) {
@@ -1400,7 +1399,7 @@ static block_t *postfix_expression(block_t *block)
             }
             while (root.type->is_vararg && peek().token != ')') {
                 consume(',');
-                arg = realloc(arg, (i + 1) * sizeof(var_t));
+                arg = realloc(arg, (i + 1) * sizeof(struct var));
                 block = assignment_expression(block);
                 arg[i] = block->expr;
                 i++;
@@ -1466,9 +1465,9 @@ static block_t *postfix_expression(block_t *block)
     }
 }
 
-static block_t *primary_expression(block_t *block)
+static struct block *primary_expression(struct block *block)
 {
-    const symbol_t *sym;
+    const struct symbol *sym;
     struct token tok;
 
     switch ((tok = next()).token) {

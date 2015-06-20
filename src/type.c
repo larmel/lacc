@@ -52,9 +52,9 @@ struct typetree *type_init_void(void)
     return type;
 }
 
-const typetree_t *type_init_string(size_t length)
+const struct typetree *type_init_string(size_t length)
 {
-    static typetree_t *base;
+    static struct typetree *base;
 
     if (!base) {
         base = type_init_integer(1);
@@ -109,7 +109,7 @@ void type_align_struct_members(struct typetree *type)
     }
 }
 
-int type_equal(const typetree_t *a, const typetree_t *b)
+int type_equal(const struct typetree *a, const struct typetree *b)
 {
     if (!a && !b) return 1;
     if (!a || !b) return 0;
@@ -171,7 +171,7 @@ int is_compatible(const struct typetree *l, const struct typetree *r)
     return (type_equal(l, r) || (l->next->size == r->next->size));
 }
 
-const typetree_t *type_deref(const typetree_t *t)
+const struct typetree *type_deref(const struct typetree *t)
 {
     if (t->type != POINTER) {
         char *str = typetostr(t);
@@ -185,7 +185,7 @@ const typetree_t *type_deref(const typetree_t *t)
 /* Validate that type p can be completed by applying size from q, and return
  * q as the result.
  */
-const typetree_t *type_complete(const typetree_t *p, const typetree_t *q)
+const struct typetree *type_complete(const struct typetree *p, const struct typetree *q)
 {
     assert(!p->size && q->size);
 
@@ -199,7 +199,7 @@ const typetree_t *type_complete(const typetree_t *p, const typetree_t *q)
 
 /* Print type to buffer, returning how many characters were written.
  */
-static int snprinttype(const typetree_t *tree, char *s, int size)
+static int snprinttype(const struct typetree *tree, char *s, int size)
 {
     int i, w = 0;
     if (!tree)
@@ -291,7 +291,7 @@ static int snprinttype(const typetree_t *tree, char *s, int size)
 }
 
 /* For debug printing and error reporting types. Caller should free memory. */
-char *typetostr(const typetree_t *type)
+char *typetostr(const struct typetree *type)
 {
     char *text = malloc(512 * sizeof(char));
     snprinttype(type, text, 511);

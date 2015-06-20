@@ -11,7 +11,7 @@
 
 /* Assembly instruction suffix based on value size. Char is 'b', short is 'w',
  * int is 'l' and quadword (long) is 'q'. */
-static char asmsuffix(const typetree_t *type)
+static char asmsuffix(const struct typetree *type)
 {
     if (type->type == ARRAY) return 'q';
     if (type->size == 1) return 'b';
@@ -20,7 +20,7 @@ static char asmsuffix(const typetree_t *type)
     return 'q';
 }
 
-typedef enum {
+enum reg {
     AX = 0,
     BX,
     CX,
@@ -37,12 +37,12 @@ typedef enum {
     R13,
     R14,
     R15
-} reg_t;
+};
 
 /* Promote all operands to 32 bit, to not have to worry about partial register
  * not being zeroed properly. On 64-bit, the upper half will be zeroed auto-
  * matically. */
-static const char* reg(reg_t r, unsigned w)
+static const char* reg(enum reg r, unsigned w)
 {
     const char *x86_64_regs[] = {
         "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
@@ -62,9 +62,9 @@ static const char* reg(reg_t r, unsigned w)
     }
 }
 
-static reg_t pregs[] = {DI, SI, DX, CX, R8, R9};
+static enum reg pregs[] = {DI, SI, DX, CX, R8, R9};
 
-static const char *sym_name(const symbol_t *sym)
+static const char *sym_name(const struct symbol *sym)
 {
     if (sym->n) {
         static char name[128];
@@ -74,7 +74,7 @@ static const char *sym_name(const symbol_t *sym)
     return sym->name;
 }
 
-static char *refer(const var_t var)
+static char *refer(const struct var var)
 {
     static char str[256];
 
@@ -113,7 +113,7 @@ static char *refer(const var_t var)
     return str;
 }
 
-static void load_address(FILE *stream, var_t var, reg_t dest)
+static void load_address(FILE *stream, struct var var, enum reg dest)
 {
     /* Address of immediate makes little sense. Address of dereferenced variable
      * is removed by evaluation. */
@@ -137,7 +137,7 @@ static void load_address(FILE *stream, var_t var, reg_t dest)
 
 /* Load with sign- or zero extension to register.
  */
-static void load(FILE *stream, var_t var, reg_t dest, unsigned width)
+static void load(FILE *stream, struct var var, enum reg dest, unsigned width)
 {
     unsigned from = var.type->size;
     char *mov;
@@ -201,7 +201,7 @@ static void load(FILE *stream, var_t var, reg_t dest, unsigned width)
     }
 }
 
-static void store(FILE *stream, reg_t source, var_t var)
+static void store(FILE *stream, enum reg source, struct var var)
 {
     char suffix = asmsuffix(var.type);
     unsigned w = (var.type->type == ARRAY) ? 8 : var.type->size;
@@ -228,7 +228,7 @@ static void store(FILE *stream, reg_t source, var_t var)
     }
 }
 
-static int fassembleop(FILE *stream, const op_t *op)
+static int fassembleop(FILE *stream, const struct op *op)
 {
     int i,
         n = 0,
@@ -413,7 +413,7 @@ static int fassembleop(FILE *stream, const op_t *op)
     return n + 1;
 }
 
-static void fassembleblock(FILE *stream, map_t *memo, const block_t *block)
+static void fassembleblock(FILE *stream, map_t *memo, const struct block *block)
 {
     int i;
 
@@ -454,10 +454,10 @@ static void fassembleblock(FILE *stream, map_t *memo, const block_t *block)
     }
 }
 
-static void assemble_immediate(FILE *stream, var_t target, var_t val)
+static void assemble_immediate(FILE *stream, struct var target, struct var val)
 {
-    const symbol_t *symbol;
-    value_t value;
+    const struct symbol *symbol;
+    union value value;
 
     symbol = target.symbol;
     value = val.value;
@@ -526,7 +526,7 @@ static void assemble_immediate(FILE *stream, var_t target, var_t val)
     }
 }
 
-static int assign_storage(const decl_t *fun)
+static int assign_storage(const struct decl *fun)
 {
     int i,
         offset = 0;
@@ -556,7 +556,7 @@ static int assign_storage(const decl_t *fun)
     return -offset;
 }
 
-static void assemble_function(FILE *stream, const decl_t *decl)
+static void assemble_function(FILE *stream, const struct decl *decl)
 {
     map_t memo;
     int i, locals_size;
@@ -580,7 +580,7 @@ static void assemble_function(FILE *stream, const decl_t *decl)
     }
 
     for (i = 0; i < decl->params.length; ++i) {
-        symbol_t *sym = decl->params.elem[i];
+        struct symbol *sym = decl->params.elem[i];
 
         fprintf(stream, "\tmov%c\t%%%s, %d(%%rbp)\n",
             asmsuffix(sym->type),
@@ -597,7 +597,7 @@ static void assemble_function(FILE *stream, const decl_t *decl)
     map_finalize(&memo);
 }
 
-void fassemble(FILE *stream, const decl_t *decl)
+void fassemble(FILE *stream, const struct decl *decl)
 {
     int i;
 

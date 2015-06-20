@@ -1,6 +1,3 @@
-/* Take a control flow graph (block_t structure) and output it in .dot format,
- * which can then be rendered. */
-
 #include "ir.h"
 #include "symbol.h"
 #include "util/map.h"
@@ -8,14 +5,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-static const char *
-sanitize(const char *label)
+static const char *sanitize(const char *label)
 {
     return (label[0] == '.') ? &label[1] : label;
 }
 
-static const char *
-escape(const char *label)
+static const char *escape(const char *label)
 {
     static char buffer[256];
 
@@ -28,8 +23,7 @@ escape(const char *label)
     return label;
 }
 
-static char *
-vartostr(const var_t var)
+static char *vartostr(const struct var var)
 {
     char *buffer = calloc(64, sizeof(char)); /* memory leak. */
 
@@ -67,8 +61,7 @@ vartostr(const var_t var)
     return buffer;
 }
 
-static void
-foutputnode(FILE *stream, map_t *memo, const block_t *node)
+static void foutputnode(FILE *stream, map_t *memo, const struct block *node)
 {
     int i;
 
@@ -81,7 +74,7 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
         sanitize(node->label), escape(node->label));
 
     for (i = 0; i < node->n; ++i) {
-        op_t op = node->code[i];
+        struct op op = node->code[i];
         switch (op.type) {
         case IR_ASSIGN:
             fprintf(stream, " | %s = %s",
@@ -191,8 +184,9 @@ foutputnode(FILE *stream, map_t *memo, const block_t *node)
     }
 }
 
-void
-fdotgen(FILE *stream, const decl_t *cfg)
+/* Take a control flow graph (struct block structure) and output it in .dot 
+ * format, which can then be rendered. */
+void fdotgen(FILE *stream, const struct decl *cfg)
 {
     if (cfg->fun) {
         map_t memo;

@@ -15,9 +15,9 @@ void help()
     fprintf(stderr, "Usage: lcc [-S] [-v] [-I <path>] [-o <file>] [file]\n");
 }
 
-extern decl_t *parse();
-extern void fdotgen(FILE *, const decl_t *);
-extern void fassemble(FILE *, const decl_t *);
+extern struct decl *parse();
+extern void fdotgen(FILE *, const struct decl *);
+extern void fassemble(FILE *, const struct decl *);
 
 int main(int argc, char* argv[])
 {
@@ -61,7 +61,7 @@ int main(int argc, char* argv[])
     register_builtin_types(&ns_ident);
 
     while (1) {
-        decl_t *fun = parse();
+        struct decl *fun = parse();
         if (errors || !fun) {
             if (errors) {
                 error("Aborting because of previous %s.",

@@ -43,8 +43,6 @@ struct typetree
 #define is_scalar(t) (is_arithmetic(t) || t->type == POINTER)
 #define is_aggregate(t) (t->type == ARRAY || t->type == OBJECT)
 
-typedef struct typetree typetree_t;
-
 struct typetree *type_init_integer(int);
 struct typetree *type_init_pointer(const struct typetree *);
 struct typetree *type_init_array(const struct typetree *, int);

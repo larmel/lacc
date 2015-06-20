@@ -9,29 +9,28 @@
 
 /* Let every namespace have a list of scopes, to optimize lookup for a
  * particular scope depth. Store indices into namespace list of symbols. */
-typedef struct scope {
+struct scope {
     int *idx;
     int size;
     int cap;
-} scope_t;
+};
 
-void push_scope(namespace_t *ns) {
+void push_scope(struct namespace *ns) {
     assert(ns);
-
     ns->depth++;
     if (!ns->scope) {
         ns->depth = 0;
     }
-    ns->scope = realloc(ns->scope, sizeof(scope_t) * (ns->depth + 1));
-    memset(&ns->scope[ns->depth], 0x0, sizeof(scope_t));
+    ns->scope = realloc(ns->scope, sizeof(struct scope) * (ns->depth + 1));
+    memset(&ns->scope[ns->depth], 0x0, sizeof(struct scope));
 }
 
-void pop_scope(namespace_t *ns) {
+void pop_scope(struct namespace *ns) {
     if (ns->depth >= 0) {
         if (ns->scope[ns->depth].idx) {
             free(ns->scope[ns->depth].idx);    
         }
-        memset(&ns->scope[ns->depth], 0x0, sizeof(scope_t));
+        memset(&ns->scope[ns->depth], 0x0, sizeof(struct scope));
         ns->depth--;
     }
     if (ns->depth == -1) {
@@ -44,16 +43,15 @@ void pop_scope(namespace_t *ns) {
 
 /* Create and add symbol to symbol table, but not to any scope. Symbol address
  * needs to be stable, so they are stored as a realloc'able list of pointers. */
-static int
-create_symbol(namespace_t *ns, symbol_t sym)
+static int create_symbol(struct namespace *ns, struct symbol sym)
 {
     sym.depth = ns->depth;
     if (ns->size == ns->capacity) {
         ns->capacity += 64;
-        ns->symbol = realloc(ns->symbol, sizeof(symbol_t*) * ns->capacity);
+        ns->symbol = realloc(ns->symbol, sizeof(struct symbol*) * ns->capacity);
     }
 
-    ns->symbol[ns->size] = calloc(1, sizeof(symbol_t));
+    ns->symbol[ns->size] = calloc(1, sizeof(struct symbol));
     *(ns->symbol[ns->size]) = sym;
 
     return ns->size++;
@@ -61,23 +59,20 @@ create_symbol(namespace_t *ns, symbol_t sym)
 
 /* Create a temporary identifier name. Use a fixed prefix '.' to all temporary 
  * variables, which will never collide with real symbols. */
-static char *
-prefixed_temporary_name(char prefix)
+static char *prefixed_temporary_name(char prefix)
 {
     static int tmpn;
     static char tmpname[16];
 
     snprintf(tmpname, 12, ".%c%d", prefix, tmpn++);
-
     return tmpname;
 }
 
 /* Add symbol to current scope, making it possible to look up. Name must be non-
  * NULL, i.e. immediate values do not belong to any scope. */
-static void
-register_in_scope(namespace_t *ns, int i)
+static void register_in_scope(struct namespace *ns, int i)
 {
-    scope_t *scope;
+    struct scope *scope;
 
     assert(i < ns->size);
     scope = &ns->scope[ns->depth];
@@ -91,8 +86,7 @@ register_in_scope(namespace_t *ns, int i)
 
 /* Retrieve a symbol based on identifier name, or NULL of not registered or
  * visible from current scope. */
-symbol_t *
-sym_lookup(namespace_t *ns, const char *name)
+struct symbol *sym_lookup(struct namespace *ns, const char *name)
 {
     int i, d;
 
@@ -109,7 +103,7 @@ sym_lookup(namespace_t *ns, const char *name)
     return NULL;
 }
 
-void print_symbol(symbol_t *sym)
+void print_symbol(struct symbol *sym)
 {
     printf("\t[type: %s",
         sym->symtype == SYM_DEFINITION ? "definition" :
@@ -129,11 +123,10 @@ void print_symbol(symbol_t *sym)
 }
 
 /* Register symbol to current scope. */
-symbol_t *
-sym_add(namespace_t *ns, symbol_t sym)
+struct symbol *sym_add(struct namespace *ns, struct symbol sym)
 {
     int idx;
-    symbol_t *symbol;
+    struct symbol *symbol;
     extern int VERBOSE;
 
     symbol = sym_lookup(ns, sym.name);
@@ -142,7 +135,8 @@ sym_add(namespace_t *ns, symbol_t sym)
 
         /* Resolve extern declaration. */
         if (sym.linkage == LINK_EXTERN && sym.symtype == SYM_DECLARATION &&
-            (symbol->symtype == SYM_TENTATIVE || symbol->symtype == SYM_DEFINITION))
+            (symbol->symtype == SYM_TENTATIVE || 
+                symbol->symtype == SYM_DEFINITION))
         {
             if (!symbol->type->size) {
                 symbol->type = type_complete(symbol->type, sym.type);
@@ -152,8 +146,10 @@ sym_add(namespace_t *ns, symbol_t sym)
 
         if (symbol->depth == ns->depth && ns->depth == 0) {
             if (symbol->linkage == sym.linkage &&
-                ((symbol->symtype == SYM_TENTATIVE && sym.symtype == SYM_DEFINITION) || 
-                (symbol->symtype == SYM_DEFINITION && sym.symtype == SYM_TENTATIVE)))
+                ((symbol->symtype == SYM_TENTATIVE && 
+                    sym.symtype == SYM_DEFINITION) || 
+                (symbol->symtype == SYM_DEFINITION && 
+                    sym.symtype == SYM_TENTATIVE)))
             {
                 if (!symbol->type->size) {
                     symbol->type = type_complete(symbol->type, sym.type);
@@ -161,14 +157,16 @@ sym_add(namespace_t *ns, symbol_t sym)
                 symbol->symtype = SYM_DEFINITION;
             }
             else if (symbol->linkage == sym.linkage &&
-                (symbol->symtype == SYM_DECLARATION && sym.symtype == SYM_TENTATIVE))
+                (symbol->symtype == SYM_DECLARATION &&
+                    sym.symtype == SYM_TENTATIVE))
             {
                 if (!symbol->type->size) {
                     symbol->type = type_complete(symbol->type, sym.type);
                 }
                 symbol->symtype = SYM_TENTATIVE;
             }
-            else if (symbol->symtype != sym.symtype || symbol->linkage != sym.linkage)
+            else if (
+                symbol->symtype != sym.symtype || symbol->linkage != sym.linkage)
             {
                 error("Declaration of symbol '%s' does not match previous declaration.", sym.name);
                 exit(1);
@@ -213,12 +211,11 @@ sym_add(namespace_t *ns, symbol_t sym)
 }
 
 /* Add temporary (autogenerated name) symbol to current scope. */
-symbol_t *
-sym_temp(namespace_t *ns, const typetree_t *type)
+struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
 {
     int idx;
 
-    symbol_t sym = {0};
+    struct symbol sym = {0};
     sym.name = strdup( prefixed_temporary_name('t') );
     sym.type = type;
 
@@ -229,12 +226,12 @@ sym_temp(namespace_t *ns, const typetree_t *type)
 }
 
 /* Add temporary symbol refering to some static value. */
-const symbol_t *
-sym_temp_static(namespace_t *ns, const typetree_t *type)
+const struct symbol *
+sym_temp_static(struct namespace *ns, const struct typetree *type)
 {
     int idx;
 
-    symbol_t sym = {0};
+    struct symbol sym = {0};
     sym.name = strdup( prefixed_temporary_name('d') );
     sym.type = type;
 
@@ -246,13 +243,13 @@ sym_temp_static(namespace_t *ns, const typetree_t *type)
 
 /* Register compiler internal builtin symbols, that are assumed to exists by
  * standard library headers. Use dummy types for now. */
-void
-register_builtin_types(namespace_t *ns)
+void register_builtin_types(struct namespace *ns)
 {
-    symbol_t sym = {
+    struct symbol sym = {
+        "__builtin_va_list",
+        NULL,
         SYM_TYPEDEF,
         LINK_NONE,
-        "__builtin_va_list"
     };
     sym.type = type_init_object();
     sym_add(ns, sym);
@@ -262,10 +259,10 @@ register_builtin_types(namespace_t *ns)
  * this translation unit, and has special representation in GNU assembler. */
 void output_definitions(FILE *stream)
 {
-    extern namespace_t ns_ident;
+    extern struct namespace ns_ident;
 
     int i, found;
-    symbol_t *sym;
+    struct symbol *sym;
 
     for (i = found = 0; i < ns_ident.size; ++i) {
         sym = ns_ident.symbol[i];
@@ -283,8 +280,7 @@ void output_definitions(FILE *stream)
     }
 }
 
-void
-dump_symtab(namespace_t *ns)
+void dump_symtab(struct namespace *ns)
 {
     int i;
     char *tstr;
@@ -293,7 +289,7 @@ dump_symtab(namespace_t *ns)
         printf("namespace %s:\n", ns->name);
     }
     for (i = 0; i < ns->size; ++i) {
-        symtype_t st = ns->symbol[i]->symtype;
+        enum symtype st = ns->symbol[i]->symtype;
 
         printf("%*s", ns->symbol[i]->depth * 2, "");
         if (ns->symbol[i]->linkage != LINK_NONE) {
