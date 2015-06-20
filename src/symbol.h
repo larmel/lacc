@@ -23,7 +23,7 @@ struct symbol
         SYM_ENUM
     } symtype;
 
-    /* Visibility of external declarations, or NONE for other symbols. */
+    /* Visibility of external declarations, or LINK_NONE for other symbols. */
     enum linkage {
         LINK_NONE = 0,
         LINK_INTERN,
@@ -46,33 +46,30 @@ struct symbol
     int depth;
 };
 
-struct scope;
-
-/* Hold symbols and manage scopes in a namespace. There are three different
- * types of namespaces in C (A11.1):
- *  1) Objects, functions, typedef names and enum constants.
- *  2) Labels.
- *  3) Structure, union and enum tags.
- *  4) Structure and union members, for each instance.
- *
- * Depth 0 is translation unit, depth 1 is function arguments, depth n is local
- * or member variables. Keep track of size of locals and number of parameters,
- * as symbols are added to different scope depths.
+/* A namespace holds symbols and manage resolution in scopes as they are pushed
+ * or popped.
  */
 struct namespace
 {
     const char *name;
     struct symbol **symbol;
-    int capacity, size;
+    int size, cap;
 
-    struct scope *scope;
-    int depth;
+    /* Hold a list of symbols per depth, optimizing lookup. Store indices into
+     * list of symbols. */
+    struct scope {
+        int *idx, size, cap;
+    } *scope;
+
+    /* Current depth, and number of scopes. Depth 0 is translation unit, 1 is 
+     * function arguments, and n is local or member variables. */
+    int current_depth;
 };
 
 extern struct namespace
-    ns_ident,   /* Identifiers */
-    ns_label,   /* Labels */
-    ns_tag;     /* Tags */
+    ns_ident,   /* Identifiers. */
+    ns_label,   /* Labels. */
+    ns_tag;     /* Tags. */
 
 void push_scope(struct namespace *);
 void pop_scope(struct namespace *);

@@ -6,34 +6,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Let every namespace have a list of scopes, optimizing lookup for a particular
- * scope depth. Store indices into namespace list of symbols.
- */
-struct scope {
-    int *idx;
-    int size;
-    int cap;
-};
-
 void push_scope(struct namespace *ns) {
     assert(ns);
-    ns->depth++;
+    ns->current_depth++;
     if (!ns->scope) {
-        ns->depth = 0;
+        ns->current_depth = 0;
     }
-    ns->scope = realloc(ns->scope, sizeof(struct scope) * (ns->depth + 1));
-    memset(&ns->scope[ns->depth], 0x0, sizeof(struct scope));
+    ns->scope = realloc(ns->scope, sizeof(*ns->scope) * (ns->current_depth+1));
+    memset(&ns->scope[ns->current_depth], 0x0, sizeof(struct scope));
 }
 
 void pop_scope(struct namespace *ns) {
-    if (ns->depth >= 0) {
-        if (ns->scope[ns->depth].idx) {
-            free(ns->scope[ns->depth].idx);    
+    if (ns->current_depth >= 0) {
+        if (ns->scope[ns->current_depth].idx) {
+            free(ns->scope[ns->current_depth].idx);    
         }
-        memset(&ns->scope[ns->depth], 0x0, sizeof(struct scope));
-        ns->depth--;
+        memset(&ns->scope[ns->current_depth], 0x0, sizeof(struct scope));
+        ns->current_depth--;
     }
-    if (ns->depth == -1) {
+    if (ns->current_depth == -1) {
         if (ns->scope) {
             free(ns->scope);
         }
@@ -46,10 +37,10 @@ void pop_scope(struct namespace *ns) {
  */
 static int create_symbol(struct namespace *ns, struct symbol sym)
 {
-    sym.depth = ns->depth;
-    if (ns->size == ns->capacity) {
-        ns->capacity += 64;
-        ns->symbol = realloc(ns->symbol, sizeof(struct symbol*) * ns->capacity);
+    sym.depth = ns->current_depth;
+    if (ns->size == ns->cap) {
+        ns->cap += 64;
+        ns->symbol = realloc(ns->symbol, sizeof(struct symbol*) * ns->cap);
     }
 
     ns->symbol[ns->size] = calloc(1, sizeof(struct symbol));
@@ -77,7 +68,7 @@ static void register_in_scope(struct namespace *ns, int i)
     struct scope *scope;
 
     assert(i < ns->size);
-    scope = &ns->scope[ns->depth];
+    scope = &ns->scope[ns->current_depth];
     if (scope->size == scope->cap) {
         scope->cap += 16;
         scope->idx = realloc(scope->idx, scope->cap * sizeof(int *));
@@ -113,7 +104,7 @@ struct symbol *sym_lookup(struct namespace *ns, const char *name)
     int i, d;
 
     assert(ns);
-    for (d = ns->depth; d >= 0; --d) {
+    for (d = ns->current_depth; d >= 0; --d) {
         for (i = 0; i < ns->scope[d].size; ++i) {
             int idx = ns->scope[d].idx[i];
             if (!strcmp(name, ns->symbol[idx]->name)) {
@@ -144,7 +135,7 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
             }
             return s;
         }
-        if (s->depth == ns->depth && ns->depth == 0) {
+        if (s->depth == ns->current_depth && ns->current_depth == 0) {
             if (s->linkage == sym.linkage && (
                 (s->symtype == SYM_TENTATIVE && sym.symtype == SYM_DEFINITION) || 
                 (s->symtype == SYM_DEFINITION && sym.symtype == SYM_TENTATIVE))
@@ -174,7 +165,7 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
                 }
             }
             return s;
-        } else if (s->depth == ns->depth && ns->depth) {
+        } else if (s->depth == ns->current_depth && ns->current_depth) {
             error("Duplicate definition of symbol '%s'", sym.name);
             exit(1);
         }
@@ -185,7 +176,7 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
 
     /* Scoped static variable must get unique name in order to not collide with
      * other external declarations. */
-    if (sym.linkage == LINK_INTERN && ns->depth) {
+    if (sym.linkage == LINK_INTERN && ns->current_depth) {
         sym.n = ++svc;
     }
 

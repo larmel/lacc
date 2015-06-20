@@ -98,7 +98,7 @@ static void define_builtin__func__(const char *name)
          farg = { "__func__", NULL, SYM_DEFINITION, LINK_INTERN },
         *func;
 
-    assert(ns_ident.depth == 1);
+    assert(ns_ident.current_depth == 1);
 
     farg.type = str.type;
     func = sym_add(&ns_ident, farg);
@@ -128,7 +128,7 @@ declaration(struct block *parent)
         arg.symtype = SYM_TYPEDEF;
         break;
     default:
-        if (!ns_ident.depth) {
+        if (!ns_ident.current_depth) {
             arg.symtype = SYM_TENTATIVE;
             arg.linkage = LINK_EXTERN;
         } else {
@@ -150,8 +150,8 @@ declaration(struct block *parent)
 
         sym = sym_add(&ns_ident, arg);
         assert(sym->type);
-        if (ns_ident.depth) {
-            assert(ns_ident.depth > 1);
+        if (ns_ident.current_depth) {
+            assert(ns_ident.current_depth > 1);
             sym_list_push_back(&decl->locals, sym);
         }
 
@@ -496,7 +496,7 @@ declaration_specifiers(enum token_type *stc)
                 arg.type = type;
                 tag = sym_lookup(&ns_tag, ident.strval);
                 if (!tag ||
-                    (tag->depth < ns_tag.depth && peek().token == '{')
+                    (tag->depth < ns_tag.current_depth && peek().token == '{')
                 ) {
                     tag = sym_add(&ns_tag, arg);
                 } else if (tag->type->type != INTEGER) {
