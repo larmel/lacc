@@ -1,25 +1,23 @@
-/* Manage string constants encountered in the translation unit. Strings declared
- * in plain text are by default read-only, except for when the string literal is
- * assigned to an array. Keep a global map of all strings, and remove duplicates
- * to save space.
- */
+#include "string.h"
 
 #include <assert.h>
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 
-
+/* Manage string constants encountered in the translation unit. Strings declared
+ * in plain text are by default read-only, except for when the string literal is
+ * assigned to an array. Keep a global map of all strings, and remove duplicates
+ * to save space.
+ */
 static int count;
 static int capacity;
-static struct strmap {
+static struct {
     const char *label;
     const char *string;
 } *strings;
 
-static const char *
-mklabel()
+static const char *mklabel(void)
 {
     static int n;
     static char name[16];
@@ -29,8 +27,7 @@ mklabel()
     return strndup(name, 15);
 }
 
-static const char *
-getoradd(const char *s)
+static const char *getoradd(const char *s)
 {
     int i;
     const char *label;
@@ -43,7 +40,7 @@ getoradd(const char *s)
 
     if (count == capacity) {
         capacity = capacity + 16;
-        strings = realloc(strings, sizeof(struct strmap) * capacity);
+        strings = realloc(strings, sizeof(*strings) * capacity);
     }
 
     label = mklabel();
@@ -57,15 +54,13 @@ getoradd(const char *s)
 
 /* Return a label representing the provided string, i.e. '.S1'.
  */
-const char *
-string_constant_label(const char *s)
+const char *strlabel(const char *s)
 {
     assert(s);
     return getoradd(s);
 }
 
-static void
-printstr(FILE *stream, const char *str)
+static void printstr(FILE *stream, const char *str)
 {
     char c;
 
@@ -77,8 +72,7 @@ printstr(FILE *stream, const char *str)
     }
 }
 
-void
-output_string(FILE *stream, const char *l)
+void output_string(FILE *stream, const char *l)
 {
     int i;
 
@@ -90,12 +84,12 @@ output_string(FILE *stream, const char *l)
     }
 }
 
-void
-output_strings(FILE *stream)
+/* Assemble strings readonly data section, GNU assembler syntax.
+ */
+void output_strings(FILE *stream)
 {
+    int i;
     if (count) {
-        int i;
-
         fprintf(stream, "\t.section .rodata\n");
         for (i = 0; i < count; ++i) {
             fprintf(stream, "%s:\n", strings[i].label);

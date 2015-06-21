@@ -3,10 +3,9 @@
 
 #include <stdio.h>
 
-const char *string_constant_label(const char *);
+const char *strlabel(const char *);
 
-void output_string(FILE *, const char *label);
-
+void output_string(FILE *, const char *);
 void output_strings(FILE *);
 
 #endif

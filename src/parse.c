@@ -93,7 +93,7 @@ struct decl *parse()
 /* C99: Define __func__ as static const char __func__[] = sym->name; */
 static void define_builtin__func__(const char *name)
 {
-    struct var str = var_string(string_constant_label(name), strlen(name) + 1);
+    struct var str = var_string(strlabel(name), strlen(name) + 1);
     struct symbol
          farg = { "__func__", NULL, SYM_DEFINITION, LINK_INTERN },
         *func;
@@ -1487,10 +1487,7 @@ static struct block *primary_expression(struct block *block)
         consume(')');
         break;
     case STRING:
-        block->expr = 
-            var_string(
-                string_constant_label(tok.strval),
-                strlen(tok.strval) + 1);
+        block->expr = var_string(strlabel(tok.strval), strlen(tok.strval) + 1);
         break;
     default:
         error("Unexpected token '%s', not a valid primary expression.",
