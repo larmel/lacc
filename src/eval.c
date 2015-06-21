@@ -154,6 +154,8 @@ eval_expr_add(struct block *block, struct var l, struct var r)
 
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
         type = usual_arithmetic_conversion(l.type, r.type);
+        l = eval_cast(block, l, type);
+        r = eval_cast(block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l = var_int(l.value.integer + r.value.integer);
         } else {
@@ -181,6 +183,8 @@ eval_expr_sub(struct block *block, struct var l, struct var r)
         } else {
             const struct typetree *type
                 = usual_arithmetic_conversion(l.type, r.type);
+            l = eval_cast(block, l, type);
+            r = eval_cast(block, r, type);
             l = eval(block, IR_OP_SUB, type, l, r);
         }
     } else if (is_pointer(l.type) && is_integer(r.type)) {

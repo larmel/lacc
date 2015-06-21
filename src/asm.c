@@ -77,24 +77,15 @@ static const char *sym_name(const struct symbol *sym)
 static char *refer(const struct var var)
 {
     static char str[256];
+    assert( var.kind == IMMEDIATE || var.kind == DIRECT );
 
-    switch (var.kind) {
-    case IMMEDIATE:
-        switch (var.type->type) {
-        case ARRAY:
+    if (var.kind == IMMEDIATE) {
+        if (var.type->type == ARRAY) {
             sprintf(str, "$%s", var.value.string);
-            break;
-        case INTEGER:
-        case POINTER:
+        } else {
             sprintf(str, "$%ld", var.value.integer);
-            break;
-        default:
-            internal_error("Refer to symbol with type %s.",
-                typetostr(var.type));
-            exit(1);
         }
-        break;
-    case DIRECT:
+    } else {
         if (var.symbol->linkage != LINK_NONE) {
             if (var.type->type == ARRAY || var.type->type == FUNCTION) {
                 sprintf(str, "$%s", sym_name(var.symbol));
@@ -104,135 +95,128 @@ static char *refer(const struct var var)
         } else {
             sprintf(str, "%d(%%rbp)", var.symbol->stack_offset + var.offset);
         }
-        break;
-    case DEREF:
-        internal_error("%s", "Cannot refer to DEREF variable.");
-        exit(1);
     }
 
     return str;
 }
 
-static void load_address(FILE *stream, struct var var, enum reg dest)
+static void load_address(FILE *s, struct var v, enum reg r)
 {
     /* Address of immediate makes little sense. Address of dereferenced variable
      * is removed by evaluation. */
-    assert(var.kind == DIRECT);
+    assert( v.kind == DIRECT );
 
     /* Similar to refer() */
-    if (var.symbol->linkage != LINK_NONE) {
-        if (var.type->type == ARRAY || var.type->type == FUNCTION) {
-            fprintf(stream, "\tmovq\t$%s, %%%s\t# load &%s\n",
-                sym_name(var.symbol), reg(dest, 8), var.symbol->name);
+    if (v.symbol->linkage != LINK_NONE) {
+        if (v.type->type == ARRAY || v.type->type == FUNCTION) {
+            fprintf(s, "\tmovq\t$%s, %%%s\t# load &%s\n",
+                sym_name(v.symbol), reg(r, 8), v.symbol->name);
         } else {
-            fprintf(stream, "\tleaq\t%s(%%rip), %%%s\t# load &%s\n",
-                sym_name(var.symbol), reg(dest, 8), var.symbol->name);
+            fprintf(s, "\tleaq\t%s(%%rip), %%%s\t# load &%s\n",
+                sym_name(v.symbol), reg(r, 8), v.symbol->name);
         }
     } else {
-        fprintf(stream, "leaq\t%d(%%rbp), %%%s\t# load &%s\n",
-            var.symbol->stack_offset + var.offset, reg(dest, 8),
-            var.symbol->name);
+        fprintf(s, "\tleaq\t%d(%%rbp), %%%s\t# load &%s\n",
+            v.symbol->stack_offset + v.offset, reg(r, 8),
+            v.symbol->name);
     }
 }
 
-/* Load with sign- or zero extension to register.
+/* Load variable v to register r, cast to type t. Handles sign- and width
+ * extension for integer types.
  */
-static void load(FILE *stream, struct var var, enum reg dest, unsigned width)
+static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
 {
-    unsigned from = var.type->size;
-    char *mov;
-    static char *map[][4] = {
-        {NULL, NULL, "movsbl", "movsbq"}, /* sign-extend. */
-        {NULL, NULL, "movswl", "movswq"},
-        {NULL, NULL, "movl", "movslq"},
-        {NULL, NULL, "movl", "movq"},
-        {NULL, NULL, "movzbl", "movzbq"}, /* zero-extend. */
-        {NULL, NULL, "movzwl", "movzwq"},
-        {NULL, NULL, "movl", "movzlq"}, /* movzlq should be movl... */
-        {NULL, NULL, "movl", "movq"},
-    };
+    const char *mov;
 
-    /* We only operate with 32 or 64 bit register values, but variables them-
-     * selves can be stored with byte or short width. Promote to 32 bit if
-     * required. */
-    if (var.type->type == ARRAY) width = 8;
-    if (width < 4) width = 4;
-    assert(width == 4 || width == 8);
+    assert( is_integer(t) );
+    assert( t->size == 4 || t->size == 8 );
+    assert( v.type->size <= t->size );
 
-    mov = map
-        [(from == 8) ? 3 : (from == 4) ? 2 : from - 1]
-        [(width == 8) ? 3 : 2];
+    mov =
+        (v.type->size == 1 && v.type->is_unsigned && t->size == 4) ? "movzbl" :
+        (v.type->size == 1 && v.type->is_unsigned && t->size == 8) ? "movzbq" :
+        (v.type->size == 1 && t->size == 4) ? "movsbl" :
+        (v.type->size == 1 && t->size == 8) ? "movsbq" :
+        (v.type->size == 2 && v.type->is_unsigned && t->size == 4) ? "movzwl" :
+        (v.type->size == 2 && v.type->is_unsigned && t->size == 8) ? "movzwq" :
+        (v.type->size == 2 && t->size == 4) ? "movswl" :
+        (v.type->size == 2 && t->size == 8) ? "movswq" :
+        (v.type->size == 4 && v.type->is_unsigned && t->size == 8) ? "movl" :
+        (v.type->size == 4 && t->size == 8) ? "movslq" :
+        "mov";
 
-    switch (var.kind) {
-    case IMMEDIATE:
-        if (var.type->type == ARRAY) {
-            fprintf(stream, "\tmovq\t%s, %%%s\n", refer(var), reg(dest, 8));
-        } else {
-            /* Immediate values are always (for now) 32 bit int. */
-            fprintf(stream, "\tmov%c\t%s, %%%s\n",
-                asmsuffix(var.type), refer(var), reg(dest, 4));
-        }
-        break;
+    switch (v.kind) {
     case DIRECT:
-        if (var.type->type == ARRAY) {
-            if (var.symbol->depth && var.symbol->linkage == LINK_NONE) {
-                fprintf(stream, "\tleaq\t%d(%%rbp), %%%s\t# load %s\n",
-                    var.symbol->stack_offset, reg(dest, 8), var.symbol->name);
-            } else {
-                fprintf(stream, "\tmovq\t%s, %%%s\t# load %s\n",
-                    refer(var), reg(dest, 8), var.symbol->name);
-            }
-        } else {
-            fprintf(stream, "\t%s\t%s, %%%s\t# load %s\n",
-                mov, refer(var), reg(dest, width), var.symbol->name);
-        }
+        fprintf(s, "\t%s\t%s, %%%s\t# load %s\n",
+            mov, refer(v), reg(r, t->size), v.symbol->name);
         break;
     case DEREF:
-        assert(var.symbol->depth);
-        fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\n", var.symbol->stack_offset);
-        if (var.type->type == ARRAY) {
-            fprintf(stream, "\tleaq\t%d(%%r10), %%%s\t# load *%s\n",
-                var.offset, reg(dest, 8), var.symbol->name);
-        } else {
-            fprintf(stream, "\t%s\t%d(%%r10), %%%s\t# load *%s\n",
-                mov, var.offset, reg(dest, width), var.symbol->name);
-        }
+        assert(v.symbol->depth);
+        fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
+        fprintf(s, "\t%s\t%d(%%r10), %%%s\t# load *%s\n",
+            mov, v.offset, reg(r, t->size), v.symbol->name);
+        break;
+    case IMMEDIATE:
+        fprintf(s, "\tmov%c\t%s, %%%s\n",
+            asmsuffix(t), refer(v), reg(r, t->size));
         break;
     }
 }
 
-static void store(FILE *stream, enum reg source, struct var var)
+/* Load variable to register.
+ */
+static void load(FILE *s, struct var v, enum reg r)
 {
-    char suffix = asmsuffix(var.type);
-    unsigned w = (var.type->type == ARRAY) ? 8 : var.type->size;
-
-    switch (var.kind) {
-    case DIRECT:
-        fprintf(stream, "\tmov%c\t%%%s, %s\t# store %s\n",
-            suffix, reg(source, w), refer(var), var.symbol->name);
-        break;
-    case DEREF:
-        fprintf(stream, "\tmovq\t%d(%%rbp), %%r10\n", var.symbol->stack_offset);
-        if (var.offset) {
-            fprintf(stream, "\tmov%c\t%%%s, %d(%%r10)\t# store *%s\n",
-                suffix, reg(source, w), var.offset, var.symbol->name);
-        } else {
-            fprintf(stream, "\tmov%c\t%%%s, (%%r10)\t# store *%s\n",
-                suffix, reg(source, w), var.symbol->name);
+    if (v.type->type == ARRAY) {
+        switch (v.kind) {
+        case IMMEDIATE:
+            fprintf(s, "\tmovq\t%s, %%%s\n", refer(v), reg(r, 8));
+            break;
+        case DIRECT:
+            if (v.symbol->depth && v.symbol->linkage == LINK_NONE) {
+                fprintf(s, "\tleaq\t%d(%%rbp), %%%s\t# load %s\n",
+                    v.symbol->stack_offset, reg(r, 8), v.symbol->name);
+            } else {
+                fprintf(s, "\tmovq\t%s, %%%s\t# load %s\n",
+                    refer(v), reg(r, 8), v.symbol->name);
+            }
+            break;
+        case DEREF:
+            fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
+            fprintf(s, "\tleaq\t%d(%%r10), %%%s\t# load *%s\n",
+                v.offset, reg(r, 8), v.symbol->name);
+            break;
         }
-        break;
-    default:
-        internal_error("Store immediate value with type %s.",
-            typetostr(var.type));
-        exit(1);
+    } else {
+        struct typetree t = *v.type;
+
+        /* We only operate with 32 or 64 bit register values, but variables can
+         * be stored with byte or short width. Promote to 32 bit if required. */
+        t.size = (t.size < 4) ? 4 : t.size;
+        t.type = (t.type == POINTER) ? INTEGER : t.type;
+        load_as(s, v, r, &t);
+    }
+}
+
+static void store(FILE *s, enum reg r, struct var v)
+{
+    assert( is_scalar(v.type) );
+    assert( v.kind == DIRECT || v.kind == DEREF );
+
+    if (v.kind == DIRECT) {
+        fprintf(s, "\tmov%c\t%%%s, %s\t# store %s\n",
+            asmsuffix(v.type), reg(r, v.type->size), refer(v), v.symbol->name);
+    } else {
+        fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
+        fprintf(s, "\tmov%c\t%%%s, %d(%%r10)\t# store *%s\n",
+            asmsuffix(v.type), reg(r, v.type->size), v.offset, v.symbol->name);
     }
 }
 
 static int fassembleop(FILE *stream, const struct op *op)
 {
-    int i,
-        n = 0,
-        width;
+    int i, n = 0;
 
     switch (op->type) {
     case IR_ASSIGN:
@@ -242,17 +226,17 @@ static int fassembleop(FILE *stream, const struct op *op)
             fprintf(stream, "\tmovq\t$%d, %%rdx\n", op->a.type->size);
             fprintf(stream, "\tcall\tmemcpy\n");
         } else {
-            load(stream, op->b, AX, op->a.type->size);
+            load(stream, op->b, AX);
             store(stream, AX, op->a);
         }
         break;
     case IR_CAST:
         assert(op->a.type->size != op->b.type->size);
-        load(stream, op->b, AX, op->a.type->size);
+        load_as(stream, op->b, AX, op->a.type);
         store(stream, AX, op->a);
         break;
     case IR_DEREF:
-        load(stream, op->b, BX, op->a.type->size);
+        load(stream, op->b, BX);
         fprintf(stream, "\tmov%c\t(%%rbx), %%%s\n",
             asmsuffix(op->a.type), reg(AX, op->a.type->size));
         store(stream, AX, op->a);
@@ -274,7 +258,7 @@ static int fassembleop(FILE *stream, const struct op *op)
             case ARRAY:
             case FUNCTION:
                 if (i < 6) {
-                    load(stream, op->a, pregs[i], op->a.type->size);
+                    load(stream, op->a, pregs[i]);
                 } else {
                     fprintf(stream, "\tpush\t%s\n", refer(op->a));
                 }
@@ -313,48 +297,48 @@ static int fassembleop(FILE *stream, const struct op *op)
         store(stream, AX, op->a);
         break;
     case IR_OP_ADD:
-        load(stream, op->b, AX, op->a.type->size);
-        load(stream, op->c, BX, op->a.type->size);
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
         fprintf(stream, "\tadd%c\t%%%s, %%%s\n",
             asmsuffix(op->a.type), reg(BX, op->a.type->size),
             reg(AX, op->a.type->size));
         store(stream, AX, op->a);
         break;
     case IR_OP_SUB:
-        load(stream, op->b, AX, op->a.type->size);
-        load(stream, op->c, BX, op->a.type->size);
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
         fprintf(stream, "\tsub%c\t%%%s, %%%s\n",
             asmsuffix(op->a.type), reg(BX, op->a.type->size),
             reg(AX, op->a.type->size));
         store(stream, AX, op->a);
         break;
     case IR_OP_MUL:
-        load(stream, op->c, AX, op->a.type->size);
+        load(stream, op->c, AX);
         if (op->b.kind == DIRECT) {
             fprintf(stream, "\tmul%c\t%s\n",
                 asmsuffix(op->b.type), refer(op->b));
         } else {
-            load(stream, op->b, BX, op->a.type->size);
+            load(stream, op->b, BX);
             fprintf(stream, "\tmul%c\t%%%s\n",
                 asmsuffix(op->b.type), reg(BX, op->b.type->size));
         }
         store(stream, AX, op->a);
         break;
     case IR_OP_BITWISE_AND:
-        load(stream, op->b, AX, op->a.type->size);
-        load(stream, op->c, BX, op->a.type->size);
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
         fprintf(stream, "\tand\t%%rbx, %%rax\n");
         store(stream, AX, op->a);
         break;
     case IR_OP_BITWISE_XOR:
-        load(stream, op->b, AX, op->a.type->size);
-        load(stream, op->c, BX, op->a.type->size);
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
         fprintf(stream, "\txor\t%%rbx, %%rax\n");
         store(stream, AX, op->a);
         break;
     case IR_OP_LOGICAL_AND:
-        load(stream, op->b, AX, op->a.type->size);
-        load(stream, op->c, BX, op->a.type->size);
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
         fprintf(stream, "\tand\t%%rbx, %%rax\n");
         fprintf(stream, "\tcmp\t$0, %%rax\n");
         fprintf(stream, "\tsetg\t%%al\n");
@@ -362,8 +346,8 @@ static int fassembleop(FILE *stream, const struct op *op)
         store(stream, AX, op->a);
         break;
     case IR_OP_LOGICAL_OR:
-        load(stream, op->b, AX, op->a.type->size);
-        load(stream, op->c, BX, op->a.type->size);
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
         fprintf(stream, "\tor\t%%rbx, %%rax\n");
         fprintf(stream, "\tcmp\t$0, %%rax\n");
         fprintf(stream, "\tsetg\t%%al\n");
@@ -371,33 +355,32 @@ static int fassembleop(FILE *stream, const struct op *op)
         store(stream, AX, op->a);
         break;
     case IR_OP_EQ:
-        width = op->a.type->size;
-        load(stream, op->b, AX, width);
-        load(stream, op->c, BX, width);
-        fprintf(stream, "\tcmp\t%%%s, %%%s\n", reg(BX, width), reg(AX, width));
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
+        fprintf(stream, "\tcmp\t%%%s, %%%s\n",
+            reg(BX, op->a.type->size), reg(AX, op->a.type->size));
         fprintf(stream, "\tsetz\t%%al\n");
         fprintf(stream, "\tmovzbl\t%%al, %%eax\n");
         store(stream, AX, op->a);
         break;
     case IR_OP_GE:
-        width = op->a.type->size;
-        load(stream, op->b, AX, width);
-        load(stream, op->c, BX, width);
-        fprintf(stream, "\tcmp\t%%%s, %%%s\n", reg(BX, width), reg(AX, width));
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
+        fprintf(stream, "\tcmp\t%%%s, %%%s\n",
+            reg(BX, op->a.type->size), reg(AX, op->a.type->size));
         fprintf(stream, "\tsetge\t%%al\n");
         fprintf(stream, "\tmovzbl\t%%al, %%eax\n");
         store(stream, AX, op->a);
         break;
     case IR_OP_GT:
-        width = op->a.type->size;
-        load(stream, op->b, AX, width);
-        load(stream, op->c, BX, width);
-        fprintf(stream, "\tcmp\t%%%s, %%%s\n", reg(BX, width), reg(AX, width));
-        if (op->b.type->is_unsigned || op->c.type->is_unsigned) {
-            /* When one or more operand is unsigned, compare without considering
-             * overflow; CF=0 && ZF=0. Fix only for this instance for now, as
-             * one of the tests depend on this code path. Proper handling of
-             * unsigned integers pending. */ 
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
+        fprintf(stream, "\tcmp\t%%%s, %%%s\n",
+            reg(BX, op->a.type->size), reg(AX, op->a.type->size));
+        if (op->b.type->is_unsigned) {
+            assert( op->b.type->is_unsigned == op->c.type->is_unsigned );
+            /* When comparison is unsigned, set flag without considering
+             * overflow; CF=0 && ZF=0. */ 
             fprintf(stream, "\tseta\t%%al\n");
         } else {
             fprintf(stream, "\tsetg\t%%al\n");
@@ -406,8 +389,8 @@ static int fassembleop(FILE *stream, const struct op *op)
         store(stream, AX, op->a);
         break;
     default:
-        internal_error("%s", "IR_OP not implemented.");
-        exit(1);
+        assert(0);
+        break;
     }
 
     return n + 1;
@@ -433,7 +416,7 @@ static void fassembleblock(FILE *stream, map_t *memo, const struct block *block)
         if (block->expr.type && block->expr.type->type != NONE
             && block->expr.type->size <= 8)
         {
-            load(stream, block->expr, AX, block->expr.type->size);
+            load(stream, block->expr, AX);
         }
         fprintf(stream, "\tleaveq\n");
         fprintf(stream, "\tretq\n");
@@ -443,7 +426,7 @@ static void fassembleblock(FILE *stream, map_t *memo, const struct block *block)
         }
         fassembleblock(stream, memo, block->jump[0]);
     } else {
-        load(stream, block->expr, AX, block->expr.type->size);
+        load(stream, block->expr, AX);
         fprintf(stream, "\tcmpq\t$0, %%rax\n");
         fprintf(stream, "\tje\t%s\n", block->jump[0]->label);
         if (map_lookup(memo, block->jump[1]->label) != NULL) {
