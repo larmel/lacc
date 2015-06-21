@@ -102,23 +102,29 @@ static char *refer(const struct var var)
 
 static void load_address(FILE *s, struct var v, enum reg r)
 {
-    /* Address of immediate makes little sense. Address of dereferenced variable
-     * is removed by evaluation. */
-    assert( v.kind == DIRECT );
+    const char *mov;
 
-    /* Similar to refer() */
-    if (v.symbol->linkage != LINK_NONE) {
-        if (v.type->type == ARRAY || v.type->type == FUNCTION) {
-            fprintf(s, "\tmovq\t$%s, %%%s\t# load &%s\n",
-                sym_name(v.symbol), reg(r, 8), v.symbol->name);
-        } else {
-            fprintf(s, "\tleaq\t%s(%%rip), %%%s\t# load &%s\n",
-                sym_name(v.symbol), reg(r, 8), v.symbol->name);
-        }
-    } else {
-        fprintf(s, "\tleaq\t%d(%%rbp), %%%s\t# load &%s\n",
-            v.symbol->stack_offset + v.offset, reg(r, 8),
-            v.symbol->name);
+    switch (v.kind) {
+    case IMMEDIATE:
+        assert( v.type->type == ARRAY );
+        fprintf(s, "\tmovq\t%s, %%%s\n", refer(v), reg(r, 8));
+        break;
+    case DIRECT:
+        mov =
+            (v.symbol->linkage != LINK_NONE &&
+                (v.type->type == ARRAY || v.type->type == FUNCTION)) ? "movq" :
+            "leaq";
+        fprintf(s, "\t%s\t%s, %%%s\t# load &%s\n",
+            mov, refer(v), reg(r, 8), v.symbol->name);
+        break;
+    case DEREF:
+        /* Address of dereferenced variable is removed by evaluation. Exception
+         * is loading plain array or function values, which decay into loading
+         * their address. */
+        fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
+        fprintf(s, "\tleaq\t%d(%%r10), %%%s\t# load (%s + %d)\n",
+            v.offset, reg(r, 8), v.symbol->name, v.offset);
+        break;
     }
 }
 
@@ -158,8 +164,7 @@ static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
             mov, v.offset, reg(r, t->size), v.symbol->name);
         break;
     case IMMEDIATE:
-        fprintf(s, "\tmov%c\t%s, %%%s\n",
-            asmsuffix(t), refer(v), reg(r, t->size));
+        fprintf(s, "\tmov\t%s, %%%s\n", refer(v), reg(r, t->size));
         break;
     }
 }
@@ -169,25 +174,7 @@ static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
 static void load(FILE *s, struct var v, enum reg r)
 {
     if (v.type->type == ARRAY) {
-        switch (v.kind) {
-        case IMMEDIATE:
-            fprintf(s, "\tmovq\t%s, %%%s\n", refer(v), reg(r, 8));
-            break;
-        case DIRECT:
-            if (v.symbol->depth && v.symbol->linkage == LINK_NONE) {
-                fprintf(s, "\tleaq\t%d(%%rbp), %%%s\t# load %s\n",
-                    v.symbol->stack_offset, reg(r, 8), v.symbol->name);
-            } else {
-                fprintf(s, "\tmovq\t%s, %%%s\t# load %s\n",
-                    refer(v), reg(r, 8), v.symbol->name);
-            }
-            break;
-        case DEREF:
-            fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
-            fprintf(s, "\tleaq\t%d(%%r10), %%%s\t# load *%s\n",
-                v.offset, reg(r, 8), v.symbol->name);
-            break;
-        }
+        load_address(s, v, r);
     } else {
         struct typetree t = *v.type;
 
