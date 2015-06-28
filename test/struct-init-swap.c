@@ -1,4 +1,4 @@
-/* From Listing 3 in "Test-Case Reduction for C Compiler Bugs" paper, avaiable
+/* From Listing 3 in "Test-Case Reduction for C Compiler Bugs" paper, available
  * at http://www.cs.utah.edu/~regehr/papers/pldi12-preprint.pdf.
  */
 

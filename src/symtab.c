@@ -273,7 +273,7 @@ void output_symbols(FILE *stream, struct namespace *ns)
         free(tstr);
 
         fprintf(stream, ", size=%d", ns->symbol[i]->type->size);
-        if (ns->symbol[i]->stack_offset < 0) {
+        if (ns->symbol[i]->stack_offset) {
             fprintf(stream, " (stack_offset: %d)", ns->symbol[i]->stack_offset);
         }
         if (ns->symbol[i]->symtype == SYM_ENUM) {

@@ -1,3 +1,4 @@
+#include "abi.h"
 #include "ir.h"
 #include "type.h"
 #include "string.h"
@@ -42,24 +43,28 @@ enum reg {
 /* Promote all operands to 32 bit, to not have to worry about partial register
  * not being zeroed properly. On 64-bit, the upper half will be zeroed auto-
  * matically. */
-static const char* reg(enum reg r, unsigned w)
+static const char* reg(enum reg r, int w)
 {
-    const char *x86_64_regs[] = {
-        "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
+    static const char *x86_64_regs[][5] = {
+        { "al", "ax", "eax", NULL, "rax" },
+        { "bl", "bx", "ebx", NULL, "rbx" },
+        { "cl", "cx", "ecx", NULL, "rcx" },
+        { "dl", "dx", "edx", NULL, "rdx" },
+        { NULL, NULL,  NULL, NULL, "rbp" },
+        { NULL, NULL,  NULL, NULL, "rsp" },
+        { NULL, "si", "esi", NULL, "rsi" },
+        { NULL, "di", "edi", NULL, "rdi" },
+        { "r8b",  "r8w",  "r8d",  NULL, "r8" },
+        { "r9b",  "r9w",  "r9d",  NULL, "r9" },
+        { "r10b", "r10w", "r10d", NULL, "r10" },
+        { "r11b", "r11w", "r11d", NULL, "r11" },
+        { "r12b", "r12w", "r12d", NULL, "r12" },
+        { "r13b", "r13w", "r13d", NULL, "r13" },
+        { "r14b", "r14w", "r14d", NULL, "r14" },
+        { "r15b", "r15w", "r15d", NULL, "r15" },
     };
 
-    switch (r) {
-    case AX: return (w==1) ? "al" : (w==2) ? "ax" : (w==4) ? "eax" : "rax";
-    case BX: return (w==1) ? "bl" : (w==2) ? "bx" : (w==4) ? "ebx" : "rbx";
-    case CX: return (w==1) ? "cl" : (w==2) ? "cx" : (w==4) ? "ecx" : "rcx";
-    case DX: return (w==1) ? "dl" : (w==2) ? "dx" : (w==4) ? "edx" : "rdx";
-    case BP: return "rbp";
-    case SP: return "rsp";
-    case SI: return (w==2) ? "si" : (w==4) ? "esi" : "rsi";
-    case DI: return (w==2) ? "di" : (w==4) ? "edi" : "rdi";
-    default:
-        return x86_64_regs[(int)r - 8];
-    }
+    return x86_64_regs[(int) r][w / 2];
 }
 
 static enum reg pregs[] = {DI, SI, DX, CX, R8, R9};
@@ -201,9 +206,119 @@ static void store(FILE *s, enum reg r, struct var v)
     }
 }
 
-static int fassembleop(FILE *stream, const struct op *op)
+/* Push value to stack, rounded up to always be 8 byte aligned.
+ */
+static void push(FILE *s, struct var v)
 {
-    int i, n = 0;
+    if (is_scalar(v.type)) {
+        if (v.kind == IMMEDIATE && v.type->size == 8) {
+            fprintf(s, "\tpush\t%s\n", refer(v));
+        } else {
+            load(s, v, AX);
+            fprintf(s, "\tpushq\t%%%s\n", reg(AX, 8));
+        }
+    } else {
+        int slices = N_EIGHTBYTES(v.type);
+
+        fprintf(s, "\tsubq\t$%d, %%rsp\n", slices * 8);
+        fprintf(s, "\tmovl\t$%d, %%%s\n", slices, reg(CX, 4));
+        fprintf(s, "\tmovq\t%%rsp, %%rdi\n");
+        load_address(s, v, SI);
+        fprintf(s, "\trep movsq\n");
+    }
+}
+
+/* Assemble a function call. For now this assumes only integer arguments passed
+ * in %rdi, %rsi, %rdx, %rcx, %r8 and %r9, and arguments passed on stack.
+ */
+static void 
+call(FILE *s, int n, const struct var *args, struct var res, struct var func)
+{
+    int i,
+        mem_used = 0,
+        next_integer_reg = 0;
+
+    enum param_class *resc;
+    enum param_class **argc;
+
+    const struct typetree **arg_types;
+
+    /* Classify function arguments and return value. */
+    arg_types = calloc(n, sizeof(*arg_types));
+    for (i = 0; i < n; ++i) {
+        arg_types[i] = args[i].type;
+    }
+
+    argc = classify_call(arg_types, func.type->next, n, &resc);
+    free(arg_types);
+
+    /* Pass arguments on stack from right to left. Do this before populating
+     * registers, because %rdi, %rsi etc will be used to do the pushing. */
+    for (i = n - 1; i >= 0; --i) {
+        if (*argc[i] == PC_MEMORY) {
+            mem_used += N_EIGHTBYTES(args[i].type) * 8;
+            push(s, args[i]);
+        }
+    }
+
+    /* When return value is MEMORY, pass a pointer to stack as hidden first
+     * argument. */
+    if (res.type->type != NONE && *resc == PC_MEMORY) {
+        next_integer_reg = 1;
+        load_address(s, res, pregs[0]);
+    }
+
+    /* Pass arguments in registers from left to right. Partition arguments into
+     * eightbyte slices and load into appropriate registers. */
+    for (i = 0; i < n; ++i) {
+        enum param_class *eightbyte = argc[i];
+
+        /*dump_classification(eightbyte, args[i].type);*/
+
+        if (*eightbyte != PC_MEMORY) {
+            int chunks = N_EIGHTBYTES(args[i].type),
+                size = args[i].type->size,
+                j;
+            struct var slice = args[i];
+
+            for (j = 0; j < chunks; ++j) {
+                int width = (size < 8) ? size % 8 : 8;
+
+                size -= width;
+                assert( eightbyte[j] == PC_INTEGER );
+                assert( width == 1 || width == 2 || width == 4 || width == 8 );
+
+                slice.type = type_init_integer(width);
+                slice.offset = args[i].offset + j * 8;
+                load(s, slice, pregs[next_integer_reg++]);
+            }
+
+            assert( size == 0 );
+        }
+    }
+
+    /* For variable argument lists, %al contains the number of vector registers
+     * used. */
+    if (func.type->is_vararg) {
+        fprintf(s, "\tmovl\t$0, %%eax\n");
+    }
+
+    assert(func.kind == DIRECT);
+    fprintf(s, "\tcall\t%s\n", func.symbol->name);
+    if (mem_used) {
+        fprintf(s, "\taddq\t$%d, %%rsp\n", mem_used);
+    }
+
+    /* TODO: Proper handling of return values. */
+    if (res.type->type != NONE) {
+        store(s, AX, res);
+    }
+}
+
+static void fassembleop(FILE *stream, const struct op *op)
+{
+    static int n_args;
+    static struct var *args;
 
     switch (op->type) {
     case IR_ASSIGN:
@@ -229,54 +344,15 @@ static int fassembleop(FILE *stream, const struct op *op)
         store(stream, AX, op->a);
         break;
     case IR_PARAM:
-        i = 0;
-        while (op->type == IR_PARAM) {
-            op = op + 1;
-            i++;
-        }
-        n = i;
-        assert(op->type == IR_CALL);
-        while (i-- > 0) {
-            op = op - 1;
-            assert(op->type == IR_PARAM);
-            switch (op->a.type->type) {
-            case INTEGER:
-            case POINTER:
-            case ARRAY:
-            case FUNCTION:
-                if (i < 6) {
-                    load(stream, op->a, pregs[i]);
-                } else {
-                    fprintf(stream, "\tpush\t%s\n", refer(op->a));
-                }
-                break;
-            default:
-                error("Parameter type not supported.");
-                exit(1);
-            }
-        }
-        op = op + n;
-        assert(op->type == IR_CALL);
+        args = realloc(args, ++n_args * sizeof(*args));
+        args[n_args - 1] = op->a;
+        break;
     case IR_CALL:
-        if (op->b.symbol->type->type != FUNCTION) {
-            error("Only supports call by name directly.");
-            exit(1);
-        }
-        if (op->b.type->is_vararg) {
-            /* Reset flag over number of vector registers used for variable
-             * argument list. */
-            fprintf(stream, "\tmovq\t$0, %%rax\n");
-        }
-        fprintf(stream, "\tcall\t%s\n", op->b.symbol->name);
-        if (n > 6) {
-            /* Restore stack pointer after pushing arguments that did not
-             * fit in registers. */
-            fprintf(stream, "\tadd\t$%d, %%rsp\t# remove arguments\n",
-                (n - 6) * 8);
-        }
-        if (op->a.type->type != NONE) {
-            /* No result for void function. */
-            store(stream, AX, op->a);
+        call(stream, n_args, args, op->a, op->b);
+        if (args) {
+            free(args);
+            args = NULL;
+            n_args = 0;
         }
         break;
     case IR_ADDR:
@@ -379,8 +455,6 @@ static int fassembleop(FILE *stream, const struct op *op)
         assert(0);
         break;
     }
-
-    return n + 1;
 }
 
 static void fassembleblock(FILE *stream, map_t *memo, const struct block *block)
@@ -393,8 +467,8 @@ static void fassembleblock(FILE *stream, map_t *memo, const struct block *block)
     map_insert(memo, block->label, (void*)"done");
 
     fprintf(stream, "%s:\n", block->label);
-    for (i = 0; i < block->n; ) {
-        i += fassembleop(stream, block->code + i);
+    for (i = 0; i < block->n; ++i) {
+        fassembleop(stream, block->code + i);
     }
 
     if (block->jump[0] == NULL && block->jump[1] == NULL) {
@@ -496,25 +570,14 @@ static void assemble_immediate(FILE *stream, struct var target, struct var val)
     }
 }
 
-static int assign_storage(const struct decl *fun)
+/* Assign storage to local variables.
+ */
+static int assign_locals_storage(const struct decl *fun, int offset)
 {
-    int i,
-        offset = 0;
-    struct symbol *sym;
-
-    /* Assume < 6 integer parameters that fit in registers and needs to be
-     * pushed to stack. */
-    for (i = 0; i < fun->params.length; ++i) {
-        sym = fun->params.elem[i];
-
-        assert(!sym->stack_offset);
-        assert(sym->linkage == LINK_NONE);
-        offset -= sym->type->size;
-        sym->stack_offset = offset;
-    }
+    int i;
 
     for (i = 0; i < fun->locals.length; ++i) {
-        sym = fun->locals.elem[i];
+        struct symbol *sym = fun->locals.elem[i];
         assert(!sym->stack_offset);
 
         if (sym->linkage == LINK_NONE) {
@@ -523,17 +586,77 @@ static int assign_storage(const struct decl *fun)
         }
     }
 
-    return -offset;
+    return offset;
+}
+
+/* Load parameters into call frame on entering a function.
+ */
+static void enter(FILE *s, const struct decl *func)
+{
+    int i,
+        next_integer_reg = 0,
+        mem_offset = 16,    /* Offset of PC_MEMORY parameters. */
+        stack_offset = 0;   /* Offset of %rsp to keep local variables. */
+
+    enum param_class
+        **params,
+        *ret;
+
+    /* Get classification of function arguments and return value. */
+    params = classify_signature(func->fun->type, &ret);
+
+    /* Assign storage to parameters.  */
+    for (i = 0; i < func->params.length; ++i) {
+        struct symbol *sym = func->params.elem[i];
+
+        assert( !sym->stack_offset );
+        assert( sym->linkage == LINK_NONE );
+
+        /* Guarantee that parameters are 8-byte aligned also for those passed by
+         * register, which makes it easier to store in local frame after
+         * entering function. Might want to revisit this and make it compact. */
+        if (*params[i] == PC_MEMORY) {
+            sym->stack_offset = mem_offset;
+            mem_offset += N_EIGHTBYTES(sym->type) * 8;
+        } else {
+            stack_offset -= N_EIGHTBYTES(sym->type) * 8;
+            sym->stack_offset = stack_offset;
+        }
+    }
+
+    /* Assign storage to locals. */
+    stack_offset = assign_locals_storage(func, stack_offset);
+    if (stack_offset < 0) {
+        fprintf(s, "\tsubq\t$%d, %%rsp\n", -stack_offset);
+    }
+
+    /* TODO: Handle return address value. */
+    if (ret && *ret == PC_MEMORY) {
+        next_integer_reg = 1;
+    }
+
+    /* Load arguments from registers to stack. */
+    for (i = 0; i < func->params.length; ++i) {
+        enum param_class *eightbyte = params[i];
+
+        if (*eightbyte != PC_MEMORY) {
+            int n = N_EIGHTBYTES(func->fun->type->member[i].type), j;
+            struct var ref = { NULL, NULL, DIRECT };
+
+            ref.symbol = func->params.elem[i];
+            for (j = 0; j < n; ++j) {
+                ref.type = type_init_integer(8);
+                ref.offset = j * 8;
+                store(s, pregs[next_integer_reg++], ref);
+            }
+        }
+    }
 }
 
 static void assemble_function(FILE *stream, const struct decl *decl)
 {
     map_t memo;
-    int i, locals_size;
-
     map_init(&memo);
-
-    locals_size = assign_storage(decl);
 
     fprintf(stream, "\t.text\n");
     if (decl->fun->linkage == LINK_EXTERN) {
@@ -545,19 +668,10 @@ static void assemble_function(FILE *stream, const struct decl *decl)
     fprintf(stream, "\tpushq\t%%rbp\n");
     fprintf(stream, "\tmovq\t%%rsp, %%rbp\n");
 
-    if (locals_size) {
-        fprintf(stream, "\tsubq\t$%d, %%rsp\n", locals_size);
-    }
+    /* Make sure parameters and local variables are placed on stack. */
+    enter(stream, decl);
 
-    for (i = 0; i < decl->params.length; ++i) {
-        struct symbol *sym = decl->params.elem[i];
-
-        fprintf(stream, "\tmov%c\t%%%s, %d(%%rbp)\n",
-            asmsuffix(sym->type),
-            reg(pregs[i], sym->type->size),
-            sym->stack_offset);
-    }
-
+    /* Recursively assemble body. */
     fassembleblock(stream, &memo, decl->body);
 
     /* This is required to see function names in valgrind. */

@@ -307,6 +307,12 @@ eval_addr_internal(struct block *block, struct var var, struct typetree *type)
     struct symbol *temp;
 
     switch (var.kind) {
+    case IMMEDIATE:
+        /* Array constants are passed as immediate values with array type. Decay
+         * into pointer on evaluation, for example as parameters. Should maybe
+         * consider an extra kind ADDR to not have to generate all these
+         * temporaries. */
+        assert(var.type->type == ARRAY);
     case DIRECT:
         temp = sym_temp(&ns_ident, type);
         res = var_direct(temp);
@@ -328,9 +334,6 @@ eval_addr_internal(struct block *block, struct var var, struct typetree *type)
         }
         res.type = type;
         break;
-    case IMMEDIATE:
-        error("Address of immediate is not supported.");
-        exit(1);
     }
 
     return res;
@@ -551,6 +554,9 @@ eval_cast(struct block *block, struct var var, const struct typetree *type)
 void param(struct block *block, struct var p)
 {
     struct op op;
+
+    p = array_or_func_to_addr(block, p);
+
     op.type = IR_PARAM;
     op.a = p;
     cfg_ir_append(block, op);
