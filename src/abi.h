@@ -28,6 +28,10 @@ enum reg {
  */
 enum reg param_int_reg[6];
 
+/* Registers used for returning INTEGER retult.
+ */
+enum reg ret_int_reg[2];
+
 /* Number of eightbytes required for a given type.
  */
 #define N_EIGHTBYTES(t) (((t)->size + 7) / 8)

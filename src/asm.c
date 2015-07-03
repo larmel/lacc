@@ -166,14 +166,14 @@ static void load(FILE *s, struct var v, enum reg r)
         /* We only operate with 32 or 64 bit register values, but variables can
          * be stored with byte or short width. Promote to 32 bit if required. */
         t.size = (t.size < 4) ? 4 : t.size;
-        t.type = (t.type == POINTER) ? INTEGER : t.type;
+        t.type = (t.type == POINTER || t.type == OBJECT) ? INTEGER : t.type;
         load_as(s, v, r, &t);
     }
 }
 
 static void store(FILE *s, enum reg r, struct var v)
 {
-    assert( is_scalar(v.type) );
+    assert( is_scalar(v.type) || v.type->size <= 8 );
     assert( v.kind == DIRECT || v.kind == DEREF );
 
     if (v.kind == DIRECT) {
@@ -243,7 +243,7 @@ call(FILE *s, int n, const struct var *args, struct var res, struct var func)
 
     /* When return value is MEMORY, pass a pointer to stack as hidden first
      * argument. */
-    if (res.type->type != NONE && *resc == PC_MEMORY) {
+    if (*resc == PC_MEMORY) {
         next_integer_reg = 1;
         load_address(s, res, param_int_reg[0]);
     }
@@ -289,9 +289,29 @@ call(FILE *s, int n, const struct var *args, struct var res, struct var func)
         fprintf(s, "\taddq\t$%d, %%rsp\n", mem_used);
     }
 
-    /* TODO: Proper handling of return values. */
-    if (res.type->type != NONE) {
-        store(s, AX, res);
+    /* Move return value from register(s) to memory. Return values with class
+     * MEMORY have already been written by callee. */
+    if (*resc != PC_MEMORY) {
+        int n = N_EIGHTBYTES(res.type);
+        int size = res.type->size;
+        struct var slice = res;
+
+        /* Only have INTEGER class for now. */
+        assert( n <= 2 );
+
+        next_integer_reg = 0;
+        for (i = 0; i < n; ++i) {
+            int width = (size < 8) ? size % 8 : 8;
+
+            size -= width;
+            assert( resc[i] == PC_INTEGER );
+
+            slice.type = type_init_integer(width);
+            slice.offset = i * 8;
+            store(s, ret_int_reg[next_integer_reg++], slice);
+        }
+
+        assert( size == 0 );
     }
 }
 
@@ -314,9 +334,10 @@ static int assign_locals_storage(const struct decl *fun, int offset)
     return offset;
 }
 
-/* Load parameters into call frame on entering a function.
+/* Load parameters into call frame on entering a function. Return parameter
+ * class of return value.
  */
-static void enter(FILE *s, const struct decl *func)
+static enum param_class *enter(FILE *s, const struct decl *func)
 {
     int i,
         next_integer_reg = 0,
@@ -329,6 +350,13 @@ static void enter(FILE *s, const struct decl *func)
 
     /* Get classification of function arguments and return value. */
     params = classify_signature(func->fun->type, &ret);
+
+    /* Address of return value is passed as first integer argument. If return
+     * value is MEMORY, store the address at stack offset -8. */
+    if (*ret == PC_MEMORY) {
+        stack_offset = -8;
+        next_integer_reg = 1;
+    }
 
     /* Assign storage to parameters.  */
     for (i = 0; i < func->params.length; ++i) {
@@ -355,12 +383,12 @@ static void enter(FILE *s, const struct decl *func)
         fprintf(s, "\tsubq\t$%d, %%rsp\n", -stack_offset);
     }
 
-    /* TODO: Handle return address value. */
-    if (ret && *ret == PC_MEMORY) {
-        next_integer_reg = 1;
+    /* Store return address to well known stack offset. */
+    if (*ret == PC_MEMORY) {
+        fprintf(s, "\tmovq\t%%%s, -8(%%rbp)\n", reg(param_int_reg[0], 8));
     }
 
-    /* Load arguments from registers to stack. */
+    /* Move arguments from register to stack. */
     for (i = 0; i < func->params.length; ++i) {
         enum param_class *eightbyte = params[i];
 
@@ -375,6 +403,55 @@ static void enter(FILE *s, const struct decl *func)
                 store(s, param_int_reg[next_integer_reg++], ref);
             }
         }
+    }
+
+    return ret;
+}
+
+/* Return value from function, placing it in register(s) or writing it to stack
+ * based on parameter class.
+ */
+static void ret(FILE *s, struct var val, const enum param_class *pc)
+{
+    int next_int_reg = 0;
+
+    assert( *pc != PC_NO_CLASS );
+
+    if (*pc != PC_MEMORY) {
+        int i;
+        int n = N_EIGHTBYTES(val.type);
+        int size = val.type->size;
+        struct var slice = val;
+
+        /* As we only support integer class, limit to two registers. Note that
+         * the classification algorithm will never allocate more than two
+         * integer registers for a single type. */
+        assert( n <= 2 );
+
+        /* This has a lot in common with call(..), and could probably be
+         * refactored. */
+        for (i = 0; i < n; ++i) {
+            int width = (size < 8) ? size % 8 : 8;
+
+            size -= width;
+            assert( pc[i] == PC_INTEGER );
+            assert( width == 1 || width == 2 || width == 4 || width == 8 );
+
+            slice.type = type_init_integer(width);
+            slice.offset = val.offset + i * 8;
+            load(s, slice, ret_int_reg[next_int_reg++]);
+        }
+
+        assert( size == 0 );
+    } else {
+        /* Load return address from magic stack offset and copy result. */
+        fprintf(s, "\tmovq\t-8(%%rbp), %%%s\n", reg(DI, 8));
+        load_address(s, val, SI);
+        fprintf(s, "\tmovl\t$%d, %%%s\n", val.type->size, reg(DX, 4));
+        fprintf(s, "\tcall\tmemcpy\n");
+
+        /* The ABI specifies that the address should be in %rax on return. */
+        fprintf(s, "\tmovq\t-8(%%rbp), %%%s\n", reg(AX, 8));
     }
 }
 
@@ -391,6 +468,13 @@ static void asm_op(FILE *stream, const struct op *op)
             fprintf(stream, "\tmovq\t$%d, %%rdx\n", op->a.type->size);
             fprintf(stream, "\tcall\tmemcpy\n");
         } else {
+            /* TODO: consider cast before assignment. */
+            /*if (!type_equal(op->a.type, op->b.type)) {
+                error("Unequal types:");
+                error(" -> %s", typetostr(op->a.type));
+                error(" -> %s", typetostr(op->b.type));
+            }*/
+            /*assert( type_equal(op->a.type, op->b.type) );*/
             load(stream, op->b, AX);
             store(stream, AX, op->a);
         }
@@ -520,44 +604,47 @@ static void asm_op(FILE *stream, const struct op *op)
     }
 }
 
-static void asm_block(FILE *stream, map_t *memo, const struct block *block)
+static void
+asm_block(FILE *stream,
+          map_t *memo,
+          const struct block *block,
+          const enum param_class *res)
 {
     int i;
 
-    if (map_lookup(memo, block->label) != NULL) 
-        return;
+    assert( block && res );
 
-    map_insert(memo, block->label, (void*)"done");
+    if (!map_lookup(memo, block->label)) {
+        map_insert(memo, block->label, (void*)"done");
+        fprintf(stream, "%s:\n", block->label);
+        for (i = 0; i < block->n; ++i) {
+            asm_op(stream, block->code + i);
+        }
 
-    fprintf(stream, "%s:\n", block->label);
-    for (i = 0; i < block->n; ++i) {
-        asm_op(stream, block->code + i);
-    }
+        if (!block->jump[0] && !block->jump[1]) {
+            if (*res != PC_NO_CLASS) {
+                ret(stream, block->expr, res);
+            }
 
-    if (block->jump[0] == NULL && block->jump[1] == NULL) {
-        /* By default return the last expression evaluated in the block.
-         * Check size <= 8 to avoid returning object types by accident. */
-        if (block->expr.type && block->expr.type->type != NONE
-            && block->expr.type->size <= 8)
-        {
+            fprintf(stream, "\tleaveq\n");
+            fprintf(stream, "\tretq\n");
+        } else if (!block->jump[1]) {
+            if (map_lookup(memo, block->jump[0]->label)) {
+                fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
+            }
+
+            asm_block(stream, memo, block->jump[0], res);
+        } else {
             load(stream, block->expr, AX);
+            fprintf(stream, "\tcmpq\t$0, %%rax\n");
+            fprintf(stream, "\tje\t%s\n", block->jump[0]->label);
+            if (map_lookup(memo, block->jump[1]->label)) {
+                fprintf(stream, "\tjmp\t%s\n", block->jump[1]->label);
+            }
+
+            asm_block(stream, memo, block->jump[1], res);
+            asm_block(stream, memo, block->jump[0], res);
         }
-        fprintf(stream, "\tleaveq\n");
-        fprintf(stream, "\tretq\n");
-    } else if (block->jump[1] == NULL) {
-        if (map_lookup(memo, block->jump[0]->label) != NULL) {
-            fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
-        }
-        asm_block(stream, memo, block->jump[0]);
-    } else {
-        load(stream, block->expr, AX);
-        fprintf(stream, "\tcmpq\t$0, %%rax\n");
-        fprintf(stream, "\tje\t%s\n", block->jump[0]->label);
-        if (map_lookup(memo, block->jump[1]->label) != NULL) {
-            fprintf(stream, "\tjmp\t%s\n", block->jump[1]->label);
-        }
-        asm_block(stream, memo, block->jump[1]);
-        asm_block(stream, memo, block->jump[0]);
     }
 }
 
@@ -636,6 +723,8 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
 static void asm_function(FILE *stream, const struct decl *decl)
 {
     map_t memo;
+    enum param_class *res;
+
     map_init(&memo);
 
     fprintf(stream, "\t.text\n");
@@ -648,16 +737,18 @@ static void asm_function(FILE *stream, const struct decl *decl)
     fprintf(stream, "\tpushq\t%%rbp\n");
     fprintf(stream, "\tmovq\t%%rsp, %%rbp\n");
 
-    /* Make sure parameters and local variables are placed on stack. */
-    enter(stream, decl);
+    /* Make sure parameters and local variables are placed on stack. Keep
+     * parameter class of return value for later assembling return. */
+    res = enter(stream, decl);
 
     /* Recursively assemble body. */
-    asm_block(stream, &memo, decl->body);
+    asm_block(stream, &memo, decl->body, res);
 
     /* This is required to see function names in valgrind. */
     fprintf(stream, "\t.size\t%s, .-%s\n",
         sym_name(decl->fun), sym_name(decl->fun));
 
+    free(res);
     map_finalize(&memo);
 }
 

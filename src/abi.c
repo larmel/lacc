@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 enum reg param_int_reg[] = {DI, SI, DX, CX, R8, R9};
+enum reg ret_int_reg[] = {AX, DX};
 
 static int has_unaligned_fields(const struct typetree *t)
 {
@@ -124,7 +125,7 @@ classify_call(const struct typetree **args,
 
     enum param_class
         **params = calloc(n_args, sizeof(*params)),
-        *res = NULL;
+        *res = calloc(1, sizeof(*res));
 
     /* Classify parameters and return value. */
     for (i = 0; i < n_args; ++i) {
