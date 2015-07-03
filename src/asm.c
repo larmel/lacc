@@ -534,6 +534,25 @@ static void asm_op(FILE *stream, const struct op *op)
         }
         store(stream, AX, op->a);
         break;
+    case IR_OP_DIV:
+    case IR_OP_MOD:
+        /* %rdx must be zero to avoid SIGFPE. */
+        fprintf(stream, "\txorq\t%%%s, %%%s\n", reg(DX, 8), reg(DX, 8));
+        load(stream, op->b, AX);
+        if (op->c.kind == DIRECT) {
+            fprintf(stream, "\tdiv%c\t%s\n",
+                asmsuffix(op->c.type), refer(op->c));
+        } else {
+            load(stream, op->c, BX);
+            fprintf(stream, "\tdiv%c\t%%%s\n",
+                asmsuffix(op->c.type), reg(BX, op->c.type->size));
+        }
+        if (op->type == IR_OP_DIV) {
+            store(stream, AX, op->a);
+        } else {
+            store(stream, DX, op->a);
+        }
+        break;
     case IR_OP_BITWISE_AND:
         load(stream, op->b, AX);
         load(stream, op->c, BX);
