@@ -5,6 +5,8 @@
 #include <string.h>
 #include <stdio.h>
 
+enum reg param_int_reg[] = {DI, SI, DX, CX, R8, R9};
+
 static int has_unaligned_fields(const struct typetree *t)
 {
     int i;

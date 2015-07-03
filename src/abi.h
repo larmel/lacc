@@ -3,6 +3,33 @@
 
 #include "type.h"
 
+/* Registers in x86_64 assembly.
+ */
+enum reg {
+    AX = 0,
+    BX,
+    CX,
+    DX,
+    BP,
+    SP,
+    SI,
+    DI,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15
+};
+
+/* Registers used for passing INTEGER parameters.
+ */
+enum reg param_int_reg[6];
+
+/* Number of eightbytes required for a given type.
+ */
 #define N_EIGHTBYTES(t) (((t)->size + 7) / 8)
 
 /* Parameter class of an 8-byte slice of an object.

@@ -17,7 +17,7 @@ void help()
 
 extern struct decl *parse();
 extern void fdotgen(FILE *, const struct decl *);
-extern void fassemble(FILE *, const struct decl *);
+extern void assemble(FILE *, const struct decl *);
 
 int main(int argc, char* argv[])
 {
@@ -71,7 +71,7 @@ int main(int argc, char* argv[])
         }
         if (fun) {
             if (assembly) {
-                fassemble(output, fun);
+                assemble(output, fun);
             } else {
                 fdotgen(output, fun);
             }
