@@ -715,13 +715,44 @@ block(struct block *parent)
     return parent;
 }
 
+static struct switch_context
+{
+    struct block *default_label;
+    struct block **case_label;
+    struct var *case_value;
+    int n;
+} *switch_ctx;
+
+static void add_switch_case(struct block *label, struct var value)
+{
+    struct switch_context *ctx = switch_ctx;
+
+    ctx->n++;
+    ctx->case_label =
+        realloc(ctx->case_label, ctx->n * sizeof(*ctx->case_label));
+    ctx->case_value =
+        realloc(ctx->case_value, ctx->n * sizeof(*ctx->case_value));
+
+    ctx->case_label[ctx->n - 1] = label;
+    ctx->case_value[ctx->n - 1] = value;
+}
+
+static void free_switch_context(struct switch_context *ctx)
+{
+    assert( ctx );
+    if (ctx->n) {
+        free(ctx->case_label);
+        free(ctx->case_value);
+    }
+    free(ctx);
+}
+
 /* Create or expand a block of code. Consecutive statements without branches
  * are stored as a single block, passed as parent. Statements with branches
  * generate new blocks. Returns the current block of execution after the
  * statement is done. For ex: after an if statement, the empty fallback is
  * returned. Caller must keep handles to roots, only the tail is returned. */
-static struct block *
-statement(struct block *parent)
+static struct block *statement(struct block *parent)
 {
     struct block *node;
     struct token tok;
@@ -731,6 +762,10 @@ statement(struct block *parent)
     static struct block *break_target, *continue_target;
     struct block *old_break_target, *old_continue_target;
 
+    /* Keep references to old switch context, pushing a new context on each
+     * 'switch' statement. */
+    struct switch_context *old_switch_ctx;
+
     switch ((tok = peek()).token) {
     case ';':
         consume(';');
@@ -739,138 +774,135 @@ statement(struct block *parent)
     case '{':
         node = block(parent); /* execution continues  */
         break;
-    case SWITCH:
-    case IF:
-        {
-            struct block *right = cfg_block_init(decl),
-                    *next  = cfg_block_init(decl);
+    case IF: {
+        struct block *right = cfg_block_init(decl),
+                *next  = cfg_block_init(decl);
 
-            consume(tok.token);
-            consume('(');
+        consume(tok.token);
+        consume('(');
 
-            /* Node becomes a branch, store the expression as condition variable
-             * and append code to compute the value. parent->expr holds the
-             * result automatically. */
-            parent = expression(parent);
-            consume(')');
+        /* Node becomes a branch, store the expression as condition variable
+         * and append code to compute the value. parent->expr holds the
+         * result automatically. */
+        parent = expression(parent);
+        consume(')');
 
-            parent->jump[0] = next;
-            parent->jump[1] = right;
+        parent->jump[0] = next;
+        parent->jump[1] = right;
 
-            /* The order is important here: Send right as head in new statement
-             * graph, and store the resulting tail as new right, hooking it up
-             * to the fallback of the if statement. */
-            right = statement(right);
-            right->jump[0] = next;
+        /* The order is important here: Send right as head in new statement
+         * graph, and store the resulting tail as new right, hooking it up
+         * to the fallback of the if statement. */
+        right = statement(right);
+        right->jump[0] = next;
 
-            if (peek().token == ELSE) {
-                struct block *left = cfg_block_init(decl);
-                consume(ELSE);
+        if (peek().token == ELSE) {
+            struct block *left = cfg_block_init(decl);
+            consume(ELSE);
 
-                /* Again, order is important: Set left as new jump target for
-                 * false if branch, then invoke statement to get the
-                 * (potentially different) tail. */
-                parent->jump[0] = left;
-                left = statement(left);
+            /* Again, order is important: Set left as new jump target for
+             * false if branch, then invoke statement to get the
+             * (potentially different) tail. */
+            parent->jump[0] = left;
+            left = statement(left);
 
-                left->jump[0] = next;
-            }
-            node = next;
-            break;
+            left->jump[0] = next;
         }
+        node = next;
+        break;
+    }
     case WHILE:
-    case DO:
-        {
-            struct block *top = cfg_block_init(decl),
-                    *body = cfg_block_init(decl),
-                    *next = cfg_block_init(decl);
-            parent->jump[0] = top; /* Parent becomes unconditional jump. */
+    case DO: {
+        struct block *top = cfg_block_init(decl),
+                *body = cfg_block_init(decl),
+                *next = cfg_block_init(decl);
+        parent->jump[0] = top; /* Parent becomes unconditional jump. */
 
-            /* Enter a new loop, remember old break and continue target. */
-            old_break_target = break_target;
-            old_continue_target = continue_target;
-            break_target = next;
-            continue_target = top;
+        /* Enter a new loop, remember old break and continue target. */
+        old_break_target = break_target;
+        old_continue_target = continue_target;
+        break_target = next;
+        continue_target = top;
 
-            consume(tok.token);
+        consume(tok.token);
 
-            if (tok.token == WHILE) {
-                struct block *cond;
+        if (tok.token == WHILE) {
+            struct block *cond;
 
-                consume('(');
-                cond = expression(top);
-                consume(')');
-                cond->jump[0] = next;
-                cond->jump[1] = body;
-
-                /* Generate statement, and get tail end of body to loop back. */
-                body = statement(body);
-                body->jump[0] = top;
-            } else if (tok.token == DO) {
-
-                /* Generate statement, and get tail end of body */
-                body = statement(top);
-                consume(WHILE);
-                consume('(');
-                /* Tail becomes branch. (nb: wrong if tail is return?!) */
-                body = expression(body);
-                body->jump[0] = next;
-                body->jump[1] = top;
-                consume(')');
-            }
-
-            /* Restore previous nested loop */
-            break_target = old_break_target;
-            continue_target = old_continue_target;
-
-            node = next;
-            break;
-        }
-    case FOR:
-        {
-            struct block *top = cfg_block_init(decl),
-                    *body = cfg_block_init(decl),
-                    *increment = cfg_block_init(decl),
-                    *next = cfg_block_init(decl);
-
-            /* Enter a new loop, remember old break and continue target. */
-            old_break_target = break_target;
-            old_continue_target = continue_target;
-            break_target = next;
-            continue_target = increment;
-
-            consume(FOR);
             consume('(');
-            if (peek().token != ';') {
-                parent = expression(parent);
-            }
-            consume(';');
-            if (peek().token != ';') {
-                parent->jump[0] = top;
-                top = expression(top);
-                top->jump[0] = next;
-                top->jump[1] = body;
-                top = (struct block *) parent->jump[0];
-            } else {
-                /* Infinite loop */
-                parent->jump[0] = body;
-                top = body;
-            }
-            consume(';');
-            if (peek().token != ')') {
-                expression(increment)->jump[0] = top;
-            }
+            cond = expression(top);
             consume(')');
+            cond->jump[0] = next;
+            cond->jump[1] = body;
+
+            /* Generate statement, and get tail end of body to loop back. */
             body = statement(body);
-            body->jump[0] = increment;
+            body->jump[0] = top;
+        } else if (tok.token == DO) {
 
-            /* Restore previous nested loop */
-            break_target = old_break_target;
-            continue_target = old_continue_target;
-
-            node = next;
-            break;
+            /* Generate statement, and get tail end of body */
+            body = statement(top);
+            consume(WHILE);
+            consume('(');
+            /* Tail becomes branch. (nb: wrong if tail is return?!) */
+            body = expression(body);
+            body->jump[0] = next;
+            body->jump[1] = top;
+            consume(')');
         }
+
+        /* Restore previous nested loop */
+        break_target = old_break_target;
+        continue_target = old_continue_target;
+
+        node = next;
+        break;
+    }
+    case FOR: {
+        struct block
+            *top = cfg_block_init(decl),
+            *body = cfg_block_init(decl),
+            *increment = cfg_block_init(decl),
+            *next = cfg_block_init(decl);
+
+        /* Enter a new loop, remember old break and continue target. */
+        old_break_target = break_target;
+        old_continue_target = continue_target;
+        break_target = next;
+        continue_target = increment;
+
+        consume(FOR);
+        consume('(');
+        if (peek().token != ';') {
+            parent = expression(parent);
+        }
+        consume(';');
+        if (peek().token != ';') {
+            parent->jump[0] = top;
+            top = expression(top);
+            top->jump[0] = next;
+            top->jump[1] = body;
+            top = (struct block *) parent->jump[0];
+        } else {
+            /* Infinite loop */
+            parent->jump[0] = body;
+            top = body;
+        }
+        consume(';');
+        if (peek().token != ')') {
+            expression(increment)->jump[0] = top;
+        }
+        consume(')');
+        body = statement(body);
+        body->jump[0] = increment;
+
+        /* Restore previous nested loop */
+        break_target = old_break_target;
+        continue_target = old_continue_target;
+
+        node = next;
+        break;
+    }
     case GOTO:
         consume(GOTO);
         consume(IDENTIFIER);
@@ -896,22 +928,96 @@ statement(struct block *parent)
         consume(';');
         node = cfg_block_init(decl); /* orphan */
         break;
-    case CASE:
-    case DEFAULT:
-        /* todo */
-        break;
-    case IDENTIFIER:
-        {
-            const struct symbol *def;
-            if ((
-                def = sym_lookup(&ns_ident, tok.strval)) 
-                && def->symtype == SYM_TYPEDEF
-            ) {
-                node = declaration(parent);
-                break;
+    case SWITCH: {
+        int i;
+        struct block
+            *body, /* First block of switch statement. */
+            *last; /* Last block of switch statement. */
+
+        consume(SWITCH);
+        consume('(');
+        parent = expression(parent);
+        consume(')');
+
+        /* Breaking out of switch reaches next block. */
+        node = cfg_block_init(decl);
+        old_break_target = break_target;
+        break_target = node;
+
+        /* Push new switch context. */
+        old_switch_ctx = switch_ctx;
+        switch_ctx = calloc(1, sizeof(*switch_ctx));
+
+        body = cfg_block_init(decl);
+        last = statement(body);
+        last->jump[0] = node;
+
+        if (!switch_ctx->n && !switch_ctx->default_label) {
+            parent->jump[0] = node;
+        } else {
+            struct block *cond = parent;
+
+            for (i = 0; i < switch_ctx->n; ++i) {
+                struct block *prev_cond = cond;
+                struct block *label = switch_ctx->case_label[i];
+                struct var value = switch_ctx->case_value[i];
+
+                cond = cfg_block_init(decl);
+                cond->expr = eval_expr(cond, IR_OP_EQ, value, parent->expr);
+                cond->jump[1] = label;
+                prev_cond->jump[0] = cond;
             }
-            /* todo: handle label statement. */
+
+            cond->jump[0] = (switch_ctx->default_label) ?
+                switch_ctx->default_label : node;
         }
+
+        free_switch_context(switch_ctx);
+        break_target = old_break_target;
+        switch_ctx = old_switch_ctx;
+        break;
+    }
+    case CASE:
+        consume(CASE);
+        if (!switch_ctx) {
+            error("Stray 'case' label, must be inside a switch statement.");
+            node = parent;
+        } else {
+            struct var expr = constant_expression();
+            consume(':');
+            node = cfg_block_init(decl);
+            add_switch_case(node, expr);
+            parent->jump[0] = node;
+            node = statement(node);
+        }
+        break;
+    case DEFAULT:
+        consume(DEFAULT);
+        consume(':');
+        if (!switch_ctx) {
+            error("Stray 'default' label, must be inside a switch statement.");
+            node = parent;
+        } else if (switch_ctx->default_label) {
+            error("Multiple 'default' labels inside the same switch.");
+            node = parent;
+        } else {
+            node = cfg_block_init(decl);
+            parent->jump[0] = node;
+            switch_ctx->default_label = node;
+            node = statement(node);
+        }
+        break;
+    case IDENTIFIER: {
+        const struct symbol *def;
+        if ((
+            def = sym_lookup(&ns_ident, tok.strval)) 
+            && def->symtype == SYM_TYPEDEF
+        ) {
+            node = declaration(parent);
+            break;
+        }
+        /* todo: handle label statement. */
+    }
     case INTEGER_CONSTANT: /* todo: any constant value */
     case STRING:
     case '*':
@@ -923,6 +1029,7 @@ statement(struct block *parent)
         node = declaration(parent);
         break;
     }
+
     return node;
 }
 
