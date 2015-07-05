@@ -1084,10 +1084,6 @@ static struct block *conditional_expression(struct block *block)
             *f = cfg_block_init(decl),
             *next = cfg_block_init(decl);
 
-        if (!is_scalar(condition.type)) {
-            error("Conditional must be scalar type.");
-        }
-
         consume('?');
         block->jump[0] = f;
         block->jump[1] = t;
@@ -1108,43 +1104,22 @@ static struct block *conditional_expression(struct block *block)
 
 static struct block *logical_or_expression(struct block *block)
 {
-    struct var res;
-    struct block *next,
-            *last = NULL;
-
     block = logical_and_expression(block);
-
     if (peek().token == LOGICAL_OR) {
-        struct symbol *sym = sym_temp(&ns_ident, type_init_integer(4));
-        res = var_direct(sym);
-        sym_list_push_back(&decl->locals, sym);
-        res.lvalue = 1;
-
-        eval_assign(block, res, block->expr);
-
-        last = cfg_block_init(decl);
-    }
-
-    while (peek().token == LOGICAL_OR) {
-        next = cfg_block_init(decl);
+        struct block 
+            *right = cfg_block_init(decl),
+            *next = cfg_block_init(decl);
 
         consume(LOGICAL_OR);
+        block->jump[0] = right;
+        block->jump[1] = next;
 
-        block->jump[1] = last;
-        block->jump[0] = next;
+        right = logical_or_expression(right);
+        right->jump[0] = next;
 
-        next = logical_and_expression(next);
         next->expr =
-            eval_expr(next, IR_OP_LOGICAL_OR, block->expr, next->expr);
-        eval_assign(next, res, next->expr);
-
+            eval_expr(next, IR_OP_LOGICAL_OR, block->expr, right->expr);
         block = next;
-    }
-
-    if (last) {
-        block->jump[0] = last;
-        block = last;
-        block->expr = res;
     }
 
     return block;
@@ -1152,43 +1127,22 @@ static struct block *logical_or_expression(struct block *block)
 
 static struct block *logical_and_expression(struct block *block)
 {
-    struct var res;
-    struct block *next,
-            *last = NULL;
-
     block = inclusive_or_expression(block);
-
     if (peek().token == LOGICAL_AND) {
-        struct symbol *sym = sym_temp(&ns_ident, type_init_integer(4));
-        res = var_direct(sym);
-        sym_list_push_back(&decl->locals, sym);
-        res.lvalue = 1;
-
-        eval_assign(block, res, block->expr);
-
-        last = cfg_block_init(decl);
-    }
-
-    while (peek().token == LOGICAL_AND) {
-        next = cfg_block_init(decl);
+        struct block 
+            *right = cfg_block_init(decl),
+            *next = cfg_block_init(decl);
 
         consume(LOGICAL_AND);
+        block->jump[0] = next;
+        block->jump[1] = right;
 
-        block->jump[0] = last;
-        block->jump[1] = next;
+        right = logical_and_expression(right);
+        right->jump[0] = next;
 
-        next = inclusive_or_expression(next);
         next->expr =
-            eval_expr(next, IR_OP_LOGICAL_AND, block->expr, next->expr);
-        eval_assign(next, res, next->expr);
-
+            eval_expr(next, IR_OP_LOGICAL_AND, block->expr, right->expr);
         block = next;
-    }
-
-    if (last) {
-        block->jump[0] = last;
-        block = last;
-        block->expr = res;
     }
 
     return block;

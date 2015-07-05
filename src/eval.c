@@ -272,14 +272,34 @@ eval_expr_eq(struct block *block, struct var l, struct var r)
 /* 6.5.13-14 Logical AND/OR operator.
  */
 static struct var
-eval_expr_logical(struct block *block, struct var l, struct var r, int e)
+eval_logical_and(struct block *block, struct var left, struct var right)
 {
-    if (!is_scalar(l.type) || !is_scalar(r.type)) {
-        error("Operands must be of scalar type.");
+    if (!is_scalar(left.type) || !is_scalar(right.type)) {
+        error("Operands to logical and must be of scalar type.");
     }
 
-    return eval(block, (e ? IR_OP_LOGICAL_AND : IR_OP_LOGICAL_OR),
-        type_init_integer(4), l, r);
+    if (left.kind == IMMEDIATE && right.kind == IMMEDIATE) {
+        return var_int(left.value.integer && right.value.integer);
+    }
+
+    return eval(block, IR_OP_LOGICAL_AND, type_init_integer(4), left, right);
+}
+
+static struct var
+eval_logical_or(struct block *block, struct var left, struct var right)
+{
+    if (!is_scalar(left.type) || !is_scalar(right.type)) {
+        error("Operands to logical or must be of scalar type.");
+    }
+
+    if ((left.kind == IMMEDIATE && left.value.integer) ||
+        (right.kind == IMMEDIATE && right.value.integer)) {
+        return var_int(1);
+    } else if (left.kind == IMMEDIATE && right.kind == IMMEDIATE) {
+        return var_int(left.value.integer || right.value.integer);
+    }
+
+    return eval(block, IR_OP_LOGICAL_OR, type_init_integer(4), left, right);
 }
 
 /* 6.5.8 Relational operators. Simplified to handle only greater than (>) and
@@ -389,8 +409,8 @@ struct var eval_expr(struct block *block, enum optype optype, ...)
     case IR_OP_EQ:          l = eval_expr_eq(block, l, r);          break;
     case IR_OP_GE:          l = eval_expr_cmp(block, l, r, 1);      break;
     case IR_OP_GT:          l = eval_expr_cmp(block, l, r, 0);      break;
-    case IR_OP_LOGICAL_AND: l = eval_expr_logical(block, l, r, 1);  break;
-    case IR_OP_LOGICAL_OR:  l = eval_expr_logical(block, l, r, 0);  break;
+    case IR_OP_LOGICAL_AND: l = eval_logical_and(block, l, r);      break;
+    case IR_OP_LOGICAL_OR:  l = eval_logical_or(block, l, r);       break;
     case IR_OP_BITWISE_AND:
     case IR_OP_BITWISE_XOR:
     case IR_OP_BITWISE_OR:
@@ -571,7 +591,9 @@ eval_conditional(struct var a, struct block *b, struct block *c)
         *t2 = c->expr.type,
         *type = NULL;
 
-    assert( is_scalar(a.type) );
+    if (!is_scalar(a.type)) {
+        error("Conditional must be scalar type.");
+    }
 
     /* Determine type of the result based on type of b and c. */
     if (is_arithmetic(t1) && is_arithmetic(t2)) {
