@@ -67,6 +67,7 @@ enum token_type
     PLUS = '+',
     MINUS = '-',
     NOT = '!',
+    QUESTION = '?',
     NEG = '~',
 
     HASH = '#',

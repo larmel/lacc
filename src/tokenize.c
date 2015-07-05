@@ -293,6 +293,7 @@ static struct token tokenize(char *in, char **endptr)
         case '+': res.strval = "+"; break;
         case '-': res.strval = "-"; break;
         case '!': res.strval = "!"; break;
+        case '?': res.strval = "?"; break;
         case '~': res.strval = "~"; break;
         case '#': res.strval = "#"; break;
         default:

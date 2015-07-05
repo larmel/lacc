@@ -18,8 +18,8 @@ struct var eval_deref(struct block *, struct var);
 struct var eval_assign(struct block *, struct var, struct var);
 struct var eval_copy(struct block *, struct var);
 struct var eval_call(struct block *, struct var);
-struct var eval_cast(struct block *, struct var,
-                          const struct typetree *);
+struct var eval_cast(struct block *, struct var, const struct typetree *);
+struct var eval_conditional(struct var, struct block *, struct block *);
 void param(struct block *, struct var);
 
 #endif

@@ -1076,7 +1076,34 @@ static struct var constant_expression()
 
 static struct block *conditional_expression(struct block *block)
 {
-    return logical_or_expression(block);
+    block = logical_or_expression(block);
+    if (peek().token == '?') {
+        struct var condition = block->expr;
+        struct block
+            *t = cfg_block_init(decl),
+            *f = cfg_block_init(decl),
+            *next = cfg_block_init(decl);
+
+        if (!is_scalar(condition.type)) {
+            error("Conditional must be scalar type.");
+        }
+
+        consume('?');
+        block->jump[0] = f;
+        block->jump[1] = t;
+
+        t = expression(t);
+        t->jump[0] = next;
+
+        consume(':');
+        f = conditional_expression(f);
+        f->jump[0] = next;
+
+        next->expr = eval_conditional(condition, t, f);
+        block = next;
+    }
+
+    return block;
 }
 
 static struct block *logical_or_expression(struct block *block)

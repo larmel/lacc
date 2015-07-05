@@ -77,6 +77,13 @@ struct var var_void()
     return var;
 }
 
+int is_nullptr(struct var val)
+{
+    return 
+        (val.type->type == INTEGER || val.type->type == POINTER) &&
+        (val.kind == IMMEDIATE && !val.value.integer);
+}
+
 /* Current declaration from parser. Need to add symbols to list whenever new
  * ones are created with sym_temp. And no, that should not be in symtab.c. */
 extern struct decl *decl;
@@ -549,6 +556,55 @@ eval_cast(struct block *block, struct var var, const struct typetree *type)
     }
 
     return res;
+}
+
+/* 6.5.15 Conditional operator.
+ * 
+ *      a ? b : c
+ */
+struct var
+eval_conditional(struct var a, struct block *b, struct block *c)
+{
+    struct var result;
+    const struct typetree
+        *t1 = b->expr.type,
+        *t2 = c->expr.type,
+        *type = NULL;
+
+    assert( is_scalar(a.type) );
+
+    /* Determine type of the result based on type of b and c. */
+    if (is_arithmetic(t1) && is_arithmetic(t2)) {
+        type = usual_arithmetic_conversion(t1, t2);
+    } else if (
+        (t1->type == NONE && t2->type == NONE) ||
+        (t1->type == OBJECT && type_equal(t1, t2)) ||
+        (t1->type == POINTER && t2->type == POINTER && is_compatible(t1, t2)) ||
+        (t1->type == POINTER && is_nullptr(c->expr)))
+    {
+        type = t1;
+    } else if (t2->type == POINTER && is_nullptr(b->expr)) {
+        type = t2;
+    } else {
+        /* The rules are more complex than this, revisit later. */
+        error("Unsupported types in conditional operator.");
+        exit(1);
+    }
+
+    /* Assign variable in end of each block. */
+    result = var_direct(sym_temp(&ns_ident, type));
+    sym_list_push_back(&decl->locals, (struct symbol *) result.symbol);
+    result.lvalue = 1;
+    b->expr = eval_assign(b, result, b->expr);
+    c->expr = eval_assign(c, result, c->expr);
+
+    /* Return immediate values if possible. */
+    if (a.kind == IMMEDIATE) {
+        return (a.value.integer) ? b->expr : c->expr;
+    }
+
+    result.lvalue = 0;
+    return result;
 }
 
 void param(struct block *block, struct var p)
