@@ -295,11 +295,6 @@ static void struct_declaration_list(struct typetree *obj)
 
     do {
         struct typetree *base = declaration_specifiers(NULL);
-        if (!base) {
-            error("Missing type specifier in struct member declaration.");
-            exit(1);
-        }
-
         do {
             struct symbol sym = {0};
 
@@ -360,18 +355,15 @@ enumerator_list()
     }
 }
 
-/* Parse type, storage class and qualifiers. Assume integer type by default.
- * Storage class is returned as token value, and error is raised if there are
- * more than one storage class given.
- * If stc is NULL, parse specifier_qualifier_list and give an error for any 
- * storage class present.
- *
- * This rule can be used to backtrack, i.e. if there is no valid declaration
- * specifier, NULL is returned. */
+/* Parse type, qualifiers and storage class. Do not assume int by default, but
+ * require at least one type specifier. Storage class is returned as token
+ * value, unless the provided pointer is NULL, in which case the input is parsed
+ * as specifier-qualifier-list.
+ */
 static struct typetree *
 declaration_specifiers(enum token_type *stc)
 {
-    int consumed = 0;
+    int done = 0;
     enum token_type sttok = '$';
     struct typetree *type = type_init_integer(4);
     struct symbol *tag = NULL;
@@ -411,7 +403,7 @@ declaration_specifiers(enum token_type *stc)
                 nt.is_const |= type->is_const;
                 *type = nt;
             } else {
-                goto end;
+                done = 1;
             }
             break;
         case CHAR:
@@ -522,12 +514,16 @@ declaration_specifiers(enum token_type *stc)
             consume('}');
             break;
         default:
-            goto end;
+            done = 1;
+            break;
         }
-    } while (++consumed);
-end:
-    if (stc && sttok != '$') *stc = sttok;
-    return consumed ? type : NULL;
+    } while (!done);
+
+    if (stc) {
+        *stc = sttok;   
+    }
+
+    return type;
 }
 
 static struct typetree *
@@ -663,13 +659,15 @@ static struct typetree *parameter_list(const struct typetree *base)
 
     while (peek().token != ')') {
         const char *name;
-        enum token_type stc;
         struct typetree *decl;
 
         name = NULL;
-        decl = declaration_specifiers(&stc);
+        decl = declaration_specifiers(NULL);
         decl = declarator(decl, &name);
         if (decl->type == NONE) {
+            if (type->n) {
+                error("Incomplete type in parameter list.");
+            }
             break;
         }
 
@@ -1332,10 +1330,6 @@ static struct block *cast_expression(struct block *block)
         case FIRST(type_name):
             consume('(');
             type = declaration_specifiers(NULL);
-            if (!type) {
-                error("Invalid cast expression, expected type-name.");
-                exit(1);
-            }
             if (peek().token != ')') {
                 type = declarator(type, NULL);
             }
@@ -1390,10 +1384,6 @@ static struct block *unary_expression(struct block *block)
             case FIRST(type_name):
                 consume('(');
                 type = declaration_specifiers(NULL);
-                if (!type) {
-                    error("Expected type-name.");
-                    exit(1);
-                }
                 if (peek().token != ')') {
                     type = declarator(type, NULL);
                 }
