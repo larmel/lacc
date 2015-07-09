@@ -5,6 +5,67 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static struct typetree V0 = { NONE, 4 }; /* This is a bug, should be 0. */
+static struct typetree I1 = { INTEGER, 1 };
+static struct typetree I2 = { INTEGER, 2 };
+static struct typetree I4 = { INTEGER, 4 };
+static struct typetree I8 = { INTEGER, 8 };
+static struct typetree U1 = { INTEGER, 1, 1 };
+static struct typetree U2 = { INTEGER, 2, 1 };
+static struct typetree U4 = { INTEGER, 4, 1 };
+static struct typetree U8 = { INTEGER, 8, 1 };
+static struct typetree F4 = { REAL, 4 };
+static struct typetree F8 = { REAL, 8 };
+
+struct typetree type_from_specifier(unsigned int spec)
+{
+    switch (spec) {
+    case 0x0001: /* void */
+        return V0;
+    case 0x0002: /* char */
+    case 0x0012: /* signed char */
+        return I1;
+    case 0x0022: /* unsigned char */
+        return U1;
+    case 0x0004: /* short */
+    case 0x0014: /* signed short */
+    case 0x000C: /* short int */
+    case 0x001C: /* signed short int */
+        return I2;
+    case 0x0024: /* unsigned short */
+    case 0x002C: /* unsigned short int */
+        return U2;
+    case 0x0008: /* int */
+    case 0x0010: /* signed */
+    case 0x0018: /* signed int */
+        return I4;
+    case 0x0020: /* unsigned */
+    case 0x0028: /* unsigned int */
+        return U4;
+    case 0x0040: /* long */
+    case 0x0050: /* signed long */
+    case 0x0048: /* long int */
+    case 0x0058: /* signed long int */
+    case 0x00C0: /* long long */
+    case 0x00D0: /* signed long long */
+    case 0x00D8: /* signed long long int */
+        return I8;
+    case 0x0060: /* unsigned long */
+    case 0x0068: /* unsigned long int */
+    case 0x00E0: /* unsigned long long */
+    case 0x00E8: /* unsigned long long int */
+        return U8;
+    case 0x0100: /* float */
+        return F4;
+    case 0x0200: /* double */
+    case 0x0240: /* long double */
+        return F8;
+    default:
+        error("Invalid type specification.");
+        exit(1); 
+    }
+}
+
 struct typetree *type_init_integer(int width)
 {
     struct typetree *type = calloc(1, sizeof(*type));

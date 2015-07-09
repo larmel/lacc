@@ -17,12 +17,13 @@ struct typetree
         NONE        /* void */
     } type;
 
+    int size;    /* Total storage size in bytes, returned for sizeof( ). */
+
+    int is_unsigned;
     int is_const;
     int is_volatile;
-    int is_unsigned;
     int is_vararg;  /* Function takes variable argument list, ... */
 
-    int size;       /* Total storage size in bytes, returned for sizeof( ). */
     int n;          /* Number of function parameters or object members. */
 
     /* Function parameters or struct/union members. */
@@ -42,6 +43,8 @@ struct typetree
 #define is_arithmetic(t) (is_integer(t) || t->type == REAL)
 #define is_scalar(t) (is_arithmetic(t) || t->type == POINTER)
 #define is_aggregate(t) (t->type == ARRAY || t->type == OBJECT)
+
+struct typetree type_from_specifier(unsigned int spec);
 
 struct typetree *type_init_integer(int);
 struct typetree *type_init_pointer(const struct typetree *);

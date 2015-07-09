@@ -20,7 +20,7 @@ struct symbol
         SYM_TENTATIVE,
         SYM_DECLARATION,
         SYM_TYPEDEF,
-        SYM_ENUM
+        SYM_ENUM_VALUE
     } symtype;
 
     /* Visibility of external declarations, or LINK_NONE for other symbols. */
@@ -35,7 +35,7 @@ struct symbol
     int n;
 
     /* Enumeration constants live in the normal symbol table, and always have
-     * integer type. Denoted by symtype SYM_ENUM. */
+     * integer type. Denoted by symtype SYM_ENUM_VALUE. */
     int enum_value;
 
     /* Parameter or local variable offset to base pointer. This is kept as 0

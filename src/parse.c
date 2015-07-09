@@ -285,8 +285,9 @@ static struct block *initializer(struct block *block, struct var target)
     return block;
 }
 
-/* Maybe a bit too clever here: overwriting existing typetree object already in
- * symbol table.
+/* Parse struct declaration list.
+ *
+ *      { int a; long b; }
  */
 static void struct_declaration_list(struct typetree *obj)
 {
@@ -295,41 +296,85 @@ static void struct_declaration_list(struct typetree *obj)
 
     do {
         struct typetree *base = declaration_specifiers(NULL);
+
         do {
             struct symbol sym = {0};
 
             sym.type = declarator(base, &sym.name);
             if (!sym.name) {
-                error("Invalid struct member declarator.");
+                error("Missing name in struct member declarator.");
                 exit(1);
             }
 
             sym_add(&ns, sym);
             type_add_member(obj, sym.type, sym.name);
-
             if (peek().token == ',') {
                 consume(',');
                 continue;
             }
-
         } while (peek().token != ';');
 
         consume(';');
     } while (peek().token != '}');
 
     type_align_struct_members(obj);
-
     pop_scope(&ns);
 }
 
-static void
-enumerator_list()
+/* Parse struct or union declaration.
+ *
+ *      struct foo { ... }
+ */
+static struct typetree *struct_or_union_declaration(void)
+{
+    struct typetree *type;
+
+    next();
+    if (peek().token == IDENTIFIER) {
+        struct token ident = consume(IDENTIFIER);
+        struct symbol *tag = sym_lookup(&ns_tag, ident.strval);
+        if (!tag) {
+            struct symbol arg = { NULL, NULL, SYM_TYPEDEF };
+            arg.name = strdup(ident.strval);
+            arg.type = (type = type_init_object());
+            tag = sym_add(&ns_tag, arg);
+        } else if (is_integer(tag->type)) {
+            error("Tag '%s' was previously defined as enum type.", tag->name);
+            exit(1);
+        }
+
+        /* Retrieve type from existing tag, possibly providing a complete
+         * definition that will be available for later declarations. Overwrites
+         * existing type information from symbol table. */
+        type = (struct typetree *) tag->type;
+        if (peek().token == '{' && type->size) {
+            error("Redefiniton of object '%s'.", tag->name);
+            exit(1);
+        }
+    } else {
+        type = type_init_object();
+    }
+
+    if (peek().token == '{') {
+        consume('{');
+        struct_declaration_list(type);
+        consume('}');
+    }
+
+    return type;
+}
+
+/* Parse enumerator list.
+ *
+ *      { FOO = 1; BAR; }
+ */
+static void enumerator_list(void)
 {
     struct token tok;
-    struct symbol arg = { NULL, NULL, SYM_ENUM };
+    struct symbol arg = { NULL, NULL, SYM_ENUM_VALUE };
 
+    consume('{');
     arg.type = type_init_integer(4);
-
     while (1) {
         tok = consume(IDENTIFIER);
         arg.name = strdup(tok.strval);
@@ -353,6 +398,51 @@ enumerator_list()
 
         break;
     }
+
+    consume('}');
+}
+
+/* Parse enum declaration.
+ *
+ *      enum tag { ... }
+ */
+static struct typetree *enum_declaration(void)
+{
+    struct typetree *type = type_init_integer(4);
+    struct symbol *tag = NULL;
+
+    consume(ENUM);
+    if (peek().token == IDENTIFIER) {
+        struct token ident = next();
+        struct symbol arg = { NULL, NULL, SYM_TYPEDEF };
+
+        arg.name = strdup(ident.strval); /* Remove strdup ? */
+        arg.type = type;
+        tag = sym_lookup(&ns_tag, ident.strval);
+        if (!tag || (tag->depth < ns_tag.current_depth && peek().token == '{'))
+        {
+            tag = sym_add(&ns_tag, arg);
+        } else if (!is_integer(tag->type)) {
+            error("Tag '%s' was previously defined as object type.", tag->name);
+            exit(1);
+        }
+
+        if (peek().token == '{' && tag->enum_value) {
+            error("Redefiniton of enum '%s'.", tag->name);
+            exit(1);
+        }
+    }
+
+    if (peek().token == '{') {
+        enumerator_list();
+        if (tag) {
+            /* Use enum_value as a sentinel to represent definition, checked on 
+             * lookup to detect duplicate definitions. */
+            tag->enum_value = 1;
+        }
+    }
+
+    return type;
 }
 
 /* Parse type, qualifiers and storage class. Do not assume int by default, but
@@ -360,167 +450,117 @@ enumerator_list()
  * value, unless the provided pointer is NULL, in which case the input is parsed
  * as specifier-qualifier-list.
  */
-static struct typetree *
-declaration_specifiers(enum token_type *stc)
+static struct typetree *declaration_specifiers(enum token_type *stc)
 {
+    struct typetree *type = NULL;
+    struct token tok;
     int done = 0;
-    enum token_type sttok = '$';
-    struct typetree *type = type_init_integer(4);
-    struct symbol *tag = NULL;
+
+    /* Use a compact bit representation to hold state about declaration 
+     * specifiers and qualifiers. Initialize storage class to sentinel value. */
+    unsigned int  spec = 0x000;
+    unsigned char qual =  0x00;
+    if (stc)      *stc =   '$';
+
+    #define set_specifier(d) \
+        if (spec & d) error("Duplicate type specifier '%s'.", tok.strval); \
+        next(); spec |= d;
+
+    #define set_qualifier(d) \
+        if (qual & d) error("Duplicate type qualifier '%s'.", tok.strval); \
+        next(); qual |= d;
+
+    #define set_storage_class(s) \
+        if (!stc) error("Unexpected storage class in qualifier list."); \
+        else if (*stc != '$') error("Multiple storage class specifiers."); \
+        next(); *stc = tok.token;
 
     do {
-        struct token tok = peek();
-
-        switch (tok.token) {
-        case CONST:
-            consume(CONST);
-            type->is_const = 1;
+        switch ((tok = peek()).token) {
+        case VOID:      set_specifier(0x001); break;
+        case CHAR:      set_specifier(0x002); break;
+        case SHORT:     set_specifier(0x004); break;
+        case INT:       set_specifier(0x008); break;
+        case SIGNED:    set_specifier(0x010); break;
+        case UNSIGNED:  set_specifier(0x020); break;
+        case LONG:
+            if (spec & 0x040) {
+                set_specifier(0x080);
+            } else {
+                set_specifier(0x040);   
+            }
             break;
-        case VOLATILE:
-            consume(VOLATILE);
-            type->is_volatile = 1;
+        case FLOAT:     set_specifier(0x100); break;
+        case DOUBLE:    set_specifier(0x200); break;
+        case CONST:     set_qualifier(0x01); break;
+        case VOLATILE:  set_qualifier(0x02); break;
+        case IDENTIFIER: {
+            struct symbol *tag = sym_lookup(&ns_ident, tok.strval);
+            if (tag && tag->symtype == SYM_TYPEDEF && !type) {
+                consume(IDENTIFIER);
+                type = calloc(1, sizeof(*type));
+                *type = *tag->type;
+            } else {
+                done = 1;
+            }
+            break;
+        }
+        case UNION:
+        case STRUCT:
+            if (!type) {
+                type = struct_or_union_declaration();
+            } else {
+                done = 1;
+            }
+            break;
+        case ENUM:
+            if (!type) {
+                type = enum_declaration();
+            } else {
+                done = 1;
+            }
             break;
         case AUTO:
         case REGISTER:
         case STATIC:
         case EXTERN:
         case TYPEDEF:
-            if (sttok != '$') {
-                error("Only one storage class specifier allowed.");
-            }
-            if (!stc) {
-                error("Storage class specifier not allowed in qualifier list.");
-            }
-            sttok = next().token;
-            break;
-        case IDENTIFIER:
-            tag = sym_lookup(&ns_ident, tok.strval);
-            if (tag && tag->symtype == SYM_TYPEDEF) {
-                struct typetree nt = *(tag->type);
-                /* todo: validate */
-                consume(IDENTIFIER);
-                nt.is_volatile |= type->is_volatile;
-                nt.is_const |= type->is_const;
-                *type = nt;
-            } else {
-                done = 1;
-            }
-            break;
-        case CHAR:
-            consume(CHAR);
-            type->size = 1;
-            break;
-        case SHORT:
-            consume(SHORT);
-            type->size = 2;
-            break;
-        case INT:
-        case SIGNED:
-            next();
-            type->size = 4;
-            break;
-        case LONG:
-            consume(LONG);
-            type->size = 8;
-            break;
-        case UNSIGNED:
-            consume(UNSIGNED);
-            if (!type->size)
-                type->size = 4;
-            type->is_unsigned = 1;
-            break;
-        case FLOAT:
-            consume(FLOAT);
-            type->type = REAL;
-            type->size = 4;
-            break;
-        case DOUBLE:
-            consume(DOUBLE);
-            type->type = REAL;
-            type->size = 8;
-            break;
-        case VOID:
-            consume(VOID);
-            type->type = NONE;
-            break;
-        case UNION:
-        case STRUCT:
-            next();
-            type->type = OBJECT;
-            type->size = 0;
-            if (peek().token == IDENTIFIER) {
-                struct token ident = consume(IDENTIFIER);
-                tag = sym_lookup(&ns_tag, ident.strval);
-                if (!tag) {
-                    struct symbol arg = { NULL, NULL, SYM_TYPEDEF };
-                    arg.name = strdup(ident.strval);
-                    arg.type = type;
-                    tag = sym_add(&ns_tag, arg);
-                } else if (tag->type->type == INTEGER) {
-                    error("Tag '%s' was previously defined as enum type.",
-                        tag->name);
-                    exit(1);
-                }
-
-                type = (struct typetree *) tag->type;
-                if (peek().token != '{') {
-                    /* Can still have volatile or const after. */
-                    break;
-                } else if (type->size) {
-                    error("Redefiniton of object '%s'.", tag->name);
-                    exit(1);
-                }
-            }
-            consume('{');
-            struct_declaration_list(type);
-            consume('}');
-            break;
-        case ENUM:
-            consume(ENUM);
-            type->type = INTEGER;
-            type->size = 4;
-            if (peek().token == IDENTIFIER) {
-                struct token ident;
-                struct symbol arg = { NULL, NULL, SYM_TYPEDEF };
-
-                ident = consume(IDENTIFIER);
-                arg.name = strdup(ident.strval);
-                arg.type = type;
-                tag = sym_lookup(&ns_tag, ident.strval);
-                if (!tag ||
-                    (tag->depth < ns_tag.current_depth && peek().token == '{')
-                ) {
-                    tag = sym_add(&ns_tag, arg);
-                } else if (tag->type->type != INTEGER) {
-                    error("Tag '%s' was previously defined as object type.",
-                        tag->name);
-                    exit(1);
-                }
-
-                type = (struct typetree *) tag->type;
-                if (peek().token != '{') {
-                    break;
-                } else if (tag->enum_value) {
-                    error("Redefiniton of enum '%s'.", tag->name);
-                    exit(1);
-                }
-            }
-            consume('{');
-            enumerator_list();
-            if (tag) {
-                /* Use enum_value to represent definition. */
-                tag->enum_value = 1;
-            }
-            consume('}');
+            set_storage_class();
             break;
         default:
             done = 1;
             break;
         }
+
+        /* Catch errors early without having a check in too many places. */
+        if (type && spec) {
+            error("Invalid combination of declaration specifiers.");
+            exit(1);
+        }
     } while (!done);
 
-    if (stc) {
-        *stc = sttok;   
+    if (type) {
+        if (qual & 0x01) {
+            if (type->is_const) {
+                error("Duplicate const qualifier.");
+            } else {
+                type->is_const = 1;
+            }
+        }
+
+        if (qual & 0x02) {
+            if (type->is_volatile) {
+                error("Duplicate volatile qualifier.");
+            } else {
+                type->is_volatile = 1;
+            }
+        }
+    } else if (spec) {
+        type = calloc(1, sizeof(*type));
+        *type = type_from_specifier(spec);
+    } else {
+        error("Missing type specifier.");
+        exit(1);
     }
 
     return type;
