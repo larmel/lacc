@@ -111,6 +111,33 @@ eval(   struct block *block, enum optype optype, const struct typetree *type,
     return res;
 }
 
+static struct var
+evaluate(struct block *block, enum optype op, const struct typetree *t, ...)
+{
+    va_list args;
+    struct var res, l, r;
+    struct symbol *sym;
+    struct op irop;
+
+    va_start(args, t);
+    l = va_arg(args, struct var);
+    if (NOPERANDS(op) == 2) {
+        r = va_arg(args, struct var);
+    }
+
+    va_end(args);
+    sym = sym_temp(&ns_ident, t);
+    res = var_direct(sym);
+    sym_list_push_back(&decl->locals, sym);
+
+    irop.type = op;
+    irop.a = res;
+    irop.b = l;
+    irop.c = r;
+    cfg_ir_append(block, irop);
+    return res;
+}
+
 /* 6.5.5 Multiplicative Operators.
  */
 static struct var
@@ -553,29 +580,26 @@ struct var eval_call(struct block *block, struct var func)
     return res;
 }
 
+/* 6.5.4 Cast operators.
+ *
+ *      (long) a
+ */
 struct var
 eval_cast(struct block *block, struct var var, const struct typetree *type)
 {
-    struct op op;
-    struct var res;
-    struct symbol *temp;
-
-    if (var.type->size == type->size) {
-        var.type = type;
-        res = var;
+    if (type->type == NONE) {
+        var = var_void();
+    } else if (is_scalar(var.type) && is_scalar(type)) {
+        if (var.type->size == type->size) {
+            var.type = type;
+        } else {
+            var = evaluate(block, IR_CAST, type, var);
+        }
     } else {
-        temp = sym_temp(&ns_ident, type);
-        res = var_direct(temp);
-
-        op.type = IR_CAST;
-        op.a = res;
-        op.b = var;
-        cfg_ir_append(block, op);
-
-        sym_list_push_back(&decl->locals, temp);
+        error("Invalid type parameters to cast expression.");
     }
 
-    return res;
+    return var;
 }
 
 /* 6.5.15 Conditional operator.

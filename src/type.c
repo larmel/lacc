@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static struct typetree V0 = { NONE, 4 }; /* This is a bug, should be 0. */
+static struct typetree V0 = { NONE };
 static struct typetree I1 = { INTEGER, 1 };
 static struct typetree I2 = { INTEGER, 2 };
 static struct typetree I4 = { INTEGER, 4 };
