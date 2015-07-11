@@ -303,11 +303,13 @@ static void struct_declaration_list(struct typetree *obj)
             sym.type = declarator(base, &sym.name);
             if (!sym.name) {
                 error("Missing name in struct member declarator.");
-                exit(1);
+            } else if (!sym.type->size) {
+                error("Field '%s' has incomplete type.", sym.name);
+            } else {
+                sym_add(&ns, sym);
+                type_add_member(obj, sym.type, sym.name);
             }
 
-            sym_add(&ns, sym);
-            type_add_member(obj, sym.type, sym.name);
             if (peek().token == ',') {
                 consume(',');
                 continue;
@@ -327,6 +329,8 @@ static void struct_declaration_list(struct typetree *obj)
  */
 static struct typetree *struct_or_union_declaration(void)
 {
+    const char *tag_name = NULL;
+    struct typetree *tag_type = NULL;
     struct typetree *type;
 
     next();
@@ -347,6 +351,8 @@ static struct typetree *struct_or_union_declaration(void)
          * definition that will be available for later declarations. Overwrites
          * existing type information from symbol table. */
         type = (struct typetree *) tag->type;
+        tag_type = type;
+        tag_name = tag->name;
         if (peek().token == '{' && type->size) {
             error("Redefiniton of object '%s'.", tag->name);
             exit(1);
@@ -359,6 +365,15 @@ static struct typetree *struct_or_union_declaration(void)
         consume('{');
         struct_declaration_list(type);
         consume('}');
+    }
+
+    /* Return to the caller a copy of the root node, which can be overwritten
+     * with new type qualifiers without altering the tag registration. */
+    if (tag_type) {
+        type = calloc(1, sizeof(*type));
+        *type = *tag_type;
+        type->next = tag_type;
+        type->tag_name = tag_name;
     }
 
     return type;
@@ -545,7 +560,9 @@ static struct typetree *declaration_specifiers(enum token_type *stc)
 
     if (type) {
         if (qual & type->qualifier) {
-            error("Duplicate type qualifiers.");
+            error("Duplicate type qualifier:%s%s.",
+                (qual & 0x01) ? " const" : "",
+                (qual & 0x02) ? " volatile" : "");
         }
     } else if (spec) {
         type = calloc(1, sizeof(*type));
@@ -1535,31 +1552,35 @@ static struct block *postfix_expression(struct block *block)
         case ARROW:
             next();
             tok = consume(IDENTIFIER);
-            if (root.type->type == POINTER && 
-                root.type->next->type == OBJECT)
-            {
+            if (root.type->type != POINTER || root.type->next->type != OBJECT) {
+                error("Cannot access field of non-object type.");
+                exit(1);
+            } else {
                 int i;
                 struct member *field;
+                const struct typetree *obj;
 
-                for (i = 0; i < root.type->next->n; ++i) {
-                    field = &root.type->next->member[i];
+                /* Find field by looking through member list. */
+                obj = type_deref(root.type);
+                assert( obj->type == OBJECT && !obj->next );
+                for (i = 0; i < obj->n; ++i) {
+                    field = obj->member + i;
                     if (!strcmp(tok.strval, field->name)) {
                         break;
                     }
                 }
-                if (i == root.type->next->n) {
-                    error("Invalid field access, no field named %s.",
+
+                if (i == obj->n) {
+                    error("Invalid field access, no member named %s.",
                         tok.strval);
                     exit(1);
                 }
 
-                root.kind = DEREF;
-                root.type = field->type;
+                /* Make it look like a pointer to the field type, then perform
+                 * normal dereferencing. */
+                root.type = type_init_pointer(field->type);
                 root.offset += field->offset;
-                root.lvalue = 1;
-            } else {
-                error("Cannot access field of non-object type.");
-                exit(1);
+                root = eval_deref(block, root);
             }
             break;
         case INCREMENT:

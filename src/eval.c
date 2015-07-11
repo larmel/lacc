@@ -47,19 +47,6 @@ struct var var_int(int value)
     return var;
 }
 
-static struct var var_deref(const struct symbol *symbol, int offset)
-{
-    struct var var = {0};
-    assert(symbol->type->type == POINTER);
-
-    var.kind = DEREF;
-    var.symbol = symbol;
-    var.type = type_deref(symbol->type);
-    var.offset = offset;
-    var.lvalue = 1;
-    return var;
-}
-
 static struct var var_void()
 {
     struct var var = {0};
@@ -450,46 +437,45 @@ struct var eval_addr(struct block *block, struct var var)
     return eval_addr_internal(block, var, type_init_pointer(var.type));
 }
 
-/* Evaluate *a.
- * If DEREF: *(*a'), double deref, evaluate the deref of a', and create 
- *     a new deref variable.
- * If DIRECT: Create a new deref variable, no evaluation.
- * If IMMEDIATE: not implemented.
+/* Evaluate *var.
+ * If DEREF: *(*var'), double deref, evaluate the deref of var' first.
+ * If DIRECT: Convert to deref variable, no evaluation.
  */
 struct var eval_deref(struct block *block, struct var var)
 {
-    struct op op;
-    struct var res;
-    struct symbol *temp;
+    struct var ptr;
+    struct op ir_op;
 
-    switch (var.kind) {
-    case DIRECT:
-        res = var_deref(var.symbol, 0);
-        break;
-    case DEREF:
-        if (var.offset) {
-            var = eval_expr(block, IR_OP_SUB, 
-                var_direct(var.symbol),
-                var_int((long) var.offset));
-        }
-        temp = sym_temp(&ns_ident, type_deref(var.symbol->type));
-        res = var_deref(temp, 0);
+    if (var.kind == DEREF) {
+        assert( var.symbol->type->type == POINTER );
 
-        sym_list_push_back(&decl->locals, temp);
+        /* Cast to char pointer temporarily to avoid pointer arithmetic calling
+         * eval_expr. No actual evaluation is performed by this. */
+        ptr = var_direct(var.symbol);
+        ptr = eval_cast(block, ptr, type_init_pointer(type_init_integer(1)));
+        ptr = eval_expr(block, IR_OP_ADD, ptr, var_int(var.offset));
+        ptr.type = var.symbol->type;
 
-        op.type = IR_DEREF;
-        op.a = res;
-        op.b = var;
+        /* Result is a new symbol. */
+        var = var_direct(sym_temp(&ns_ident, var.type));
+        sym_list_push_back(&decl->locals, (struct symbol *) var.symbol);
 
-        cfg_ir_append(block, op);
-        break;
-    case IMMEDIATE:
-        error("Dereferenced immediate is not supported.");
-        exit(1);
-        break;
+        /* Perform the dereferencing. */
+        ir_op.type = IR_DEREF;
+        ir_op.a = var;
+        ir_op.b = ptr;
+        cfg_ir_append(block, ir_op);
     }
 
-    return res;
+    assert( var.kind == DIRECT );
+    assert( var.type->type == POINTER );
+
+    /* Simply convert a direct reference to a deref. */
+    var.kind = DEREF;
+    var.type = type_deref(var.type);
+    var.lvalue = 1;
+
+    return var;
 }
 
 /* Evaluate a = b.

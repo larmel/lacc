@@ -124,13 +124,7 @@ struct typetree *type_init_void(void)
 
 const struct typetree *type_init_string(size_t length)
 {
-    static struct typetree *base;
-
-    if (!base) {
-        base = type_init_integer(1);
-    }
-
-    return type_init_array(base, length);
+    return type_init_array(&I1, length);
 }
 
 void type_add_member(
@@ -179,22 +173,30 @@ void type_align_struct_members(struct typetree *type)
     }
 }
 
+#define is_tagged(t) ((t)->type == OBJECT && (t)->next)
+
 int type_equal(const struct typetree *a, const struct typetree *b)
 {
     if (!a && !b) return 1;
     if (!a || !b) return 0;
+    if (is_tagged(a) || is_tagged(b)) {
+        assert( a->type == OBJECT && b->type == OBJECT );
+        return a->next == b->next && a->qualifier == b->qualifier;
+    }
 
     if (a->type == b->type
         && a->size == b->size
         && a->n == b->n
+        /*&& a->qualifier == b->qualifier*/
         && is_unsigned(a) == is_unsigned(b)
         && type_equal(a->next, b->next))
     {
         int i;
 
         for (i = 0; i < a->n; ++i) {
-            if (!type_equal(a->member[i].type, b->member[i].type))
+            if (!type_equal(a->member[i].type, b->member[i].type)) {
                 return 0;
+            }
         }
         return 1;   
     }
@@ -208,7 +210,7 @@ int type_equal(const struct typetree *a, const struct typetree *b)
 const struct typetree *
 usual_arithmetic_conversion(const struct typetree *l, const struct typetree *r)
 {
-    assert(is_arithmetic(l) && is_arithmetic(r));
+    assert( is_arithmetic(l) && is_arithmetic(r) );
 
     /* Skip everything dealing with floating point types. */
 
@@ -220,7 +222,7 @@ usual_arithmetic_conversion(const struct typetree *l, const struct typetree *r)
         return usual_arithmetic_conversion(r, l);
     }
 
-    assert(!is_unsigned(l) && is_unsigned(r));
+    assert( !is_unsigned(l) && is_unsigned(r) );
 
     /* Integer promotion. This could be separated out, as it is not only 
      * performed for usual arithmetic conversion. This may also need to be in 
@@ -238,24 +240,32 @@ int is_compatible(const struct typetree *l, const struct typetree *r)
 {
     assert( is_pointer(l) && is_pointer(r) );
 
-    return (type_equal(l, r) || (l->next->size == r->next->size));
+    return type_equal(l, r) || (l->next->size == r->next->size);
 }
 
 const struct typetree *type_deref(const struct typetree *t)
 {
-    if (t->type != POINTER) {
-        char *str = typetostr(t);
-        error("Cannot dereference non-pointer type `%s`.", str);
-        free(str);
-        return NULL;
+    const struct typetree *child = t->next;
+
+    assert( t->type == POINTER );
+
+    /* Unwrap type from tag indirection. The qualifiers have to be copied
+     * explicitly, as they are not part of the tag. */
+    if (child->type == OBJECT && child->next) {
+        struct typetree *type = type_init_object();
+        *type = *t->next->next;
+        type->qualifier = t->next->qualifier;
+        child = type;
     }
-    return t->next;
+
+    return child;
 }
 
-/* Validate that type p can be completed by applying size from q, and return
- * q as the result.
+/* Validate that type p can be completed by applying size from q, and return q
+ * as the result.
  */
-const struct typetree *type_complete(const struct typetree *p, const struct typetree *q)
+const struct typetree *
+type_complete(const struct typetree *p, const struct typetree *q)
 {
     assert(!p->size && q->size);
 
@@ -272,15 +282,22 @@ const struct typetree *type_complete(const struct typetree *p, const struct type
 static int snprinttype(const struct typetree *tree, char *s, int size)
 {
     int i, w = 0;
-    if (!tree)
-        return w;
 
-    if (is_unsigned(tree))
-        w += snprintf(s + w, size - w, "unsigned ");
-    if (is_const(tree))
-        w += snprintf(s + w, size - w, "const ");
-    if (is_volatile(tree))
-        w += snprintf(s + w, size - w, "volatile ");
+    if (!tree) {
+        return w;
+    }
+
+    if (is_const(tree))     w += snprintf(s + w, size - w, "const ");
+    if (is_volatile(tree))  w += snprintf(s + w, size - w, "volatile ");
+
+    if (is_tagged(tree)) {
+        w += snprintf(s + w, size - w, "%s %s",
+            (tree->flags & 0x04) ? "union" : "struct", tree->tag_name);
+        assert( tree->type == OBJECT );
+        return w;
+    }
+
+    if (is_unsigned(tree))  w += snprintf(s + w, size - w, "unsigned ");
 
     switch (tree->type) {
     case INTEGER:
@@ -294,11 +311,8 @@ static int snprinttype(const struct typetree *tree, char *s, int size)
         case 4:
             w += snprintf(s + w, size - w, "int");
             break;
-        case 8:
-            w += snprintf(s + w, size - w, "long");
-            break;
         default:
-            w += snprintf(s + w, size - w, "__int%d", tree->size * 8);
+            w += snprintf(s + w, size - w, "long");
             break;
         }
         break;
@@ -307,11 +321,8 @@ static int snprinttype(const struct typetree *tree, char *s, int size)
         case 4:
             w += snprintf(s + w, size - w, "float");
             break;
-        case 8:
-            w += snprintf(s + w, size - w, "double");
-            break;
         default:
-            w += snprintf(s + w, size - w, "__real%d", tree->size * 8);
+            w += snprintf(s + w, size - w, "double");
             break;
         }
         break;
@@ -357,13 +368,14 @@ static int snprinttype(const struct typetree *tree, char *s, int size)
     default:
         break;
     }
+
     return w;
 }
 
 /* For debug printing and error reporting types. Caller should free memory. */
 char *typetostr(const struct typetree *type)
 {
-    char *text = malloc(512 * sizeof(char));
-    snprinttype(type, text, 511);
+    char *text = malloc(2048 * sizeof(char));
+    snprinttype(type, text, 2047);
     return text;
 }

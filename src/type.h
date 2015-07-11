@@ -3,26 +3,31 @@
 
 #include <stdlib.h>
 
-/* Internal representation of a type. Should fit in four eightbytes.
+/* Internal representation of a type.
  */
 struct typetree
 {
     enum {
-        INTEGER,    /* signed or unsigned integer */
-        REAL,       /* floating point */
+        INTEGER,
+        REAL,
         POINTER,
         FUNCTION,
         ARRAY,
-        OBJECT,     /* struct or union */
-        NONE        /* void */
+        OBJECT,
+        NONE
     } type;
 
-    int size;       /* Total storage size in bytes, returned for sizeof */
+    /* Total storage size in bytes, returned for sizeof */
+    int size;
 
-    unsigned short qualifier;   /*         const  | volatile */
-    unsigned short flags;       /* union | vararg | unsigned */
+    /* Bitfield representing const and volatile qualifiers. */
+    unsigned short qualifier;
 
-    int n;          /* Number of function parameters or object members */
+    /* Bitfield representing union, vararg, and unsigned. */
+    unsigned short flags;
+
+    /* Number of function parameters or object members */
+    int n;
 
     /* Function parameters or struct/union members. */
     struct member {
@@ -31,8 +36,13 @@ struct typetree
         int offset;
     } *member;
 
-    /* Function return value, pointer target, or array base. */
+    /* Function return value, pointer target, array base, or pointer to tagged
+     * struct or union type. */
     const struct typetree *next;
+
+    /* Struct or union tag name, taken from symbol table in order to be able to
+     * print the reference. */
+    const char *tag_name;
 };
 
 /* 6.2.5 Types */
