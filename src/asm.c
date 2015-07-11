@@ -120,15 +120,15 @@ static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
     assert( v.type->size <= t->size );
 
     mov =
-        (v.type->size == 1 && v.type->is_unsigned && t->size == 4) ? "movzbl" :
-        (v.type->size == 1 && v.type->is_unsigned && t->size == 8) ? "movzbq" :
+        (v.type->size == 1 && is_unsigned(v.type) && t->size == 4) ? "movzbl" :
+        (v.type->size == 1 && is_unsigned(v.type) && t->size == 8) ? "movzbq" :
         (v.type->size == 1 && t->size == 4) ? "movsbl" :
         (v.type->size == 1 && t->size == 8) ? "movsbq" :
-        (v.type->size == 2 && v.type->is_unsigned && t->size == 4) ? "movzwl" :
-        (v.type->size == 2 && v.type->is_unsigned && t->size == 8) ? "movzwq" :
+        (v.type->size == 2 && is_unsigned(v.type) && t->size == 4) ? "movzwl" :
+        (v.type->size == 2 && is_unsigned(v.type) && t->size == 8) ? "movzwq" :
         (v.type->size == 2 && t->size == 4) ? "movswl" :
         (v.type->size == 2 && t->size == 8) ? "movswq" :
-        (v.type->size == 4 && v.type->is_unsigned && t->size == 8) ? "movl" :
+        (v.type->size == 4 && is_unsigned(v.type) && t->size == 8) ? "movl" :
         (v.type->size == 4 && t->size == 8) ? "movslq" :
         (v.type->size == t->size && t->size == 4) ? "movl" :
         (v.type->size == t->size && t->size == 8) ? "movq" :
@@ -279,7 +279,7 @@ call(FILE *s, int n, const struct var *args, struct var res, struct var func)
 
     /* For variable argument lists, %al contains the number of vector registers
      * used. */
-    if (func.type->is_vararg) {
+    if (is_vararg(func.type)) {
         fprintf(s, "\tmovl\t$0, %%eax\n");
     }
 
@@ -606,8 +606,8 @@ static void asm_op(FILE *stream, const struct op *op)
         load(stream, op->c, BX);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n",
             reg(BX, op->a.type->size), reg(AX, op->a.type->size));
-        if (op->b.type->is_unsigned) {
-            assert( op->b.type->is_unsigned == op->c.type->is_unsigned );
+        if (is_unsigned(op->b.type)) {
+            assert( is_unsigned(op->c.type) );
             /* When comparison is unsigned, set flag without considering
              * overflow; CF=0 && ZF=0. */ 
             fprintf(stream, "\tseta\t%%al\n");

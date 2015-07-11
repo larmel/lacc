@@ -458,9 +458,9 @@ static struct typetree *declaration_specifiers(enum token_type *stc)
 
     /* Use a compact bit representation to hold state about declaration 
      * specifiers and qualifiers. Initialize storage class to sentinel value. */
-    unsigned int  spec = 0x000;
-    unsigned char qual =  0x00;
-    if (stc)      *stc =   '$';
+    unsigned short spec = 0x0000;
+    unsigned short qual = 0x0000;
+    if (stc)       *stc =    '$';
 
     #define set_specifier(d) \
         if (spec & d) error("Duplicate type specifier '%s'.", tok.strval); \
@@ -532,28 +532,20 @@ static struct typetree *declaration_specifiers(enum token_type *stc)
             break;
         }
 
-        /* Catch errors early without having a check in too many places. */
         if (type && spec) {
+            /* Catch errors early without having a check in too many places. */
             error("Invalid combination of declaration specifiers.");
             exit(1);
         }
     } while (!done);
 
-    if (type) {
-        if (qual & 0x01) {
-            if (type->is_const) {
-                error("Duplicate const qualifier.");
-            } else {
-                type->is_const = 1;
-            }
-        }
+    #undef set_specifier
+    #undef set_qualifier
+    #undef set_storage_class
 
-        if (qual & 0x02) {
-            if (type->is_volatile) {
-                error("Duplicate volatile qualifier.");
-            } else {
-                type->is_volatile = 1;
-            }
+    if (type) {
+        if (qual & type->qualifier) {
+            error("Duplicate type qualifiers.");
         }
     } else if (spec) {
         type = calloc(1, sizeof(*type));
@@ -563,31 +555,39 @@ static struct typetree *declaration_specifiers(enum token_type *stc)
         exit(1);
     }
 
+    type->qualifier |= qual;
     return type;
 }
 
-static struct typetree *
-declarator(struct typetree *base, const char **symbol)
+static struct typetree *declarator(struct typetree *base, const char **symbol)
 {
     while (peek().token == '*') {
         base = pointer(base);
     }
+
     return direct_declarator(base, symbol);
 }
 
-static struct typetree *
-pointer(const struct typetree *base)
+static struct typetree *pointer(const struct typetree *base)
 {
     struct typetree *type = type_init_pointer(base);
 
+    #define set_qualifier(d) \
+        if (type->qualifier & d) \
+            error("Duplicate type qualifier '%s'.", peek().strval); \
+        type->qualifier |= d;
+
     consume('*');
-    while (peek().token == CONST || peek().token == VOLATILE) {
-        if (next().token == CONST) {
-            type->is_const = 1;
-        } else {
-            type->is_volatile = 1;
-        }
+    while (1) {
+        if (peek().token == CONST) {
+            set_qualifier(0x01);
+        } else if (peek().token == VOLATILE) {
+            set_qualifier(0x02);
+        } else break;
+        next();
     }
+
+    #undef set_qualifier
 
     return type;
 }
@@ -727,7 +727,7 @@ static struct typetree *parameter_list(const struct typetree *base)
             exit(1);
         } else if (peek().token == DOTS) {
             consume(DOTS);
-            type->is_vararg = 1;
+            type->flags |= 0x02;
             break;
         }
     }
@@ -1515,7 +1515,7 @@ static struct block *postfix_expression(struct block *block)
                     consume(',');
                 }
             }
-            while (root.type->is_vararg && peek().token != ')') {
+            while (is_vararg(root.type) && peek().token != ')') {
                 consume(',');
                 arg = realloc(arg, (i + 1) * sizeof(struct var));
                 block = assignment_expression(block);

@@ -10,14 +10,14 @@ static struct typetree I1 = { INTEGER, 1 };
 static struct typetree I2 = { INTEGER, 2 };
 static struct typetree I4 = { INTEGER, 4 };
 static struct typetree I8 = { INTEGER, 8 };
-static struct typetree U1 = { INTEGER, 1, 1 };
-static struct typetree U2 = { INTEGER, 2, 1 };
-static struct typetree U4 = { INTEGER, 4, 1 };
-static struct typetree U8 = { INTEGER, 8, 1 };
+static struct typetree U1 = { INTEGER, 1, 0x00, 0x01 };
+static struct typetree U2 = { INTEGER, 2, 0x00, 0x01 };
+static struct typetree U4 = { INTEGER, 4, 0x00, 0x01 };
+static struct typetree U8 = { INTEGER, 8, 0x00, 0x01 };
 static struct typetree F4 = { REAL, 4 };
 static struct typetree F8 = { REAL, 8 };
 
-struct typetree type_from_specifier(unsigned int spec)
+struct typetree type_from_specifier(unsigned short spec)
 {
     switch (spec) {
     case 0x0001: /* void */
@@ -71,6 +71,15 @@ struct typetree *type_init_integer(int width)
     struct typetree *type = calloc(1, sizeof(*type));
     type->type = INTEGER;
     type->size = width;
+    return type;
+}
+
+struct typetree *type_init_unsigned(int width)
+{
+    struct typetree *type = calloc(1, sizeof(*type));
+    type->type = INTEGER;
+    type->size = width;
+    type->flags = 0x01;
     return type;
 }
 
@@ -178,7 +187,7 @@ int type_equal(const struct typetree *a, const struct typetree *b)
     if (a->type == b->type
         && a->size == b->size
         && a->n == b->n
-        && a->is_unsigned == b->is_unsigned
+        && is_unsigned(a) == is_unsigned(b)
         && type_equal(a->next, b->next))
     {
         int i;
@@ -204,14 +213,14 @@ usual_arithmetic_conversion(const struct typetree *l, const struct typetree *r)
     /* Skip everything dealing with floating point types. */
 
     if (type_equal(l, r)) return l;
-    if (l->is_unsigned == r->is_unsigned) return (l->size > r->size) ? l : r;
+    if (is_unsigned(l) == is_unsigned(r)) return (l->size > r->size) ? l : r;
 
     /* Make sure l is signed and r is unsigned */
-    if (l->is_unsigned && !r->is_unsigned) {
+    if (is_unsigned(l) && !is_unsigned(r)) {
         return usual_arithmetic_conversion(r, l);
     }
 
-    assert(!l->is_unsigned && r->is_unsigned);
+    assert(!is_unsigned(l) && is_unsigned(r));
 
     /* Integer promotion. This could be separated out, as it is not only 
      * performed for usual arithmetic conversion. This may also need to be in 
@@ -266,11 +275,11 @@ static int snprinttype(const struct typetree *tree, char *s, int size)
     if (!tree)
         return w;
 
-    if (tree->is_unsigned)
+    if (is_unsigned(tree))
         w += snprintf(s + w, size - w, "unsigned ");
-    if (tree->is_const)
+    if (is_const(tree))
         w += snprintf(s + w, size - w, "const ");
-    if (tree->is_volatile)
+    if (is_volatile(tree))
         w += snprintf(s + w, size - w, "volatile ");
 
     switch (tree->type) {

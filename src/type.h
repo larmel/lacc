@@ -3,28 +3,26 @@
 
 #include <stdlib.h>
 
-/* Internal representation of a type.
+/* Internal representation of a type. Should fit in four eightbytes.
  */
 struct typetree
 {
     enum {
-        INTEGER,    /* (unsigned) char, short, int, long */ 
-        REAL,       /* float, double */
+        INTEGER,    /* signed or unsigned integer */
+        REAL,       /* floating point */
         POINTER,
         FUNCTION,
         ARRAY,
-        OBJECT,     /* struct, union */
+        OBJECT,     /* struct or union */
         NONE        /* void */
     } type;
 
-    int size;    /* Total storage size in bytes, returned for sizeof( ). */
+    int size;       /* Total storage size in bytes, returned for sizeof */
 
-    int is_unsigned;
-    int is_const;
-    int is_volatile;
-    int is_vararg;  /* Function takes variable argument list, ... */
+    unsigned short qualifier;   /*         const  | volatile */
+    unsigned short flags;       /* union | vararg | unsigned */
 
-    int n;          /* Number of function parameters or object members. */
+    int n;          /* Number of function parameters or object members */
 
     /* Function parameters or struct/union members. */
     struct member {
@@ -44,31 +42,38 @@ struct typetree
 #define is_scalar(t) (is_arithmetic(t) || t->type == POINTER)
 #define is_aggregate(t) (t->type == ARRAY || t->type == OBJECT)
 
-struct typetree type_from_specifier(unsigned int spec);
+#define is_const(t) (t->qualifier & 0x01)
+#define is_volatile(t) (t->qualifier & 0x02)
+#define is_unsigned(t) (t->flags & 0x01)
+#define is_vararg(t) (t->flags & 0x02)
+#define is_union(t) (t->flags & 0x04)
 
-struct typetree *type_init_integer(int);
-struct typetree *type_init_pointer(const struct typetree *);
-struct typetree *type_init_array(const struct typetree *, int);
+struct typetree type_from_specifier(unsigned short spec);
+
+struct typetree *type_init_integer(int size);
+struct typetree *type_init_unsigned(int size);
+struct typetree *type_init_pointer(const struct typetree *to);
+struct typetree *type_init_array(const struct typetree *of, int size);
 struct typetree *type_init_function(void);
 struct typetree *type_init_object(void);
 struct typetree *type_init_void(void);
 
-const struct typetree *type_init_string(size_t);
+const struct typetree *type_init_string(size_t length);
 
 void type_add_member(struct typetree *, const struct typetree *, const char *);
-void type_align_struct_members(struct typetree *);
+void type_align_struct_members(struct typetree *type);
 
-int type_equal(const struct typetree *, const struct typetree *);
-
-int is_compatible(const struct typetree *, const struct typetree *);
+int type_equal(const struct typetree *l, const struct typetree *r);
+int is_compatible(const struct typetree *l, const struct typetree *r);
 
 const struct typetree *type_deref(const struct typetree *);
-const struct typetree *type_complete(const struct typetree *,
-                                     const struct typetree *);
 
-const struct typetree *usual_arithmetic_conversion(const struct typetree *l,
-                                                   const struct typetree *r);
+const struct typetree *
+type_complete(const struct typetree *, const struct typetree *);
 
-char *typetostr(const struct typetree *);
+const struct typetree *
+usual_arithmetic_conversion(const struct typetree *l, const struct typetree *r);
+
+char *typetostr(const struct typetree *type);
 
 #endif

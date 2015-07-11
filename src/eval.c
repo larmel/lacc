@@ -190,8 +190,7 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
         r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
         l = evaluate(block, IR_OP_SUB, l.type, l, r);
     } else if (is_pointer(l.type) && is_pointer(r.type)) {
-        struct typetree *type = type_init_integer(8);
-        type->is_unsigned = 1;
+        struct typetree *type = type_init_unsigned(8);
 
         if (!(l.type->next->size && l.type->next->size == r.type->next->size)) {
             error("Referenced type is incomplete.");
