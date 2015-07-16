@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static struct typetree V0 = { NONE };
 static struct typetree I1 = { INTEGER, 1 };
@@ -275,6 +276,21 @@ type_complete(const struct typetree *p, const struct typetree *q)
     }
 
     return q;
+}
+
+const struct member *
+find_type_member(const struct typetree *type, const char *name)
+{
+    int i;
+    assert( type->type == OBJECT );
+
+    for (i = 0; i < type->n; ++i) {
+        if (!strcmp(name, type->member[i].name)) {
+            return type->member + i;
+        }
+    }
+
+    return NULL;
 }
 
 /* Print type to buffer, returning how many characters were written.

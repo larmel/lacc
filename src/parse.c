@@ -1548,29 +1548,20 @@ static struct block *postfix_expression(struct block *block)
             free(arg);
             break;
         case '.':
+            /* There is no short representation of symbol address, so unless
+             * this is a deref there will be a new temporary. */
             root = eval_addr(block, root);
         case ARROW:
             next();
             tok = consume(IDENTIFIER);
-            if (root.type->type != POINTER || root.type->next->type != OBJECT) {
+            if (!is_pointer(root.type) || root.type->next->type != OBJECT) {
                 error("Cannot access field of non-object type.");
                 exit(1);
             } else {
-                int i;
-                struct member *field;
-                const struct typetree *obj;
+                const struct member *field;
 
-                /* Find field by looking through member list. */
-                obj = type_deref(root.type);
-                assert( obj->type == OBJECT && !obj->next );
-                for (i = 0; i < obj->n; ++i) {
-                    field = obj->member + i;
-                    if (!strcmp(tok.strval, field->name)) {
-                        break;
-                    }
-                }
-
-                if (i == obj->n) {
+                field = find_type_member(type_deref(root.type), tok.strval);
+                if (!field) {
                     error("Invalid field access, no member named %s.",
                         tok.strval);
                     exit(1);

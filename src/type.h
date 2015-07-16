@@ -70,10 +70,8 @@ struct typetree *type_init_void(void);
 
 const struct typetree *type_init_string(size_t length);
 
-void type_add_member(struct typetree *, const struct typetree *, const char *);
-void type_align_struct_members(struct typetree *type);
-
 int type_equal(const struct typetree *l, const struct typetree *r);
+
 int is_compatible(const struct typetree *l, const struct typetree *r);
 
 const struct typetree *type_deref(const struct typetree *);
@@ -84,6 +82,19 @@ type_complete(const struct typetree *, const struct typetree *);
 const struct typetree *
 usual_arithmetic_conversion(const struct typetree *l, const struct typetree *r);
 
+void type_add_member(struct typetree *, const struct typetree *, const char *);
+
+void type_align_struct_members(struct typetree *type);
+
+/* Find type member of the given name, meaning struct or union field, or
+ * function parameter. Returns NULL in the case no member is found.
+ */
+const struct member *
+find_type_member(const struct typetree *type, const char *name);
+
+/* Serialize type to string. Allocates memory with malloc, caller is responsible
+ * for calling free.
+ */
 char *typetostr(const struct typetree *type);
 
 #endif
