@@ -1099,19 +1099,62 @@ static struct block *expression(struct block *block)
     return block;
 }
 
-/* todo: Fix this rule (a lot more complicated than this...) */
 static struct block *assignment_expression(struct block *block)
 {
     struct var target;
 
     block = conditional_expression(block);
-    if (peek().token == '=') {
+    target = block->expr;
+    switch (peek().token) {
+    case '=':
         consume('=');
-        target = block->expr;
         block = assignment_expression(block);
-        block->expr = eval_assign(block, target, block->expr);
+        break;
+    case MUL_ASSIGN:
+        consume(MUL_ASSIGN);
+        block = assignment_expression(block);
+        block->expr = eval_expr(block, IR_OP_MUL, target, block->expr);
+        break;
+    case DIV_ASSIGN:
+        consume(DIV_ASSIGN);
+        block = assignment_expression(block);
+        block->expr = eval_expr(block, IR_OP_DIV, target, block->expr);
+        break;
+    case MOD_ASSIGN:
+        consume(MOD_ASSIGN);
+        block = assignment_expression(block);
+        block->expr = eval_expr(block, IR_OP_MOD, target, block->expr);
+        break;
+    case PLUS_ASSIGN:
+        consume(PLUS_ASSIGN);
+        block = assignment_expression(block);
+        block->expr = eval_expr(block, IR_OP_ADD, target, block->expr);
+        break;
+    case MINUS_ASSIGN:
+        consume(MINUS_ASSIGN);
+        block = assignment_expression(block);
+        block->expr = eval_expr(block, IR_OP_SUB, target, block->expr);
+        break;
+    case AND_ASSIGN:
+        consume(AND_ASSIGN);
+        block = assignment_expression(block);
+        block->expr = eval_expr(block, IR_OP_BITWISE_AND, target, block->expr);
+        break;
+    case OR_ASSIGN:
+        consume(OR_ASSIGN);
+        block = assignment_expression(block);
+        block->expr = eval_expr(block, IR_OP_BITWISE_OR, target, block->expr);
+        break;
+    case XOR_ASSIGN:
+        consume(XOR_ASSIGN);
+        block = assignment_expression(block);
+        block->expr = eval_expr(block, IR_OP_BITWISE_XOR, target, block->expr);
+        break;
+    default:
+        return block;
     }
 
+    block->expr = eval_assign(block, target, block->expr);
     return block;
 }
 

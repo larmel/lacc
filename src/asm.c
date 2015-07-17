@@ -559,6 +559,12 @@ static void asm_op(FILE *stream, const struct op *op)
         fprintf(stream, "\tand\t%%rbx, %%rax\n");
         store(stream, AX, op->a);
         break;
+    case IR_OP_BITWISE_OR:
+        load(stream, op->b, AX);
+        load(stream, op->c, BX);
+        fprintf(stream, "\tor\t%%rbx, %%rax\n");
+        store(stream, AX, op->a);
+        break;
     case IR_OP_BITWISE_XOR:
         load(stream, op->b, AX);
         load(stream, op->c, BX);
