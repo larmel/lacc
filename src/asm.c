@@ -679,6 +679,11 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
         if (symbol->linkage == LINK_EXTERN) {
             fprintf(stream, "\t.globl\t%s\n", sym_name(symbol));
         }
+
+        if (is_aggregate(symbol->type)) {
+            fprintf(stream, "\t.align\t16\n");
+        }
+
         fprintf(stream, "%s:\n", sym_name(symbol));
     }
 
