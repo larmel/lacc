@@ -178,7 +178,7 @@ static struct token tokenize(char *in, char **endptr)
 
         { "*=", MUL_ASSIGN },
         { "/=", DIV_ASSIGN },
-        { "%%=", MOD_ASSIGN },
+        { "\x25=", MOD_ASSIGN },
         { "+=", PLUS_ASSIGN },
         { "-=", MINUS_ASSIGN },
         { "<<=", LSHIFT_ASSIGN },
