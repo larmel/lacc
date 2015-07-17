@@ -574,14 +574,18 @@ struct var
 eval_conditional(struct var a, struct block *b, struct block *c)
 {
     struct var result;
-    const struct typetree
-        *t1 = b->expr.type,
-        *t2 = c->expr.type,
-        *type = NULL;
+    const struct typetree *t1, *t2, *type = NULL;
 
     if (!is_scalar(a.type)) {
         error("Conditional must be scalar type.");
     }
+
+    /* Arrays and functions decay into pointers. */
+    b->expr = array_or_func_to_addr(b, b->expr);
+    c->expr = array_or_func_to_addr(c, c->expr);
+
+    t1 = b->expr.type;
+    t2 = c->expr.type;
 
     /* Determine type of the result based on type of b and c. */
     if (is_arithmetic(t1) && is_arithmetic(t2)) {
@@ -596,8 +600,13 @@ eval_conditional(struct var a, struct block *b, struct block *c)
     } else if (t2->type == POINTER && is_nullptr(b->expr)) {
         type = t2;
     } else {
+        extern int VERBOSE;
+
         /* The rules are more complex than this, revisit later. */
         error("Unsupported types in conditional operator.");
+        if (VERBOSE) {
+            error("Operands were '%s' and '%s'.", typetostr(t1), typetostr(t2));
+        }
         exit(1);
     }
 
