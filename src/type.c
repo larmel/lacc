@@ -268,7 +268,9 @@ const struct typetree *type_deref(const struct typetree *t)
 const struct typetree *
 type_complete(const struct typetree *p, const struct typetree *q)
 {
-    assert(!p->size && q->size);
+    /* Functions have no size, quick fix to avoid rejecting functions that are
+     * declared more than once. */
+    assert(p->type == FUNCTION || (!p->size && q->size));
 
     if (p->type != q->type || !type_equal(p->next, q->next)) {
         error("Incompatible specification of incomplete type.");
