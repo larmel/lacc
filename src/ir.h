@@ -39,31 +39,33 @@ struct var
     int lvalue;
 };
 
-/* Three address code optypes. Use second least significant hex digit to mark
- * number of operands. 
+/* Three address code operation types.
  */
 enum optype
 {
-    IR_PARAM = 0x00,    /* param a    */
-    IR_ASSIGN = 0x10,   /* a = b      */
-    IR_DEREF,           /* a = *b     */
-    IR_ADDR,            /* a = &b     */
-    IR_CALL,            /* a = b()    */
-    IR_CAST,            /* a = (T) b  */
-    IR_OP_ADD = 0x20,   /* a = b + c  */
-    IR_OP_SUB,
-    IR_OP_MUL,
-    IR_OP_DIV,
-    IR_OP_MOD,
-    IR_OP_AND,
-    IR_OP_OR,
-    IR_OP_XOR,
-    IR_OP_EQ,           /* a = b == c */
-    IR_OP_GE,           /* a = b >= c */
-    IR_OP_GT            /* a = b > c  */
+    IR_PARAM,    /* param a    */
+    IR_ASSIGN,   /* a = b      */
+    IR_DEREF,    /* a = *b     */
+    IR_ADDR,     /* a = &b     */
+    IR_CALL,     /* a = b()    */
+    IR_CAST,     /* a = (T) b  */
+    IR_OP_ADD,   /* a = b + c  */
+    IR_OP_SUB,   /* a = b - c  */
+    IR_OP_MUL,   /* a = b * c  */
+    IR_OP_DIV,   /* a = b / c  */
+    IR_OP_MOD,   /* a = b % c  */
+    IR_OP_AND,   /* a = b & c  */
+    IR_OP_OR,    /* a = b | c  */
+    IR_OP_XOR,   /* a = b ^ c  */
+    IR_OP_EQ,    /* a = b == c */
+    IR_OP_GE,    /* a = b >= c */
+    IR_OP_GT     /* a = b > c  */
 };
 
-#define NOPERANDS(t) ((int)(t) & 0x20 ? 2 : 1)
+/* Find the number of operands to a given operation type, using the fact that
+ * enumeration constants are sorted by operand count. 
+ */
+#define NOPERANDS(t) ((t) > 5 ? 2 : (t) > 1)
 
 /* CFG block.
  */
