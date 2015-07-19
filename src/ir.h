@@ -55,9 +55,9 @@ enum optype
     IR_OP_MUL,
     IR_OP_DIV,
     IR_OP_MOD,
-    IR_OP_BITWISE_AND,
-    IR_OP_BITWISE_OR,
-    IR_OP_BITWISE_XOR,
+    IR_OP_AND,
+    IR_OP_OR,
+    IR_OP_XOR,
     IR_OP_EQ,           /* a = b == c */
     IR_OP_GE,           /* a = b >= c */
     IR_OP_GT            /* a = b > c  */

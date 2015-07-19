@@ -404,9 +404,9 @@ struct var eval_expr(struct block *block, enum optype op, ...)
     case IR_OP_GT:
         l = eval_expr_cmp(block, l, r, 0);
         break;
-    case IR_OP_BITWISE_AND:
-    case IR_OP_BITWISE_XOR:
-    case IR_OP_BITWISE_OR:
+    case IR_OP_AND:
+    case IR_OP_XOR:
+    case IR_OP_OR:
         /* Ignore immediate evaluation. */
         if (!is_integer(l.type) || !is_integer(r.type)) {
             error("Operands must have integer type.");

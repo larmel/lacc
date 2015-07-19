@@ -125,15 +125,15 @@ static void foutputnode(FILE *stream, map_t *memo, const struct block *node)
             fprintf(stream, " | %s = %s %% %s",
                 vartostr(op.a), vartostr(op.b), vartostr(op.c));
             break;
-        case IR_OP_BITWISE_AND:
+        case IR_OP_AND:
             fprintf(stream, " | %s = %s & %s",
                 vartostr(op.a), vartostr(op.b), vartostr(op.c));
             break;
-        case IR_OP_BITWISE_OR:
+        case IR_OP_OR:
             fprintf(stream, " | %s = %s | %s",
                 vartostr(op.a), vartostr(op.b), vartostr(op.c));
             break;
-        case IR_OP_BITWISE_XOR:
+        case IR_OP_XOR:
             fprintf(stream, " | %s = %s ^ %s",
                 vartostr(op.a), vartostr(op.b), vartostr(op.c));
             break;

@@ -1138,17 +1138,17 @@ static struct block *assignment_expression(struct block *block)
     case AND_ASSIGN:
         consume(AND_ASSIGN);
         block = assignment_expression(block);
-        block->expr = eval_expr(block, IR_OP_BITWISE_AND, target, block->expr);
+        block->expr = eval_expr(block, IR_OP_AND, target, block->expr);
         break;
     case OR_ASSIGN:
         consume(OR_ASSIGN);
         block = assignment_expression(block);
-        block->expr = eval_expr(block, IR_OP_BITWISE_OR, target, block->expr);
+        block->expr = eval_expr(block, IR_OP_OR, target, block->expr);
         break;
     case XOR_ASSIGN:
         consume(XOR_ASSIGN);
         block = assignment_expression(block);
-        block->expr = eval_expr(block, IR_OP_BITWISE_XOR, target, block->expr);
+        block->expr = eval_expr(block, IR_OP_XOR, target, block->expr);
         break;
     default:
         return block;
@@ -1241,7 +1241,7 @@ static struct block *inclusive_or_expression(struct block *block)
         consume('|');
         value = block->expr;
         block = exclusive_or_expression(block);
-        block->expr = eval_expr(block, IR_OP_BITWISE_OR, value, block->expr);
+        block->expr = eval_expr(block, IR_OP_OR, value, block->expr);
     }
 
     return block;
@@ -1256,7 +1256,7 @@ static struct block *exclusive_or_expression(struct block *block)
         consume('^');
         value = block->expr;
         block = and_expression(block);
-        block->expr = eval_expr(block, IR_OP_BITWISE_XOR, value, block->expr);
+        block->expr = eval_expr(block, IR_OP_XOR, value, block->expr);
     }
 
     return block;
@@ -1271,7 +1271,7 @@ static struct block *and_expression(struct block *block)
         consume('&');
         value = block->expr;
         block = equality_expression(block);
-        block->expr = eval_expr(block, IR_OP_BITWISE_AND, value, block->expr);
+        block->expr = eval_expr(block, IR_OP_AND, value, block->expr);
     }
 
     return block;

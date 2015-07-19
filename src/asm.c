@@ -553,19 +553,19 @@ static void asm_op(FILE *stream, const struct op *op)
             store(stream, DX, op->a);
         }
         break;
-    case IR_OP_BITWISE_AND:
+    case IR_OP_AND:
         load(stream, op->b, AX);
         load(stream, op->c, BX);
         fprintf(stream, "\tand\t%%rbx, %%rax\n");
         store(stream, AX, op->a);
         break;
-    case IR_OP_BITWISE_OR:
+    case IR_OP_OR:
         load(stream, op->b, AX);
         load(stream, op->c, BX);
         fprintf(stream, "\tor\t%%rbx, %%rax\n");
         store(stream, AX, op->a);
         break;
-    case IR_OP_BITWISE_XOR:
+    case IR_OP_XOR:
         load(stream, op->b, AX);
         load(stream, op->c, BX);
         fprintf(stream, "\txor\t%%rbx, %%rax\n");
