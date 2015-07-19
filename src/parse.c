@@ -1202,22 +1202,15 @@ static struct block *conditional_expression(struct block *block)
 
 static struct block *logical_or_expression(struct block *block)
 {
+    extern struct block *
+        eval_logical_or(
+            struct block *left, struct block *right_top, struct block *right);
+
     block = logical_and_expression(block);
     if (peek().token == LOGICAL_OR) {
-        struct block 
-            *right = cfg_block_init(decl),
-            *next = cfg_block_init(decl);
-
+        struct block *right = cfg_block_init(decl);
         consume(LOGICAL_OR);
-        block->jump[0] = right;
-        block->jump[1] = next;
-
-        right = logical_or_expression(right);
-        right->jump[0] = next;
-
-        next->expr =
-            eval_expr(next, IR_OP_LOGICAL_OR, block->expr, right->expr);
-        block = next;
+        block = eval_logical_or(block, right, logical_or_expression(right));
     }
 
     return block;
@@ -1225,22 +1218,15 @@ static struct block *logical_or_expression(struct block *block)
 
 static struct block *logical_and_expression(struct block *block)
 {
+    extern struct block *
+        eval_logical_and(
+            struct block *left, struct block *right_top, struct block *right);
+
     block = inclusive_or_expression(block);
     if (peek().token == LOGICAL_AND) {
-        struct block 
-            *right = cfg_block_init(decl),
-            *next = cfg_block_init(decl);
-
+        struct block *right = cfg_block_init(decl);
         consume(LOGICAL_AND);
-        block->jump[0] = next;
-        block->jump[1] = right;
-
-        right = logical_and_expression(right);
-        right->jump[0] = next;
-
-        next->expr =
-            eval_expr(next, IR_OP_LOGICAL_AND, block->expr, right->expr);
-        block = next;
+        block = eval_logical_and(block, right, logical_and_expression(right));
     }
 
     return block;

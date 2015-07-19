@@ -571,24 +571,6 @@ static void asm_op(FILE *stream, const struct op *op)
         fprintf(stream, "\txor\t%%rbx, %%rax\n");
         store(stream, AX, op->a);
         break;
-    case IR_OP_LOGICAL_AND:
-        load(stream, op->b, AX);
-        load(stream, op->c, BX);
-        fprintf(stream, "\tand\t%%rbx, %%rax\n");
-        fprintf(stream, "\tcmp\t$0, %%rax\n");
-        fprintf(stream, "\tsetg\t%%al\n");
-        fprintf(stream, "\tmovzx\t%%al, %%rax\n");
-        store(stream, AX, op->a);
-        break;
-    case IR_OP_LOGICAL_OR:
-        load(stream, op->b, AX);
-        load(stream, op->c, BX);
-        fprintf(stream, "\tor\t%%rbx, %%rax\n");
-        fprintf(stream, "\tcmp\t$0, %%rax\n");
-        fprintf(stream, "\tsetg\t%%al\n");
-        fprintf(stream, "\tmovzx\t%%al, %%rax\n");
-        store(stream, AX, op->a);
-        break;
     case IR_OP_EQ:
         load(stream, op->b, AX);
         load(stream, op->c, BX);

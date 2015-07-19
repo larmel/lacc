@@ -55,8 +55,6 @@ enum optype
     IR_OP_MUL,
     IR_OP_DIV,
     IR_OP_MOD,
-    IR_OP_LOGICAL_AND,
-    IR_OP_LOGICAL_OR,
     IR_OP_BITWISE_AND,
     IR_OP_BITWISE_OR,
     IR_OP_BITWISE_XOR,

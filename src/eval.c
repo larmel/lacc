@@ -243,38 +243,43 @@ static struct var eval_expr_eq(struct block *block, struct var l, struct var r)
     return evaluate(block, IR_OP_EQ, type_init_integer(4), l, r);
 }
 
-/* 6.5.13-14 Logical AND/OR operator.
- */
-static struct var
-eval_logical_and(struct block *block, struct var left, struct var right)
+static struct block *eval_logical_expression(
+    int is_and, /* Logical AND if true, otherwise logical OR. */
+    struct block *left,
+    struct block *right_top,
+    struct block *right)
 {
-    if (!is_scalar(left.type) || !is_scalar(right.type)) {
-        error("Operands to logical and must be of scalar type.");
+    struct block
+        *t = cfg_block_init(decl),
+        *f = cfg_block_init(decl),
+        *r = cfg_block_init(decl);
+
+    /* Result is integer type, assigned in true and false branches to numeric
+     * constant 1 or 0. */
+    r->expr = var_direct(sym_temp(&ns_ident, type_init_integer(4)));
+    sym_list_push_back(&decl->locals, (struct symbol *) r->expr.symbol);
+
+    left->expr = eval_expr(left, IR_OP_EQ, left->expr, var_int(0));
+    if (is_and) {
+        left->jump[0] = right_top;
+        left->jump[1] = f;
+    } else {
+        left->jump[0] = t;
+        left->jump[1] = right_top;
     }
 
-    if (left.kind == IMMEDIATE && right.kind == IMMEDIATE) {
-        return var_int(left.value.integer && right.value.integer);
-    }
+    right->expr = eval_expr(right, IR_OP_EQ, right->expr, var_int(0));
+    right->jump[0] = t;
+    right->jump[1] = f;
 
-    return
-        evaluate(block, IR_OP_LOGICAL_AND, type_init_integer(4), left, right);
-}
+    r->expr.lvalue = 1;
+    eval_assign(t, r->expr, var_int(1));
+    eval_assign(f, r->expr, var_int(0));
+    r->expr.lvalue = 0;
 
-static struct var
-eval_logical_or(struct block *block, struct var left, struct var right)
-{
-    if (!is_scalar(left.type) || !is_scalar(right.type)) {
-        error("Operands to logical or must be of scalar type.");
-    }
-
-    if ((left.kind == IMMEDIATE && left.value.integer) ||
-        (right.kind == IMMEDIATE && right.value.integer)) {
-        return var_int(1);
-    } else if (left.kind == IMMEDIATE && right.kind == IMMEDIATE) {
-        return var_int(left.value.integer || right.value.integer);
-    }
-
-    return evaluate(block, IR_OP_LOGICAL_OR, type_init_integer(4), left, right);
+    t->jump[0] = r;
+    f->jump[0] = r;
+    return r;
 }
 
 /* 6.5.8 Relational operators. Simplified to handle only greater than (>) and
@@ -398,12 +403,6 @@ struct var eval_expr(struct block *block, enum optype op, ...)
         break;
     case IR_OP_GT:
         l = eval_expr_cmp(block, l, r, 0);
-        break;
-    case IR_OP_LOGICAL_AND:
-        l = eval_logical_and(block, l, r);
-        break;
-    case IR_OP_LOGICAL_OR:
-        l = eval_logical_or(block, l, r);
         break;
     case IR_OP_BITWISE_AND:
     case IR_OP_BITWISE_XOR:
@@ -624,6 +623,44 @@ eval_conditional(struct var a, struct block *b, struct block *c)
 
     result.lvalue = 0;
     return result;
+}
+
+/* 6.5.13 Logical AND operator.
+ */
+struct block *eval_logical_or(
+    struct block *left,
+    struct block *right_top,
+    struct block *right)
+{
+    if (!is_scalar(left->expr.type) || !is_scalar(right->expr.type)) {
+        error("Operands to logical or must be of scalar type.");
+    } else if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
+        left->expr =
+            var_int(left->expr.value.integer || right->expr.value.integer);
+    } else {
+        left = eval_logical_expression(0, left, right_top, right);
+    }
+
+    return left;
+}
+
+/* 6.5.14 Logical OR operator.
+ */
+struct block *eval_logical_and(
+    struct block *left,
+    struct block *right_top,
+    struct block *right)
+{
+    if (!is_scalar(left->expr.type) || !is_scalar(right->expr.type)) {
+        error("Operands to logical and must be of scalar type.");
+    } else if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
+        left->expr =
+            var_int(left->expr.value.integer && right->expr.value.integer);
+    } else {
+        left = eval_logical_expression(1, left, right_top, right);
+    }
+
+    return left;
 }
 
 void param(struct block *block, struct var p)
