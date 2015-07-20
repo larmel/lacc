@@ -45,6 +45,8 @@ enum token_type
     XOR_ASSIGN, /* ^= */
     OR_ASSIGN, /* |= */
 
+    TOKEN_PASTE, /* ## */
+
     OR = '|',
     AND = '&',
     XOR = '^',

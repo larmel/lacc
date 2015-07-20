@@ -186,7 +186,6 @@ static struct token tokenize(char *in, char **endptr)
         { "&=", AND_ASSIGN },
         { "^=", XOR_ASSIGN },
         { "|=", OR_ASSIGN },
-
         { "...", DOTS },
         { "||", LOGICAL_OR },
         { "&&", LOGICAL_AND },
@@ -198,7 +197,9 @@ static struct token tokenize(char *in, char **endptr)
         { "++", INCREMENT },
         { "--", DECREMENT },
         { "<<", LSHIFT },
-        { ">>", RSHIFT } /* 54 */
+        { ">>", RSHIFT },
+
+        { "##", TOKEN_PASTE } /* 55 */
     };
 
     int n;
@@ -218,7 +219,7 @@ static struct token tokenize(char *in, char **endptr)
         return res;
     }
 
-    for (n = 0; n < 54; ++n) {
+    for (n = 0; n < 55; ++n) {
         int length = strlen(reserved[n].value);
         if (!strncmp(in, reserved[n].value, length)) {
             if (n < 32 && (isalnum(in[length]) || in[length] == '_')) {
