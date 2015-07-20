@@ -47,6 +47,8 @@ macro_t *definition(struct token name)
 {
     macro_t *macro = NULL;
 
+    assert(name.token == IDENTIFIER);
+
     if (name.strval) {
         macro = map_lookup(&definitions, name.strval);
         if (macro && macro->name.token == IDENTIFIER) {
@@ -141,17 +143,52 @@ char *pastetok(char *buf, struct token t) {
     return buf;
 }
 
+/* Keep track of which macros have been expanded, avoiding recursion by looking
+ * up in this list for each new expansion.
+*/
+static struct {
+    const char *name;
+} *expand_stack;
+static int stack_size;
+
+static void push_expand_stack(const char *macro_name)
+{
+    stack_size++;
+    expand_stack = realloc(expand_stack, stack_size * sizeof(*expand_stack));
+    expand_stack[stack_size - 1].name = macro_name;
+}
+
+static void pop_expand_stack(void)
+{
+    assert(stack_size);
+    stack_size--;
+    expand_stack = realloc(expand_stack, stack_size * sizeof(*expand_stack));
+}
+
+static int is_macro_expanded(const char *macro_name)
+{
+    int i;
+    for (i = 0; i < stack_size; ++i)
+        if (!strcmp(expand_stack[i].name, macro_name))
+            return 1;
+    return 0;
+}
+
+/* Expand a list of tokens, replacing any macro definitions.
+ */
 static toklist_t *expand_toklist(toklist_t *tl)
 {
-    toklist_t *res = toklist_init();
     int i;
+    toklist_t *res = toklist_init();
 
     assert(tl);
     for (i = 0; i < tl->length; ++i) {
-        macro_t *def = definition(tl->elem[i]);
+        macro_t *def;
 
-        /* todo: skip if macro already expanded in this context (depth). */
-        if (def) {
+        if (tl->elem[i].token == IDENTIFIER &&
+            (def = definition(tl->elem[i])) &&
+            !is_macro_expanded(def->name.strval))
+        {
             if (def->type == FUNCTION_LIKE) {
                 internal_error("%s.", "Unsupported macro type.");
                 exit(1);
@@ -161,20 +198,20 @@ static toklist_t *expand_toklist(toklist_t *tl)
             toklist_push_back(res, tl->elem[i]);
         }
     }
-
     return res;
 }
 
+/* Expand a macro with given arguments to a list of tokens.
+ */
 toklist_t *expand_macro(macro_t *def, toklist_t **args)
 {
     int i, n;
     toklist_t *res, *prescanned;
 
     assert(def->type == FUNCTION_LIKE || !args);
-    res = toklist_init();
 
-    /* Rewrite this: First prescan all the params and put into one big replacement
-     * list. Then do regular expand_list on that. No more duplication. */
+    push_expand_stack(def->name.strval);
+    res = toklist_init();
     for (i = 0; i < def->size; ++i) {
         n = def->replacement[i].param;
         if (n) {
@@ -183,27 +220,19 @@ toklist_t *expand_macro(macro_t *def, toklist_t **args)
         } else if (
             i < def->size - 1 &&
             def->replacement[i].token.token == '#' &&
-            def->replacement[i + 1].param
-        ) {
+            def->replacement[i + 1].param)
+        {
             i++;
             n = def->replacement[i].param;
             toklist_push_back(res, toklist_to_string(args[n - 1]));
         } else {
-            macro_t *m = definition(def->replacement[i].token);
-
-            /* Handle only direct self-referencing macros. */
-            if (m && strcmp(m->name.strval, def->name.strval)) {
-                if (m->type == FUNCTION_LIKE) {
-                    internal_error("%s.", "Unsupported macro type.");
-                    exit(1);
-                }
-                toklist_push_back_list(res, expand_macro(m, NULL));
-            } else {
-                toklist_push_back(res, def->replacement[i].token);    
-            }
+            toklist_push_back(res, def->replacement[i].token);
         }
     }
 
+    /* Do regular token expansion after all arguments have been pre-scanned. */
+    res = expand_toklist(res);
+    pop_expand_stack();
     return res;
 }
 

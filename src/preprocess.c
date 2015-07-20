@@ -196,9 +196,9 @@ static void preprocess_directive()
 
 static void expand_token(struct token t)
 {
-    macro_t *def = definition(t);
+    macro_t *def;
 
-    if (def) {
+    if (t.token == IDENTIFIER && (def = definition(t))) {
         int i;
         toklist_t **args = NULL, *res = NULL;
 
