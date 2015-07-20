@@ -221,8 +221,9 @@ static struct token tokenize(char *in, char **endptr)
     for (n = 0; n < 54; ++n) {
         int length = strlen(reserved[n].value);
         if (!strncmp(in, reserved[n].value, length)) {
-            if (n < 32 && isalnum(in[length]))
+            if (n < 32 && (isalnum(in[length]) || in[length] == '_')) {
                 break;
+            }
             res.token = reserved[n].type;
             res.strval = reserved[n].value;
             *endptr = in + length;
