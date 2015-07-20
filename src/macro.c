@@ -201,13 +201,81 @@ static toklist_t *expand_toklist(toklist_t *tl)
     return res;
 }
 
+/* Paste together two tokens, forming a new token which has to be re-scanned
+ * by tokenizer.
+ */
+static struct token paste_tokens(struct token left, struct token right)
+{
+    extern struct token tokenize(char *in, char **endptr);
+    struct token result;
+    size_t length;
+    char *data, *endptr;
+
+    assert(left.strval && right.strval);
+
+    length = strlen(left.strval) + strlen(right.strval);
+    data = calloc(length + 1, sizeof(char));
+    strcpy(data, left.strval);
+    strcat(data, right.strval);
+    result = tokenize(data, &endptr);
+    if (endptr != data + length) {
+        error("Invalid token resulting from pasting '%s' and '%s'.",
+            left.strval, right.strval);
+        exit(1);
+    }
+    free(data);
+
+    return result;
+}
+
+/* Resolve token pasting with '##' operator.
+ */
+static toklist_t *expand_paste_operators(toklist_t *list)
+{
+    int i = 1,  /* Index into list. */
+        j = 0;  /* Index into result. */
+    toklist_t *res = (list->length) ? toklist_init() : list;
+
+    if (!list->length) {
+        return res;
+    }
+    if (list->elem[0].token == TOKEN_PASTE) {
+        error("Invalid token paste operator at beginning of line.");
+        exit(1);
+    }
+    if (list->elem[list->length - 1].token == TOKEN_PASTE) {
+        error("Invalid token paste operator at end of line.");
+        exit(1);
+    }
+
+    /* Overwrite last element in result list for each paste occurrence. */
+    toklist_push_back(res, list->elem[0]);
+    for (; i < list->length - 1; ++i) {
+        if (list->elem[i].token == TOKEN_PASTE) {
+            struct token
+                left = res->elem[j],
+                right = list->elem[i + 1];
+            res->elem[j] = paste_tokens(left, right);
+            i += 1;
+        } else {
+            toklist_push_back(res, list->elem[i]);
+            j += 1;
+        }
+    }
+
+    /* Include last element unless it has already been pasted. */
+    if (i < list->length) {
+        toklist_push_back(res, list->elem[i]);
+    }
+    return res;
+}
+
 /* Expand a macro with given arguments to a list of tokens.
  */
 toklist_t *expand_macro(macro_t *def, toklist_t **args)
 {
     int i, n;
     toklist_t *res, *prescanned;
-
     assert(def->type == FUNCTION_LIKE || !args);
 
     push_expand_stack(def->name.strval);
@@ -229,10 +297,10 @@ toklist_t *expand_macro(macro_t *def, toklist_t **args)
             toklist_push_back(res, def->replacement[i].token);
         }
     }
-
-    /* Do regular token expansion after all arguments have been pre-scanned. */
+    res = expand_paste_operators(res);
     res = expand_toklist(res);
     pop_expand_stack();
+
     return res;
 }
 

@@ -137,7 +137,7 @@ static const char *strtostr(char *in, char **endptr)
 /* Parse and return next preprocessing token, from char buffer where comments
  * are removed and line continuations are applied.
  */
-static struct token tokenize(char *in, char **endptr)
+struct token tokenize(char *in, char **endptr)
 {
     static struct {
         const char *value;
