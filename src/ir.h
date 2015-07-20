@@ -67,6 +67,8 @@ enum optype
  */
 #define NOPERANDS(t) ((t) > 5 ? 2 : (t) > 1)
 
+#define IS_COMPARISON(t) ((t) > 13)
+
 /* CFG block.
  */
 struct block

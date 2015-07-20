@@ -611,46 +611,114 @@ static void asm_op(FILE *stream, const struct op *op)
     }
 }
 
-static void
-asm_block(FILE *stream,
-          map_t *memo,
-          const struct block *block,
-          const enum param_class *res)
+static void asm_block(
+    FILE *stream,
+    map_t *memo,
+    const struct block *block,
+    const enum param_class *res);
+
+static void tail_cmp_jump(
+    FILE *stream,
+    map_t *memo,
+    const struct block *block,
+    const enum param_class *res)
+{
+    struct op *cmp = block->code + block->n - 1;
+
+    /* Target of assignment should be temporary, thus we do not lose any side
+     * effects from not storing the value to stack. */
+    assert(!cmp->a.lvalue);
+
+    load(stream, cmp->b, AX);
+    load(stream, cmp->c, BX);
+    fprintf(stream, "\tcmp\t%%%s, %%%s\n",
+        reg(BX, cmp->a.type->size), reg(AX, cmp->a.type->size));
+    switch (cmp->type) {
+    case IR_OP_EQ:
+        fprintf(stream, "\tje\t%s\n", block->jump[1]->label);
+        break;
+    case IR_OP_GE:
+        fprintf(stream, "\t%s\t%s\n",
+            (is_unsigned(cmp->b.type) ? "jae" : "jge"), block->jump[1]->label);
+        break;
+    case IR_OP_GT:
+        fprintf(stream, "\t%s\t%s\n",
+            (is_unsigned(cmp->b.type) ? "ja" : "jg"), block->jump[1]->label);
+        break;
+    default:
+        assert(0);
+    }
+
+    if (map_lookup(memo, block->jump[0]->label)) {
+        fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
+    }
+
+    asm_block(stream, memo, block->jump[0], res);
+    asm_block(stream, memo, block->jump[1], res);
+}
+
+static void tail_generic(
+    FILE *stream,
+    map_t *memo,
+    const struct block *block,
+    const enum param_class *res)
+{
+    if (!block->jump[0] && !block->jump[1]) {
+        if (*res != PC_NO_CLASS) {
+            ret(stream, block->expr, res);
+        }
+
+        fprintf(stream, "\tleaveq\n");
+        fprintf(stream, "\tretq\n");
+    } else if (!block->jump[1]) {
+        if (map_lookup(memo, block->jump[0]->label)) {
+            fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
+        }
+
+        asm_block(stream, memo, block->jump[0], res);
+    } else {
+        load(stream, block->expr, AX);
+        fprintf(stream, "\tcmpq\t$0, %%rax\n");
+        fprintf(stream, "\tje\t%s\n", block->jump[0]->label);
+        if (map_lookup(memo, block->jump[1]->label)) {
+            fprintf(stream, "\tjmp\t%s\n", block->jump[1]->label);
+        }
+
+        asm_block(stream, memo, block->jump[1], res);
+        asm_block(stream, memo, block->jump[0], res);
+    }
+}
+
+static void asm_block(
+    FILE *stream,
+    map_t *memo,
+    const struct block *block,
+    const enum param_class *res)
 {
     int i;
 
-    assert( block && res );
+    assert(block && res);
 
     if (!map_lookup(memo, block->label)) {
         map_insert(memo, block->label, (void*)"done");
         fprintf(stream, "%s:\n", block->label);
-        for (i = 0; i < block->n; ++i) {
+        for (i = 0; i < block->n - 1; ++i) {
             asm_op(stream, block->code + i);
         }
 
-        if (!block->jump[0] && !block->jump[1]) {
-            if (*res != PC_NO_CLASS) {
-                ret(stream, block->expr, res);
-            }
-
-            fprintf(stream, "\tleaveq\n");
-            fprintf(stream, "\tretq\n");
-        } else if (!block->jump[1]) {
-            if (map_lookup(memo, block->jump[0]->label)) {
-                fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
-            }
-
-            asm_block(stream, memo, block->jump[0], res);
+        /* Special case on comparison + jump, saving some space by not writing
+         * the result of comparison (always a temporary). */
+        if (
+            block->n && IS_COMPARISON(block->code[i].type) &&
+            block->jump[0] && block->jump[1])
+        {
+            tail_cmp_jump(stream, memo, block, res);
         } else {
-            load(stream, block->expr, AX);
-            fprintf(stream, "\tcmpq\t$0, %%rax\n");
-            fprintf(stream, "\tje\t%s\n", block->jump[0]->label);
-            if (map_lookup(memo, block->jump[1]->label)) {
-                fprintf(stream, "\tjmp\t%s\n", block->jump[1]->label);
+            if (block->n) {
+                asm_op(stream, block->code + i);
             }
 
-            asm_block(stream, memo, block->jump[1], res);
-            asm_block(stream, memo, block->jump[0], res);
+            tail_generic(stream, memo, block, res);
         }
     }
 }
