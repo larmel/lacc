@@ -5,14 +5,16 @@
 #include "input.h"
 #include "preprocess.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
 
 int VERBOSE = 0;
 
-void help()
+void help(void)
 {
-    fprintf(stderr, "Usage: lcc [-S] [-v] [-I <path>] [-o <file>] [file]\n");
+    fprintf(stderr,
+        "Usage: lcc [-S] [-E] [-v] [-I <path>] [-o <file>] [file]\n");
 }
 
 extern struct decl *parse();
@@ -22,13 +24,21 @@ extern void assemble(FILE *, const struct decl *);
 int main(int argc, char* argv[])
 {
     char *input = NULL;
-    int c, assembly = 0;
     FILE *output = stdout;
+    int c;
+    enum {
+        OUT_DOT,
+        OUT_ASSEMBLY,
+        OUT_PREPROCESSED
+    } output_mode = OUT_DOT;
 
-    while ((c = getopt(argc, argv, "So:vI:")) != -1) {
+    while ((c = getopt(argc, argv, "SEo:vI:")) != -1) {
         switch (c) {
         case 'S':
-            assembly = 1;
+            output_mode = OUT_ASSEMBLY;
+            break;
+        case 'E':
+            output_mode = OUT_PREPROCESSED;
             break;
         case 'o':
             output = fopen(optarg, "w");
@@ -53,43 +63,47 @@ int main(int argc, char* argv[])
     }
 
     init(input);
+    if (output_mode == OUT_PREPROCESSED) {
+        preprocess(output);
+    } else {
+        push_scope(&ns_ident);
+        push_scope(&ns_tag);
 
-    push_scope(&ns_ident);
-    push_scope(&ns_tag);
+        register_builtin_definitions();
+        register_builtin_types(&ns_ident);
 
-    register_builtin_definitions();
-    register_builtin_types(&ns_ident);
-
-    while (1) {
-        struct decl *fun = parse();
-        if (errors || !fun) {
-            if (errors) {
-                error("Aborting because of previous %s.",
-                    (errors > 1) ? "errors" : "error");
+        while (1) {
+            struct decl *fun = parse();
+            if (errors || !fun) {
+                if (errors) {
+                    error("Aborting because of previous %s.",
+                        (errors > 1) ? "errors" : "error");
+                }
+                break;
             }
-            break;
-        }
-        if (fun) {
-            if (assembly) {
-                assemble(output, fun);
-            } else {
-                fdotgen(output, fun);
+            if (fun) {
+                if (output_mode == OUT_ASSEMBLY) {
+                    assemble(output, fun);
+                } else {
+                    assert(output_mode == OUT_DOT);
+                    fdotgen(output, fun);
+                }
+                cfg_finalize(fun);
             }
-            cfg_finalize(fun);
         }
-    }
 
-    pop_scope(&ns_tag);
-    pop_scope(&ns_ident);
+        pop_scope(&ns_tag);
+        pop_scope(&ns_ident);
 
-    if (assembly) {
-        output_definitions(output);
-        output_strings(output);
-    }
+        if (output_mode == OUT_ASSEMBLY) {
+            output_definitions(output);
+            output_strings(output);
+        }
 
-    if (VERBOSE) {
-        output_symbols(stdout, &ns_ident);
-        output_symbols(stdout, &ns_tag);
+        if (VERBOSE) {
+            output_symbols(stdout, &ns_ident);
+            output_symbols(stdout, &ns_tag);
+        }
     }
 
     return errors;

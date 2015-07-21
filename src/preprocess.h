@@ -1,6 +1,8 @@
 #ifndef PREPROCESS_H
 #define PREPROCESS_H
 
+#include <stdio.h>
+
 /* Simple numerical value to identify the type of token. Start on 256 to skip
  * the range of ASCII number, which are later explicitly assigned to single-
  * character tokens. This lets us refer to f.ex the PLUS token type as literal
@@ -107,5 +109,9 @@ struct token next();
 struct token peek();
 struct token peekn(unsigned);
 struct token consume(enum token_type);
+
+/* Output preprocessed input to provided stream, toggled by -E program option.
+ */
+void preprocess(FILE *output);
 
 #endif

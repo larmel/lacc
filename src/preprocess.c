@@ -336,6 +336,25 @@ struct token consume(enum token_type expected) {
     return t;
 }
 
+void preprocess(FILE *output)
+{
+    do {
+        int ws = 0;
+        preprocess_line();
+        while (
+            cursor < lookahead.length &&
+            lookahead.elem[cursor].token != END)
+        {
+            if (ws) {
+                putc(' ', output);
+            }
+            fprintf(output, "%s", lookahead.elem[cursor++].strval);
+            ws = 1;
+        }
+        fputc('\n', output);
+    } while (lookahead.elem[cursor].token != END);
+}
+
 /* Parse and evaluate token stream corresponding to constant expression.
  * Operators handled in preprocessing expressions are: 
  *  * Integer constants.
