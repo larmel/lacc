@@ -47,6 +47,15 @@ struct var var_int(int value)
     return var;
 }
 
+struct var var_zero(int size)
+{
+    struct var var = {0};
+    var.kind = IMMEDIATE;
+    var.type = type_init_integer(size);
+    var.value.integer = 0;
+    return var;
+}
+
 static struct var var_void()
 {
     struct var var = {0};

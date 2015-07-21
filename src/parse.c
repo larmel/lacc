@@ -222,32 +222,37 @@ declaration(struct block *parent)
  */
 static struct block *initializer(struct block *block, struct var target)
 {
-    int i;
-    const struct typetree *type;
-
     assert(target.kind == DIRECT);
 
     if (peek().token == '{') {
-        type = target.type;
-        target.lvalue = 1;
+        int i = 0,
+            base = target.offset, /* Initially filled offset. */
+            cursor = 0;           /* Currently filled offset. */
+        const struct typetree *type = target.type;
+
         consume('{');
+        target.lvalue = 1;
         switch (type->type) {
         case OBJECT:
-            for (i = 0; i < type->n; ++i) {
+            for (; i < type->n; ++i) {
                 target.type = type->member[i].type;
-                target.offset = type->member[i].offset;
+                target.offset = base + type->member[i].offset;
                 block = initializer(block, target);
-                if (i < type->n - 1) {
-                    consume(',');
+                if (peek().token != ',') {
+                    cursor = (i < type->n - 1) ?
+                        type->member[i + 1].offset : type->size;
+                    break;
                 }
+                consume(',');
             }
             break;
         case ARRAY:
             target.type = type->next;
-            for (i = 0; !type->size || i < type->size / type->next->size; ++i) {
+            for (; !type->size || i < type->size / type->next->size; ++i) {
+                target.offset = base + i * type->next->size;
                 block = initializer(block, target);
-                target.offset += type->next->size;
                 if (peek().token != ',') {
+                    cursor = target.offset + type->next->size;
                     break;
                 }
                 consume(',');
@@ -258,16 +263,26 @@ static struct block *initializer(struct block *block, struct var target)
                 assert(!target.symbol->type->size);
                 assert(target.symbol->type->type == ARRAY);
 
-                ((struct typetree *) target.symbol->type)->size = target.offset;
-            }
-            if (target.offset < type->size) {
-                error("Incomplete array initializer is not yet supported.");
+                ((struct typetree *) target.symbol->type)->size = cursor;
             }
             break;
         default:
             error("Block initializer only apply to array or object type.");
             exit(1);
         }
+        /* Initialize the rest to zero, choosing greedily from largest possible
+         * integer width for assignment. */
+        while (cursor < type->size) {
+            struct var zero;
+            int w = type->size - cursor;
+            w = (w >= 8) ? 8 : (w > 4) ? 4 : (w == 3) ? 2 : w;
+            zero = var_zero(w);
+            target.offset = base + cursor;
+            target.type = zero.type;
+            eval_assign(block, target, zero);
+            cursor += w;
+        }
+        target.lvalue = 0;
         consume('}');
     } else {
         block = assignment_expression(block);
