@@ -5,7 +5,6 @@
 
 #include <stdlib.h>
 
-
 typedef struct {
     struct token name;
     enum { OBJECT_LIKE, FUNCTION_LIKE } type;
@@ -18,7 +17,6 @@ typedef struct {
         struct token token;
         int param;
     } *replacement;
-
 } macro_t;
 
 typedef struct toklist {
@@ -45,6 +43,5 @@ macro_t *definition(struct token);
 toklist_t *expand_macro(macro_t *, toklist_t **);
 
 void register_builtin_definitions();
-
 
 #endif

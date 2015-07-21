@@ -7,7 +7,6 @@
 #include <string.h>
 #include <ctype.h>
 
-
 static map_t definitions;
 
 void define_macro(macro_t *macro)
@@ -18,13 +17,13 @@ void define_macro(macro_t *macro)
 void define(struct token name, struct token subst)
 {
     macro_t *macro;
-
     assert(name.strval);
 
     macro = map_lookup(&definitions, name.strval);
     if (!macro) {
-        macro_t *p = malloc(sizeof(macro_t));
+        macro_t *p = calloc(1, sizeof(*p));
         p->name = name;
+        p->type = OBJECT_LIKE;
         p->replacement = malloc(1 * sizeof(struct macro_subst_t));
         p->replacement[0].token = subst;
         p->replacement[0].param = 0;
