@@ -817,11 +817,11 @@ static void free_switch_context(struct switch_context *ctx)
     free(ctx);
 }
 
-/* Create or expand a block of code. Consecutive statements without branches
- * are stored as a single block, passed as parent. Statements with branches
- * generate new blocks. Returns the current block of execution after the
- * statement is done. For ex: after an if statement, the empty fallback is
- * returned. Caller must keep handles to roots, only the tail is returned. */
+/* Create or expand a block of code. Consecutive statements without branches are
+ * stored as a single block, passed as parent. Statements with branches generate
+ * new blocks. Returns the current block of execution after the statement is
+ * done. For ex: after an if statement, the empty fallback is returned. Caller
+ * must keep handles to roots, only the tail is returned. */
 static struct block *statement(struct block *parent)
 {
     struct block *node;
@@ -829,12 +829,39 @@ static struct block *statement(struct block *parent)
 
     /* Store reference to top of loop, for resolving break and continue. Use
      * call stack to keep track of depth, backtracking to the old value. */
-    static struct block *break_target, *continue_target;
-    struct block *old_break_target, *old_continue_target;
+    static struct block
+        *break_target,
+        *continue_target;
+
+    struct block
+        *old_break_target,
+        *old_continue_target;
 
     /* Keep references to old switch context, pushing a new context on each
-     * 'switch' statement. */
+     * switch statement. */
     struct switch_context *old_switch_ctx;
+
+    #define is_immediate_true(e) \
+        (e).kind == IMMEDIATE && \
+        (e).type->type == INTEGER && (e).value.integer
+
+    #define is_immediate_false(e) \
+        (e).kind == IMMEDIATE && \
+        (e).type->type == INTEGER && !(e).value.integer
+
+    #define set_break_target(brk) \
+        old_break_target = break_target; \
+        break_target = (brk); \
+
+    #define set_continue_target(cont) \
+        old_continue_target = continue_target; \
+        continue_target = (cont);
+
+    #define restore_break_target() \
+        break_target = old_break_target;
+
+    #define restore_continue_target() \
+        continue_target = old_continue_target;
 
     switch ((tok = peek()).token) {
     case ';':
@@ -842,11 +869,12 @@ static struct block *statement(struct block *parent)
         node = parent;
         break;
     case '{':
-        node = block(parent); /* execution continues  */
+        node = block(parent); /* Execution continues. */
         break;
     case IF: {
-        struct block *right = cfg_block_init(decl),
-                *next  = cfg_block_init(decl);
+        struct block
+            *right = cfg_block_init(decl),
+            *next  = cfg_block_init(decl);
 
         consume(tok.token);
         consume('(');
@@ -856,13 +884,18 @@ static struct block *statement(struct block *parent)
          * result automatically. */
         parent = expression(parent);
         consume(')');
-
-        parent->jump[0] = next;
-        parent->jump[1] = right;
+        if (is_immediate_true(parent->expr)) {
+            parent->jump[0] = right;
+        } else if (is_immediate_false(parent->expr)) {
+            parent->jump[0] = next;
+        } else {
+            parent->jump[0] = next;
+            parent->jump[1] = right;
+        }
 
         /* The order is important here: Send right as head in new statement
-         * graph, and store the resulting tail as new right, hooking it up
-         * to the fallback of the if statement. */
+         * graph, and store the resulting tail as new right, hooking it up to
+         * the fallback of the if statement. */
         right = statement(right);
         right->jump[0] = next;
 
@@ -870,9 +903,9 @@ static struct block *statement(struct block *parent)
             struct block *left = cfg_block_init(decl);
             consume(ELSE);
 
-            /* Again, order is important: Set left as new jump target for
-             * false if branch, then invoke statement to get the
-             * (potentially different) tail. */
+            /* Again, order is important: Set left as new jump target for false
+             * if branch, then invoke statement to get the (potentially
+             * different) tail. */
             parent->jump[0] = left;
             left = statement(left);
 
@@ -883,27 +916,29 @@ static struct block *statement(struct block *parent)
     }
     case WHILE:
     case DO: {
-        struct block *top = cfg_block_init(decl),
-                *body = cfg_block_init(decl),
-                *next = cfg_block_init(decl);
+        struct block
+            *top = cfg_block_init(decl),
+            *body = cfg_block_init(decl),
+            *next = cfg_block_init(decl);
         parent->jump[0] = top; /* Parent becomes unconditional jump. */
 
-        /* Enter a new loop, remember old break and continue target. */
-        old_break_target = break_target;
-        old_continue_target = continue_target;
-        break_target = next;
-        continue_target = top;
-
+        set_break_target(next);
+        set_continue_target(top);
         consume(tok.token);
-
         if (tok.token == WHILE) {
             struct block *cond;
 
             consume('(');
             cond = expression(top);
             consume(')');
-            cond->jump[0] = next;
-            cond->jump[1] = body;
+            if (is_immediate_true(cond->expr)) {
+                cond->jump[0] = body;
+            } else if (is_immediate_false(cond->expr)) {
+                cond->jump[0] = next;
+            } else {
+                cond->jump[0] = next;
+                cond->jump[1] = body;
+            }
 
             /* Generate statement, and get tail end of body to loop back. */
             body = statement(body);
@@ -914,17 +949,21 @@ static struct block *statement(struct block *parent)
             body = statement(top);
             consume(WHILE);
             consume('(');
+
             /* Tail becomes branch. (nb: wrong if tail is return?!) */
             body = expression(body);
-            body->jump[0] = next;
-            body->jump[1] = top;
+            if (is_immediate_true(body->expr)) {
+                body->jump[0] = top;
+            } else if (is_immediate_false(body->expr)) {
+                body->jump[0] = next;
+            } else {
+                body->jump[0] = next;
+                body->jump[1] = top;
+            }
             consume(')');
         }
-
-        /* Restore previous nested loop */
-        break_target = old_break_target;
-        continue_target = old_continue_target;
-
+        restore_break_target();
+        restore_continue_target();
         node = next;
         break;
     }
@@ -935,12 +974,8 @@ static struct block *statement(struct block *parent)
             *increment = cfg_block_init(decl),
             *next = cfg_block_init(decl);
 
-        /* Enter a new loop, remember old break and continue target. */
-        old_break_target = break_target;
-        old_continue_target = continue_target;
-        break_target = next;
-        continue_target = increment;
-
+        set_break_target(next);
+        set_continue_target(increment);
         consume(FOR);
         consume('(');
         if (peek().token != ';') {
@@ -950,8 +985,14 @@ static struct block *statement(struct block *parent)
         if (peek().token != ';') {
             parent->jump[0] = top;
             top = expression(top);
-            top->jump[0] = next;
-            top->jump[1] = body;
+            if (is_immediate_true(top->expr)) {
+                top->jump[0] = body;
+            } else if (is_immediate_false(top->expr)) {
+                top->jump[0] = next;
+            } else {
+                top->jump[0] = next;
+                top->jump[1] = body;
+            }
             top = (struct block *) parent->jump[0];
         } else {
             /* Infinite loop */
@@ -966,10 +1007,8 @@ static struct block *statement(struct block *parent)
         body = statement(body);
         body->jump[0] = increment;
 
-        /* Restore previous nested loop */
-        break_target = old_break_target;
-        continue_target = old_continue_target;
-
+        restore_break_target();
+        restore_continue_target();
         node = next;
         break;
     }
@@ -1011,8 +1050,7 @@ static struct block *statement(struct block *parent)
 
         /* Breaking out of switch reaches next block. */
         node = cfg_block_init(decl);
-        old_break_target = break_target;
-        break_target = node;
+        set_break_target(node);
 
         /* Push new switch context. */
         old_switch_ctx = switch_ctx;
@@ -1043,7 +1081,7 @@ static struct block *statement(struct block *parent)
         }
 
         free_switch_context(switch_ctx);
-        break_target = old_break_target;
+        restore_break_target();
         switch_ctx = old_switch_ctx;
         break;
     }
@@ -1079,9 +1117,9 @@ static struct block *statement(struct block *parent)
         break;
     case IDENTIFIER: {
         const struct symbol *def;
-        if ((
-            def = sym_lookup(&ns_ident, tok.strval)) 
-            && def->symtype == SYM_TYPEDEF
+        if (
+            (def = sym_lookup(&ns_ident, tok.strval)) &&
+            def->symtype == SYM_TYPEDEF
         ) {
             node = declaration(parent);
             break;
@@ -1099,6 +1137,13 @@ static struct block *statement(struct block *parent)
         node = declaration(parent);
         break;
     }
+
+    #undef is_immediate_true
+    #undef is_immediate_false
+    #undef set_break_target
+    #undef set_continue_target
+    #undef restore_break_target
+    #undef restore_continue_target
 
     return node;
 }
