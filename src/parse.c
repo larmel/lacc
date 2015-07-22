@@ -824,7 +824,6 @@ static void free_switch_context(struct switch_context *ctx)
  * must keep handles to roots, only the tail is returned. */
 static struct block *statement(struct block *parent)
 {
-    struct block *node;
     struct token tok;
 
     /* Store reference to top of loop, for resolving break and continue. Use
@@ -866,10 +865,9 @@ static struct block *statement(struct block *parent)
     switch ((tok = peek()).token) {
     case ';':
         consume(';');
-        node = parent;
         break;
     case '{':
-        node = block(parent); /* Execution continues. */
+        parent = block(parent);
         break;
     case IF: {
         struct block
@@ -911,7 +909,7 @@ static struct block *statement(struct block *parent)
 
             left->jump[0] = next;
         }
-        node = next;
+        parent = next;
         break;
     }
     case WHILE:
@@ -964,7 +962,7 @@ static struct block *statement(struct block *parent)
         }
         restore_break_target();
         restore_continue_target();
-        node = next;
+        parent = next;
         break;
     }
     case FOR: {
@@ -1009,7 +1007,7 @@ static struct block *statement(struct block *parent)
 
         restore_break_target();
         restore_continue_target();
-        node = next;
+        parent = next;
         break;
     }
     case GOTO:
@@ -1021,13 +1019,12 @@ static struct block *statement(struct block *parent)
     case CONTINUE:
     case BREAK:
         consume(tok.token);
-        parent->jump[0] = (tok.token == CONTINUE) ? 
-            continue_target :
-            break_target;
+        parent->jump[0] = (tok.token == CONTINUE) ?
+            continue_target : break_target;
         consume(';');
-        /* Return orphan node, which is dead code unless there is a label
-         * and a goto statement. */
-        node = cfg_block_init(decl); 
+        /* Return orphan node, which is dead code unless there is a label and a
+         * goto statement. */
+        parent = cfg_block_init(decl); 
         break;
     case RETURN:
         consume(RETURN);
@@ -1035,13 +1032,14 @@ static struct block *statement(struct block *parent)
             parent = expression(parent);
         }
         consume(';');
-        node = cfg_block_init(decl); /* orphan */
+        parent = cfg_block_init(decl); /* orphan */
         break;
     case SWITCH: {
         int i;
         struct block
             *body, /* First block of switch statement. */
-            *last; /* Last block of switch statement. */
+            *last, /* Last block of switch statement. */
+            *next;
 
         consume(SWITCH);
         consume('(');
@@ -1049,8 +1047,8 @@ static struct block *statement(struct block *parent)
         consume(')');
 
         /* Breaking out of switch reaches next block. */
-        node = cfg_block_init(decl);
-        set_break_target(node);
+        next = cfg_block_init(decl);
+        set_break_target(next);
 
         /* Push new switch context. */
         old_switch_ctx = switch_ctx;
@@ -1058,10 +1056,10 @@ static struct block *statement(struct block *parent)
 
         body = cfg_block_init(decl);
         last = statement(body);
-        last->jump[0] = node;
+        last->jump[0] = next;
 
         if (!switch_ctx->n && !switch_ctx->default_label) {
-            parent->jump[0] = node;
+            parent->jump[0] = next;
         } else {
             struct block *cond = parent;
 
@@ -1077,26 +1075,27 @@ static struct block *statement(struct block *parent)
             }
 
             cond->jump[0] = (switch_ctx->default_label) ?
-                switch_ctx->default_label : node;
+                switch_ctx->default_label : next;
         }
 
         free_switch_context(switch_ctx);
         restore_break_target();
         switch_ctx = old_switch_ctx;
+        parent = next;
         break;
     }
     case CASE:
         consume(CASE);
         if (!switch_ctx) {
             error("Stray 'case' label, must be inside a switch statement.");
-            node = parent;
         } else {
+            struct block *next = cfg_block_init(decl);
             struct var expr = constant_expression();
             consume(':');
-            node = cfg_block_init(decl);
-            add_switch_case(node, expr);
-            parent->jump[0] = node;
-            node = statement(node);
+            add_switch_case(next, expr);
+            parent->jump[0] = next;
+            next = statement(next);
+            parent = next;
         }
         break;
     case DEFAULT:
@@ -1104,15 +1103,14 @@ static struct block *statement(struct block *parent)
         consume(':');
         if (!switch_ctx) {
             error("Stray 'default' label, must be inside a switch statement.");
-            node = parent;
         } else if (switch_ctx->default_label) {
             error("Multiple 'default' labels inside the same switch.");
-            node = parent;
         } else {
-            node = cfg_block_init(decl);
-            parent->jump[0] = node;
-            switch_ctx->default_label = node;
-            node = statement(node);
+            struct block *next = cfg_block_init(decl);
+            parent->jump[0] = next;
+            switch_ctx->default_label = next;
+            next = statement(next);
+            parent = next;
         }
         break;
     case IDENTIFIER: {
@@ -1121,7 +1119,7 @@ static struct block *statement(struct block *parent)
             (def = sym_lookup(&ns_ident, tok.strval)) &&
             def->symtype == SYM_TYPEDEF
         ) {
-            node = declaration(parent);
+            parent = declaration(parent);
             break;
         }
         /* todo: handle label statement. */
@@ -1130,11 +1128,11 @@ static struct block *statement(struct block *parent)
     case STRING:
     case '*':
     case '(':
-        node = expression(parent);
+        parent = expression(parent);
         consume(';');
         break;
     default:
-        node = declaration(parent);
+        parent = declaration(parent);
         break;
     }
 
@@ -1145,7 +1143,7 @@ static struct block *statement(struct block *parent)
     #undef restore_break_target
     #undef restore_continue_target
 
-    return node;
+    return parent;
 }
 
 static struct block *expression(struct block *block)
