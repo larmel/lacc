@@ -194,10 +194,10 @@ declaration(struct block *parent)
             for (i = 0; i < sym->type->n; ++i) {
                 struct symbol sarg = {
                     SYM_DEFINITION,
-                    LINK_NONE,
+                    LINK_NONE
                 };
                 sarg.name = arg.type->member[i].name;
-                sarg.type = sym->type->member[i].type;;
+                sarg.type = sym->type->member[i].type;
                 if (!sarg.name) {
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
@@ -500,10 +500,10 @@ static struct typetree *declaration_specifiers(enum token_type *stc)
         if (qual & d) error("Duplicate type qualifier '%s'.", tok.strval); \
         next(); qual |= d;
 
-    #define set_storage_class(s) \
+    #define set_storage_class(t) \
         if (!stc) error("Unexpected storage class in qualifier list."); \
         else if (*stc != '$') error("Multiple storage class specifiers."); \
-        next(); *stc = tok.token;
+        next(); *stc = t;
 
     do {
         switch ((tok = peek()).token) {
@@ -555,7 +555,7 @@ static struct typetree *declaration_specifiers(enum token_type *stc)
         case STATIC:
         case EXTERN:
         case TYPEDEF:
-            set_storage_class();
+            set_storage_class(tok.token);
             break;
         default:
             done = 1;
