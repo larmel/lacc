@@ -115,9 +115,9 @@ static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
 {
     const char *mov;
 
-    assert( is_integer(t) );
-    assert( t->size == 4 || t->size == 8 );
-    assert( v.type->size <= t->size );
+    assert(is_integer(t) || is_pointer(t));
+    assert(t->size == 4 || t->size == 8);
+    assert(v.type->size <= t->size);
 
     mov =
         (v.type->size == 1 && is_unsigned(v.type) && t->size == 4) ? "movzbl" :
@@ -134,7 +134,7 @@ static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
         (v.type->size == t->size && t->size == 8) ? "movq" :
         NULL;
 
-    assert( mov );
+    assert(mov);
 
     switch (v.kind) {
     case DIRECT:
@@ -142,8 +142,16 @@ static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
             mov, refer(v), reg(r, t->size), v.symbol->name);
         break;
     case DEREF:
-        assert(v.symbol->depth);
-        fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
+        /* Suspiciously similar to refer(), should consider refactoring. */
+        if (v.symbol->linkage != LINK_NONE) {
+            if (v.type->type == ARRAY || v.type->type == FUNCTION) {
+                fprintf(s, "\tmovq\t$%s, %%r10\n", sym_name(v.symbol));
+            } else {
+                fprintf(s, "\tmovq\t%s(%%rip), %%r10\n", sym_name(v.symbol));
+            }
+        } else {
+            fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
+        }
         fprintf(s, "\t%s\t%d(%%r10), %%%s\t# load *%s\n",
             mov, v.offset, reg(r, t->size), v.symbol->name);
         break;
@@ -166,7 +174,11 @@ static void load(FILE *s, struct var v, enum reg r)
         /* We only operate with 32 or 64 bit register values, but variables can
          * be stored with byte or short width. Promote to 32 bit if required. */
         t.size = (t.size < 4) ? 4 : t.size;
-        t.type = (t.type == POINTER || t.type == OBJECT) ? INTEGER : t.type;
+        if (t.type == OBJECT) {
+            assert(t.size <= 8);
+            t.type = INTEGER;
+            t.flags = 0x0001; /* Unsigned. */
+        }
         load_as(s, v, r, &t);
     }
 }
