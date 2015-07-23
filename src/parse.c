@@ -300,15 +300,16 @@ static struct block *initializer(struct block *block, struct var target)
     return block;
 }
 
-/* Parse struct declaration list.
+/* Parse struct declaration list. Return size of largest member.
  *
  *      { int a; long b; }
  */
-static void struct_declaration_list(struct typetree *obj)
+static int struct_declaration_list(struct typetree *obj)
 {
     struct namespace ns = {0};
-    push_scope(&ns);
+    int size = 0;
 
+    push_scope(&ns);
     do {
         struct typetree *base = declaration_specifiers(NULL);
 
@@ -324,7 +325,9 @@ static void struct_declaration_list(struct typetree *obj)
                 sym_add(&ns, sym);
                 type_add_member(obj, sym.type, sym.name);
             }
-
+            if (sym.type->size > size) {
+                size = sym.type->size;
+            }
             if (peek().token == ',') {
                 consume(',');
                 continue;
@@ -334,8 +337,8 @@ static void struct_declaration_list(struct typetree *obj)
         consume(';');
     } while (peek().token != '}');
 
-    type_align_struct_members(obj);
     pop_scope(&ns);
+    return size;
 }
 
 /* Parse struct or union declaration.
@@ -347,8 +350,9 @@ static struct typetree *struct_or_union_declaration(void)
     const char *tag_name = NULL;
     struct typetree *tag_type = NULL;
     struct typetree *type;
+    enum token_type token = next().token;
+    int size;
 
-    next();
     if (peek().token == IDENTIFIER) {
         struct token ident = consume(IDENTIFIER);
         struct symbol *tag = sym_lookup(&ns_tag, ident.strval);
@@ -358,7 +362,11 @@ static struct typetree *struct_or_union_declaration(void)
             arg.type = (type = type_init_object());
             tag = sym_add(&ns_tag, arg);
         } else if (is_integer(tag->type)) {
-            error("Tag '%s' was previously defined as enum type.", tag->name);
+            error("Tag '%s' was previously declared as enum.", tag->name);
+            exit(1);
+        } else if (is_union(tag->type) != (token == UNION)) {
+            error("Tag '%s' was previously declared as %s.", tag->name,
+                (token == UNION) ? "struct" : "union");
             exit(1);
         }
 
@@ -376,10 +384,21 @@ static struct typetree *struct_or_union_declaration(void)
         type = type_init_object();
     }
 
+    if (token == UNION) {
+        /* Magic value in type object to separate between struct and union. */
+        type->flags |= 0x04;
+    }
+
     if (peek().token == '{') {
         consume('{');
-        struct_declaration_list(type);
+        size = struct_declaration_list(type);
         consume('}');
+        if (token == STRUCT) {
+            type_align_struct_members(type);
+        } else {
+            assert(token == UNION);
+            type->size = size;
+        }
     }
 
     /* Return to the caller a copy of the root node, which can be overwritten

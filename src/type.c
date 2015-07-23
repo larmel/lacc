@@ -136,6 +136,7 @@ void type_add_member(
 
     type->member[type->n - 1].type = member;
     type->member[type->n - 1].name = name;
+    type->member[type->n - 1].offset = 0;
 }
 
 void type_align_struct_members(struct typetree *type)

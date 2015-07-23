@@ -56,7 +56,7 @@ struct typetree
 #define is_volatile(t) (t->qualifier & 0x02)
 #define is_unsigned(t) (t->flags & 0x01)
 #define is_vararg(t) (t->flags & 0x02)
-#define is_union(t) (t->flags & 0x04)
+#define is_union(t) (((t)->flags & 0x04) != 0)
 
 struct typetree type_from_specifier(unsigned short spec);
 
