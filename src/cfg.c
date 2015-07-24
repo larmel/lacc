@@ -7,7 +7,7 @@
 
 DEFINE_LIST_IMPLEMENTATION(sym_list, struct symbol *)
 
-static const char *mklabel()
+const char *mklabel(void)
 {
     static int n;
 

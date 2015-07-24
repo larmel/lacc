@@ -1622,9 +1622,8 @@ static struct block *postfix_expression(struct block *block)
                 error("Calling non-function symbol.");
                 exit(1);
             }
-            arg = malloc(sizeof(struct var) * root.type->n);
-
             consume('(');
+            arg = malloc(sizeof(struct var) * root.type->n);
             for (i = 0; i < root.type->n; ++i) {
                 if (peek().token == ')') {
                     error("Too few arguments to %s, expected %d but got %d.",
@@ -1701,6 +1700,50 @@ static struct block *postfix_expression(struct block *block)
     }
 }
 
+/* Parse call to builtin symbol __builtin_va_start, which is the result of
+ * calling va_start(arg, s). Return type depends on second input argument.
+ */
+static struct block *parse__builtin_va_start(struct block *block)
+{
+    struct symbol *sym;
+    struct token param;
+
+    consume('(');
+    block = assignment_expression(block);
+    consume(',');
+    param = consume(IDENTIFIER);
+    sym = sym_lookup(&ns_ident, param.strval);
+    if (!sym || sym->depth != 1 || !decl->fun || !decl->fun->type->n ||
+        strcmp(decl->fun->type->member[decl->fun->type->n - 1].name,
+            param.strval))
+    {
+        error("Second parameter of va_start must be last function argument.");
+        exit(1);
+    }
+    consume(')');
+    block->expr = eval__builtin_va_start(block, block->expr);
+    return block;
+}
+
+/* Parse call to builtin symbol __builtin_va_arg, which is the result of calling
+ * va_arg(arg, T). Return type depends on second input argument.
+ */
+static struct block *parse__builtin_va_arg(struct block *block)
+{
+    struct typetree *type;
+
+    consume('(');
+    block = assignment_expression(block);
+    consume(',');
+    type = declaration_specifiers(NULL);
+    if (peek().token != ')') {
+        type = declarator(type, NULL);
+    }
+    consume(')');
+    block->expr = eval__builtin_va_arg(block, block->expr, type);
+    return block;
+}
+
 static struct block *primary_expression(struct block *block)
 {
     const struct symbol *sym;
@@ -1713,7 +1756,17 @@ static struct block *primary_expression(struct block *block)
             error("Undefined symbol '%s'.", tok.strval);
             exit(1);
         }
-        block->expr = var_direct(sym);
+        /* Special handling for builtin pseudo functions. These are expected to
+         * behave as macros, thus should be no problem parsing as function call
+         * in primary expression. Constructs like (va_arg)(args, int) will not
+         * work with this scheme. */
+        if (!strcmp("__builtin_va_start", sym->name)) {
+            block = parse__builtin_va_start(block);
+        } else if (!strcmp("__builtin_va_arg", sym->name)) {
+            block = parse__builtin_va_arg(block);
+        } else {
+            block->expr = var_direct(sym);
+        }
         break;
     case INTEGER_CONSTANT:
         block->expr = var_int(tok.intval);

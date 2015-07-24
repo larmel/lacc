@@ -679,3 +679,29 @@ void param(struct block *block, struct var p)
     op.a = array_or_func_to_addr(block, p);
     cfg_ir_append(block, op);
 }
+
+struct var eval__builtin_va_start(struct block *block, struct var arg)
+{
+    struct op op = { IR_VA_START };
+
+    op.a = arg;
+    cfg_ir_append(block, op);
+    return var_void();
+}
+
+struct var eval__builtin_va_arg(
+    struct block *block,
+    struct var arg,
+    const struct typetree *type)
+{
+    struct op op = { IR_VA_ARG };
+    struct var result;
+
+    result = var_direct(sym_temp(&ns_ident, type));
+    sym_list_push_back(&decl->locals, (struct symbol *) result.symbol);
+
+    op.a = result;
+    op.b = arg;
+    cfg_ir_append(block, op);
+    return result;
+}

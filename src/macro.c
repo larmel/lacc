@@ -360,6 +360,40 @@ toklist_t *expand_macro(macro_t *def, toklist_t **args)
     return res;
 }
 
+static void register__builtin_va_end(void)
+{
+    extern struct token tokenize(char *in, char **endptr);
+
+    macro_t *p;
+    struct token name = { IDENTIFIER, "__builtin_va_end" };
+    char *str =
+        "@[0].gp_offset=0;" /* Each line has 9 tokens. */
+        "@[0].fp_offset=0;"
+        "@[0].overflow_arg_area=(void*)0;" /* Each line has 13 tokens. */
+        "@[0].reg_save_area=(void*)0;";
+    char *endptr;
+    int i;
+
+    p = calloc(1, sizeof(*p));
+    p->name = name;
+    p->type = FUNCTION_LIKE;
+    p->params = 1;
+    p->size = 44;
+    p->replacement = calloc(p->size, sizeof(*p->replacement));
+    for (i = 0; i < p->size; ++i) {
+        if (*str == '@') {
+            p->replacement[i].param = 1;
+            str++;
+        } else {
+            p->replacement[i].token = tokenize(str, &endptr);
+            assert(str != endptr);
+            str = endptr;
+        }
+    }
+
+    define_macro(p);
+}
+
 void register_builtin_definitions()
 {
     struct token 
@@ -386,4 +420,6 @@ void register_builtin_definitions()
     valu.token = STRING;
     valu.strval = current_file.path;
     define( name, valu );
+
+    register__builtin_va_end();
 }

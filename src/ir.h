@@ -59,7 +59,16 @@ enum optype
     IR_OP_XOR,   /* a = b ^ c  */
     IR_OP_EQ,    /* a = b == c */
     IR_OP_GE,    /* a = b >= c */
-    IR_OP_GT     /* a = b > c  */
+    IR_OP_GT,    /* a = b > c  */
+
+    /* Call va_start(a), setting reg_save_area and overflow_arg_area. This,
+     * together with va_arg assumes some details about memory layout that can
+     * only be known by backend, thus the need for these operations. */
+    IR_VA_START,
+
+    /* Call a = va_arg(b, T), with type T taken from a. Intercepted as call to
+     * __builtin_va_arg in parser. */
+    IR_VA_ARG
 };
 
 /* Find the number of operands to a given operation type, using the fact that

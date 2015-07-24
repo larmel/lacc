@@ -149,6 +149,13 @@ static void foutputnode(FILE *stream, map_t *memo, const struct block *node)
             fprintf(stream, " | %s = %s \\>= %s",
                 vartostr(op.a), vartostr(op.b), vartostr(op.c));
             break;
+        case IR_VA_START:
+            fprintf(stream, " | va_start(%s)", vartostr(op.a));
+            break;
+        case IR_VA_ARG:
+            fprintf(stream, " | %s = va_arg(%s, %s)",
+                vartostr(op.a), vartostr(op.b), typetostr(op.a.type));
+            break;
         }
     }
 

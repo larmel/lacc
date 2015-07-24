@@ -346,6 +346,13 @@ static int assign_locals_storage(const struct decl *fun, int offset)
     return offset;
 }
 
+/* Values from va_list initialization.
+ */
+static int gp_offset;
+static int fp_offset;
+static int overflow_arg_area_offset;
+static int reg_save_area_offset;
+
 /* Load parameters into call frame on entering a function. Return parameter
  * class of return value.
  */
@@ -370,7 +377,17 @@ static enum param_class *enter(FILE *s, const struct decl *func)
         next_integer_reg = 1;
     }
 
-    /* Assign storage to parameters.  */
+    /* For functions with variable argument list, reserve a fixed area at the
+     * beginning of the stack fram for register values. In total there are 8
+     * bytes for each of the 6 integer registers, and 16 bytes for each of the 8
+     * SSE registers, for a total of 176 bytes. We want to keep the register
+     * save area fixed regardless of parameter class of return value, so skip
+     * the first 8 bytes used for return value address. */
+    if (is_vararg(func->fun->type)) {
+        stack_offset = -176 - 8;
+    }
+
+    /* Assign storage to parameters. */
     for (i = 0; i < func->params.length; ++i) {
         struct symbol *sym = func->params.elem[i];
 
@@ -400,6 +417,31 @@ static enum param_class *enter(FILE *s, const struct decl *func)
         fprintf(s, "\tmovq\t%%%s, -8(%%rbp)\n", reg(param_int_reg[0], 8));
     }
 
+    /* Store all potential parameters to register save area. This includes
+     * parameters that are known to be passed as registers, that will anyway be
+     * stored to another stack location. Maybe potential for optimization. */
+    if (is_vararg(func->fun->type)) {
+        extern const char *mklabel(void);
+        const char *label = mklabel();
+
+        /* It is desireable to skip touching floating point unit if possible, al
+         * holds the number of floating point registers passed. */
+        fprintf(s, "\ttestb\t%%al, %%al\n");
+        fprintf(s, "\tjz %s\n", label);
+        reg_save_area_offset = -8; /* Skip address of return value. */
+        for (i = 0; i < 8; ++i) {
+            reg_save_area_offset -= 16;
+            fprintf(s, "\tmovaps\t%%xmm%d, %d(%%rbp)\n",
+                (7 - i), reg_save_area_offset);
+        }
+        fprintf(s, "%s:\n", label);
+        for (i = 0; i < 6; ++i) {
+            reg_save_area_offset -= 8;
+            fprintf(s, "\tmovq\t%%%s, %d(%%rbp)\n",
+                reg(param_int_reg[5 - i], 8), reg_save_area_offset);
+        }
+    }
+
     /* Move arguments from register to stack. */
     for (i = 0; i < func->params.length; ++i) {
         enum param_class *eightbyte = params[i];
@@ -420,6 +462,14 @@ static enum param_class *enter(FILE *s, const struct decl *func)
             }
             assert(!size);
         }
+    }
+
+    /* After loading parameters we know how many registers have been used for
+     * fixed parameters. Update offsets to be used in va_start. */
+    if (is_vararg(func->fun->type)) {
+        gp_offset = 8 * next_integer_reg;
+        fp_offset = 0;
+        overflow_arg_area_offset = mem_offset;
     }
 
     return ret;
@@ -469,6 +519,150 @@ static void ret(FILE *s, struct var val, const enum param_class *pc)
 
         /* The ABI specifies that the address should be in %rax on return. */
         fprintf(s, "\tmovq\t-8(%%rbp), %%%s\n", reg(AX, 8));
+    }
+}
+
+/* Execute call to va_start, initializing the provided va_list object. Values
+ * are taken from static context set during enter.
+ */
+static void assemble__builtin_va_start(FILE *stream, struct var args)
+{
+    assert(args.kind == DIRECT);
+    fprintf(stream, "\tmovl\t$%d, %s\t# gp_offset\n", gp_offset, refer(args));
+    args.offset += 4;
+    fprintf(stream, "\tmovl\t$%d, %s\t# fp_offset\n", fp_offset, refer(args));
+    args.offset += 4;
+    fprintf(stream, "\tleaq\t%d(%%rbp), %%rax\n", overflow_arg_area_offset);
+    fprintf(stream, "\tmovq\t%%rax, %s\t# overflow_arg_area\n", refer(args));
+    args.offset += 8;
+    fprintf(stream, "\tleaq\t%d(%%rbp), %%rax\n", reg_save_area_offset);
+    fprintf(stream, "\tmovq\t%%rax, %s\t# reg_save_area\n", refer(args));
+}
+
+/* Output logic for fetching a parameter from calling va_arg(args, T).
+ */
+static void assemble__builtin_va_arg(FILE *s, struct var res, struct var args)
+{
+    extern const char *mklabel(void);
+
+    enum param_class *pc = classify(res.type);
+    struct var
+        var_gp_offset = args,
+        var_fp_offset = args,
+        var_overflow_arg_area = args,
+        var_reg_save_area = args;
+    const char
+        *memory = mklabel(),
+        *done = mklabel();
+
+    /* Might be too restrictive for res, but simplifies some codegen. */
+    assert(res.kind == DIRECT);
+    assert(args.kind == DIRECT);
+
+    /* References into va_list object. */
+    var_gp_offset.type = type_init_unsigned(4);
+    var_fp_offset.offset += 4;
+    var_fp_offset.type = type_init_unsigned(4);
+    var_overflow_arg_area.offset += 8;
+    var_overflow_arg_area.type = type_init_unsigned(8);
+    var_reg_save_area.offset += 16;
+    var_reg_save_area.type = type_init_unsigned(8);
+
+    /* Integer or SSE parameters are read from registers, if there are enough of
+     * them left. Otherwise read from overflow area. */
+    if (*pc != PC_MEMORY) {
+        struct var slice = res;
+        int i,
+            size = res.type->size,
+            num_gp = 0, /* Number of general purpose registers needed. */
+            num_fp = 0; /* Number of floating point registers needed. */
+
+        for (i = 0; i < N_EIGHTBYTES(res.type); ++i) {
+            if (pc[i] == PC_INTEGER) {
+                num_gp++;
+            } else {
+                assert(pc[i] == PC_SSE);
+                num_fp++;
+            }
+        }
+
+        /* Keep reg_save_area in register for the remainder, a pointer to stack
+         * where registers are stored. This value does not change. */
+        load(s, var_reg_save_area, SI);
+
+        /* Check whether there are enough registers left for the argument to be
+         * passed in. */
+        if (num_gp) {
+            load(s, var_gp_offset, CX);
+            fprintf(s, "\tcmpl\t$%d, %%%s\n", (6*8 - 8*num_gp), reg(CX, 4));
+            fprintf(s, "\tja %s\n", memory);
+        }
+        if (num_fp) {
+            assert(0); /* No actual float support yet. */
+            load(s, var_fp_offset, DX);
+            fprintf(s, "\tcmpl\t$%d, %%%s\n", (8*8 - 8*num_fp), reg(DX, 4));
+            fprintf(s, "\tja %s\n", memory);
+        }
+
+        /* Load argument, one eightbyte at a time. This code has a lot in common
+         * with enter, ret etc, potential for refactoring probably. */
+        for (i = 0; i < N_EIGHTBYTES(res.type); ++i) {
+            int width = (size < 8) ? size : 8;
+
+            size -= width;
+            assert(pc[i] == PC_INTEGER);
+            assert(width == 1 || width == 2 || width == 4 || width == 8);
+
+            slice.type = type_init_unsigned(width);
+            slice.offset = res.offset + i * 8;
+
+            /* Advanced addressing, loading (%rsi + 8*i + (%rcx * 1)) into %rax.
+             * Base of registers are stored in %rsi, first pending register is
+             * at offset %rcx, and i counts number of registers done. */
+            fprintf(s, "\tmov%c\t%d(%%%s, %%%s, 1), %%%s\n",
+                asmsuffix(slice.type), (i * 8), reg(SI, 8), reg(CX, 8),
+                reg(AX, width));
+            store(s, AX, slice);
+        }
+
+        /* Store updated offsets to va_list. */
+        if (num_gp) {
+            fprintf(s, "\taddl\t$%d, %s\t# Update gp_offset\n",
+                (8 * num_gp), refer(var_gp_offset));
+        }
+        if (num_fp) {
+            assert(0);
+            fprintf(s, "\taddl\t$%d, %s\t# Update fp_offset\n",
+                (16 * num_fp), refer(var_fp_offset));
+        }
+
+        fprintf(s, "\tjmp %s\n", done);
+        fprintf(s, "%s:\t# memory\n", memory);
+    }
+
+    /* Parameters that are passed on stack will be read from overflow_arg_area.
+     * This is also the fallback when arguments do not fit in remaining
+     * registers. */
+    load(s, var_overflow_arg_area, SI); /* Align overflow area before load? */
+    if (res.type->size <= 8) {
+        assert(res.kind == DIRECT);
+        fprintf(s, "\tmov%c\t(%%%s), %%%s\n",
+            asmsuffix(res.type), reg(SI, 8), reg(AX, res.type->size));
+        fprintf(s, "\tmov%c\t%%%s, %s\t# Load vararg\n",
+            asmsuffix(res.type), reg(AX, res.type->size), refer(res));
+    } else {
+        load_address(s, res, DI);
+        fprintf(s, "\tmovq\t$%d, %%rdx\n", res.type->size);
+        fprintf(s, "\tcall\tmemcpy\t# Load vararg\n");
+    }
+
+    /* Move overflow_arg_area pointer to position of next memory argument, 
+     * aligning to 8 byte. */
+    fprintf(s, "\taddl\t$%d, %s\t# Update overflow_arg_area\n",
+        N_EIGHTBYTES(res.type) * 8, refer(var_overflow_arg_area));
+
+    if (*pc != PC_MEMORY) {
+        fprintf(s, "%s:\t# done\n", done);
     }
 }
 
@@ -621,6 +815,14 @@ static void asm_op(FILE *stream, const struct op *op)
         }
         fprintf(stream, "\tmovzbl\t%%al, %%eax\n");
         store(stream, AX, op->a);
+        break;
+    case IR_VA_START:
+        fprintf(stream, "\t# va_start\n");
+        assemble__builtin_va_start(stream, op->a);
+        break;
+    case IR_VA_ARG:
+        fprintf(stream, "\t# va_arg (%s)\n", typetostr(op->a.type));
+        assemble__builtin_va_arg(stream, op->a, op->b);
         break;
     default:
         assert(0);

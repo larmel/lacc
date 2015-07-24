@@ -83,7 +83,7 @@ static int merge(enum param_class *l, int n)
  * return value. If the first element is not PC_MEMORY, the number of elements
  * in the list can be determined by N_EIGHTBYTES(t). 
  */
-static enum param_class *classify(const struct typetree *t)
+enum param_class *classify(const struct typetree *t)
 {
     enum param_class *eb = calloc(1, sizeof(*eb));
 

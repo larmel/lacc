@@ -205,17 +205,30 @@ struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
 }
 
 /* Register compiler internal builtin symbols, that are assumed to exists by
- * standard library headers. Use dummy types for now.
+ * standard library headers.
  */
 void register_builtin_types(struct namespace *ns)
 {
-    struct symbol sym = {
-        "__builtin_va_list",
-        NULL,
-        SYM_TYPEDEF,
-        LINK_NONE,
-    };
-    sym.type = type_init_object();
+    /* Define va_list, as described in System V ABI. */
+    struct symbol sym = {"__builtin_va_list", NULL, SYM_TYPEDEF};
+    struct typetree *type = type_init_object();
+    type_add_member(type, type_init_unsigned(4), "gp_offset");
+    type_add_member(type, type_init_unsigned(4), "fp_offset");
+    type_add_member(type, type_init_pointer(type_init_void()),
+        "overflow_arg_area");
+    type_add_member(type, type_init_pointer(type_init_void()), "reg_save_area");
+    type_align_struct_members(type);
+    sym.type = type_init_array(type, 1);
+    sym_add(ns, sym);
+
+    /* Register symbols with dummy types just to reserve them, and make them
+     * resolve during parsing. */
+    sym.name = "__builtin_va_start";
+    sym.type = type_init_void();
+    sym.symtype = SYM_DECLARATION;
+    sym_add(ns, sym);
+
+    sym.name = "__builtin_va_arg";
     sym_add(ns, sym);
 }
 
