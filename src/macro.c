@@ -114,7 +114,8 @@ struct token toklist_to_string(toklist_t *tl)
 }
 
 /* Append token string representation at the end of provided buffer. If NULL is
- * provided, a new buffer is allocated that must be free'd by caller. */
+ * provided, a new buffer is allocated that must be free'd by caller.
+ */
 char *pastetok(char *buf, struct token t) {
     size_t len;
 
@@ -144,7 +145,7 @@ char *pastetok(char *buf, struct token t) {
 
 /* Keep track of which macros have been expanded, avoiding recursion by looking
  * up in this list for each new expansion.
-*/
+ */
 static struct {
     const char *name;
 } *expand_stack;
@@ -173,7 +174,7 @@ static int is_macro_expanded(const char *macro_name)
     return 0;
 }
 
-/* Expand a list of tokens, replacing any macro definitions.
+/* Expand a list of tokens, replacing any macro definitions. 
  */
 static toklist_t *expand_toklist(toklist_t *tl)
 {
@@ -181,6 +182,7 @@ static toklist_t *expand_toklist(toklist_t *tl)
     toklist_t *res = toklist_init();
 
     assert(tl);
+
     for (i = 0; i < tl->length; ++i) {
         macro_t *def;
 
@@ -188,15 +190,70 @@ static toklist_t *expand_toklist(toklist_t *tl)
             (def = definition(tl->elem[i])) &&
             !is_macro_expanded(def->name.strval))
         {
+            toklist_t **args = NULL;
             if (def->type == FUNCTION_LIKE) {
-                internal_error("%s.", "Unsupported macro type.");
-                exit(1);
+                int j,
+                    nesting = 0;    /* Keep track parenthesis nesting level. */
+
+                #define expect_token_at(l, i, t)                               \
+                    if (i >= l->length || l->elem[i].token != t) {             \
+                        error("Unexpected input.");                            \
+                        exit(1);                                               \
+                    }
+
+                /* Parse macro parameter from list of tokens. Duplicates a lot
+                 * of logic also found in preprocess.c reading directly from
+                 * input buffer. Revisit and refactor later. */
+                i++;
+                expect_token_at(tl, i, '(');
+                args = calloc(def->params, sizeof(*args));
+                for (j = 0; j < def->params; ++j) {
+                    struct token next;
+                    args[j] = toklist_init();
+                    while (1) {
+                        i++;
+                        if (i >= tl->length) {
+                            error("Unexpected end of input.");
+                            exit(1);
+                        }
+                        next = tl->elem[i];
+                        if (!nesting &&
+                            (next.token == ',' || next.token == ')'))
+                        {
+                            /* Got a valid argument separator, next param. */
+                            break;
+                        }
+                        if (next.token == ',' || nesting < 0) {
+                            error("Macro expansion does not match definition.");
+                            exit(1);
+                        }
+                        if (next.token == '(') {
+                            nesting++;
+                        } else if (next.token == ')') {
+                            nesting--;
+                            if (nesting < 0) {
+                                error("Negative nesting depth in expansion.");
+                                exit(1);
+                            }
+                        }
+                        toklist_push_back(args[j], next);
+                    }
+                    if (j < def->params - 1) {
+                        expect_token_at(tl, i, ',');
+                    }
+                }
+                expect_token_at(tl, i, ')');
+
+                #undef expect_token_at
             }
-            toklist_push_back_list(res, expand_macro(def, NULL));
+
+            /* Push result of macro expansion. */
+            toklist_push_back_list(res, expand_macro(def, args));
         } else {
             toklist_push_back(res, tl->elem[i]);
         }
     }
+
     return res;
 }
 
