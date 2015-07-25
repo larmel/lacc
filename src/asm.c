@@ -405,15 +405,20 @@ static enum param_class *enter(FILE *s, const struct decl *func)
         enum param_class *eightbyte = params[i];
 
         if (*eightbyte != PC_MEMORY) {
-            int n = N_EIGHTBYTES(func->fun->type->member[i].type), j;
+            int n = N_EIGHTBYTES(func->fun->type->member[i].type),
+                size = func->fun->type->member[i].type->size,
+                j;
             struct var ref = { NULL, NULL, DIRECT };
 
             ref.symbol = func->params.elem[i];
             for (j = 0; j < n; ++j) {
-                ref.type = type_init_integer(8);
+                int width = (size < 8) ? size : 8;
+                ref.type = type_init_integer(width);
                 ref.offset = j * 8;
                 store(s, param_int_reg[next_integer_reg++], ref);
+                size -= width;
             }
+            assert(!size);
         }
     }
 
