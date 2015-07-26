@@ -351,6 +351,7 @@ eval_addr_internal(struct block *block, struct var var, struct typetree *type)
         cfg_ir_append(block, op);
         break;
     case DEREF:
+        assert(is_pointer(var.symbol->type));
         res = var_direct(var.symbol);
         if (var.offset) {
             /* Address of *(sym + offset) is (sym + offset), but without pointer
@@ -458,8 +459,8 @@ struct var eval_addr(struct block *block, struct var var)
 }
 
 /* Evaluate *var.
- * If DEREF: *(*var'), double deref, evaluate the deref of var' first.
- * If DIRECT: Convert to deref variable, no evaluation.
+ * If DEREF: *(*var'), evaluate the deref of var' first.
+ * If DIRECT: Convert to deref variable, evaluate if offset or non-pointer.
  */
 struct var eval_deref(struct block *block, struct var var)
 {
@@ -467,7 +468,7 @@ struct var eval_deref(struct block *block, struct var var)
     struct op ir_op;
 
     if (var.kind == DEREF) {
-        assert( var.symbol->type->type == POINTER );
+        assert(is_pointer(var.symbol->type));
 
         /* Cast to char pointer temporarily to avoid pointer arithmetic calling
          * eval_expr. No actual evaluation is performed by this. */
@@ -485,16 +486,28 @@ struct var eval_deref(struct block *block, struct var var)
         ir_op.a = var;
         ir_op.b = ptr;
         cfg_ir_append(block, ir_op);
+
+    } else if (
+        var.kind == DIRECT &&
+        (var.offset || !is_pointer(var.symbol->type)))
+    {
+        /* Cannot immediately dereference a pointer which is at a direct offset
+         * from another symbol. Also, pointers that are the result of indexing
+         * into a structure must be evaluated, as DEREF variables assume symbol
+         * to be of pointer type. */
+        ptr = var_direct(sym_temp(&ns_ident, var.type));
+        sym_list_push_back(&decl->locals, (struct symbol *) ptr.symbol);
+        ptr.lvalue = 1;
+        eval_assign(block, ptr, var);
+        var = ptr;
     }
 
-    assert( var.kind == DIRECT );
-    assert( var.type->type == POINTER );
-
     /* Simply convert a direct reference to a deref. */
+    assert(var.kind == DIRECT && !var.offset);
+    assert(is_pointer(var.type) && is_pointer(var.symbol->type));
     var.kind = DEREF;
     var.type = type_deref(var.type);
     var.lvalue = 1;
-
     return var;
 }
 

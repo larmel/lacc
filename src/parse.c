@@ -1600,6 +1600,7 @@ static struct block *postfix_expression(struct block *block)
     root = block->expr;
 
     while (1) {
+        const struct member *field;
         struct var expr, copy, *arg;
         struct token tok;
         int i, j;
@@ -1653,18 +1654,24 @@ static struct block *postfix_expression(struct block *block)
             free(arg);
             break;
         case '.':
-            /* There is no short representation of symbol address, so unless
-             * this is a deref there will be a new temporary. */
-            root = eval_addr(block, root);
+            consume('.');
+            tok = consume(IDENTIFIER);
+            field = find_type_member(root.type, tok.strval);
+            if (!field) {
+                error("Invalid field access, no member named '%s'.",
+                    tok.strval);
+                exit(1);
+            }
+            root.type = field->type;
+            root.offset += field->offset;
+            break;
         case ARROW:
-            next();
+            consume(ARROW);
             tok = consume(IDENTIFIER);
             if (!is_pointer(root.type) || root.type->next->type != OBJECT) {
                 error("Cannot access field of non-object type.");
                 exit(1);
             } else {
-                const struct member *field;
-
                 field = find_type_member(type_deref(root.type), tok.strval);
                 if (!field) {
                     error("Invalid field access, no member named %s.",
@@ -1675,8 +1682,8 @@ static struct block *postfix_expression(struct block *block)
                 /* Make it look like a pointer to the field type, then perform
                  * normal dereferencing. */
                 root.type = type_init_pointer(field->type);
-                root.offset += field->offset;
                 root = eval_deref(block, root);
+                root.offset = field->offset;
             }
             break;
         case INCREMENT:

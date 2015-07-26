@@ -54,20 +54,28 @@ static const char *sym_name(const struct symbol *sym)
     return sym->name;
 }
 
+/* Create a string representation of the given value, for example -16(%rbp), 
+ * str(%rip), or $2. Format depending on type of variable.
+ */
 static char *refer(const struct var var)
 {
     static char str[256];
-    assert( var.kind == IMMEDIATE || var.kind == DIRECT );
-
     if (var.kind == IMMEDIATE) {
+        assert(!var.offset);
         if (var.type->type == ARRAY) {
             sprintf(str, "$%s", var.value.string);
         } else {
             sprintf(str, "$%ld", var.value.integer);
         }
     } else {
+        assert(var.kind == DIRECT);
         if (var.symbol->linkage != LINK_NONE) {
-            if (var.type->type == ARRAY || var.type->type == FUNCTION) {
+            if (var.offset) {
+                sprintf(str, "%s%s%d(%%rip)",
+                    sym_name(var.symbol),
+                    (var.offset > 0) ? "+" : "",
+                    var.offset);
+            } else if (var.type->type == ARRAY || var.type->type == FUNCTION) {
                 sprintf(str, "$%s", sym_name(var.symbol));
             } else {
                 sprintf(str, "%s(%%rip)", sym_name(var.symbol));
@@ -76,7 +84,6 @@ static char *refer(const struct var var)
             sprintf(str, "%d(%%rbp)", var.symbol->stack_offset + var.offset);
         }
     }
-
     return str;
 }
 
@@ -91,7 +98,7 @@ static void load_address(FILE *s, struct var v, enum reg r)
         break;
     case DIRECT:
         mov =
-            (v.symbol->linkage != LINK_NONE &&
+            (v.symbol->linkage != LINK_NONE && !v.offset &&
                 (v.type->type == ARRAY || v.type->type == FUNCTION)) ? "movq" :
             "leaq";
         fprintf(s, "\t%s\t%s, %%%s\t# load &%s\n",

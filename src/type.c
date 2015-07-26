@@ -281,18 +281,21 @@ type_complete(const struct typetree *p, const struct typetree *q)
     return q;
 }
 
-const struct member *
-find_type_member(const struct typetree *type, const char *name)
+const struct member *find_type_member(
+    const struct typetree *type,
+    const char *name)
 {
     int i;
-    assert( type->type == OBJECT );
 
-    for (i = 0; i < type->n; ++i) {
-        if (!strcmp(name, type->member[i].name)) {
-            return type->member + i;
+    if (type->type != OBJECT) {
+        error("Cannot access field of non-object type.");
+    } else {
+        for (i = 0; i < type->n; ++i) {
+            if (!strcmp(name, type->member[i].name)) {
+                return type->member + i;
+            }
         }
     }
-
     return NULL;
 }
 
