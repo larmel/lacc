@@ -803,7 +803,12 @@ static void asm_op(FILE *stream, const struct op *op)
         load(stream, op->c, BX);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n",
             reg(BX, op->a.type->size), reg(AX, op->a.type->size));
-        fprintf(stream, "\tsetge\t%%al\n");
+        if (is_unsigned(op->b.type)) {
+            assert(is_unsigned(op->c.type));
+            fprintf(stream, "\tsetae\t%%al\n");
+        } else {
+            fprintf(stream, "\tsetge\t%%al\n");
+        }
         fprintf(stream, "\tmovzbl\t%%al, %%eax\n");
         store(stream, AX, op->a);
         break;
