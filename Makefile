@@ -9,9 +9,23 @@ bootstrap: bin/bootstrap
 bin/bootstrap: bin/lcc bin/abi.o bin/asm.o bin/cfg.o bin/dot.o bin/error.o bin/eval.o bin/input.o bin/lcc.o bin/macro.o bin/parse.o bin/preprocess.o bin/string.o bin/symtab.o bin/tokenize.o bin/type.o bin/libutil.a
 	cc -Wall -pedantic -ansi bin/*.o -L./bin/ -lutil -o $@
 
+bin/abi.o: bin/abi.s
+	cc -Wall -c $< -o $@
+bin/abi.s: src/abi.c
+	bin/lcc -S -I /usr/include/x86_64-linux-musl/ $< -o $@
+
+bin/error.o: bin/error.s
+	cc -Wall -c $< -o $@
+bin/error.s: src/error.c
+	bin/lcc -S -I /usr/include/x86_64-linux-musl/ $< -o $@
+
+bin/lcc.o: bin/lcc.s
+	cc -Wall -c $< -o $@
+bin/lcc.s: src/lcc.c
+	bin/lcc -S -I /usr/include/x86_64-linux-musl/ $< -o $@
+
 bin/string.o: bin/string.s
 	cc -Wall -c $< -o $@
-
 bin/string.s: src/string.c
 	bin/lcc -S -I /usr/include/x86_64-linux-musl/ $< -o $@
 
