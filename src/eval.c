@@ -155,10 +155,18 @@ static struct var eval_expr_add(struct block *block, struct var l, struct var r)
             l = evaluate(block, IR_OP_ADD, type, l, r);
         }
     } else if (is_integer(l.type) && is_pointer(r.type)) {
+        /* Make sure pointer is left, and integer right. */
         l = eval_expr_add(block, r, l);
-    } else if (is_pointer(l.type) && l.type->next->size && is_integer(r.type)) {
-        r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
-        l = evaluate(block, IR_OP_ADD, l.type, l, r);
+    } else if (is_pointer(l.type) && is_integer(r.type)) {
+        if (!l.type->next->size) {
+            error("Pointer arithmetic on incomplete type.");
+            exit(1);
+        }
+        /* No evaluation if r is zero. */
+        if (r.kind != IMMEDIATE || r.value.integer) {
+            r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
+            l = evaluate(block, IR_OP_ADD, l.type, l, r);
+        }
     } else {
         error("Incompatible arguments to addition operator, was %s and %s.",
             typetostr(l.type), typetostr(r.type));
@@ -182,13 +190,17 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
     } else if (is_pointer(l.type) && is_integer(r.type)) {
         if (!l.type->next->size) {
             error("Pointer arithmetic on incomplete type.");
+            exit(1);
         }
-        r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
-        l = evaluate(block, IR_OP_SUB, l.type, l, r);
+        /* No evaluation if r is zero. */
+        if (r.kind != IMMEDIATE || r.value.integer) {
+            r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
+            l = evaluate(block, IR_OP_SUB, l.type, l, r);
+        }
     } else if (is_pointer(l.type) && is_pointer(r.type)) {
         struct typetree *type = type_init_unsigned(8);
 
-        if (!(l.type->next->size && l.type->next->size == r.type->next->size)) {
+        if (!l.type->next->size || l.type->next->size != r.type->next->size) {
             error("Referenced type is incomplete.");
         }
 
