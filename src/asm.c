@@ -89,25 +89,24 @@ static char *refer(const struct var var)
 
 static void load_address(FILE *s, struct var v, enum reg r)
 {
-    const char *mov;
-
     switch (v.kind) {
     case IMMEDIATE:
-        assert( v.type->type == ARRAY );
+        assert(v.type->type == ARRAY);
         fprintf(s, "\tmovq\t%s, %%%s\n", refer(v), reg(r, 8));
         break;
     case DIRECT:
-        mov =
-            (v.symbol->linkage != LINK_NONE && !v.offset &&
-                (v.type->type == ARRAY || v.type->type == FUNCTION)) ? "movq" :
-            "leaq";
         fprintf(s, "\t%s\t%s, %%%s\t# load &%s\n",
-            mov, refer(v), reg(r, 8), v.symbol->name);
+            ((v.symbol->linkage != LINK_NONE && !v.offset &&
+                (v.type->type == ARRAY || v.type->type == FUNCTION)) ?
+                "movq" : "leaq"),
+            refer(v), reg(r, 8), v.symbol->name);
         break;
     case DEREF:
         /* Address of dereferenced variable is removed by evaluation. Exception
          * is loading plain array or function values, which decay into loading
          * their address. */
+        assert(v.symbol->stack_offset);
+        assert(is_pointer(v.symbol->type));
         fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
         fprintf(s, "\tleaq\t%d(%%r10), %%%s\t# load (%s + %d)\n",
             v.offset, reg(r, 8), v.symbol->name, v.offset);
@@ -904,7 +903,8 @@ static void tail_generic(
     const enum param_class *res)
 {
     if (!block->jump[0] && !block->jump[1]) {
-        if (*res != PC_NO_CLASS) {
+        if (*res != PC_NO_CLASS && block->has_return_value) {
+            assert(block->expr.type && block->expr.type->type != NONE);
             ret(stream, block->expr, res);
         }
 

@@ -16,6 +16,10 @@ struct var eval_cast(struct block *b, struct var v, const struct typetree *t);
 struct var eval_conditional(struct var a, struct block *b, struct block *c);
 void param(struct block *, struct var);
 
+/* Return block->expr from current function declaration.
+ */
+void eval_return(struct block *block);
+
 struct var eval__builtin_va_start(struct block *block, struct var arg);
 
 struct var eval__builtin_va_arg(

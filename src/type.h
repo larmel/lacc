@@ -51,6 +51,7 @@ struct typetree
 #define is_arithmetic(t) (is_integer(t) || t->type == REAL)
 #define is_scalar(t) (is_arithmetic(t) || t->type == POINTER)
 #define is_aggregate(t) (t->type == ARRAY || t->type == OBJECT)
+#define is_void(t) ((t)->type == NONE)
 
 #define is_const(t) (t->qualifier & 0x01)
 #define is_volatile(t) (t->qualifier & 0x02)
@@ -74,7 +75,15 @@ int type_equal(const struct typetree *l, const struct typetree *r);
 
 int is_compatible(const struct typetree *l, const struct typetree *r);
 
-const struct typetree *type_deref(const struct typetree *);
+/* Get the type the given POINTER is pointing to. Handles tag indirections for
+ * pointers to typedef'ed object types.
+ */
+const struct typetree *type_deref(const struct typetree *ptr);
+
+/* Get the return type of given FUNCTION type. Handles tag indirections, which
+ * can occur for functions returning struct values.
+ */
+const struct typetree *get_return_type(const struct typetree *func);
 
 const struct typetree *
 type_complete(const struct typetree *, const struct typetree *);

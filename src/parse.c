@@ -1047,8 +1047,10 @@ static struct block *statement(struct block *parent)
         break;
     case RETURN:
         consume(RETURN);
-        if (peek().token != ';') {
+        /* Expression is return iff return type of function is not void. */
+        if (!is_void(get_return_type(decl->fun->type))) {
             parent = expression(parent);
+            eval_return(parent);
         }
         consume(';');
         parent = cfg_block_init(decl); /* orphan */

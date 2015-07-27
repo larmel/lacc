@@ -581,6 +581,31 @@ struct var eval_call(struct block *block, struct var var)
     return res;
 }
 
+/* Evaluate return (expr)
+ * If expr has a different type than return value T, a conversion equivalent to
+ * assignment is made:
+ *
+ *      T a = expr;
+ *      return a;
+ *
+ */
+void eval_return(struct block *block)
+{
+    const struct typetree *ret = get_return_type(decl->fun->type);
+    assert(ret->type != NONE);
+
+    if (!type_equal(ret, block->expr.type)) {
+        struct var tmp = var_direct(sym_temp(&ns_ident, ret));
+        sym_list_push_back(&decl->locals, (struct symbol *) tmp.symbol);
+        tmp.lvalue = 1;
+        eval_assign(block, tmp, block->expr);
+        tmp.lvalue = 0;
+        block->expr = tmp;
+    }
+
+    block->has_return_value = 1;
+}
+
 /* 6.5.4 Cast operators.
  *
  *      (long) a

@@ -109,7 +109,13 @@ struct block
         struct var c;
     } *code;
 
+    /* Number of ir operations. */
     int n;
+
+    /* Toggle last statement was return, meaning expr is valid. There are cases
+     * where we reach end of control in a non-void function, but not wanting to
+     * return a value. For example when exit has been called. */
+    int has_return_value;
 
     /* Value to evaluate in branch conditions, or return value. Also used for
      * return value from expression parsing rules, as a convenience. The

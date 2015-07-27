@@ -245,22 +245,30 @@ int is_compatible(const struct typetree *l, const struct typetree *r)
     return type_equal(l, r) || (l->next->size == r->next->size);
 }
 
-const struct typetree *type_deref(const struct typetree *t)
+/* Some object types are represented with a tag, and indirectly pointing to a
+ * typedef'ed value. Returns a copy of the typedef, with qualifiers applied.
+ */
+static const struct typetree *unwrap_if_indirection(const struct typetree *type)
 {
-    const struct typetree *child = t->next;
-
-    assert( t->type == POINTER );
-
-    /* Unwrap type from tag indirection. The qualifiers have to be copied
-     * explicitly, as they are not part of the tag. */
-    if (child->type == OBJECT && child->next) {
-        struct typetree *type = type_init_object();
-        *type = *t->next->next;
-        type->qualifier = t->next->qualifier;
-        child = type;
+    if (type->type == OBJECT && type->next) {
+        struct typetree *obj = type_init_object();
+        *obj = *type->next;
+        obj->qualifier = type->qualifier;
+        type = obj;
     }
+    return type;
+}
 
-    return child;
+const struct typetree *type_deref(const struct typetree *ptr)
+{
+    assert(ptr->type == POINTER);
+    return unwrap_if_indirection(ptr->next);
+}
+
+const struct typetree *get_return_type(const struct typetree *func)
+{
+    assert(func->type == FUNCTION);
+    return unwrap_if_indirection(func->next);
 }
 
 /* Validate that type p can be completed by applying size from q, and return q
