@@ -3,13 +3,6 @@
 
 #include "ir.h"
 
-/* Expression variables.
- */
-struct var var_direct(const struct symbol *sym);
-struct var var_string(const char *label, size_t length);
-struct var var_int(int value);
-struct var var_zero(int size);
-
 /* Interface used in parser to evaluate expressions and add operations to the
  * control flow graph.
  */

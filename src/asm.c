@@ -149,18 +149,16 @@ static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
             mov, refer(v), reg(r, t->size), v.symbol->name);
         break;
     case DEREF:
-        /* Suspiciously similar to refer(), should consider refactoring. */
-        if (v.symbol->linkage != LINK_NONE) {
-            if (v.type->type == ARRAY || v.type->type == FUNCTION) {
-                fprintf(s, "\tmovq\t$%s, %%r10\n", sym_name(v.symbol));
-            } else {
-                fprintf(s, "\tmovq\t%s(%%rip), %%r10\n", sym_name(v.symbol));
-            }
+        assert(is_pointer(v.symbol->type));
+        load_as(s, var_direct(v.symbol), R11, v.symbol->type);
+        if (v.offset) {
+            fprintf(s, "\t%s\t%d(%%%s), %%%s\t# load *(%s + %d)\n",
+                mov, v.offset, reg(R11, 8), reg(r, t->size),
+                v.symbol->name, v.offset);
         } else {
-            fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
+            fprintf(s, "\t%s\t(%%%s), %%%s\t# load *%s\n",
+                mov, reg(R11, 8), reg(r, t->size), v.symbol->name);
         }
-        fprintf(s, "\t%s\t%d(%%r10), %%%s\t# load *%s\n",
-            mov, v.offset, reg(r, t->size), v.symbol->name);
         break;
     case IMMEDIATE:
         fprintf(s, "\tmov%c\t%s, %%%s\n",

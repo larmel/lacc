@@ -467,6 +467,9 @@ struct var eval_deref(struct block *block, struct var var)
     struct var ptr;
     struct op ir_op;
 
+    /* Dereferenced arrays should decay into pointer. */
+    var = array_or_func_to_addr(block, var);
+
     if (var.kind == DEREF) {
         assert(is_pointer(var.symbol->type));
 

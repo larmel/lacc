@@ -39,6 +39,22 @@ struct var
     int lvalue;
 };
 
+/* A direct reference to given symbol.
+ */
+struct var var_direct(const struct symbol *sym);
+
+/* A string value of type [] char.
+ */
+struct var var_string(const char *label, size_t length);
+
+/* A constant value of integer type.
+ */
+struct var var_int(int value);
+
+/* A zero constant value of integer type.
+ */
+struct var var_zero(int size);
+
 /* Three address code operation types.
  */
 enum optype
