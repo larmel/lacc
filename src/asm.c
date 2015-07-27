@@ -190,16 +190,27 @@ static void load(FILE *s, struct var v, enum reg r)
 
 static void store(FILE *s, enum reg r, struct var v)
 {
-    assert( is_scalar(v.type) || v.type->size <= 8 );
-    assert( v.kind == DIRECT || v.kind == DEREF );
+    assert(is_scalar(v.type) || v.type->size <= 8);
 
     if (v.kind == DIRECT) {
+        /* Special case for string constants, which is the only valid case with
+         * array type as assignment value. */
+        int w = (v.type->type == ARRAY) ? 8 : v.type->size;
         fprintf(s, "\tmov%c\t%%%s, %s\t# store %s\n",
-            asmsuffix(v.type), reg(r, v.type->size), refer(v), v.symbol->name);
+            asmsuffix(v.type), reg(r, w), refer(v), v.symbol->name);
     } else {
-        fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
-        fprintf(s, "\tmov%c\t%%%s, %d(%%r10)\t# store *%s\n",
-            asmsuffix(v.type), reg(r, v.type->size), v.offset, v.symbol->name);
+        assert(v.kind == DEREF);
+        assert(is_pointer(v.symbol->type));
+        load_as(s, var_direct(v.symbol), R11, v.symbol->type);
+        if (v.offset) {
+            fprintf(s, "\tmov%c\t%%%s, %d(%%%s)\t# store *(%s + %d)\n",
+                asmsuffix(v.type), reg(r, v.type->size), v.offset, reg(R11, 8),
+                v.symbol->name, v.offset);
+        } else {
+            fprintf(s, "\tmov%c\t%%%s, (%%%s)\t# store *%s\n",
+                asmsuffix(v.type), reg(r, v.type->size), reg(R11, 8),
+                v.symbol->name);
+        }
     }
 }
 
