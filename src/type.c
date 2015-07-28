@@ -177,14 +177,31 @@ void type_align_struct_members(struct typetree *type)
 
 #define is_tagged(t) ((t)->type == OBJECT && (t)->next)
 
+/* Some object types are represented with a tag, and indirectly pointing to a
+ * typedef'ed value. Returns a copy of the typedef, with qualifiers applied.
+ */
+static const struct typetree *unwrap_if_indirection(const struct typetree *type)
+{
+    if (type->type == OBJECT && type->next) {
+        struct typetree *obj = type_init_object();
+        *obj = *type->next;
+        obj->qualifier = type->qualifier;
+        type = obj;
+    }
+    return type;
+}
+
+/* Determine whether two types are the same.
+ */
 int type_equal(const struct typetree *a, const struct typetree *b)
 {
     if (!a && !b) return 1;
     if (!a || !b) return 0;
-    if (is_tagged(a) || is_tagged(b)) {
-        assert( a->type == OBJECT && b->type == OBJECT );
+    if (is_tagged(a) && is_tagged(b))
         return a->next == b->next && a->qualifier == b->qualifier;
-    }
+
+    a = unwrap_if_indirection(a);
+    b = unwrap_if_indirection(b);
 
     if (a->type == b->type
         && a->size == b->size
@@ -194,7 +211,6 @@ int type_equal(const struct typetree *a, const struct typetree *b)
         && type_equal(a->next, b->next))
     {
         int i;
-
         for (i = 0; i < a->n; ++i) {
             if (!type_equal(a->member[i].type, b->member[i].type)) {
                 return 0;
@@ -202,6 +218,7 @@ int type_equal(const struct typetree *a, const struct typetree *b)
         }
         return 1;   
     }
+
     return 0;
 }
 
@@ -243,20 +260,6 @@ int is_compatible(const struct typetree *l, const struct typetree *r)
     assert( is_pointer(l) && is_pointer(r) );
 
     return type_equal(l, r) || (l->next->size == r->next->size);
-}
-
-/* Some object types are represented with a tag, and indirectly pointing to a
- * typedef'ed value. Returns a copy of the typedef, with qualifiers applied.
- */
-static const struct typetree *unwrap_if_indirection(const struct typetree *type)
-{
-    if (type->type == OBJECT && type->next) {
-        struct typetree *obj = type_init_object();
-        *obj = *type->next;
-        obj->qualifier = type->qualifier;
-        type = obj;
-    }
-    return type;
 }
 
 const struct typetree *type_deref(const struct typetree *ptr)
