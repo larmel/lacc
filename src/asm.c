@@ -114,30 +114,29 @@ static void load_address(FILE *s, struct var v, enum reg r)
     }
 }
 
-/* Load variable v to register r, cast to type t. Handles sign- and width
- * extension for integer types.
+/* Load variable v to register r, sign extended to fit register size. Width must
+ * be either 4 (as in %eax) or 8 (as in %rax).
  */
-static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
+static void load_value(FILE *s, struct var v, enum reg r, unsigned int w)
 {
     const char *mov;
 
-    assert(is_integer(t) || is_pointer(t));
-    assert(t->size == 4 || t->size == 8);
-    assert(v.type->size <= t->size);
+    assert(w == 4 || w == 8);
+    assert(v.type->size <= w);
 
     mov =
-        (v.type->size == 1 && is_unsigned(v.type) && t->size == 4) ? "movzbl" :
-        (v.type->size == 1 && is_unsigned(v.type) && t->size == 8) ? "movzbq" :
-        (v.type->size == 1 && t->size == 4) ? "movsbl" :
-        (v.type->size == 1 && t->size == 8) ? "movsbq" :
-        (v.type->size == 2 && is_unsigned(v.type) && t->size == 4) ? "movzwl" :
-        (v.type->size == 2 && is_unsigned(v.type) && t->size == 8) ? "movzwq" :
-        (v.type->size == 2 && t->size == 4) ? "movswl" :
-        (v.type->size == 2 && t->size == 8) ? "movswq" :
-        (v.type->size == 4 && is_unsigned(v.type) && t->size == 8) ? "movl" :
-        (v.type->size == 4 && t->size == 8) ? "movslq" :
-        (v.type->size == t->size && t->size == 4) ? "movl" :
-        (v.type->size == t->size && t->size == 8) ? "movq" :
+        (v.type->size == 1 && is_unsigned(v.type) && w == 4) ? "movzbl" :
+        (v.type->size == 1 && is_unsigned(v.type) && w == 8) ? "movzbq" :
+        (v.type->size == 1 && w == 4) ? "movsbl" :
+        (v.type->size == 1 && w == 8) ? "movsbq" :
+        (v.type->size == 2 && is_unsigned(v.type) && w == 4) ? "movzwl" :
+        (v.type->size == 2 && is_unsigned(v.type) && w == 8) ? "movzwq" :
+        (v.type->size == 2 && w == 4) ? "movswl" :
+        (v.type->size == 2 && w == 8) ? "movswq" :
+        (v.type->size == 4 && is_unsigned(v.type) && w == 8) ? "movl" :
+        (v.type->size == 4 && w == 8) ? "movslq" :
+        (v.type->size == w && w == 4) ? "movl" :
+        (v.type->size == w && w == 8) ? "movq" :
         NULL;
 
     assert(mov);
@@ -145,23 +144,23 @@ static void load_as(FILE *s, struct var v, enum reg r, const struct typetree *t)
     switch (v.kind) {
     case DIRECT:
         fprintf(s, "\t%s\t%s, %%%s\t# load %s\n",
-            mov, refer(v), reg(r, t->size), v.symbol->name);
+            mov, refer(v), reg(r, w), v.symbol->name);
         break;
     case DEREF:
         assert(is_pointer(v.symbol->type));
-        load_as(s, var_direct(v.symbol), R11, v.symbol->type);
+        load_value(s, var_direct(v.symbol), R11, v.symbol->type->size);
         if (v.offset) {
             fprintf(s, "\t%s\t%d(%%%s), %%%s\t# load *(%s + %d)\n",
-                mov, v.offset, reg(R11, 8), reg(r, t->size),
+                mov, v.offset, reg(R11, 8), reg(r, w),
                 v.symbol->name, v.offset);
         } else {
             fprintf(s, "\t%s\t(%%%s), %%%s\t# load *%s\n",
-                mov, reg(R11, 8), reg(r, t->size), v.symbol->name);
+                mov, reg(R11, 8), reg(r, w), v.symbol->name);
         }
         break;
     case IMMEDIATE:
         fprintf(s, "\tmov%c\t%s, %%%s\n",
-            asmsuffix(t), refer(v), reg(r, t->size));
+            (w == 4) ? 'l' : 'q', refer(v), reg(r, w));
         break;
     }
 }
@@ -173,17 +172,24 @@ static void load(FILE *s, struct var v, enum reg r)
     if (v.type->type == ARRAY) {
         load_address(s, v, r);
     } else {
-        struct typetree t = *v.type;
-
+        unsigned int size = (v.type->size < 4) ? 4 : v.type->size;
         /* We only operate with 32 or 64 bit register values, but variables can
          * be stored with byte or short width. Promote to 32 bit if required. */
-        t.size = (t.size < 4) ? 4 : t.size;
-        if (t.type == OBJECT) {
-            assert(t.size <= 8);
-            t.type = INTEGER;
-            t.flags = 0x0001; /* Unsigned. */
-        }
-        load_as(s, v, r, &t);
+        assert(size == 4 || size == 8);
+        load_value(s, v, r, size);
+    }
+}
+
+/* Load variable to register, extended to specified width.
+ */
+static void load_w(FILE *s, struct var v, enum reg r, unsigned int w)
+{
+    if (v.type->type == ARRAY) {
+        assert(w == 8);
+        load_address(s, v, r);
+    } else {
+        assert(w == 4 || w == 8);
+        load_value(s, v, r, w);
     }
 }
 
@@ -200,7 +206,7 @@ static void store(FILE *s, enum reg r, struct var v)
     } else {
         assert(v.kind == DEREF);
         assert(is_pointer(v.symbol->type));
-        load_as(s, var_direct(v.symbol), R11, v.symbol->type);
+        load_value(s, var_direct(v.symbol), R11, v.symbol->type->size);
         if (v.offset) {
             fprintf(s, "\tmov%c\t%%%s, %d(%%%s)\t# store *(%s + %d)\n",
                 asmsuffix(v.type), reg(r, v.type->size), v.offset, reg(R11, 8),
@@ -683,7 +689,7 @@ static void assemble__builtin_va_arg(FILE *s, struct var res, struct var args)
 
 static void asm_op(FILE *stream, const struct op *op)
 {
-    static int n_args;
+    static int n_args, w;
     static struct var *args;
 
     switch (op->type) {
@@ -693,21 +699,21 @@ static void asm_op(FILE *stream, const struct op *op)
             load_address(stream, op->b, SI);
             fprintf(stream, "\tmovq\t$%d, %%rdx\n", op->a.type->size);
             fprintf(stream, "\tcall\tmemcpy\n");
-        } else {
-            /* TODO: consider cast before assignment. */
-            /*if (!type_equal(op->a.type, op->b.type)) {
-                error("Unequal types:");
-                error(" -> %s", typetostr(op->a.type));
-                error(" -> %s", typetostr(op->b.type));
-            }*/
-            /*assert( type_equal(op->a.type, op->b.type) );*/
-            load(stream, op->b, AX);
-            store(stream, AX, op->a);
+            break;
         }
-        break;
+        /* Fallthrough, assignment has implicit cast for convenience and to make
+         * static initialization work without explicit casts. */
     case IR_CAST:
-        assert(op->a.type->size != op->b.type->size);
-        load_as(stream, op->b, AX, op->a.type);
+        if (op->a.type->type == ARRAY || op->b.type->type == ARRAY) {
+            /* This is only relevant for string constants. */
+            w = 8;
+        } else {
+            w = (op->a.type->size > op->b.type->size) ?
+                op->a.type->size : op->b.type->size;
+            if (w < 4) w = 4;
+        }
+        assert(w == 4 || w == 8);
+        load_w(stream, op->b, AX, w);
         store(stream, AX, op->a);
         break;
     case IR_DEREF:

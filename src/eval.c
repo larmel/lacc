@@ -514,11 +514,12 @@ struct var eval_deref(struct block *block, struct var var)
     return var;
 }
 
-/* Evaluate a = b.
- * Restrictions on a: DEREF or DIRECT l-value, not temporary.
- * Restrictions on b: None
- * 
- * Return value is the value of b.
+/* Evaluate simple assignment (6.5.16.1). 
+ *
+ *      a = b
+ *
+ * The type of the expression is typeof(a) after l-to-r-value conversion. The
+ * result is an r-value. Operand b is converted to typeof(A) before assignment.
  */
 struct var eval_assign(struct block *block, struct var target, struct var var)
 {
@@ -529,13 +530,17 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
         exit(1);
     }
 
-    /* NB: missing type checking! */
+    /* l-value conversion. */
+    target.lvalue = 0;
+
+    /* Assignment has implicit conversion for basic types when evaluating the IR
+     * operation, meaning var will be sign extended to size of target.type. */
     op.type = IR_ASSIGN;
     op.a = target;
     op.b = var;
     cfg_ir_append(block, op);
 
-    return var;
+    return target;
 }
 
 /* Evaluate a = copy(b). Create a new temporary variable to hold the result,
@@ -621,7 +626,10 @@ struct var eval_cast(struct block *b, struct var v, const struct typetree *t)
             v = evaluate(b, IR_CAST, t, v);
         }
     } else {
-        error("Invalid type parameters to cast expression.");
+        error(
+            "Invalid type parameters to cast expression,"
+            " cannot convert %s to %s.",
+            typetostr(v.type), typetostr(t));
     }
 
     return v;
