@@ -32,8 +32,13 @@ struct var
     union value {
         long integer;
         double real;
-        const char *string;
     } value;
+
+    /* Represent string constant value, or label, for IMMEDIATE values. If type
+     * is char [], this is the literal string constant. If type is char *, this
+     * is the label representing the string, as in '.LC1'. Pointers can have a
+     * constant offset, representing address constants such as .LC1+3. */
+    const char *string;
 
     int offset;
     int lvalue;
@@ -45,7 +50,7 @@ struct var var_direct(const struct symbol *sym);
 
 /* A string value of type [] char.
  */
-struct var var_string(const char *label, size_t length);
+struct var var_string(const char *str);
 
 /* A constant value of integer type.
  */

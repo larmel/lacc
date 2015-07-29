@@ -1,9 +1,11 @@
 #include "eval.h"
 #include "error.h"
+#include "string.h"
 
 #include <assert.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* Current declaration from parser. Need to add symbols to list whenever new
  * temporary ones are created during evaluation.
@@ -27,13 +29,14 @@ struct var var_direct(const struct symbol *sym)
     return var;
 }
 
-struct var var_string(const char *label, size_t length)
+struct var var_string(const char *str)
 {
     struct var var = {0};
+    unsigned int length = strlen(str) + 1;
 
     var.kind = IMMEDIATE;
     var.type = type_init_string(length);
-    var.value.string = label;
+    var.string = str;
     return var;
 }
 
@@ -162,8 +165,15 @@ static struct var eval_expr_add(struct block *block, struct var l, struct var r)
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
+        /* Special case for string literal + constant. This is represented as an
+         * immediate with offset. */
+        if (l.kind == IMMEDIATE && l.string &&
+            r.kind == IMMEDIATE && is_integer(r.type))
+        {
+            l.offset += r.value.integer;
+        }
         /* No evaluation if r is zero. */
-        if (r.kind != IMMEDIATE || r.value.integer) {
+        else if (r.kind != IMMEDIATE || r.value.integer) {
             r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
             l = evaluate(block, IR_OP_ADD, l.type, l, r);
         }
@@ -192,8 +202,15 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
+        /* Special case for string literal - constant. This is represented as an
+         * immediate with offset. */
+        if (l.kind == IMMEDIATE && l.string &&
+            r.kind == IMMEDIATE && is_integer(r.type))
+        {
+            l.offset -= r.value.integer;
+        }
         /* No evaluation if r is zero. */
-        if (r.kind != IMMEDIATE || r.value.integer) {
+        else if (r.kind != IMMEDIATE || r.value.integer) {
             r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
             l = evaluate(block, IR_OP_SUB, l.type, l, r);
         }
@@ -325,58 +342,31 @@ eval_expr_cmp(struct block *block, struct var l, struct var r, int e)
     return evaluate(block, e ? IR_OP_GE : IR_OP_GT, type_init_integer(4), l, r);
 }
 
-/* Extract core address-of evaluation to suit special cases with address of
- * functions and arrays. */
-static struct var
-eval_addr_internal(struct block *block, struct var var, struct typetree *type)
-{
-    struct op op;
-    struct var res;
-    struct symbol *temp;
-
-    switch (var.kind) {
-    case IMMEDIATE:
-        /* Array constants are passed as immediate values with array type. Decay
-         * into pointer on evaluation, for example as parameters. Should maybe
-         * consider an extra kind ADDR to not have to generate all these
-         * temporaries. */
-        assert(var.type->type == ARRAY);
-    case DIRECT:
-        temp = sym_temp(&ns_ident, type);
-        res = var_direct(temp);
-        sym_list_push_back(&decl->locals, temp);
-        op.type = IR_ADDR;
-        op.a = res;
-        op.b = var;
-        cfg_ir_append(block, op);
-        break;
-    case DEREF:
-        assert(is_pointer(var.symbol->type));
-        res = var_direct(var.symbol);
-        if (var.offset) {
-            /* Address of *(sym + offset) is (sym + offset), but without pointer
-             * arithmetic applied in addition. Cast to char pointer temporarily
-             * to avoid trouble calling eval_expr. */
-            res = eval_cast(block, res,
-                type_init_pointer(type_init_integer(1)));
-            res = eval_expr(block, IR_OP_ADD, res, var_int(var.offset));
-        }
-        res.type = type;
-        break;
-    }
-
-    return res;
-}
-
 /* Convert variables of type ARRAY or FUNCTION to addresses when used in
  * expressions. 'array of T' is converted (decay) to pointer to T. Not the same
  * as taking the address of an array, which would give 'pointer to array of T'.
  */
 static struct var array_or_func_to_addr(struct block *block, struct var var)
 {
-    if (var.type->type == ARRAY) {
-        var = eval_addr_internal(block, var, type_init_pointer(var.type->next));  
-    } else if (var.type->type == FUNCTION) {
+    /* Convert IMMEDIATE string values of type char [n] to char *, adding the
+     * string to strings table and generating a unique label. */
+    if (var.string && var.type->type == ARRAY) {
+        assert(var.kind == IMMEDIATE);
+        var.string = strlabel(var.string);
+        var.type = type_init_pointer(var.type->next);
+    }
+
+    /* References to arrays decay into pointer to the first element. Change type
+     * before doing regular address evaluation, this way backend does not need
+     * to handle address of array in any special way. The memory location
+     * represented by var can also be seen as the first element. */
+    else if (var.type->type == ARRAY) {
+        var.type = var.type->next;
+        var = eval_addr(block, var);
+    }
+
+    /* It is unclear what this does, never tested function pointers :p */
+    else if (var.type->type == FUNCTION) {
         var = eval_addr(block, var);
     }
 
@@ -455,7 +445,43 @@ struct var eval_expr(struct block *block, enum optype op, ...)
  */
 struct var eval_addr(struct block *block, struct var var)
 {
-    return eval_addr_internal(block, var, type_init_pointer(var.type));
+    struct op op;
+    struct var res;
+    struct symbol *temp;
+    const struct typetree *type = type_init_pointer(var.type);
+
+    switch (var.kind) {
+    case IMMEDIATE:
+        /* Array constants are passed as immediate values with array type. Decay
+         * into pointer on evaluation, for example as parameters. Should maybe
+         * consider an extra kind ADDR to not have to generate all these
+         * temporaries. */
+        assert(var.type->type == ARRAY);
+    case DIRECT:
+        temp = sym_temp(&ns_ident, type);
+        res = var_direct(temp);
+        sym_list_push_back(&decl->locals, temp);
+        op.type = IR_ADDR;
+        op.a = res;
+        op.b = var;
+        cfg_ir_append(block, op);
+        break;
+    case DEREF:
+        assert(is_pointer(var.symbol->type));
+        res = var_direct(var.symbol);
+        if (var.offset) {
+            /* Address of *(sym + offset) is (sym + offset), but without pointer
+             * arithmetic applied in addition. Cast to char pointer temporarily
+             * to avoid trouble calling eval_expr. */
+            res = eval_cast(block, res,
+                type_init_pointer(type_init_integer(1)));
+            res = eval_expr(block, IR_OP_ADD, res, var_int(var.offset));
+        }
+        res.type = type;
+        break;
+    }
+
+    return res;
 }
 
 /* Evaluate *var.
@@ -524,6 +550,11 @@ struct var eval_deref(struct block *block, struct var var)
 struct var eval_assign(struct block *block, struct var target, struct var var)
 {
     struct op op;
+
+    /* hack, special case is char [] = string in initializers. */
+    if (target.type->type != ARRAY) {
+        var = array_or_func_to_addr(block, var);
+    }
 
     if (!target.lvalue) {
         error("Target of assignment must be l-value.");

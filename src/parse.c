@@ -93,7 +93,7 @@ struct decl *parse()
 /* C99: Define __func__ as static const char __func__[] = sym->name; */
 static void define_builtin__func__(const char *name)
 {
-    struct var str = var_string(strlabel(name), strlen(name) + 1);
+    struct var str = var_string(name);
     struct symbol
          farg = { "__func__", NULL, SYM_DEFINITION, LINK_INTERN },
         *func;
@@ -102,6 +102,8 @@ static void define_builtin__func__(const char *name)
 
     farg.type = str.type;
     func = sym_add(&ns_ident, farg);
+
+    /* Initialize special case, setting char[] = char[]. */
     eval_assign(decl->head, var_direct(func), str);
 }
 
@@ -290,9 +292,14 @@ static struct block *initializer(struct block *block, struct var target)
             error("Initializer must be computable at load time.");
             exit(1);
         }
+        /* Complete type based on string literal. */
         if (target.kind == DIRECT && !target.type->size) {
-            ((struct symbol *) target.symbol)->type =
+            const struct typetree *type =
                 type_complete(target.symbol->type, block->expr.type);
+            assert(target.offset == 0);
+
+            target.type = type;
+            ((struct symbol *) target.symbol)->type = type;
         }
         eval_assign(block, target, block->expr);
     }
@@ -1785,7 +1792,9 @@ static struct block *primary_expression(struct block *block)
         consume(')');
         break;
     case STRING:
-        block->expr = var_string(strlabel(tok.strval), strlen(tok.strval) + 1);
+        /* Immediate value of type char [n]. Will decay into char * immediate on
+         * evaluation, and be added to string table. */
+        block->expr = var_string(tok.strval);
         break;
     default:
         error("Unexpected token '%s', not a valid primary expression.",

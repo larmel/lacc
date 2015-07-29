@@ -5,11 +5,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* Manage string constants encountered in the translation unit. Strings declared
- * in plain text are by default read-only, except for when the string literal is
- * assigned to an array. Keep a global map of all strings, and remove duplicates
- * to save space.
- */
 static int count;
 static int capacity;
 static struct {
@@ -27,7 +22,10 @@ static const char *mklabel(void)
     return strndup(name, 15);
 }
 
-static const char *getoradd(const char *s)
+/* Return an existing, or generate a new unique label representing the provided
+ * string. Labels are used verbatim for assembly tags.
+ */
+const char *strlabel(const char *s)
 {
     int i;
     const char *label;
@@ -52,15 +50,7 @@ static const char *getoradd(const char *s)
     return label;
 }
 
-/* Return a label representing the provided string, i.e. '.S1'.
- */
-const char *strlabel(const char *s)
-{
-    assert(s);
-    return getoradd(s);
-}
-
-static void printstr(FILE *stream, const char *str)
+void output_string(FILE *stream, const char *str)
 {
     char c;
 
@@ -69,18 +59,6 @@ static void printstr(FILE *stream, const char *str)
             putc(c, stream);
         else
             fprintf(stream, "\\x%x", (int) c);
-    }
-}
-
-void output_string(FILE *stream, const char *l)
-{
-    int i;
-
-    for (i = 0; i < count; ++i) {
-        if (!strcmp(strings[i].label, l)) {
-            printstr(stream, strings[i].string);
-            break;
-        }
     }
 }
 
@@ -94,7 +72,7 @@ void output_strings(FILE *stream)
         for (i = 0; i < count; ++i) {
             fprintf(stream, "%s:\n", strings[i].label);
             fprintf(stream, "\t.string \"");
-            printstr(stream, strings[i].string);
+            output_string(stream, strings[i].string);
             fprintf(stream, "\"\n");
         }
     }

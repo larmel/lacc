@@ -2,6 +2,7 @@
 #include "symbol.h"
 #include "util/map.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -30,15 +31,24 @@ static char *vartostr(const struct var var)
     switch (var.kind) {
     case IMMEDIATE:
         switch (var.type->type) {
-            case INTEGER:
-                sprintf(buffer, "%ld", var.value.integer);
+        case POINTER:
+            if (var.string) {
+                if (var.offset) {
+                    sprintf(buffer, "$%s%s%d", var.string,
+                        (var.offset > 0) ? "+" : "", var.offset);
+                } else {
+                    sprintf(buffer, "$%s", var.string);
+                }
                 break;
-            case POINTER:
-            case ARRAY:
-                sprintf(buffer, "%s", var.value.string);
-                break;
-            default:
-                sprintf(buffer, "(immediate)");  
+            }
+        case INTEGER:
+            sprintf(buffer, "%ld", var.value.integer);
+            break;
+        case ARRAY:
+            sprintf(buffer, "\\\"%s\\\"", var.string);
+            break;
+        default:
+            assert(0);
         }
         break;
     case DIRECT:

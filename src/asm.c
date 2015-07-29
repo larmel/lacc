@@ -55,16 +55,23 @@ static const char *sym_name(const struct symbol *sym)
 }
 
 /* Create a string representation of the given value, for example -16(%rbp), 
- * str(%rip), or $2. Format depending on type of variable.
+ * str(%rip), $.LC1+3, or $2. Format depending on type of variable.
  */
 static char *refer(const struct var var)
 {
     static char str[256];
     if (var.kind == IMMEDIATE) {
-        assert(!var.offset);
-        if (var.type->type == ARRAY) {
-            sprintf(str, "$%s", var.value.string);
+        assert(var.type->type != ARRAY);
+        if (is_pointer(var.type) && var.string) {
+            if (var.offset) {
+                sprintf(str, "$%s%s%d", var.string,
+                    (var.offset > 0) ? "+" : "", var.offset);
+            } else {
+                sprintf(str, "$%s", var.string);
+            }
         } else {
+            assert(!var.offset);
+            assert(is_integer(var.type));
             sprintf(str, "$%ld", var.value.integer);
         }
     } else {
@@ -75,8 +82,6 @@ static char *refer(const struct var var)
                     sym_name(var.symbol),
                     (var.offset > 0) ? "+" : "",
                     var.offset);
-            } else if (var.type->type == ARRAY || var.type->type == FUNCTION) {
-                sprintf(str, "$%s", sym_name(var.symbol));
             } else {
                 sprintf(str, "%s(%%rip)", sym_name(var.symbol));
             }
@@ -91,8 +96,7 @@ static void load_address(FILE *s, struct var v, enum reg r)
 {
     switch (v.kind) {
     case IMMEDIATE:
-        assert(v.type->type == ARRAY);
-        fprintf(s, "\tmovq\t%s, %%%s\n", refer(v), reg(r, 8));
+        assert(0);
         break;
     case DIRECT:
         fprintf(s, "\t%s\t%s, %%%s\t# load &%s\n",
@@ -121,6 +125,8 @@ static void load_value(FILE *s, struct var v, enum reg r, unsigned int w)
 {
     const char *mov;
 
+    /* We operate only with 32 or 64 bit register values, but variables can be
+     * stored with byte or short width. Promote to 32 bit if required. */
     assert(w == 4 || w == 8);
     assert(v.type->size <= w);
 
@@ -165,32 +171,14 @@ static void load_value(FILE *s, struct var v, enum reg r, unsigned int w)
     }
 }
 
-/* Load variable to register.
+/* Load variable to register, automatically sign/width extended to either 32 or
+ * 64 bit.
  */
 static void load(FILE *s, struct var v, enum reg r)
 {
-    if (v.type->type == ARRAY) {
-        load_address(s, v, r);
-    } else {
-        unsigned int size = (v.type->size < 4) ? 4 : v.type->size;
-        /* We only operate with 32 or 64 bit register values, but variables can
-         * be stored with byte or short width. Promote to 32 bit if required. */
-        assert(size == 4 || size == 8);
-        load_value(s, v, r, size);
-    }
-}
-
-/* Load variable to register, extended to specified width.
- */
-static void load_w(FILE *s, struct var v, enum reg r, unsigned int w)
-{
-    if (v.type->type == ARRAY) {
-        assert(w == 8);
-        load_address(s, v, r);
-    } else {
-        assert(w == 4 || w == 8);
-        load_value(s, v, r, w);
-    }
+    unsigned int w = (v.type->size < 4) ? 4 : v.type->size;
+    assert(w == 4 || w == 8);
+    load_value(s, v, r, w);
 }
 
 static void store(FILE *s, enum reg r, struct var v)
@@ -198,11 +186,9 @@ static void store(FILE *s, enum reg r, struct var v)
     assert(is_scalar(v.type) || v.type->size <= 8);
 
     if (v.kind == DIRECT) {
-        /* Special case for string constants, which is the only valid case with
-         * array type as assignment value. */
-        int w = (v.type->type == ARRAY) ? 8 : v.type->size;
+        assert(v.type->type != ARRAY);
         fprintf(s, "\tmov%c\t%%%s, %s\t# store %s\n",
-            asmsuffix(v.type), reg(r, w), refer(v), v.symbol->name);
+            asmsuffix(v.type), reg(r, v.type->size), refer(v), v.symbol->name);
     } else {
         assert(v.kind == DEREF);
         assert(is_pointer(v.symbol->type));
@@ -244,8 +230,12 @@ static void push(FILE *s, struct var v)
 /* Assemble a function call. For now this assumes only integer arguments passed
  * in %rdi, %rsi, %rdx, %rcx, %r8 and %r9, and arguments passed on stack.
  */
-static void 
-call(FILE *s, int n, const struct var *args, struct var res, struct var func)
+static void call(
+    FILE *s,
+    int n,
+    const struct var *args,
+    struct var res,
+    struct var func)
 {
     int i,
         mem_used = 0,
@@ -289,24 +279,28 @@ call(FILE *s, int n, const struct var *args, struct var res, struct var func)
         /*dump_classification(eightbyte, args[i].type);*/
 
         if (*eightbyte != PC_MEMORY) {
-            int chunks = N_EIGHTBYTES(args[i].type),
-                size = args[i].type->size,
-                j;
-            struct var slice = args[i];
+            if (args[i].type->type == OBJECT) {
+                int chunks = N_EIGHTBYTES(args[i].type),
+                    size = args[i].type->size,
+                    j;
+                struct var slice = args[i];
 
-            for (j = 0; j < chunks; ++j) {
-                int width = (size < 8) ? size % 8 : 8;
+                for (j = 0; j < chunks; ++j) {
+                    int w = (size < 8) ? size % 8 : 8;
 
-                size -= width;
-                assert( eightbyte[j] == PC_INTEGER );
-                assert( width == 1 || width == 2 || width == 4 || width == 8 );
+                    size -= w;
+                    assert(eightbyte[j] == PC_INTEGER);
+                    assert(w == 1 || w == 2 || w == 4 || w == 8);
 
-                slice.type = type_init_integer(width);
-                slice.offset = args[i].offset + j * 8;
-                load(s, slice, param_int_reg[next_integer_reg++]);
+                    slice.type = type_init_integer(w);
+                    slice.offset = args[i].offset + j * 8;
+                    load(s, slice, param_int_reg[next_integer_reg++]);
+                }
+                assert(size == 0);
+            } else {
+                /* Non-objects can be loaded normally. */
+                load(s, args[i], param_int_reg[next_integer_reg++]);
             }
-
-            assert( size == 0 );
         }
     }
 
@@ -467,6 +461,8 @@ static enum param_class *enter(FILE *s, const struct decl *func)
     for (i = 0; i < func->params.length; ++i) {
         enum param_class *eightbyte = params[i];
 
+        /* Here it is ok to not separate between object and other types. Data in
+         * registers can always be treated as integer type. */
         if (*eightbyte != PC_MEMORY) {
             int n = N_EIGHTBYTES(func->fun->type->member[i].type),
                 size = func->fun->type->member[i].type->size,
@@ -505,6 +501,8 @@ static void ret(FILE *s, struct var val, const enum param_class *pc)
 
     assert( *pc != PC_NO_CLASS );
 
+    /* NB: This might break down for non-object values, in particular string
+     * constants that cannot be interpreted as integers. */
     if (*pc != PC_MEMORY) {
         int i;
         int n = N_EIGHTBYTES(val.type);
@@ -514,23 +512,23 @@ static void ret(FILE *s, struct var val, const enum param_class *pc)
         /* As we only support integer class, limit to two registers. Note that
          * the classification algorithm will never allocate more than two
          * integer registers for a single type. */
-        assert( n <= 2 );
+        assert(n <= 2);
 
-        /* This has a lot in common with call(..), and could probably be
+        /* This has a lot in common with call and enter, and could probably be
          * refactored. */
         for (i = 0; i < n; ++i) {
             int width = (size < 8) ? size % 8 : 8;
 
             size -= width;
-            assert( pc[i] == PC_INTEGER );
-            assert( width == 1 || width == 2 || width == 4 || width == 8 );
+            assert(pc[i] == PC_INTEGER);
+            assert(width == 1 || width == 2 || width == 4 || width == 8);
 
             slice.type = type_init_integer(width);
             slice.offset = val.offset + i * 8;
             load(s, slice, ret_int_reg[next_int_reg++]);
         }
 
-        assert( size == 0 );
+        assert(size == 0);
     } else {
         /* Load return address from magic stack offset and copy result. */
         fprintf(s, "\tmovq\t-8(%%rbp), %%%s\n", reg(DI, 8));
@@ -694,7 +692,32 @@ static void asm_op(FILE *stream, const struct op *op)
 
     switch (op->type) {
     case IR_ASSIGN:
-        if (op->a.type->size == op->b.type->size && op->a.type->size > 8) {
+        /* Handle special case of char [] = string literal. This will only occur
+         * as part of initializer, at block scope. External definitions are
+         * handled before this. At no other point should array types be seen in
+         * assembly backend. We handle these assignments with memcpy, other
+         * compilers load the string into register as ascii numbers. */
+        if (op->a.type->type == ARRAY || op->b.type->type == ARRAY) {
+            struct var str = op->b;
+            assert(type_equal(op->a.type, op->b.type));
+            assert(op->a.kind == DIRECT);
+            assert(op->b.kind == IMMEDIATE && op->b.string);
+
+            /* The string value is an immediate, that has not yet gotten a label
+             * that we can refer to. Add to string table, decay to address. */
+            str.string = strlabel(str.string);
+            str.type = type_init_pointer(str.type->next);
+            fprintf(stream, "\tmovq\t%s, %%%s\n", refer(str), reg(SI, 8));
+
+            load_address(stream, op->a, DI);
+            fprintf(stream, "\tmovq\t$%d, %%rdx\n", op->a.type->size);
+            fprintf(stream, "\tcall\tmemcpy\n");
+            break;
+        }
+        /* Struct or union assignment, values that cannot be loaded into a
+         * single register. */
+        else if (op->a.type->size > 8) {
+            assert(op->a.type->size == op->b.type->size);
             load_address(stream, op->a, DI);
             load_address(stream, op->b, SI);
             fprintf(stream, "\tmovq\t$%d, %%rdx\n", op->a.type->size);
@@ -704,16 +727,11 @@ static void asm_op(FILE *stream, const struct op *op)
         /* Fallthrough, assignment has implicit cast for convenience and to make
          * static initialization work without explicit casts. */
     case IR_CAST:
-        if (op->a.type->type == ARRAY || op->b.type->type == ARRAY) {
-            /* This is only relevant for string constants. */
-            w = 8;
-        } else {
-            w = (op->a.type->size > op->b.type->size) ?
-                op->a.type->size : op->b.type->size;
-            if (w < 4) w = 4;
-        }
+        w = (op->a.type->size > op->b.type->size) ?
+            op->a.type->size : op->b.type->size;
+        w = (w < 4) ? 4 : w;
         assert(w == 4 || w == 8);
-        load_w(stream, op->b, AX, w);
+        load_value(stream, op->b, AX, w);
         store(stream, AX, op->a);
         break;
     case IR_DEREF:
@@ -971,11 +989,10 @@ static void asm_block(
 
 static void asm_immediate(FILE *stream, struct var target, struct var val)
 {
-    const struct symbol *symbol;
-    union value value;
+    const struct symbol *symbol = target.symbol;
 
-    symbol = target.symbol;
-    value = val.value;
+    assert(target.kind == DIRECT);
+    assert(val.kind == IMMEDIATE);
 
     if (!target.offset) {
         if (symbol->linkage == LINK_EXTERN) {
@@ -993,16 +1010,16 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
     case INTEGER:
         switch (target.type->size) {
         case 1:
-            fprintf(stream, "\t.byte\t%d\n", (unsigned char) value.integer);
+            fprintf(stream, "\t.byte\t%d\n", (unsigned char) val.value.integer);
             break;
         case 2:
-            fprintf(stream, "\t.short\t%d\n", (short) value.integer);
+            fprintf(stream, "\t.short\t%d\n", (short) val.value.integer);
             break;
         case 4:
-            fprintf(stream, "\t.int\t%d\n", (int) value.integer);
+            fprintf(stream, "\t.int\t%d\n", (int) val.value.integer);
             break;
         case 8:
-            fprintf(stream, "\t.quad\t%ld\n", value.integer);
+            fprintf(stream, "\t.quad\t%ld\n", val.value.integer);
             break;
         default:
             assert(0);
@@ -1010,25 +1027,12 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
         break;
     case POINTER:
         fprintf(stream, "\t.quad\t");
-        if (target.type->next->type == INTEGER &&
-            target.type->next->size == 1 &&
-            value.string)
-        {
-            fprintf(stream, "%s", value.string);
-        } else {
-            fprintf(stream, "%ld", value.integer);
-        }
-        fprintf(stream, "\n");
+        fprintf(stream, "%s\n", refer(val) + 1); /* Skip the leading '$'. */
         break;
     case ARRAY:
-        if (
-            target.type->next->type == INTEGER && 
-            target.type->next->size == 1 &&
-            value.string
-        ) {
-            /* Special handling for string type. */
+        if (val.string) {
             fprintf(stream, "\t.string\t\"");
-            output_string(stream, value.string);
+            output_string(stream, val.string);
             fprintf(stream, "\"\n");
         } else {
             /* Default to this for static initialization. */
