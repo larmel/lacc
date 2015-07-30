@@ -551,18 +551,58 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
 {
     struct op op;
 
-    /* hack, special case is char [] = string in initializers. */
-    if (target.type->type != ARRAY) {
-        var = array_or_func_to_addr(block, var);
-    }
-
     if (!target.lvalue) {
         error("Target of assignment must be l-value.");
         exit(1);
     }
 
-    /* l-value conversion. */
-    target.lvalue = 0;
+    if (target.type->type != ARRAY) {
+        var = array_or_func_to_addr(block, var);
+    }
+
+    /* Special case char [] = string in initializers. */
+    if (target.type->type == ARRAY) {
+        if (!type_equal(target.type, var.type) || var.kind != IMMEDIATE) {
+            error("Invalid initializer assignment, was %s = %s.",
+                typetostr(target.type), typetostr(var.type));
+            exit(1);
+        }
+    }
+    /* Rules for simple assignment. */
+    else if (
+        /* The left operand has atomic, qualified, or unqualified arithmetic
+         * type, and the right has arithmetic type. */
+        !(is_arithmetic(target.type) && is_arithmetic(var.type)) &&
+        /* The left operand has an atomic, qualified, or unqualified version of
+         * a structure or union type compatible with the type of the right. */
+        !(is_object(target.type) && is_object(var.type)
+            && is_compatible(target.type, var.type)) &&
+        /* The left operand has atomic, qualified, or unqualified pointer type,
+         * and (considering the type the left operand would have after lvalue
+         * conversion) both operands are pointers to qualified or unqualified
+         * versions of compatible types, and the type pointed to by the left has
+         * all the qualifiers of the type pointed to by the right. */
+        !(is_pointer(target.type) && is_pointer(var.type)
+            && is_compatible(target.type, var.type)
+            && target.type->qualifier == var.type->qualifier) &&
+        /* The left operand has atomic, qualified, or unqualified pointer type,
+         * and (considering the type the left operand would have after lvalue
+         * conversion) one operand is a pointer to an object type, and the other
+         * is a pointer to a qualified or unqualified version of void, and the
+         * type pointed to by the left has all the qualifiers of the type
+         * pointed to by the right. */
+        !(is_pointer(target.type) && is_pointer(var.type)
+            && ((is_void(target.type->next) && is_object(var.type->next))
+                || (is_object(target.type->next) && is_void(var.type->next)))
+            && target.type->next->qualifier == var.type->next->qualifier) &&
+        /* The left operand is an atomic, qualified, or unqualified pointer, and
+         * the right is a null pointer constant. */
+        !(is_pointer(target.type) && is_nullptr(var)))
+    {
+        error("Incompatible operands to assignment expression, %s = %s.",
+            typetostr(target.type), typetostr(var.type));
+        exit(1);
+    }
 
     /* Assignment has implicit conversion for basic types when evaluating the IR
      * operation, meaning var will be sign extended to size of target.type. */
@@ -570,7 +610,7 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
     op.a = target;
     op.b = var;
     cfg_ir_append(block, op);
-
+    target.lvalue = 0;
     return target;
 }
 

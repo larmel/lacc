@@ -50,7 +50,8 @@ struct typetree
 #define is_pointer(t) (t->type == POINTER)
 #define is_arithmetic(t) (is_integer(t) || t->type == REAL)
 #define is_scalar(t) (is_arithmetic(t) || t->type == POINTER)
-#define is_aggregate(t) (t->type == ARRAY || t->type == OBJECT)
+#define is_object(t) ((t)->type == OBJECT)
+#define is_aggregate(t) ((t)->type == ARRAY || is_object(t))
 #define is_void(t) ((t)->type == NONE)
 
 #define is_const(t) (t->qualifier & 0x01)

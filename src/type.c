@@ -191,14 +191,14 @@ static const struct typetree *unwrap_if_indirection(const struct typetree *type)
     return type;
 }
 
-/* Determine whether two types are the same.
+/* Determine whether two types are the same, disregarding qualifiers.
  */
 int type_equal(const struct typetree *a, const struct typetree *b)
 {
     if (!a && !b) return 1;
     if (!a || !b) return 0;
     if (is_tagged(a) && is_tagged(b))
-        return a->next == b->next && a->qualifier == b->qualifier;
+        return a->next == b->next;
 
     a = unwrap_if_indirection(a);
     b = unwrap_if_indirection(b);
@@ -206,7 +206,6 @@ int type_equal(const struct typetree *a, const struct typetree *b)
     if (a->type == b->type
         && a->size == b->size
         && a->n == b->n
-        /*&& a->qualifier == b->qualifier*/
         && is_unsigned(a) == is_unsigned(b)
         && type_equal(a->next, b->next))
     {
@@ -257,9 +256,7 @@ usual_arithmetic_conversion(const struct typetree *l, const struct typetree *r)
  */
 int is_compatible(const struct typetree *l, const struct typetree *r)
 {
-    assert( is_pointer(l) && is_pointer(r) );
-
-    return type_equal(l, r) || (l->next->size == r->next->size);
+    return type_equal(l, r);
 }
 
 const struct typetree *type_deref(const struct typetree *ptr)
