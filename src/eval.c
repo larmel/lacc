@@ -434,54 +434,54 @@ struct var eval_expr(struct block *block, enum optype op, ...)
     return l;
 }
 
-/* Evaluate &a. Depending on var a:
- * If DEREF, create a new var with a DIRECT reference to the same symbol. Not
- *     even necessary to add any code for cases like &(*foo).
- * If DIRECT, create a temporary symbol with type pointer to a::type, and add
- *     an operation to the current block.
- * If IMMEDIATE: not implemented
- *
- * Result is always DIRECT.
+/* Evaluate &a.
  */
 struct var eval_addr(struct block *block, struct var var)
 {
     struct op op;
-    struct var res;
-    struct symbol *temp;
-    const struct typetree *type = type_init_pointer(var.type);
+    struct var tmp;
 
     switch (var.kind) {
     case IMMEDIATE:
-        /* Array constants are passed as immediate values with array type. Decay
-         * into pointer on evaluation, for example as parameters. Should maybe
-         * consider an extra kind ADDR to not have to generate all these
-         * temporaries. */
-        assert(var.type->type == ARRAY);
+        if (!var.string) {
+            error("Address of immediate other than string, was '%s'.",
+                typetostr(var.type));
+            exit(1);
+        }
+        /* Address of string literal can be done without evaluation, just decay
+         * the variable to pointer. */
+        if (var.type->type == ARRAY) {
+            var = array_or_func_to_addr(block, var);
+            assert(var.kind == IMMEDIATE);
+            break;
+        }
+        assert(is_pointer(var.type) && var.string);
     case DIRECT:
-        temp = sym_temp(&ns_ident, type);
-        res = var_direct(temp);
-        sym_list_push_back(&decl->locals, temp);
+        tmp = var_direct(sym_temp(&ns_ident, type_init_pointer(var.type)));
+        sym_list_push_back(&decl->locals, (struct symbol *) tmp.symbol);
         op.type = IR_ADDR;
-        op.a = res;
+        op.a = tmp;
         op.b = var;
         cfg_ir_append(block, op);
+        var = tmp;
         break;
     case DEREF:
         assert(is_pointer(var.symbol->type));
-        res = var_direct(var.symbol);
+        tmp = var_direct(var.symbol);
         if (var.offset) {
             /* Address of *(sym + offset) is (sym + offset), but without pointer
              * arithmetic applied in addition. Cast to char pointer temporarily
              * to avoid trouble calling eval_expr. */
-            res = eval_cast(block, res,
+            tmp = eval_cast(block, tmp,
                 type_init_pointer(type_init_integer(1)));
-            res = eval_expr(block, IR_OP_ADD, res, var_int(var.offset));
+            tmp = eval_expr(block, IR_OP_ADD, tmp, var_int(var.offset));
         }
-        res.type = type;
+        tmp.type = type_init_pointer(var.type);
+        var = tmp;
         break;
     }
 
-    return res;
+    return var;
 }
 
 /* Evaluate *var.
