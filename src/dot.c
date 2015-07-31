@@ -170,7 +170,7 @@ static void foutputnode(FILE *stream, map_t *memo, const struct block *node)
     }
 
     if (node->jump[0] == NULL && node->jump[1] == NULL) {
-        if (node->expr.type && node->expr.type->type != NONE) {
+        if (node->has_return_value) {
             fprintf(stream, " | return");
             fprintf(stream, " %s", vartostr(node->expr));
         }
@@ -197,25 +197,34 @@ static void foutputnode(FILE *stream, map_t *memo, const struct block *node)
  * format, which can then be rendered. */
 void fdotgen(FILE *stream, const struct decl *cfg)
 {
-    if (cfg->fun) {
-        map_t memo;
-        map_init(&memo);
+    map_t memo;
+    map_init(&memo);
 
+    if (cfg->head->n && cfg->fun) {
+        struct decl copy = *cfg;
+        copy.fun = NULL;
+        fdotgen(stream, &copy);
+        copy.fun = cfg->fun;
+        copy.head->n = 0;
+        fdotgen(stream, &copy);
+    } else {
         fprintf(stream, "digraph {\n");
-        fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,"
-                        "style=\"setlinewidth(0.1)\",shape=record];\n");
-        fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,"
-                        "style=\"setlinewidth(0.1)\"];\n");
-
-        if (cfg->fun) {
+        fprintf(stream,
+            "\tnode [fontname=\"Courier_New\",fontsize=10,"
+            "style=\"setlinewidth(0.1)\",shape=record];\n");
+        fprintf(stream,
+            "\tedge [fontname=\"Courier_New\",fontsize=10,"
+            "style=\"setlinewidth(0.1)\"];\n");
+        if (cfg->head->n) {
+            foutputnode(stream, &memo, cfg->head);
+        } else {
+            assert(cfg->fun);
             fprintf(stream, "\tlabel=\"%s\"\n", cfg->fun->name);
             fprintf(stream, "\tlabelloc=\"t\"\n");
+            foutputnode(stream, &memo, cfg->body);
         }
-
-        foutputnode(stream, &memo, cfg->body);
-
         fprintf(stream, "}\n");
-
-        map_finalize(&memo);
     }
+
+    map_finalize(&memo);
 }
