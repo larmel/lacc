@@ -989,22 +989,8 @@ static void asm_block(
 
 static void asm_immediate(FILE *stream, struct var target, struct var val)
 {
-    const struct symbol *symbol = target.symbol;
-
     assert(target.kind == DIRECT);
     assert(val.kind == IMMEDIATE);
-
-    if (!target.offset) {
-        if (symbol->linkage == LINK_EXTERN) {
-            fprintf(stream, "\t.globl\t%s\n", sym_name(symbol));
-        }
-
-        if (is_aggregate(symbol->type)) {
-            fprintf(stream, "\t.align\t16\n");
-        }
-
-        fprintf(stream, "%s:\n", sym_name(symbol));
-    }
 
     switch (target.type->type) {
     case INTEGER:
@@ -1049,6 +1035,46 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
     }
 }
 
+static void assemble_data(FILE *stream, struct block *head)
+{
+    int i;
+    int initialized = 0;
+    const struct symbol *symbol = NULL;
+
+    fprintf(stream, "\t.data\n");
+    for (i = 0; i < head->n; ++i) {
+        struct op *op = head->code + i;
+        symbol = op->a.symbol;
+
+        assert(op->type == IR_ASSIGN);
+        assert(op->a.kind == DIRECT);
+        assert(symbol == op->a.symbol || !op->a.offset);
+
+        /* Assume that assignments come in sequentially per symbol, and for each
+         * symbol sorted on increasing offsets. */
+        if (!op->a.offset) {
+            symbol = op->a.symbol;
+            initialized = 0;
+            if (symbol->linkage == LINK_EXTERN) {
+                fprintf(stream, "\t.globl\t%s\n", sym_name(symbol));
+            }
+            if (is_aggregate(symbol->type)) {
+                fprintf(stream, "\t.align\t16\n");
+            }
+            fprintf(stream, "%s:\n", sym_name(symbol));
+        }
+
+        /* Insert necessary padding bytes before emitting initializer, which
+         * does not handle offsets in any way. */
+        if (op->a.offset > initialized) {
+            fprintf(stream, "\t.zero\t%d\n",
+                op->a.offset - initialized);
+        }
+        asm_immediate(stream, op->a, op->b);
+        initialized = op->a.offset + op->a.type->size;
+    }
+}
+
 static void asm_function(FILE *stream, const struct decl *decl)
 {
     map_t memo;
@@ -1083,18 +1109,9 @@ static void asm_function(FILE *stream, const struct decl *decl)
 
 void assemble(FILE *stream, const struct decl *decl)
 {
-    int i;
-
     if (decl->head->n) {
-        fprintf(stream, "\t.data\n");
-        for (i = 0; i < decl->head->n; ++i) {
-            assert(decl->head->code[i].type == IR_ASSIGN);
-
-            asm_immediate(stream,
-                decl->head->code[i].a, decl->head->code[i].b);
-        }
+        assemble_data(stream, decl->head);
     }
-
     if (decl->fun) {
         assert(decl->fun->type->type == FUNCTION);
         asm_function(stream, decl);
