@@ -20,6 +20,8 @@ static struct block *initializer(struct block *block, struct var target);
 static struct block *block(struct block *);
 static struct block *statement(struct block *);
 
+static void zero_initialize(struct block *block, struct var target);
+
 static struct block *expression(struct block *);
 static struct block *assignment_expression(struct block *);
 static struct block *conditional_expression(struct block *);
@@ -63,25 +65,23 @@ struct decl *parse()
     while (peek().token != '$') {
         decl->fun = NULL;
         declaration(decl->body);
-
         if (decl->head->n || decl->fun) {
             return decl;
         }
     }
 
     if (!done_last_iteration) {
-        int i, found;
+        int i;
         struct symbol *sym;
-        for (i = found = 0; i < ns_ident.size; ++i) {
+
+        for (i = 0; i < ns_ident.size; ++i) {
             sym = ns_ident.symbol[i];
             if (sym->symtype == SYM_TENTATIVE && sym->linkage == LINK_INTERN) {
-                found = 1;
-                eval_assign(decl->head, var_direct(sym), var_int(0));
+                zero_initialize(decl->head, var_direct(sym));
             }
         }
-
         done_last_iteration = 1;
-        if (found) {
+        if (decl->head->n) {
             return decl;
         }
     }
@@ -161,7 +161,7 @@ declaration(struct block *parent)
         case ';':
             consume(';');
             return parent;
-        case '=': 
+        case '=':
             if (sym->symtype == SYM_DECLARATION) {
                 error("Extern symbol '%s' cannot be initialized.", sym->name);
             }
@@ -227,62 +227,60 @@ static struct block *initializer(struct block *block, struct var target)
     assert(target.kind == DIRECT);
 
     if (peek().token == '{') {
-        int i = 0,
-            base = target.offset, /* Initially filled offset. */
-            cursor = 0;           /* Currently filled offset. */
+        int i, base = target.offset; /* Initially filled offset. */
         const struct typetree *type = target.type;
 
         consume('{');
         target.lvalue = 1;
         switch (type->type) {
         case OBJECT:
-            for (; i < type->n; ++i) {
+            for (i = 0; i < type->n; ++i) {
                 target.type = type->member[i].type;
                 target.offset = base + type->member[i].offset;
                 block = initializer(block, target);
-                if (peek().token != ',') {
-                    cursor = (i < type->n - 1) ?
-                        type->member[i + 1].offset : type->size;
+                if (peek().token == ',') {
+                    consume(',');
+                } else break;
+                if (peek().token == '}') {
                     break;
                 }
-                consume(',');
+            }
+            while (++i < type->n) {
+                target.type = type->member[i].type;
+                target.offset = base + type->member[i].offset;
+                zero_initialize(block, target);
             }
             break;
         case ARRAY:
             target.type = type->next;
-            for (; !type->size || i < type->size / type->next->size; ++i) {
+            for (i = 0; !type->size || i < type->size / type->next->size; ++i) {
                 target.offset = base + i * type->next->size;
                 block = initializer(block, target);
-                if (peek().token != ',') {
-                    cursor = target.offset + type->next->size;
+                if (peek().token == ',') {
+                    consume(',');
+                } else break;
+                if (peek().token == '}') {
                     break;
                 }
-                consume(',');
             }
-            /* Incomplete array type can only be in the root level of target
-             * type tree, thus safe to overwrite type directly in symbol. */
             if (!type->size) {
                 assert(!target.symbol->type->size);
                 assert(target.symbol->type->type == ARRAY);
 
-                ((struct typetree *) target.symbol->type)->size = cursor;
+                /* Incomplete array type can only be in the root level of target
+                 * type tree, thus safe to overwrite type directly in symbol. */
+                ((struct typetree *) target.symbol->type)->size =
+                    (i + 1) * type->next->size;
+            } else {
+                while (++i < type->size / type->next->size) {
+                    target.offset = base + i * type->next->size;
+                    zero_initialize(block, target);
+                }
             }
             break;
         default:
             error("Block initializer only apply to array or object type.");
             exit(1);
-        }
-        /* Initialize the rest to zero, choosing greedily from largest possible
-         * integer width for assignment. */
-        while (cursor < type->size) {
-            struct var zero;
-            int w = type->size - cursor;
-            w = (w >= 8) ? 8 : (w > 4) ? 4 : (w == 3) ? 2 : w;
-            zero = var_zero(w);
-            target.offset = base + cursor;
-            target.type = zero.type;
-            eval_assign(block, target, zero);
-            cursor += w;
         }
         target.lvalue = 0;
         consume('}');
@@ -292,12 +290,15 @@ static struct block *initializer(struct block *block, struct var target)
             error("Initializer must be computable at load time.");
             exit(1);
         }
-        /* Complete type based on string literal. */
         if (target.kind == DIRECT && !target.type->size) {
             const struct typetree *type =
                 type_complete(target.symbol->type, block->expr.type);
-            assert(target.offset == 0);
+            
+            assert(!target.offset);
+            assert(block->expr.kind == IMMEDIATE);
+            assert(block->expr.type->type == ARRAY && block->expr.string);
 
+            /* Complete type based on string literal. */
             target.type = type;
             ((struct symbol *) target.symbol)->type = type;
         }
@@ -305,6 +306,53 @@ static struct block *initializer(struct block *block, struct var target)
     }
 
     return block;
+}
+
+/* Set var = 0, using simple assignment on members for composite types. This
+ * rule does not consume any input, but generates a series of assignments on the
+ * given variable. Point is to be able to zero initialize using normal simple
+ * assignment rules, although IR can become verbose for large structures.
+ */
+static void zero_initialize(struct block *block, struct var target)
+{
+    int i;
+    struct var var;
+    assert(target.kind == DIRECT);
+
+    switch (target.type->type) {
+    case OBJECT:
+        target.type = unwrap_if_indirection(target.type);
+        var = target;
+        for (i = 0; i < var.type->n; ++i) {
+            target.type = var.type->member[i].type;
+            target.offset = var.offset + var.type->member[i].offset;
+            zero_initialize(block, target);
+        }
+        break;
+    case ARRAY:
+        assert(target.type->size);
+        var = target;
+        target.type = target.type->next;
+        assert(target.type->type != OBJECT || !target.type->next);
+        for (i = 0; i < var.type->size / var.type->next->size; ++i) {
+            target.offset = var.offset + i * var.type->next->size;
+            zero_initialize(block, target);
+        }
+        break;
+    case POINTER:
+        var = var_zero(8);
+        var.type = type_init_pointer(type_init_void());
+        eval_assign(block, target, var);
+        break;
+    case INTEGER:
+        var = var_zero(target.type->size);
+        eval_assign(block, target, var);
+        break;
+    default:
+        internal_error("Invalid type to zero-initialize, was '%s'.",
+            typetostr(target.type));
+        exit(1);
+    }
 }
 
 /* Parse struct declaration list. Return size of largest member.

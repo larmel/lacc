@@ -78,6 +78,11 @@ int type_equal(const struct typetree *l, const struct typetree *r);
 
 int is_compatible(const struct typetree *l, const struct typetree *r);
 
+/* Instances of OBJECT types can be represented as indirections in the form of
+ * a tag. Return the complete object if tagged.
+ */
+const struct typetree *unwrap_if_indirection(const struct typetree *type);
+
 /* Get the type the given POINTER is pointing to. Handles tag indirections for
  * pointers to typedef'ed object types.
  */

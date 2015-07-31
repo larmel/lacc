@@ -71,7 +71,7 @@ static char *refer(const struct var var)
             }
         } else {
             assert(!var.offset);
-            assert(is_integer(var.type));
+            assert(is_scalar(var.type));
             sprintf(str, "$%ld", var.value.integer);
         }
     } else {
@@ -1022,31 +1022,30 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
             fprintf(stream, "\t.quad\t%ld\n", val.value.integer);
             break;
         default:
-            assert(0);
+            internal_error("Unknown integer width %d in initialization.",
+                target.type->size);
+            exit(1);
         }
         break;
     case POINTER:
         fprintf(stream, "\t.quad\t");
-        fprintf(stream, "%s\n", refer(val) + 1); /* Skip the leading '$'. */
+        if (val.string) {
+            fprintf(stream, "%s\n", refer(val) + 1); /* Skip the leading '$' */
+        } else {
+            fprintf(stream, "%ld\n", val.value.integer);
+        }
         break;
     case ARRAY:
         if (val.string) {
             fprintf(stream, "\t.string\t\"");
             output_string(stream, val.string);
             fprintf(stream, "\"\n");
-        } else {
-            /* Default to this for static initialization. */
-            assert(val.type->type == INTEGER && !val.value.integer);
-            fprintf(stream, "\t.skip %d, 0\n", target.type->size);
+            break;
         }
-        break;
-    case OBJECT:
-        /* Only way this happens is static initialization to zero. */
-        assert(val.type->type == INTEGER && !val.value.integer);
-        fprintf(stream, "\t.skip %d, 0\n", target.type->size);
-        break;
     default:
-        assert(0);
+        internal_error("Invalid assignment of type '%s'.",
+            typetostr(target.type));
+        exit(1);
     }
 }
 

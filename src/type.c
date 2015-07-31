@@ -180,7 +180,7 @@ void type_align_struct_members(struct typetree *type)
 /* Some object types are represented with a tag, and indirectly pointing to a
  * typedef'ed value. Returns a copy of the typedef, with qualifiers applied.
  */
-static const struct typetree *unwrap_if_indirection(const struct typetree *type)
+const struct typetree *unwrap_if_indirection(const struct typetree *type)
 {
     if (type->type == OBJECT && type->next) {
         struct typetree *obj = type_init_object();
