@@ -560,11 +560,14 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
         var = array_or_func_to_addr(block, var);
     }
 
-    /* Special case char [] = string in initializers. */
+    /* Special case char [] = string in initializers. BUT: This is not enough,
+     * also uses foo = zero constant to fill up static initialization... */
     if (target.type->type == ARRAY) {
         if (!type_equal(target.type, var.type) || var.kind != IMMEDIATE) {
-            error("Invalid initializer assignment, was %s = %s.",
-                typetostr(target.type), typetostr(var.type));
+            error("Invalid initializer assignment, was %s :: %s = %s.",
+                target.symbol->name,
+                typetostr(target.type),
+                typetostr(var.type));
             exit(1);
         }
     }
@@ -575,7 +578,7 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
         !(is_arithmetic(target.type) && is_arithmetic(var.type)) &&
         /* The left operand has an atomic, qualified, or unqualified version of
          * a structure or union type compatible with the type of the right. */
-        !(is_object(target.type) && is_object(var.type)
+        !(is_struct_or_union(target.type)
             && is_compatible(target.type, var.type)) &&
         /* The left operand has atomic, qualified, or unqualified pointer type,
          * and (considering the type the left operand would have after lvalue
@@ -583,8 +586,9 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
          * versions of compatible types, and the type pointed to by the left has
          * all the qualifiers of the type pointed to by the right. */
         !(is_pointer(target.type) && is_pointer(var.type)
-            && is_compatible(target.type, var.type)
-            && target.type->qualifier == var.type->qualifier) &&
+            && is_compatible(target.type->next, var.type->next)
+            && (target.type->next->qualifier | var.type->next->qualifier)
+                == target.type->next->qualifier) &&
         /* The left operand has atomic, qualified, or unqualified pointer type,
          * and (considering the type the left operand would have after lvalue
          * conversion) one operand is a pointer to an object type, and the other
@@ -594,13 +598,14 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
         !(is_pointer(target.type) && is_pointer(var.type)
             && ((is_void(target.type->next) && is_object(var.type->next))
                 || (is_object(target.type->next) && is_void(var.type->next)))
-            && target.type->next->qualifier == var.type->next->qualifier) &&
+            && (target.type->next->qualifier | var.type->next->qualifier)
+                == target.type->next->qualifier) &&
         /* The left operand is an atomic, qualified, or unqualified pointer, and
          * the right is a null pointer constant. */
         !(is_pointer(target.type) && is_nullptr(var)))
     {
-        error("Incompatible operands to assignment expression, %s = %s.",
-            typetostr(target.type), typetostr(var.type));
+        error("Incompatible operands to assignment expression, %s :: %s = %s.",
+            target.symbol->name, typetostr(target.type), typetostr(var.type));
         exit(1);
     }
 

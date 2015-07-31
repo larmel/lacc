@@ -45,12 +45,14 @@ struct typetree
     const char *tag_name;
 };
 
-/* 6.2.5 Types */
+/* 6.2.5 Types. Types are separated into object types and function types. Define
+ * macros that mimic semantics given in standardese. */
+#define is_object(t) ((t)->type != FUNCTION)
+#define is_struct_or_union(t) ((t)->type == OBJECT)
 #define is_integer(t) (t->type == INTEGER)
 #define is_pointer(t) (t->type == POINTER)
 #define is_arithmetic(t) (is_integer(t) || t->type == REAL)
 #define is_scalar(t) (is_arithmetic(t) || t->type == POINTER)
-#define is_object(t) ((t)->type == OBJECT)
 #define is_aggregate(t) ((t)->type == ARRAY || is_object(t))
 #define is_void(t) ((t)->type == NONE)
 
