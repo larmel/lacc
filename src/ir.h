@@ -60,6 +60,15 @@ struct var var_int(int value);
  */
 struct var var_zero(int size);
 
+/* A value with no type.
+ */
+struct var var_void(void);
+
+/* Create a variable of the given type, returning a direct reference to a new
+ * symbol.
+ */
+struct var create_var(const struct typetree *type);
+
 /* Three address code operation types.
  */
 enum optype
@@ -158,20 +167,24 @@ struct decl
     size_t capacity;
 };
 
-/* Initialize a new control flow graph structure. */
-struct decl *cfg_create();
+/* Initialize a new control flow graph structure.
+ */
+struct decl *cfg_create(void);
 
 /* Initialize a CFG block with a unique jump label, and associate it with the
  * provided decl object. Blocks and functions have the same lifecycle, and 
- * should only be freed by calling cfg_finalize. */
+ * should only be freed by calling cfg_finalize.
+ */
 struct block *cfg_block_init(struct decl *);
 
 /* Add a 3-address code operation to the block. Code is kept in a separate list
- * for each block. */
+ * for each block.
+ */
 void cfg_ir_append(struct block *, struct op);
 
 /* Release all resources related to the control flow graph. Calls free on all
- * blocks and their labels, and finally the struct decl object itself. */
+ * blocks and their labels, and finally the struct decl object itself.
+ */
 void cfg_finalize(struct decl *);
 
 #endif

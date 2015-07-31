@@ -6,7 +6,7 @@ bootstrap: bin/bootstrap
 #
 # Build the compiler from assembly code built by itself (bootstrapping)
 #
-bin/bootstrap: bin/lcc bin/abi.o bin/asm.o bin/cfg.o bin/dot.o bin/error.o bin/eval.o bin/input.o bin/lcc.o bin/macro.o bin/parse.o bin/preprocess.o bin/string.o bin/symtab.o bin/tokenize.o bin/type.o bin/libutil.a
+bin/bootstrap: bin/lcc bin/abi.o bin/asm.o bin/ir.o bin/dot.o bin/error.o bin/eval.o bin/input.o bin/lcc.o bin/macro.o bin/parse.o bin/preprocess.o bin/string.o bin/symtab.o bin/tokenize.o bin/type.o bin/libutil.a
 	cc -Wall -pedantic -ansi bin/*.o -L./bin/ -lutil -o $@
 
 bin/abi.o: bin/abi.s
