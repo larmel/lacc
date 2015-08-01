@@ -1,3 +1,7 @@
+#if _XOPEN_SOURCE < 500
+#  undef _XOPEN_SOURCE
+#  define _XOPEN_SOURCE 500 /* strdup */
+#endif
 #include "error.h"
 #include "input.h"
 #include "util/stack.h"

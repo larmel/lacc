@@ -1,3 +1,6 @@
+#ifndef _XOPEN_SOURCE
+#  define _XOPEN_SOURCE 500 /* getopt */
+#endif
 #include "error.h"
 #include "ir.h"
 #include "string.h"

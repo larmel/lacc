@@ -6,6 +6,7 @@
 const char *strlabel(const char *);
 
 void output_string(FILE *, const char *);
+
 void output_strings(FILE *);
 
 #endif

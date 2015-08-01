@@ -1,9 +1,13 @@
+#if _XOPEN_SOURCE < 700
+#  undef _XOPEN_SOURCE
+#  define _XOPEN_SOURCE 700 /* strdup, strndup */
+#endif
 #include "string.h"
 
 #include <assert.h>
 #include <ctype.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int count;
 static int capacity;

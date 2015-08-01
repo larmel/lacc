@@ -1,3 +1,7 @@
+#if _XOPEN_SOURCE < 500
+#  undef _XOPEN_SOURCE
+#  define _XOPEN_SOURCE 500 /* snprintf */
+#endif
 #include "error.h"
 #include "type.h"
 

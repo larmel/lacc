@@ -1,3 +1,7 @@
+#if _XOPEN_SOURCE < 700
+#  undef _XOPEN_SOURCE
+#  define _XOPEN_SOURCE 700 /* strdup, strndup */
+#endif
 #include "error.h"
 #include "preprocess.h"
 
