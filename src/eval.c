@@ -527,15 +527,16 @@ struct var eval_call(struct block *block, struct var var)
     return res;
 }
 
-void eval_return(struct block *block)
+struct var eval_return(struct block *block, const struct typetree *type)
 {
-    const struct typetree *type = unwrap_if_indirection(decl->fun->type->next);
     assert(type->type != NONE);
 
     if (!type_equal(type, block->expr.type)) {
         block->expr = eval_assign(block, create_var(type), block->expr);
     }
+
     block->has_return_value = 1;
+    return block->expr;
 }
 
 struct var eval_cast(struct block *b, struct var v, const struct typetree *t)

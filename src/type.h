@@ -88,11 +88,6 @@ const struct typetree *unwrap_if_indirection(const struct typetree *type);
  */
 const struct typetree *type_deref(const struct typetree *ptr);
 
-/* Get the return type of given FUNCTION type. Handles tag indirections, which
- * can occur for functions returning struct values.
- */
-const struct typetree *get_return_type(const struct typetree *func);
-
 const struct typetree *
 type_complete(const struct typetree *, const struct typetree *);
 

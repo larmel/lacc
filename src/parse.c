@@ -1103,9 +1103,11 @@ static struct block *statement(struct block *parent)
     case RETURN:
         consume(RETURN);
         /* Expression is return iff return type of function is not void. */
-        if (!is_void(get_return_type(decl->fun->type))) {
+        if (!is_void(decl->fun->type->next)) {
             parent = expression(parent);
-            eval_return(parent);
+            parent->expr =
+                eval_return(parent,
+                    unwrap_if_indirection(decl->fun->type->next));
         }
         consume(';');
         parent = cfg_block_init(decl); /* orphan */

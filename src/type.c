@@ -265,12 +265,6 @@ const struct typetree *type_deref(const struct typetree *ptr)
     return unwrap_if_indirection(ptr->next);
 }
 
-const struct typetree *get_return_type(const struct typetree *func)
-{
-    assert(func->type == FUNCTION);
-    return unwrap_if_indirection(func->next);
-}
-
 /* Validate that type p can be completed by applying size from q, and return q
  * as the result.
  */

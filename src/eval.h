@@ -44,13 +44,13 @@ struct var eval_conditional(struct var a, struct block *b, struct block *c);
 void param(struct block *, struct var);
 
 /* Evaluate return (expr)
- * If expr has a different type than return value T, a conversion equivalent to
+ * If expr has a different type than return type T, a conversion equivalent to
  * assignment is made:
  *
  *      T a = expr;
  *      return a;
  */
-void eval_return(struct block *block);
+struct var eval_return(struct block *block, const struct typetree *type);
 
 /* Evaluate va_start builtin function.
  */
