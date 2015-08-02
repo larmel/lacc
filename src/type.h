@@ -91,8 +91,18 @@ const struct typetree *type_deref(const struct typetree *ptr);
 const struct typetree *
 type_complete(const struct typetree *, const struct typetree *);
 
-const struct typetree *
-usual_arithmetic_conversion(const struct typetree *l, const struct typetree *r);
+/* Find a common real type between operands used in an expression, giving the
+ * type of the result.
+ */
+const struct typetree *usual_arithmetic_conversion(
+    const struct typetree *t1,
+    const struct typetree *t2);
+
+/* Promote the given integer type to int or unsigned int, or do nothing if the
+ * precision is already as wide. For example, unsigned short will be converted
+ * to int.
+ */
+const struct typetree *promote_integer(const struct typetree *type);
 
 void type_add_member(struct typetree *, const struct typetree *, const char *);
 

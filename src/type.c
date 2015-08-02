@@ -225,35 +225,46 @@ int type_equal(const struct typetree *a, const struct typetree *b)
     return 0;
 }
 
-/* 6.3.1.8 Usual Arithmetic Conversion. Find a common real type between the
- * operands. Each operand is converted to common type, and unless otherwise
- * specified this is also the result type.
- */
-const struct typetree *
-usual_arithmetic_conversion(const struct typetree *l, const struct typetree *r)
+static const struct typetree *remove_qualifiers(const struct typetree *type)
 {
-    assert( is_arithmetic(l) && is_arithmetic(r) );
+    if (type->qualifier) {
+        struct typetree *copy = calloc(1, sizeof (*copy));
+        *copy = *type;
+        copy->qualifier = 0;
+        type = copy;
+    }
+    return type;
+}
+
+const struct typetree *promote_integer(const struct typetree *type)
+{
+    assert(is_integer(type));
+    if (type->size < 4) {
+        type = (is_unsigned(type)) ? &U4 : &I4;
+    }
+    return type;
+}
+
+const struct typetree *usual_arithmetic_conversion(
+    const struct typetree *t1,
+    const struct typetree *t2)
+{
+    assert(is_arithmetic(t1) && is_arithmetic(t2));
 
     /* Skip everything dealing with floating point types. */
 
-    if (type_equal(l, r)) return l;
-    if (is_unsigned(l) == is_unsigned(r)) return (l->size > r->size) ? l : r;
+    assert(is_integer(t1) && is_integer(t2));
+    t1 = promote_integer(t1);
+    t2 = promote_integer(t2);
 
-    /* Make sure l is signed and r is unsigned */
-    if (is_unsigned(l) && !is_unsigned(r)) {
-        return usual_arithmetic_conversion(r, l);
-    }
+    if (t1->size > t2->size)
+        return remove_qualifiers(t1);
+    else if (t2->size > t1->size)
+        return remove_qualifiers(t2);
 
-    assert( !is_unsigned(l) && is_unsigned(r) );
-
-    /* Integer promotion. This could be separated out, as it is not only 
-     * performed for usual arithmetic conversion. This may also need to be in 
-     * eval.c, as it can generate temporaries (i.e. if a char is promoted to
-     * int). */
-    if (l->size > r->size) return l;
-    if (l->size == r->size) return r;
-
-    return r;
+    return (is_unsigned(t1)) ?
+        remove_qualifiers(t1) :
+        remove_qualifiers(t2);
 }
 
 /* 6.2.7 Compatible types. Simplified rules.
