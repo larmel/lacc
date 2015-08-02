@@ -46,7 +46,6 @@ static struct block *primary_expression(struct block *block);
 
 static struct var constant_expression();
 
-/* Namespaces. */
 struct namespace
     ns_ident = {"identifiers"},
     ns_label = {"labels"},
@@ -54,14 +53,12 @@ struct namespace
     ;
 
 /* Current declaration, accessed for creating new blocks or adding init code
- * in head block. */
+ * in head block.
+ */
 struct decl *decl;
 
-/* Parse the next external declaration. */
 struct decl *parse()
 {
-    static int done_last_iteration;
-
     decl = cfg_create();
     decl->head = cfg_block_init(decl);
     decl->body = cfg_block_init(decl);
@@ -70,22 +67,6 @@ struct decl *parse()
         decl->fun = NULL;
         declaration(decl->body);
         if (decl->head->n || decl->fun) {
-            return decl;
-        }
-    }
-
-    if (!done_last_iteration) {
-        int i;
-        struct symbol *sym;
-
-        for (i = 0; i < ns_ident.size; ++i) {
-            sym = ns_ident.symbol[i];
-            if (sym->symtype == SYM_TENTATIVE && sym->linkage == LINK_INTERN) {
-                zero_initialize(decl->head, var_direct(sym));
-            }
-        }
-        done_last_iteration = 1;
-        if (decl->head->n) {
             return decl;
         }
     }

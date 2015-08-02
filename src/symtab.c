@@ -36,6 +36,17 @@ void pop_scope(struct namespace *ns) {
     }
 }
 
+const char *sym_name(const struct symbol *sym)
+{
+    if (sym->n) {
+        static char name[128];
+        snprintf(name, 127, "%s.%d", sym->name, sym->n);
+        return name;
+    }
+
+    return sym->name;
+}
+
 /* Create and add symbol to symbol table, but not to any scope. Symbol address
  * needs to be stable, so they are stored as a realloc'able list of pointers.
  */
@@ -236,28 +247,29 @@ void register_builtin_types(struct namespace *ns)
     sym_add(ns, sym);
 }
 
-/* Output tentative definitions with external scope. Not assigned a value in
- * this translation unit, and has special representation in GNU assembler.
- */
-void output_definitions(FILE *stream)
+static int sym_asm_alignment(const struct symbol *sym)
+{
+    int w = sym->type->size;
+    if (w >= 16) return 16;
+    if (w >= 8) return 8;
+    return 4;
+}
+
+void assemble_tentative_definitions(FILE *stream)
 {
     extern struct namespace ns_ident;
 
-    int i, found;
+    int i;
     struct symbol *sym;
 
-    for (i = found = 0; i < ns_ident.size; ++i) {
+    for (i = 0; i < ns_ident.size; ++i) {
         sym = ns_ident.symbol[i];
-        if (sym->symtype == SYM_TENTATIVE && sym->linkage == LINK_EXTERN &&
-            sym->type->type != FUNCTION) {
-            if (!found) {
-                fprintf(stream, "\t.data\n");
-                found = 1;
+        if (sym->symtype == SYM_TENTATIVE && is_object(sym->type)) {
+            if (sym->linkage == LINK_INTERN) {
+                fprintf(stream, "\t.local %s\n", sym_name(sym));
             }
-
             fprintf(stream, "\t.comm %s, %d, %d\n",
-                sym->name, sym->type->size,
-                (sym->type->size < 32) ? sym->type->size : 32);
+                sym_name(sym), sym->type->size, sym_asm_alignment(sym));
         }
     }
 }

@@ -46,6 +46,10 @@ struct symbol
     int depth;
 };
 
+/* Get the full name, including numeric value to disambiguate.
+ */
+const char *sym_name(const struct symbol *sym);
+
 /* A namespace holds symbols and manage resolution in scopes as they are pushed
  * or popped.
  */
@@ -79,7 +83,12 @@ struct symbol *sym_add(struct namespace *, struct symbol);
 struct symbol *sym_temp(struct namespace *, const struct typetree *);
 
 void register_builtin_types(struct namespace *);
-void output_definitions(FILE *);
+
+/* Output tentative definitions, symbols that have not been assigned a value in
+ * this translation unit. Output as .comm directives in GNU assembly syntax.
+ */
+void assemble_tentative_definitions(FILE *);
+
 void output_symbols(FILE *, struct namespace *);
 
 #endif

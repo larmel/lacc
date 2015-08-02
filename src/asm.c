@@ -47,17 +47,6 @@ static const char* reg(enum reg r, int w)
     return x86_64_regs[(int) r][w / 2];
 }
 
-static const char *sym_name(const struct symbol *sym)
-{
-    if (sym->n) {
-        static char name[128];
-        snprintf(name, 127, "%s.%d", sym->name, sym->n);
-        return name;
-    }
-
-    return sym->name;
-}
-
 /* Create a string representation of the given value, for example -16(%rbp), 
  * str(%rip), $.LC1+3, or $2. Format depending on type of variable.
  */

@@ -99,7 +99,7 @@ int main(int argc, char* argv[])
         pop_scope(&ns_ident);
 
         if (output_mode == OUT_ASSEMBLY) {
-            output_definitions(output);
+            assemble_tentative_definitions(output);
             output_strings(output);
         }
 
