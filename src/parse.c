@@ -1457,7 +1457,23 @@ static struct block *relational_expression(struct block *block)
 
 static struct block *shift_expression(struct block *block)
 {
-    return additive_expression(block);
+    struct var value;
+
+    block = additive_expression(block);
+    while (1) {
+        value = block->expr;
+        if (peek().token == LSHIFT) {
+            consume(LSHIFT);
+            block = additive_expression(block);
+            block->expr = eval_expr(block, IR_OP_SHL, value, block->expr);
+        } else if (peek().token == RSHIFT) {
+            consume(RSHIFT);
+            block = additive_expression(block);
+            block->expr = eval_expr(block, IR_OP_SHR, value, block->expr);
+        } else break;
+    }
+
+    return block;
 }
 
 static struct block *additive_expression(struct block *block)

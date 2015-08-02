@@ -147,6 +147,14 @@ static void foutputnode(FILE *stream, map_t *memo, const struct block *node)
             fprintf(stream, " | %s = %s ^ %s",
                 vartostr(op.a), vartostr(op.b), vartostr(op.c));
             break;
+        case IR_OP_SHL:
+            fprintf(stream, " | %s = %s \\<\\< %s",
+                vartostr(op.a), vartostr(op.b), vartostr(op.c));
+            break;
+        case IR_OP_SHR:
+            fprintf(stream, " | %s = %s \\>\\> %s",
+                vartostr(op.a), vartostr(op.b), vartostr(op.c));
+            break;
         case IR_OP_EQ:
             fprintf(stream, " | %s = %s == %s",
                 vartostr(op.a), vartostr(op.b), vartostr(op.c));

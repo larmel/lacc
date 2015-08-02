@@ -74,11 +74,13 @@ struct var create_var(const struct typetree *type);
 enum optype
 {
     IR_PARAM,    /* param a    */
+
     IR_ASSIGN,   /* a = b      */
     IR_DEREF,    /* a = *b     */
     IR_ADDR,     /* a = &b     */
     IR_CALL,     /* a = b()    */
     IR_CAST,     /* a = (T) b  */
+
     IR_OP_ADD,   /* a = b + c  */
     IR_OP_SUB,   /* a = b - c  */
     IR_OP_MUL,   /* a = b * c  */
@@ -87,6 +89,9 @@ enum optype
     IR_OP_AND,   /* a = b & c  */
     IR_OP_OR,    /* a = b | c  */
     IR_OP_XOR,   /* a = b ^ c  */
+    IR_OP_SHL,   /* a = b << c */
+    IR_OP_SHR,   /* a = b >> c */
+
     IR_OP_EQ,    /* a = b == c */
     IR_OP_GE,    /* a = b >= c */
     IR_OP_GT,    /* a = b > c  */
@@ -106,7 +111,7 @@ enum optype
  */
 #define NOPERANDS(t) ((t) > 5 ? 2 : (t) > 1)
 
-#define IS_COMPARISON(t) ((t) > 13)
+#define IS_COMPARISON(t) ((t) > 15)
 
 /* CFG block.
  */

@@ -274,6 +274,32 @@ static struct var eval_expr_cmp(
     return evaluate(block, e ? IR_OP_GE : IR_OP_GT, type_init_integer(4), l, r);
 }
 
+static struct var eval_shift_left(
+    struct block *block,
+    struct var l,
+    struct var r)
+{
+    if (!is_integer(l.type) || !is_integer(r.type)) {
+        error("Shift operands must have integer type.");
+        exit(1);
+    }
+
+    return evaluate(block, IR_OP_SHL, promote_integer(l.type), l, r);
+}
+
+static struct var eval_shift_right(
+    struct block *block,
+    struct var l,
+    struct var r)
+{
+    if (!is_integer(l.type) || !is_integer(r.type)) {
+        error("Shift operands must have integer type.");
+        exit(1);
+    }
+
+    return evaluate(block, IR_OP_SHR, promote_integer(l.type), l, r);
+}
+
 /* Convert variables of type ARRAY or FUNCTION to addresses when used in
  * expressions. 'array of T' is converted (decay) to pointer to T. Not the same
  * as taking the address of an array, which would give 'pointer to array of T'.
@@ -353,6 +379,12 @@ struct var eval_expr(struct block *block, enum optype op, ...)
         }
         l = evaluate(block, op,
             usual_arithmetic_conversion(l.type, r.type), l, r);
+        break;
+    case IR_OP_SHL:
+        l = eval_shift_left(block, l, r);
+        break;
+    case IR_OP_SHR:
+        l = eval_shift_right(block, l, r);
         break;
     default:
         internal_error("%s", "Invalid opcode.");

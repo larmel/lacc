@@ -814,6 +814,41 @@ static void asm_op(FILE *stream, const struct op *op)
         fprintf(stream, "\txor\t%%rbx, %%rax\n");
         store(stream, AX, op->a);
         break;
+    case IR_OP_SHL:
+        /* Shift amount must for some reason be in CX register, and appear as
+         * %cl in instruction argument. Behavior is undefined if shift is
+         * greater than integer width, so don't care about overflow or sign. */
+        load(stream, op->b, AX);
+        load(stream, op->c, CX);
+        if (is_unsigned(op->a.type)) {
+            fprintf(stream, "\tshl%c\t%%%s, %%%s\n",
+                asmsuffix(op->a.type),
+                reg(CX, 1),
+                reg(AX, op->a.type->size));
+        } else {
+            fprintf(stream, "\tsal%c\t%%%s, %%%s\n",
+                asmsuffix(op->a.type),
+                reg(CX, 1),
+                reg(AX, op->a.type->size));
+        }
+        store(stream, AX, op->a);
+        break;
+    case IR_OP_SHR:
+        load(stream, op->b, AX);
+        load(stream, op->c, CX);
+        if (is_unsigned(op->a.type)) {
+            fprintf(stream, "\tshr%c\t%%%s, %%%s\n",
+                asmsuffix(op->a.type),
+                reg(CX, 1),
+                reg(AX, op->a.type->size));
+        } else {
+            fprintf(stream, "\tsar%c\t%%%s, %%%s\n",
+                asmsuffix(op->a.type),
+                reg(CX, 1),
+                reg(AX, op->a.type->size));
+        }
+        store(stream, AX, op->a);
+        break;
     case IR_OP_EQ:
         load(stream, op->b, AX);
         load(stream, op->c, BX);
