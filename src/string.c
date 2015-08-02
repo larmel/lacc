@@ -10,13 +10,12 @@
 #include <string.h>
 
 static int count;
-static int capacity;
 static struct {
     const char *label;
     const char *string;
 } *strings;
 
-static const char *mklabel(void)
+static const char *create_label(void)
 {
     static int n;
     static char name[16];
@@ -26,13 +25,11 @@ static const char *mklabel(void)
     return strndup(name, 15);
 }
 
-/* Return an existing, or generate a new unique label representing the provided
- * string. Labels are used verbatim for assembly tags.
- */
 const char *strlabel(const char *s)
 {
     int i;
     const char *label;
+    static int capacity;
 
     for (i = 0; i < count; ++i) {
         if (!strcmp(strings[i].string, s)) {
@@ -41,11 +38,11 @@ const char *strlabel(const char *s)
     }
 
     if (count == capacity) {
-        capacity = capacity + 16;
+        capacity += 16;
         strings = realloc(strings, sizeof(*strings) * capacity);
     }
 
-    label = mklabel();
+    label = create_label();
 
     strings[count].string = strdup(s);
     strings[count].label = label;
