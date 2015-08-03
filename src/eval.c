@@ -12,7 +12,7 @@ static int is_nullptr(struct var val)
 {
     return 
         (val.type->type == INTEGER || val.type->type == POINTER) &&
-        (val.kind == IMMEDIATE && !val.value.integer);
+        (val.kind == IMMEDIATE && !val.value.i4);
 }
 
 static struct var evaluate(
@@ -43,7 +43,7 @@ static struct var eval_expr_mul(struct block *block, struct var l, struct var r)
     const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
 
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return var_int(l.value.integer * r.value.integer);
+        return var_int(l.value.i4 * r.value.i4);
     }
 
     return evaluate(block, IR_OP_MUL, type, l, r);
@@ -54,7 +54,7 @@ static struct var eval_expr_div(struct block *block, struct var l, struct var r)
     const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
 
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return var_int(l.value.integer / r.value.integer);
+        return var_int(l.value.i4 / r.value.i4);
     }
 
     return evaluate(block, IR_OP_DIV, type, l, r);
@@ -68,7 +68,7 @@ static struct var eval_expr_mod(struct block *block, struct var l, struct var r)
     }
 
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return var_int(l.value.integer % r.value.integer);
+        return var_int(l.value.i4 % r.value.i4);
     }
 
     return evaluate(block, IR_OP_MOD, type, l, r);
@@ -85,7 +85,7 @@ static struct var eval_expr_add(struct block *block, struct var l, struct var r)
         l = eval_cast(block, l, type);
         r = eval_cast(block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-            l = var_int(l.value.integer + r.value.integer);
+            l = var_int(l.value.i4 + r.value.i4);
         } else {
             l = evaluate(block, IR_OP_ADD, type, l, r);
         }
@@ -102,10 +102,10 @@ static struct var eval_expr_add(struct block *block, struct var l, struct var r)
         if (l.kind == IMMEDIATE && l.string &&
             r.kind == IMMEDIATE && is_integer(r.type))
         {
-            l.offset += r.value.integer;
+            l.offset += r.value.i4;
         }
         /* No evaluation if r is zero. */
-        else if (r.kind != IMMEDIATE || r.value.integer) {
+        else if (r.kind != IMMEDIATE || r.value.i4) {
             r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
             l = evaluate(block, IR_OP_ADD, l.type, l, r);
         }
@@ -121,7 +121,7 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
 {
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-            l = var_int(l.value.integer - r.value.integer);
+            l = var_int(l.value.i4 - r.value.i4);
         } else {
             const struct typetree *type
                 = usual_arithmetic_conversion(l.type, r.type);
@@ -139,10 +139,10 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
         if (l.kind == IMMEDIATE && l.string &&
             r.kind == IMMEDIATE && is_integer(r.type))
         {
-            l.offset -= r.value.integer;
+            l.offset -= r.value.i4;
         }
         /* No evaluation if r is zero. */
-        else if (r.kind != IMMEDIATE || r.value.integer) {
+        else if (r.kind != IMMEDIATE || r.value.i4) {
             r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
             l = evaluate(block, IR_OP_SUB, l.type, l, r);
         }
@@ -197,7 +197,7 @@ static struct var eval_expr_eq(struct block *block, struct var l, struct var r)
         } else {
             if (!is_integer(r.type) ||
                 r.kind != IMMEDIATE ||
-                r.value.integer != 0)
+                r.value.i4 != 0)
             {
                 error("Numerical comparison must be null constant.");
                 exit(1);
@@ -628,7 +628,7 @@ struct var eval_conditional(struct var a, struct block *b, struct block *c)
     result.lvalue = 0;
 
     if (a.kind == IMMEDIATE) {
-        return (a.value.integer) ? b->expr : c->expr;
+        return (a.value.i4) ? b->expr : c->expr;
     }
     return result;
 }
@@ -642,7 +642,7 @@ struct block *eval_logical_or(
         error("Operands to logical or must be of scalar type.");
     } else if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
         left->expr =
-            var_int(left->expr.value.integer || right->expr.value.integer);
+            var_int(left->expr.value.i4 || right->expr.value.i4);
     } else {
         left = eval_logical_expression(0, left, right_top, right);
     }
@@ -659,7 +659,7 @@ struct block *eval_logical_and(
         error("Operands to logical and must be of scalar type.");
     } else if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
         left->expr =
-            var_int(left->expr.value.integer && right->expr.value.integer);
+            var_int(left->expr.value.i4 && right->expr.value.i4);
     } else {
         left = eval_logical_expression(1, left, right_top, right);
     }

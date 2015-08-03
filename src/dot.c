@@ -42,7 +42,7 @@ static char *vartostr(const struct var var)
                 break;
             }
         case INTEGER:
-            sprintf(buffer, "%ld", var.value.integer);
+            sprintf(buffer, "%ld", var.value.i8);
             break;
         case ARRAY:
             sprintf(buffer, "\\\"%s\\\"", var.string);

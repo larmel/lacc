@@ -78,7 +78,7 @@ struct var var_direct(const struct symbol *sym)
     var.type = sym->type;
     if (sym->symtype == SYM_ENUM_VALUE) {
         var.kind = IMMEDIATE;
-        var.value.integer = sym->enum_value;
+        var.value.i4 = sym->enum_value;
     } else {
         var.kind = DIRECT;
         var.symbol = sym;
@@ -105,7 +105,7 @@ struct var var_int(int value)
 
     var.kind = IMMEDIATE;
     var.type = type_init_integer(4);
-    var.value.integer = value;
+    var.value.i4 = value;
     return var;
 }
 
@@ -115,7 +115,7 @@ struct var var_zero(int size)
 
     var.kind = IMMEDIATE;
     var.type = type_init_integer(size);
-    var.value.integer = 0;
+    var.value.i4 = 0;
     return var;
 }
 

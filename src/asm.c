@@ -65,7 +65,7 @@ static char *refer(const struct var var)
         } else {
             assert(!var.offset);
             assert(is_scalar(var.type));
-            sprintf(str, "$%ld", var.value.integer);
+            sprintf(str, "$%ld", var.value.i8);
         }
     } else {
         assert(var.kind == DIRECT);
@@ -1024,21 +1024,18 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
     case INTEGER:
         switch (target.type->size) {
         case 1:
-            fprintf(stream, "\t.byte\t%d\n", (unsigned char) val.value.integer);
+            fprintf(stream, "\t.byte\t%d\n", val.value.i1);
             break;
         case 2:
-            fprintf(stream, "\t.short\t%d\n", (short) val.value.integer);
+            fprintf(stream, "\t.short\t%d\n", val.value.i2);
             break;
         case 4:
-            fprintf(stream, "\t.int\t%d\n", (int) val.value.integer);
-            break;
-        case 8:
-            fprintf(stream, "\t.quad\t%ld\n", val.value.integer);
+            fprintf(stream, "\t.int\t%d\n", val.value.i4);
             break;
         default:
-            internal_error("Unknown integer width %d in initialization.",
-                target.type->size);
-            exit(1);
+            assert(target.type->size == 8);
+            fprintf(stream, "\t.quad\t%ld\n", val.value.i8);
+            break;
         }
         break;
     case POINTER:
@@ -1046,7 +1043,7 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
         if (val.string) {
             fprintf(stream, "%s\n", refer(val) + 1); /* Skip the leading '$' */
         } else {
-            fprintf(stream, "%ld\n", val.value.integer);
+            fprintf(stream, "%lu\n", val.value.u8);
         }
         break;
     case ARRAY:
