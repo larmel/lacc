@@ -10,21 +10,396 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Buffer of preprocessed tokens, ready to be consumed by the parser. Configured
- * to hold at least K tokens, enabling LL(K) parsing. For the K&R grammar, it is
- * sufficient to have K = 2. */
-static struct toklist lookahead;
-static const int K = 2;
-
-static void add_token(struct token t)
+/* Add consecutive space tokens, returning the first token that is of another
+ * type.
+ */
+static struct token get_next(toklist_t *list)
 {
-    extern int VERBOSE;
-
-    toklist_push_back(&lookahead, t);
-
-    if (VERBOSE) {
-        debug_output_token(t);
+    struct token t = get_preprocessing_token();
+    while (t.token == SPACE) {
+        toklist_push_back(list, t);
+        t = get_preprocessing_token();
     }
+    return t;
+}
+
+/* Skip through whitespace and add token of expected type. Whitespace is also
+ * added.
+ */
+static void expect_next(toklist_t *list, enum token_type type)
+{
+    struct token t = get_next(list);
+    if (t.token != type) {
+        error("Expected token '%c', but got '%s'.", (char) type, t.strval);
+        exit(1);
+    }
+    toklist_push_back(list, t);
+}
+
+/* Keep track of the nesting depth of macro arguments. For example MAX( MAX(10,
+ * 12), 20 ) should complete on the last parenthesis, which makes the expression
+ * balanced. Read lines until full macro invocation is included.
+ */
+static void read_macro_invocation(toklist_t *list, macro_t *macro)
+{
+    int nesting = 1;
+    assert(macro->type == FUNCTION_LIKE);
+
+    expect_next(list, '(');
+    while (nesting) {
+        struct token t = get_next(list);
+        if (t.token == '(') {
+            nesting++;
+        }
+        if (t.token == ')') {
+            assert(nesting);
+            nesting--;
+        }
+        if (t.token == NEWLINE) {
+            /* This is the only scenario where reading a line is not enough.
+             * Macro invocations can span lines, and we want to have
+             * everything in the same token list. */
+            continue;
+        }
+        if (t.token == END) {
+            break;
+        }
+        toklist_push_back(list, t);
+    }
+    if (nesting) {
+        error("Unbalanced invocation of macro '%s'.", macro->name.strval);
+        exit(1);
+    }
+}
+
+/* Replace defined name and defined (name) with 0 or 1 constants.
+ */
+static void read_defined_operator(toklist_t *list)
+{
+    int is_parens = 0;
+    struct token t = get_next(list);
+
+    if (t.token == '(') {
+        t = get_next(list);
+        is_parens = 1;
+    }
+    if (t.token != IDENTIFIER) {
+        error("Expected identifier in 'defined' clause, but got '%s'",
+            t.strval);
+        exit(1);
+    }
+    if (definition(t)) {
+        t.intval = 1;
+        t.strval = "1";
+    } else {
+        t.intval = 0;
+        t.strval = "0";
+    }
+    t.token = INTEGER_CONSTANT;
+    toklist_push_back(list, t);
+    if (is_parens) {
+        t = get_next(list);
+        if (t.token != ')') {
+            error("Expected '(' but got '%s'.", t.strval);
+            exit(1);
+        }
+    }
+}
+
+/* Read tokens until reaching newline or eof. If initial token is '#', stop on
+ * newline. Otherwise make sure macro invocations spanning multiple lines are
+ * joined, and replace 'defined' directives with constants. Return newline or $.
+ */
+static struct token read_complete_line(toklist_t *list, struct token t)
+{
+    int is_directive = (t.token == '#');
+    macro_t *def;
+
+    while (t.token != NEWLINE && t.token != END) {
+        if (t.token == IDENTIFIER) {
+            if (!strcmp("defined", t.strval) && is_directive) {
+                read_defined_operator(list);
+            } else if ((def = definition(t)) && def->type == FUNCTION_LIKE) {
+                toklist_push_back(list, t);
+                read_macro_invocation(list, def);
+            } else {
+                toklist_push_back(list, t);
+            }
+        } else {
+            toklist_push_back(list, t);
+        }
+        t = get_preprocessing_token();
+    }
+    return t;
+}
+
+/* A token list, but with additional pointer to current element.
+ */
+struct token_stream
+{
+    unsigned next;
+    toklist_t *list;
+};
+
+static void ts_skip_ws(struct token_stream *stream)
+{
+    while (stream->next < stream->list->length) {
+        if (stream->list->elem[stream->next].token == SPACE) {
+            stream->next++;
+        } else break;
+    }
+}
+
+/* Progress pointer, returning the next non-whitespace element.
+ */
+static struct token ts_next(struct token_stream *stream)
+{
+    ts_skip_ws(stream);
+    assert(stream->next < stream->list->length);
+    return stream->list->elem[stream->next++];
+}
+
+/* Move past next token, failing with an error if it does not match the expected
+ * type.
+ */
+static void ts_consume(struct token_stream *stream, enum token_type type)
+{
+    struct token t = ts_next(stream);
+    if (t.token != type) {
+        error("Unexpected preprocessing token '%s', expected '%c'.",
+            t.strval, type);
+        exit(1);
+    }
+}
+
+/* Return next element or EOF, without changing pointer.
+ */
+static enum token_type ts_peek(struct token_stream *stream)
+{
+    ts_skip_ws(stream);
+    if (stream->next == stream->list->length) {
+        return END;
+    }
+    return stream->list->elem[stream->next].token;
+}
+
+static int expression(struct token_stream *stream);
+
+static int eval_primary(struct token_stream *stream)
+{
+    int value = 0;
+    struct token t = ts_next(stream);
+
+    switch (t.token) {
+    case INTEGER_CONSTANT:
+        value = t.intval;
+        break;
+    case IDENTIFIER:
+        /* Macro expansions should already have been done. Stray identifiers are
+         * interpreted as zero constants. */
+        assert(!definition(t));
+        break;
+    case '(':
+        value = expression(stream);
+        ts_consume(stream, ')');
+        break;
+    default:
+        error("Invalid primary expression.");
+        break;
+    }
+    return value;
+}
+
+static int eval_unary(struct token_stream *stream)
+{
+    switch (ts_peek(stream)) {
+    case '+':
+        ts_next(stream);
+        return eval_unary(stream);
+    case '-':
+        ts_next(stream);
+        return - eval_unary(stream);
+    case '~':
+        ts_next(stream);
+        return ~ eval_unary(stream);
+    case '!':
+        ts_next(stream);
+        return ! eval_unary(stream);
+    default:
+        return eval_primary(stream);
+    }
+}
+
+static int eval_multiplicative(struct token_stream *stream)
+{
+    int val = eval_unary(stream), done = 0;
+    do {
+        switch (ts_peek(stream)) {
+        case '*':
+            ts_next(stream);
+            val = val * eval_unary(stream);
+            break;
+        case '/':
+            ts_next(stream);
+            val = val / eval_unary(stream);
+            break;
+        case '%':
+            ts_next(stream);
+            val = val % eval_unary(stream);
+            break;
+        default:
+            done = 1;
+            break;
+        }
+    } while (!done);
+    return val;
+}
+
+static int eval_additive(struct token_stream *stream)
+{
+    int val = eval_multiplicative(stream), done = 0;
+    do {
+        switch (ts_peek(stream)) {
+        case '+':
+            ts_next(stream);
+            val = val + eval_multiplicative(stream);
+            break;
+        case '-':
+            ts_next(stream);
+            val = val - eval_multiplicative(stream);
+            break;
+        default:
+            done = 1;
+            break;
+        }
+    } while (!done);
+    return val;
+}
+
+static int eval_shift(struct token_stream *stream)
+{
+    int val = eval_additive(stream), done = 0;
+    do {
+        switch (ts_peek(stream)) {
+        case LSHIFT:
+            ts_next(stream);
+            val = val << eval_additive(stream);
+            break;
+        case RSHIFT:
+            ts_next(stream);
+            val = val >> eval_additive(stream);
+            break;
+        default:
+            done = 1;
+            break;
+        }
+    } while (!done);
+    return val;
+}
+
+static int eval_relational(struct token_stream *stream)
+{
+    int val = eval_shift(stream), done = 0;
+    do {
+        switch (ts_peek(stream)) {
+        case '<':
+            ts_next(stream);
+            val = val < eval_shift(stream);
+            break;
+        case '>':
+            ts_next(stream);
+            val = val > eval_shift(stream);
+            break;
+        case LEQ:
+            ts_next(stream);
+            val = val <= eval_shift(stream);
+            break;
+        case GEQ:
+            ts_next(stream);
+            val = val >= eval_shift(stream);
+            break;
+        default:
+            done = 1;
+            break;
+        }
+    } while (!done);
+    return val;
+}
+
+static int eval_equality(struct token_stream *stream)
+{
+    int val = eval_relational(stream);
+    if (ts_peek(stream) == EQ) {
+        ts_next(stream);
+        val = val == eval_equality(stream);
+    } else if (ts_peek(stream) == NEQ) {
+        ts_next(stream);
+        val = val != eval_equality(stream);
+    }
+    return val;
+}
+
+static int eval_and(struct token_stream *stream)
+{
+    int val = eval_equality(stream);
+    if (ts_peek(stream) == '&') {
+        ts_next(stream);
+        val = eval_and(stream) & val;
+    }
+    return val;
+}
+
+static int eval_exclusive_or(struct token_stream *stream)
+{
+    int val = eval_and(stream);
+    if (ts_peek(stream) == '^') {
+        ts_next(stream);
+        val = eval_exclusive_or(stream) ^ val;
+    }
+    return val;
+}
+
+static int eval_inclusive_or(struct token_stream *stream)
+{
+    int val = eval_exclusive_or(stream);
+    if (ts_peek(stream) == '|') {
+        ts_next(stream);
+        val = eval_inclusive_or(stream) | val;
+    }
+    return val;
+}
+
+static int eval_logical_and(struct token_stream *stream)
+{
+    int val = eval_inclusive_or(stream);
+    if (ts_peek(stream) == LOGICAL_AND) {
+        ts_next(stream);
+        val = eval_logical_and(stream) && val;
+    }
+    return val;
+}
+
+static int eval_logical_or(struct token_stream *stream)
+{
+    int val = eval_logical_and(stream);
+    if (ts_peek(stream) == LOGICAL_OR) {
+        ts_next(stream);
+        val = eval_logical_or(stream) || val;
+    }
+    return val;
+}
+
+static int expression(struct token_stream *stream)
+{
+    int a = eval_logical_or(stream), b, c;
+    if (ts_peek(stream) == '?') {
+        ts_consume(stream, '?');
+        b = expression(stream);
+        ts_consume(stream, ':');
+        c = expression(stream);
+        return a ? b : c;
+    }
+    return a;
 }
 
 /* Push and pop branch conditions for #if, #elif and #endif.
@@ -56,78 +431,72 @@ static int pop_condition() {
     return branch_stack.condition[--branch_stack.length];
 }
 
-static int expression();
-
-static void preprocess_directive()
+static void preprocess_directive(toklist_t *list)
 {
-    struct token t = next_raw_token();
+    struct token t;
+    struct token_stream stream;
+
+    stream.list = list;
+    stream.next = 0;
+
+    t = ts_next(&stream);
+    assert(t.token == '#');
+    t = ts_next(&stream);
+    if (t.token == IF || (t.token == IDENTIFIER && !strcmp("elif", t.strval))) {
+        /* Perform macro expansion only for if and elif directives, before doing
+         * the expression parsing. Next element pointer should stay the same. */
+        stream.list = expand(stream.list);
+    }
 
     if (t.token == IF) {
-        int val = expression();
-        /*printf(" condition value = %d\n", val);*/
-        push_condition( peek_condition() ? val : 0 );
-    }
-    else if (t.token == IDENTIFIER && !strcmp("elif", t.strval)) {
-        int val = expression();
-        /*printf(" condition value = %d\n", val);*/
-        push_condition( !pop_condition() && peek_condition() ? val : 0 );
-    }
-    else if (t.token == ELSE) {
-        push_condition( !pop_condition() && peek_condition() );
-    }
-    else if (t.token == IDENTIFIER && !strcmp("endif", t.strval)) {
+        int val = expression(&stream);
+        push_condition(peek_condition() ? val : 0);
+    } else if (t.token == IDENTIFIER && !strcmp("elif", t.strval)) {
+        int val = expression(&stream);
+        push_condition(!pop_condition() && peek_condition() ? val : 0);
+    } else if (t.token == ELSE) {
+        push_condition(!pop_condition() && peek_condition());
+    } else if (t.token == IDENTIFIER && !strcmp("endif", t.strval)) {
         pop_condition();
-    }
-    else if (t.token == IDENTIFIER && !strcmp("ifndef", t.strval)) {
-        t = next_raw_token();
-        push_condition( definition(t) == NULL && peek_condition() );
-    }
-    else if (t.token == IDENTIFIER && !strcmp("ifdef", t.strval)) {
-        t = next_raw_token();
-        push_condition( definition(t) != NULL && peek_condition() );
-    }
-    else if (peek_condition()) {
+    } else if (t.token == IDENTIFIER && !strcmp("ifndef", t.strval)) {
+        t = ts_next(&stream);
+        push_condition(!definition(t) && peek_condition());
+    } else if (t.token == IDENTIFIER && !strcmp("ifdef", t.strval)) {
+        t = ts_next(&stream);
+        push_condition(definition(t) && peek_condition());
+    } else if (peek_condition()) {
         if (t.token == IDENTIFIER && !strcmp("define", t.strval)) {
-            extern char *line;
+            macro_t *macro = calloc(1, sizeof(macro_t));
+            toklist_t *params = toklist_init();
 
-            struct token name, subs;
-            macro_t *macro;
-            toklist_t *params;
-
-            name = next_raw_token();
-            if (name.token != IDENTIFIER) {
+            macro->name = ts_next(&stream);
+            macro->type = OBJECT_LIKE;
+            if (macro->name.token != IDENTIFIER) {
                 error("Definition must be identifier.");
                 exit(1);
             }
 
-            params = toklist_init();
-
-            macro = calloc(1, sizeof(macro_t));
-            macro->name = name;
-            macro->type = OBJECT_LIKE;
-
             /* Function-like macro iff parenthesis immediately after, access
-             * input buffer directly. */
-            if (*line == '(') {
+             * input stream directly. */
+            if (stream.list->elem[stream.next].token == '(') {
                 macro->type = FUNCTION_LIKE;
-                consume_raw_token('(');
-                while (peek_raw_token() != ')') {
-                    if (peek_raw_token() != IDENTIFIER) {
+                ts_consume(&stream, '(');
+                while (ts_peek(&stream) != ')') {
+                    if (ts_peek(&stream) != IDENTIFIER) {
                         error("Invalid macro parameter.");
                         exit(1);
                     }
-                    toklist_push_back(params, next_raw_token());
+                    toklist_push_back(params, ts_next(&stream));
                     macro->params++;
-                    if (peek_raw_token() != ',') {
+                    if (ts_peek(&stream) != ',') {
                         break;
                     }
-                    consume_raw_token(',');
+                    ts_consume(&stream, ',');
                 }
-                consume_raw_token(')');
+                ts_consume(&stream, ')');
             }
-
-            while (peek_raw_token() != NEWLINE) {
-                subs = next_raw_token();
+            while (ts_peek(&stream) != NEWLINE) {
+                struct token subs = ts_next(&stream);
                 macro->size++;
                 macro->replacement = 
                     realloc(macro->replacement, 
@@ -144,30 +513,27 @@ static void preprocess_directive()
                     }
                 }
             }
-
             define_macro(macro);
-        }
-        else if (t.token == IDENTIFIER && !strcmp("undef", t.strval)) {
-            struct token name = next_raw_token();
+        } else if (t.token == IDENTIFIER && !strcmp("undef", t.strval)) {
+            struct token name = ts_next(&stream);
             undef(name);
-        }
-        else if (t.token == IDENTIFIER && !strcmp("include", t.strval)) {
+        } else if (t.token == IDENTIFIER && !strcmp("include", t.strval)) {
             char *path = NULL;
             int angles = 0;
-            if (peek_raw_token() == STRING) {
-                t = next_raw_token();
+            if (ts_peek(&stream) == STRING) {
+                t = ts_next(&stream);
                 path = (char*) t.strval;
-            } else if (peek_raw_token() == '<') {
-                consume_raw_token('<');
+            } else if (ts_peek(&stream) == '<') {
+                ts_consume(&stream, '<');
                 angles = 1;
-                while (peek_raw_token() != NEWLINE) {
-                    if (peek_raw_token() == '>') {
+                while (ts_peek(&stream) != NEWLINE) {
+                    if (ts_peek(&stream) == '>') {
                         break;
                     }
-                    t = next_raw_token();
+                    t = ts_next(&stream);
                     path = pastetok(path, t);
                 }
-                consume_raw_token('>');
+                ts_consume(&stream, '>');
             }
             if (!path) {
                 error("Invalid include directive.");
@@ -178,132 +544,113 @@ static void preprocess_directive()
             } else {
                 include_file(path);
             }
-        }
-        else if (t.token == IDENTIFIER && !strcmp("error", t.strval)) {
-            extern char *line;
-
-            error("%s", line + 1);
+        } else if (t.token == IDENTIFIER && !strcmp("error", t.strval)) {
+            t = toklist_to_string(stream.list);
+            error("%s", t.strval);
             exit(1);
         }
     } else {
         /* Skip dead code. */
-        while (peek_raw_token() != NEWLINE) {
-            next_raw_token();
+        while (ts_peek(&stream) != NEWLINE) {
+            ts_next(&stream);
         }
     }
-    consume_raw_token(NEWLINE);
+    ts_consume(&stream, NEWLINE);
 }
 
-static void expand_token(struct token t)
+/* Toggle for producing preprocessed output (-E).
+ */
+static int preserve_whitespace;
+
+/* Buffer of preprocessed tokens, ready to be consumed by the parser. Configured
+ * to hold at least K tokens, enabling LL(K) parsing.
+ */
+static struct toklist lookahead;
+
+/* For the K&R grammar, it is sufficient to have K = 2.
+ */
+static const int K = 2;
+
+static void add_token(struct token t)
 {
-    macro_t *def;
+    extern int VERBOSE;
 
-    if (t.token == IDENTIFIER && (def = definition(t))) {
-        int i;
-        toklist_t **args = NULL, *res = NULL;
+    toklist_push_back(&lookahead, t);
 
-        if (def->type == FUNCTION_LIKE) {
-
-            /* Keep track of the nesting depth of macro arguments. For example
-             * MAX( MAX(10, 12), 20 ) should ignore the first comma inside a
-             * nested parenthesis. */
-            int nesting;
-
-            if (def->params) {
-                args = malloc(sizeof(toklist_t *) * def->params);
-            }
-            consume_raw_token('(');
-            for (i = nesting = 0; i < def->params; ++i) {
-                args[i] = toklist_init();
-
-                do {
-                    t = next_raw_token();
-                    if (t.token == ',') {
-                        error("Macro expansion does not match definition.");
-                        exit(1);
-                    }
-                    if (t.token == '(') {
-                        nesting++;
-                    } else if (t.token == ')') {
-                        assert(nesting);
-                        nesting--;
-                    } else if (t.token == NEWLINE) {
-                        continue;
-                    }
-                    toklist_push_back(args[i], t);
-                } while (
-                    nesting ||
-                    (i  < def->params - 1 && peek_raw_token() != ',') ||
-                    (i == def->params - 1 && peek_raw_token() != ')')
-                );
-
-                if (i < def->params - 1) {
-                    consume_raw_token(',');
-                }
-            }
-            consume_raw_token(')');
-        }
-
-        res = expand_macro(def, args);
-
-        for (i = 0; i < res->length; ++i) {
-            add_token(res->elem[i]);
-        }
-        for (i = 0; i < def->params; ++i) {
-            toklist_destroy(args[i]);
-        }
-        toklist_destroy(res);
-    } else {
-        add_token(t);
+    if (VERBOSE) {
+        debug_output_token(t);
     }
 }
 
-/* Current position in list of tokens ready for parsing, pointing to next token
- * to be returned by next(). */
+/* Current position in lookahead buffer, pointing to next token to be returned
+ * by next().
+ */
 static size_t cursor;
 
-/* Consume at least one line, up until the final newline or end of file. */
-static void preprocess_line()
+/* Consume at least one line, up until the final newline or end of file.
+ */
+static void preprocess_line(void)
 {
     struct token t;
     size_t remaining;
 
+    /* Update lookahead buffer. */
     remaining = lookahead.length - cursor;
     if (remaining) {
         memmove(lookahead.elem, lookahead.elem + cursor, 
             remaining * sizeof(*lookahead.elem));
     }
-
     lookahead.length = remaining;
     cursor = 0;
 
+    /* Consume and preprocess lines until lookahead is met, or end of input. */
     do {
-        t = next_raw_token();
+        toklist_t *tokens = toklist_init();
 
+        t = get_next(tokens);
         if (t.token == '#') {
-            preprocess_directive();
+            t = read_complete_line(tokens, t);
+            if (t.token == NEWLINE) {
+                toklist_push_back(tokens, t);
+            }
+            preprocess_directive(tokens);
         } else if (peek_condition()) {
-            while (t.token != NEWLINE && t.token != END) {
-                expand_token(t);
-                t = next_raw_token();
+            int i;
+
+            t = read_complete_line(tokens, t);
+            if (preserve_whitespace && t.token == NEWLINE) {
+                toklist_push_back(tokens, t);
+            }
+            tokens = expand(tokens);
+            for (i = 0; i < tokens->length; ++i) {
+                t = tokens->elem[i];
+                if ((t.token != NEWLINE && t.token != SPACE) ||
+                    preserve_whitespace)
+                {
+                    add_token(t);
+                }
             }
         }
+        toklist_destroy(tokens);
     } while (lookahead.length < K && t.token != END);
 
+    /* Fill remainder of lookahead buffer with $. */
     while (lookahead.length < K) {
         assert(t.token == END);
         add_token(t);
     }
 }
 
-struct token next() {
+struct token next()
+{
     if (cursor + K >= lookahead.length) {
         preprocess_line();
     }
     return lookahead.elem[cursor++];
 }
 
-struct token peek() {
+struct token peek()
+{
     if (!lookahead.length) {
         /* If peek() is the first call made, make sure there is an initial call
          * to populate the lookahead buffer. */
@@ -312,7 +659,8 @@ struct token peek() {
     return lookahead.elem[cursor];
 }
 
-struct token peekn(unsigned n) {
+struct token peekn(unsigned n)
+{
     assert(n && n <= K);
 
     if (!lookahead.length) {
@@ -321,7 +669,8 @@ struct token peekn(unsigned n) {
     return lookahead.elem[cursor + n - 1];
 }
 
-struct token consume(enum token_type expected) {
+struct token consume(enum token_type expected)
+{
     struct token t = next();
 
     if (t.token != expected) {
@@ -338,269 +687,22 @@ struct token consume(enum token_type expected) {
 
 void preprocess(FILE *output)
 {
-    do {
-        int ws = 0;
-        preprocess_line();
-        while (
-            cursor < lookahead.length &&
-            lookahead.elem[cursor].token != END)
-        {
-            if (ws) {
-                putc(' ', output);
-            }
-            fprintf(output, "%s", lookahead.elem[cursor++].strval);
-            ws = 1;
-        }
-        fputc('\n', output);
-    } while (lookahead.elem[cursor].token != END);
-}
-
-/* Parse and evaluate token stream corresponding to constant expression.
- * Operators handled in preprocessing expressions are: 
- *  * Integer constants.
- *  * Character constants, which are interpreted as they would be in normal code.
- *  * Arithmetic operators for addition, subtraction, multiplication, division,
- *    bitwise operations, shifts, comparisons, and logical operations (&& and ||).
- *    The latter two obey the usual short-circuiting rules of standard C.
- *  * Macros. All macros in the expression are expanded before actual computation
- *    of the expression's value begins.
- *  * Uses of the defined operator, which lets you check whether macros are 
- *    defined in the middle of an #if.
- *  * Identifiers that are not macros, which are all considered to be the number
- *    zero. This allows you to write #if MACRO instead of #ifdef MACRO, if you 
- *    know that MACRO, when defined, will always have a nonzero value. Function-
- *    like macros used without their function call parentheses are also treated
- *    as zero.
- *
- * Source: http://tigcc.ticalc.org/doc/cpp.html
- */
-static int eval_logical_or();
-static int eval_logical_and();
-static int eval_inclusive_or();
-static int eval_exclusive_or();
-static int eval_and();
-static int eval_equality();
-static int eval_relational();
-static int eval_shift();
-static int eval_additive();
-static int eval_multiplicative();
-static int eval_unary();
-static int eval_primary();
-static int expression() {
-    int a = eval_logical_or(), b, c;
-    if (peek_raw_token() == '?') {
-        consume_raw_token('?');
-        b = expression();
-        consume_raw_token(':');
-        c = expression();
-        return a ? b : c;
-    }
-    return a;
-}
-
-static int eval_logical_or() {
-    int val = eval_logical_and();
-    if (peek_raw_token() == LOGICAL_OR) {
-        next_raw_token();
-        val = eval_logical_or() || val;
-    }
-    return val;
-}
-
-static int eval_logical_and() {
-    int val = eval_inclusive_or();
-    if (peek_raw_token() == LOGICAL_AND) {
-        next_raw_token();
-        val = eval_logical_and() && val;
-    }
-    return val;
-}
-
-static int eval_inclusive_or() {
-    int val = eval_exclusive_or();
-    if (peek_raw_token() == '|') {
-        next_raw_token();
-        val = eval_inclusive_or() | val;
-    }
-    return val;
-}
-
-static int eval_exclusive_or() {
-    int val = eval_and();
-    if (peek_raw_token() == '^') {
-        next_raw_token();
-        val = eval_exclusive_or() ^ val;
-    }
-    return val;
-}
-
-static int eval_and()
-{
-    int val = eval_equality();
-    if (peek_raw_token() == '&') {
-        next_raw_token();
-        val = eval_and() & val;
-    }
-    return val;
-}
-
-static int eval_equality() {
-    int val = eval_relational();
-    if (peek_raw_token() == EQ) {
-        next_raw_token();
-        val = val == eval_equality();
-    } else if (peek_raw_token() == NEQ) {
-        next_raw_token();
-        val = val != eval_equality();
-    }
-    return val;
-}
-
-static int eval_relational() {
-    int val = eval_shift(), done = 0;
-    do {
-        switch (peek_raw_token()) {
-            case '<':
-                next_raw_token();
-                val = val < eval_shift();
-                break;
-            case '>':
-                next_raw_token();
-                val = val > eval_shift();
-                break;
-            case LEQ:
-                next_raw_token();
-                val = val <= eval_shift();
-                break;
-            case GEQ:
-                next_raw_token();
-                val = val >= eval_shift();
-                break;
-            default:
-                done = 1;
-                break;
-        }
-    } while (!done);
-    return val;
-}
-
-static int eval_shift() {
-    int val = eval_additive(), done = 0;
-    do {
-        switch (peek_raw_token()) {
-            case LSHIFT:
-                next_raw_token();
-                val = val << eval_additive();
-                break;
-            case RSHIFT:
-                next_raw_token();
-                val = val >> eval_additive();
-                break;
-            default:
-                done = 1;
-                break;
-        }
-    } while (!done);
-    return val;
-}
-
-static int eval_additive() {
-    int val = eval_multiplicative(), done = 0;
-    do {
-        switch (peek_raw_token()) {
-            case '+':
-                next_raw_token();
-                val = val + eval_multiplicative();
-                break;
-            case '-':
-                next_raw_token();
-                val = val - eval_multiplicative();
-                break;
-            default:
-                done = 1;
-                break;
-        }
-    } while (!done);
-    return val;
-}
-
-static int eval_multiplicative() {
-    int val = eval_unary(), done = 0;
-    do {
-        switch (peek_raw_token()) {
-            case '*':
-                next_raw_token();
-                val = val * eval_unary();
-                break;
-            case '/':
-                next_raw_token();
-                val = val / eval_unary();
-                break;
-            case '%':
-                next_raw_token();
-                val = val % eval_unary();
-                break;
-            default:
-                done = 1;
-                break;
-        }
-    } while (!done);
-    return val;
-}
-
-static int eval_unary() {
-    switch (peek_raw_token()) {
-        case '+':
-            next_raw_token();
-            return eval_unary();
-        case '-':
-            next_raw_token();
-            return - eval_unary();
-        case '~':
-            next_raw_token();
-            return ~ eval_unary();
-        case '!':
-            next_raw_token();
-            return ! eval_unary();
-        default:
-            return eval_primary();
-    }
-}
-
-static int eval_primary() {
-    int value;
-    macro_t *def;
     struct token t;
 
-    t = next_raw_token();
-    switch (t.token) {
+    preserve_whitespace = 1;
+    t = next();
+    while (t.token != END) {
+        switch (t.token) {
         case INTEGER_CONSTANT:
-            return t.intval;
-        case IDENTIFIER:
-            if (!strcmp("defined", t.strval)) {
-                t = next_raw_token();
-                if (t.token == '(') {
-                    t = next_raw_token();
-                    consume_raw_token(')');
-                }
-                if (t.token == IDENTIFIER) {
-                    def = definition(t);
-                    return def != NULL;
-                }
-                error("Invalid defined check.");
-                exit(1);
-            } else {
-                def = definition(t);
-                return def ? def->replacement[0].token.intval : 0;
-            }
-            return 0;
-        case '(':
-            value = expression();
-            consume_raw_token(')');
-            return value;
+            fprintf(output, "%ld", t.intval);
+            break;
+        case STRING:
+            fprintf(output, "\"%s\"", t.strval);
+            break;
         default:
-            error("Invalid primary expression.");
-            exit(1);
-            return 0;
+            fprintf(output, "%s", t.strval);
+            break;
+        }
+        t = next();
     }
 }

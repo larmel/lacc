@@ -1,6 +1,6 @@
 #if _XOPEN_SOURCE < 700
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 700 /* strdup, strndup */
+#  define _XOPEN_SOURCE 700 /* strdup, strndup, isblank */
 #endif
 #include "error.h"
 #include "preprocess.h"
@@ -138,6 +138,28 @@ static const char *strtostr(char *in, char **endptr)
     return start;
 }
 
+/* Parse string as whitespace tokens, consuming space and tab characters. Return
+ * a new heap allocated string.
+ */
+static const char *strtospace(char *in, char **endptr)
+{
+    char *start = in;
+    char *ws = NULL;
+
+    while (isblank(*in)) {
+        in++;
+    }
+
+    if (start < in) {
+        size_t length = in - start;
+        ws = calloc(length, sizeof(*ws) + 1);
+        ws = strncpy(ws, start, length);
+    }
+
+    *endptr = in;
+    return ws;
+}
+
 /* Parse and return next preprocessing token, from char buffer where comments
  * are removed and line continuations are applied.
  */
@@ -207,19 +229,28 @@ struct token tokenize(char *in, char **endptr)
     };
 
     int n;
-    struct token res = {END, NULL, 0};
+    struct token res;
 
     assert(endptr);
-    assert(in && *in != '\0');
+    assert(in);
+
+    if (*in == '\0') {
+        /* End of line does not consume any input, *endptr is set to same as
+         * input. Thus safe to call n + 1 times. */
+        res.token = END;
+        res.strval = NULL;
+        res.intval = 0;
+        *endptr = in;
+        return res;
+    }
 
     if (isspace(*in)) {
         res.token = SPACE;
-        res.strval = " ";
-        while (isspace(*in)) {
-            in++;
-            res.intval++;
+        res.strval = strtospace(in, endptr);
+        if (*endptr == in) {
+            error("Unrecognized whitespace sequence: '%s'.", in);
+            exit(1);
         }
-        *endptr = in;
         return res;
     }
 
@@ -280,7 +311,7 @@ struct token tokenize(char *in, char **endptr)
         case '|': res.strval = "|"; break;
         case '&': res.strval = "&"; break;
         case '^': res.strval = "^"; break;
-        case '%': res.strval = "%%"; break;
+        case '%': res.strval = "\x25"; break;
         case '<': res.strval = "<"; break;
         case '>': res.strval = ">"; break;
         case '(': res.strval = "("; break;
@@ -312,70 +343,28 @@ struct token tokenize(char *in, char **endptr)
     return res;
 }
 
-/* Hold current clean line to be tokenized. */
-char *line;
-
-/* Use one lookahead for preprocessing token. */
-static struct token prep_token_peek;
-static int has_prep_token_peek;
-
-struct token next_raw_token()
+struct token get_preprocessing_token(void)
 {
-    static struct token
-        tok_end = {END, NULL, 0},
-        tok_nl = {NEWLINE, NULL, 0};
+    static char *line;  /* Hold current line to be tokenized. */
+    static const struct token
+        tok_end = {END, "$", 0},
+        tok_nl = {NEWLINE, "\n", 0};
 
     struct token r;
     char *end;
 
-    if (has_prep_token_peek) {
-        has_prep_token_peek = 0;
-        return prep_token_peek;
-    }
-
-    do {
-        if (!line && getprepline(&line) == -1) {
-            r = tok_end;
-        } else if (*line == '\0') {
+    if (!line && getprepline(&line) == -1) {
+        r = tok_end;
+    } else {
+        r = tokenize(line, &end);
+        line = end;
+        if (r.token == END) {
+            /* Newlines are removed by getprepline, and never present in the
+             * input data. Instead intercept end of string, which represents
+             * end of line. */
             line = NULL;
             r = tok_nl;
-        } else {
-            r = tokenize(line, &end);
-            line = end;
         }
-
-    } while (r.token == SPACE);
-    /*debug_output_token(r); */
+    }
     return r;
-}
-
-enum token_type peek_raw_token()
-{
-    if (has_prep_token_peek) {
-        return prep_token_peek.token;
-    }
-
-    prep_token_peek = next_raw_token();
-    has_prep_token_peek = 1;
-
-    /*debug_output_token(prep_token_peek); */
-
-    return prep_token_peek.token;
-}
-
-void consume_raw_token(enum token_type t)
-{
-    struct token read = next_raw_token();
-
-    if (read.token != t) {
-        error("Unexpected preprocessing token.");
-        printf("  -> Token was:");
-        debug_output_token(read);
-        if (isprint((int) t)) {
-            printf("  -> Expected %c\n", (char) t);
-        } else {
-            printf("  -> Expected %d\n", (int) t);
-        }
-        exit(1);
-    }
 }

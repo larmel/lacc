@@ -66,13 +66,13 @@ int main(int argc, char* argv[])
     }
 
     init(input);
+    register_builtin_definitions();
+
     if (output_mode == OUT_PREPROCESSED) {
         preprocess(output);
     } else {
         push_scope(&ns_ident);
         push_scope(&ns_tag);
-
-        register_builtin_definitions();
         register_builtin_types(&ns_ident);
 
         while (1) {

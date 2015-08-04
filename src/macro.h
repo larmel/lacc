@@ -28,8 +28,14 @@ typedef struct toklist {
 toklist_t *toklist_init();
 void toklist_push_back(toklist_t *, struct token);
 void toklist_destroy(toklist_t *);
-struct token toklist_to_string(toklist_t *);
 
+/* Stringify a list of tokens.
+ */
+struct token toklist_to_string(toklist_t *list);
+
+/* Append token string representation at the end of provided buffer. If NULL is
+ * provided, a new buffer is allocated that must be free'd by caller.
+ */
 char *pastetok(char *, struct token);
 
 void define_macro(macro_t *);
@@ -40,7 +46,9 @@ void undef(struct token name);
 
 macro_t *definition(struct token);
 
-toklist_t *expand_macro(macro_t *, toklist_t **);
+/* Expand a list of tokens, replacing any macro definitions. 
+ */
+toklist_t *expand(toklist_t *tl);
 
 void register_builtin_definitions();
 

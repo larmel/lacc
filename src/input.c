@@ -1,16 +1,16 @@
 #if _XOPEN_SOURCE < 500
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 500 /* strdup */
+#  define _XOPEN_SOURCE 600 /* strdup, isblank */
 #endif
 #include "error.h"
 #include "input.h"
 #include "util/stack.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
 #include <unistd.h>
 
 /* Globally exposed for diagnostics info and default macro values.
@@ -166,17 +166,15 @@ void init(char *path)
 }
 
 /* Read characters from stream and assemble a line. Keep track of and remove
- * comments, join lines ending with '\', and ignore all-whitespace lines. Trim
- * leading whitespace, guaranteeing that the first character is '#' for
- * preprocessor directives. Increment line counter in fnt struct for each line
- * consumed.
+ * comments, join lines ending with '\', and ignore all-whitespace lines.
+ * Increment line counter in fnt structure for each line consumed.
  */
 static int getcleanline(char **lineptr, size_t *n, source_t *fn)
 {
     enum { NORMAL, COMMENT } state = 0;
-    int c, next; /* getc return values */
-    int i = 0, /* chars written to output buffer */
-        nonwhitespace = 0; /* non-whitespace characters written */
+    int c, next;            /* getc return values */
+    int i = 0,              /* chars written to output buffer */
+        nonwhitespace = 0;  /* non-whitespace characters written */
     FILE *stream;
 
     assert(fn);
@@ -229,13 +227,13 @@ static int getcleanline(char **lineptr, size_t *n, source_t *fn)
             fn->line++;
             if (nonwhitespace > 0)
                 break;
-        }
-        /* skip leading whitspace */
-        if (isspace(c)) {
-            if (nonwhitespace == 0)
+            else
                 continue;
-        } else
+        }
+        /* Count non-whitespace. */
+        if (!isblank(c)) {
             nonwhitespace++;
+        }
 
         /* make sure we have room for trailing null byte, and copy character */
         if (i + 1 >= *n) {
