@@ -1,12 +1,9 @@
 #include "error.h"
 #include "input.h"
 #include "macro.h"
-#include "preprocess.h"
-#include "util/map.h"
 
 #include <assert.h>
 #include <ctype.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
