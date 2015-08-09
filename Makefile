@@ -1,67 +1,50 @@
-.PHONY: all bootstrap test test-bootstrap clean
+BIN := bin
+SRC_DIRS := src src/util
+TESTS := $(wildcard test/*.c)
+
+LD := cc
+CC := cc
 CCFLAGS := -Wall -pedantic -std=c89
+LCCFLAGS := -I /usr/include/x86_64-linux-musl/
 
-all: bin/lcc
-bootstrap: bin/bootstrap
+# Normal build with gcc
+SOURCES := $(foreach sdir,$(SRC_DIRS),$(wildcard $(sdir)/*.c))
+OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(SOURCES))
 
-#
-# Build the compiler from assembly code built by itself (bootstrapping)
-#
-bin/bootstrap: bin/lcc bin/abi.o bin/asm.o bin/ir.o bin/dot.o bin/error.o bin/eval.o bin/input.o bin/lcc.o bin/macro.o bin/parse.o bin/preprocess.o bin/string.o bin/symtab.o bin/tokenize.o bin/type.o bin/libutil.a
-	cc $(CCFLAGS) bin/*.o -L./bin/ -lutil -o $@
+# Bootstrap build subset of files
+BOOTSTRAP_SOURCES := src/abi.c src/error.c src/lcc.c src/string.c
+BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))
+REMAINING_SOURCES := $(filter-out $(BOOTSTRAP_SOURCES), $(SOURCES))
+REMAINING_OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(REMAINING_SOURCES))
 
-bin/abi.o: bin/abi.s
-	cc $(CCFLAGS) -c $< -o $@
-bin/abi.s: src/abi.c
-	bin/lcc -S -I /usr/include/x86_64-linux-musl/ $< -o $@
+.PHONY: all bootstrap test test-bootstrap clean
 
-bin/error.o: bin/error.s
-	cc $(CCFLAGS) -c $< -o $@
-bin/error.s: src/error.c
-	bin/lcc -S -I /usr/include/x86_64-linux-musl/ $< -o $@
+all: $(BIN)/lcc
+bootstrap: $(BIN)/bootstrap
 
-bin/lcc.o: bin/lcc.s
-	cc $(CCFLAGS) -c $< -o $@
-bin/lcc.s: src/lcc.c
-	bin/lcc -S -I /usr/include/x86_64-linux-musl/ $< -o $@
+$(BIN)/%.o: src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CCFLAGS) -c $< -o $@
 
-bin/string.o: bin/string.s
-	cc -Wall -c $< -o $@
-bin/string.s: src/string.c
-	bin/lcc -S -I /usr/include/x86_64-linux-musl/ $< -o $@
+$(BIN)/%-bootstrap.o: $(BIN)/%-bootstrap.s
+	@mkdir -p $(dir $@)
+	$(CC) -c $< -o $@
 
-bin/%.o: src/%.c
-	cc $(CCFLAGS) -c $< -o $@
+$(BIN)/%-bootstrap.s: src/%.c $(BIN)/lcc
+	@mkdir -p $(dir $@)
+	$(BIN)/lcc $(LCCFLAGS) -S $< -o $@
 
-#
-# Build the compiler using gcc
-#
-bin/lcc: src/*.c bin/libutil.a
-	cc $(CCFLAGS) -g $+ -o $@ -L./bin/ -lutil
+$(BIN)/lcc: $(OBJECTS)
+	$(LD) $^ -o $@
 
-bin/libutil.a: bin/util/map.o bin/util/stack.o
-	ar -cvq $@ $+
+$(BIN)/bootstrap: $(BOOTSTRAP_OBJECTS) $(REMAINING_OBJECTS)
+	$(LD) $^ -o $@
 
-bin/util/%.o: src/util/%.c
-	cc $(CCFLAGS) -c $< -o $@
+test: $(BIN)/lcc
+	@$(foreach file,$(TESTS),./check.sh $< $(file);)
 
-#
-# Tests
-#
-test: bin/lcc
-	@for file in test/*.c; do \
-		./check.sh $< $$file ; \
-	done
+test-bootstrap: $(BIN)/bootstrap
+	@$(foreach file,$(TESTS),./check.sh $< $(file);)
 
-test-bootstrap: bin/bootstrap
-	@for file in test/*.c; do \
-		./check.sh $< $$file ; \
-	done
-
-#
-# Clean
-#
 clean:
-	rm -rf bin/*
-	mkdir -p bin/util
-	rm -f test/*.out test/*.s test/*.txt
+	rm -rf $(BIN)
