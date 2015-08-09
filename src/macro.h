@@ -50,6 +50,4 @@ macro_t *definition(struct token);
  */
 toklist_t *expand(toklist_t *tl);
 
-void register_builtin_definitions();
-
 #endif
