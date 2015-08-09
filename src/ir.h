@@ -1,13 +1,11 @@
 #ifndef IR_H
 #define IR_H
 
-#include "util.h"
 #include "type.h"
 #include "symbol.h"
+#include "util/list.h"
 
 #include <stddef.h>
-
-DECLARE_LIST_IMPLEMENTATION(sym_list, struct symbol *)
 
 /* A reference to some storage location or direct value, used in intermediate
  * representation of expressions.
@@ -169,8 +167,8 @@ struct decl
     int locals_size;
 
     /* Store all symbols associated with a function declaration. */
-    struct sym_list params;
-    struct sym_list locals;
+    list_t *params;
+    list_t *locals;
 
     /* Store all associated nodes in a list to simplify deallocation. */
     struct block **nodes;

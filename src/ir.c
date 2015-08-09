@@ -10,8 +10,6 @@
 #include <stdio.h>
 #include <string.h>
 
-DEFINE_LIST_IMPLEMENTATION(sym_list, struct symbol *)
-
 const char *mklabel(void)
 {
     static int n;
@@ -23,18 +21,18 @@ const char *mklabel(void)
 struct decl *cfg_create(void)
 {
     struct decl *decl = calloc(1, sizeof(*decl));
-    assert(decl);
+    decl->params = list_init();
+    decl->locals = list_init();
     return decl;
 }
 
 struct block *cfg_block_init(struct decl *decl)
 {
     struct block *block;
-
     assert(decl);
+
     block = calloc(1, sizeof(*block));
     block->label = mklabel();
-
     if (decl->size == decl->capacity) {
         decl->capacity += 16;
         decl->nodes =
@@ -47,6 +45,9 @@ struct block *cfg_block_init(struct decl *decl)
 void cfg_finalize(struct decl *decl)
 {
     assert(decl);
+
+    list_finalize(decl->params);
+    list_finalize(decl->locals);
     if (decl->capacity) {
         int i;
         for (i = 0; i < decl->size; ++i) {
@@ -135,7 +136,7 @@ struct var create_var(const struct typetree *type)
     struct symbol *temp = sym_temp(&ns_ident, type);
     struct var res = var_direct(temp);
 
-    sym_list_push_back(&decl->locals, temp);
+    list_push_back(decl->locals, (void *) temp);
     res.lvalue = 1;
     return res;
 }

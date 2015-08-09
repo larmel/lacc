@@ -8,6 +8,7 @@
 #include "string.h"
 #include "preprocess.h"
 #include "symbol.h"
+#include "util/list.h"
 
 #include <stdio.h>
 #include <assert.h>
@@ -139,7 +140,7 @@ declaration(struct block *parent)
         assert(sym->type);
         if (ns_ident.current_depth) {
             assert(ns_ident.current_depth > 1);
-            sym_list_push_back(&decl->locals, sym);
+            list_push_back(decl->locals, (void *)sym);
         }
 
         switch (peek().token) {
@@ -189,7 +190,7 @@ declaration(struct block *parent)
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
                 }
-                sym_list_push_back(&decl->params, sym_add(&ns_ident, sarg));
+                list_push_back(decl->params, (void *) sym_add(&ns_ident, sarg));
             }
             parent = block(parent);
             pop_scope(&ns_ident);

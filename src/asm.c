@@ -341,8 +341,8 @@ static int assign_locals_storage(const struct decl *fun, int offset)
 {
     int i;
 
-    for (i = 0; i < fun->locals.length; ++i) {
-        struct symbol *sym = fun->locals.elem[i];
+    for (i = 0; i < list_length(fun->locals); ++i) {
+        struct symbol *sym = (struct symbol *) list_get(fun->locals, i);
         assert(!sym->stack_offset);
 
         if (sym->linkage == LINK_NONE) {
@@ -396,8 +396,8 @@ static enum param_class *enter(FILE *s, const struct decl *func)
     }
 
     /* Assign storage to parameters. */
-    for (i = 0; i < func->params.length; ++i) {
-        struct symbol *sym = func->params.elem[i];
+    for (i = 0; i < list_length(func->params); ++i) {
+        struct symbol *sym = (struct symbol *) list_get(func->params, i);
 
         assert( !sym->stack_offset );
         assert( sym->linkage == LINK_NONE );
@@ -451,7 +451,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
     }
 
     /* Move arguments from register to stack. */
-    for (i = 0; i < func->params.length; ++i) {
+    for (i = 0; i < list_length(func->params); ++i) {
         enum param_class *eightbyte = params[i];
 
         /* Here it is ok to not separate between object and other types. Data in
@@ -462,7 +462,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
                 j;
             struct var ref = { NULL, NULL, DIRECT };
 
-            ref.symbol = func->params.elem[i];
+            ref.symbol = (struct symbol *) list_get(func->params, i);
             for (j = 0; j < n; ++j) {
                 int width = (size < 8) ? size : 8;
                 ref.type = type_init_integer(width);
