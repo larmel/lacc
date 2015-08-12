@@ -4,16 +4,16 @@
 #include <stdio.h>
 #include <stddef.h>
 
-typedef struct source {
+struct source {
     FILE *file;
     const char *name;
     const char *directory;
     const char *path;
     int line;
-} source_t;
+};
 
-/* Called by driver to initialize root directory, and set up required state in
- * the preprocessor.
+/* Initialize with root file name, and store relative path to resolve later
+ * includes. Default to stdin.
  */
 void init(char *);
 

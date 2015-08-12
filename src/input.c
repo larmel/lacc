@@ -1,10 +1,9 @@
-#if _XOPEN_SOURCE < 500
+#if _XOPEN_SOURCE < 600
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 600 /* strdup, isblank */
 #endif
 #include "error.h"
 #include "input.h"
-#include "util/stack.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -22,27 +21,33 @@ struct source current_file;
 static const char **search_path;
 static size_t search_path_count;
 
-/* Keep stack of file descriptors as resolved by includes. Make helper
- * functions for pushing (#include) and popping (EOF) of files, keeping track
- * of the file name and line number for diagnostics.
+/* Keep stack of file descriptors as resolved by includes. Push and pop from the
+ * end of the list.
  */
-static stack_t sources;
+static struct source *src_stack;
+static size_t src_count;
 
-static int pop()
+static int pop(void)
 {
-    source_t *source = (source_t *) stack_pop(&sources);
-    if (source != NULL) {
+    if (src_count) {
+        struct source *source = &src_stack[--src_count];
         if (source->file != stdin) {
             fclose(source->file);
         }
-        free(source);
-        source = (source_t *) stack_peek(&sources);
-        if (source != NULL) {
-            current_file = *source;
+        memset(source, 0, sizeof(*source));
+        if (src_count) {
+            current_file = src_stack[src_count - 1];
             return 1;
         }
     }
     return EOF;
+}
+
+static void push(struct source source)
+{
+    src_count++;
+    src_stack = realloc(src_stack, src_count * sizeof(*src_stack));
+    src_stack[src_count - 1] = source;
 }
 
 static char *create_path(const char *dir, const char *name)
@@ -54,45 +59,43 @@ static char *create_path(const char *dir, const char *name)
     return path;
 }
 
-/* First search current directory, then go through list of search paths.
- */
 static void include_file_internal(const char *name, int incurrent)
 {
-    source_t *source;
-    int i;
+    struct source source = {0};
 
-    source = calloc(1, sizeof(source_t));
-    source->name = strdup(name);
+    source.name = strdup(name);
 
+    /* First check in current directory. */
     if (incurrent) {
-        source->path = create_path(current_file.directory, name);
-        source->file = fopen(source->path, "r");
-        source->directory = current_file.directory;
+        source.path = create_path(current_file.directory, name);
+        source.file = fopen(source.path, "r");
+        source.directory = current_file.directory;
     }
 
-    if (!source->file) {
-        i = search_path_count - 1;
+    /* Go through list of include paths. */
+    if (!source.file) {
+        int i = search_path_count - 1;
         if (!incurrent) {
             i--; /* skip invocation dir for system files. */
         }
-        for (; i >= 0 && !source->file; --i) {
-            if (source->path) {
-                free((void *) source->path);
-                source->path = NULL;
+        for (; i >= 0 && !source.file; --i) {
+            if (source.path) {
+                free((void *) source.path);
+                source.path = NULL;
             }
-            source->path = create_path(search_path[i], name);
-            source->file = fopen(source->path, "r");
-            source->directory = search_path[i];
+            source.path = create_path(search_path[i], name);
+            source.file = fopen(source.path, "r");
+            source.directory = search_path[i];
         }
     }
 
-    if (!source->file) {
+    if (!source.file) {
         error("Unable to resolve include file %s.", name);
         exit(1);
     }
 
-    current_file = *source;
-    stack_push(&sources, source);
+    current_file = source;
+    push(source);
 }
 
 void include_file(const char *name)
@@ -109,9 +112,10 @@ void include_system_file(const char *name)
  */
 static void finalize()
 {
+    assert(src_stack);
     while (pop() != EOF)
         ;
-    stack_finalize(&sources);
+    free(src_stack);
 }
 
 void add_include_search_path(const char *path)
@@ -128,40 +132,38 @@ void add_include_search_path(const char *path)
     search_path[search_path_count - 1] = path;
 }
 
-/* Initialize with root file name, and store relative path to resolve later
- * includes. Default to stdin.
- */
 void init(char *path)
 {
-    source_t *source = calloc(1, sizeof(source_t));
-    source->file = stdin;
-    source->path = "<stdin>";
-    source->name = "<stdin>";
-    source->directory = ".";
-    source->line = 0;
+    struct source source = {0};
+
+    source.file = stdin;
+    source.path = "<stdin>";
+    source.name = "<stdin>";
+    source.directory = ".";
+    source.line = 0;
 
     if (path) {
         char *sep;
 
-        source->name = path;
+        source.name = path;
         sep = strrchr(path, '/');
         if (sep) {
             *sep = '\0';
-            source->name = sep + 1;
-            source->directory = path;
+            source.name = sep + 1;
+            source.directory = path;
         }
 
-        source->path = create_path(source->directory, source->name);
-        source->file = fopen(source->path, "r");
-        if (!source->file) {
-            error("Unable to open file %s.", source->path);
+        source.path = create_path(source.directory, source.name);
+        source.file = fopen(source.path, "r");
+        if (!source.file) {
+            error("Unable to open file %s.", source.path);
             exit(1);
         }
     }
 
-    current_file = *source;
-    stack_push(&sources, source);
-    add_include_search_path(source->directory);
+    current_file = source;
+    push(source);
+    add_include_search_path(source.directory);
     atexit(finalize);
 }
 
@@ -169,7 +171,7 @@ void init(char *path)
  * comments, join lines ending with '\', and ignore all-whitespace lines.
  * Increment line counter in fnt structure for each line consumed.
  */
-static int getcleanline(char **lineptr, size_t *n, source_t *fn)
+static int getcleanline(char **lineptr, size_t *n, struct source *fn)
 {
     enum { NORMAL, COMMENT } state = 0;
     int c, next;            /* getc return values */
@@ -247,24 +249,21 @@ static int getcleanline(char **lineptr, size_t *n, source_t *fn)
     return i;
 }
 
-/* Yield next clean line.
- */
 int getprepline(char **buffer)
 {
     extern int VERBOSE;
 
     static char *line;
     static size_t size;
-    source_t *source;
+
     int read, processed;
 
     while (1) {
-        source = (source_t *)stack_peek(&sources);
-        if (!source) {
+        if (!src_count) {
             return -1;
         }
 
-        read = getcleanline(&line, &size, source);
+        read = getcleanline(&line, &size, &src_stack[src_count - 1]);
         if (read == 0) {
             if (pop() == EOF) {
                 return -1;
@@ -277,7 +276,7 @@ int getprepline(char **buffer)
     }
 
     *buffer = line;
-    current_file = *source;
+    current_file = src_stack[src_count - 1];
 
     if (VERBOSE) {
         printf("(%s, %d): `%s`\n", current_file.name, current_file.line, line);
