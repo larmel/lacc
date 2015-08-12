@@ -3,16 +3,26 @@
 
 #include <stddef.h>
 
-typedef struct list list_t;
+struct list;
 
-list_t *list_init(void);
+/* Create and initialize a list
+ */
+struct list *list_init(void);
 
-void list_push_back(list_t *list, void *elem);
+/* Add an element to the end of the list.
+ */
+void list_push_back(struct list *list, void *elem);
 
-void *list_get(const list_t *list, size_t i);
+/* Return element at position i.
+ */
+void *list_get(const struct list *list, size_t i);
 
-size_t list_length(const list_t *list);
+/* Return number of elements.
+ */
+size_t list_length(const struct list *list);
 
-void list_finalize(list_t *list);
+/* Release resources.
+ */
+void list_finalize(struct list *list);
 
 #endif

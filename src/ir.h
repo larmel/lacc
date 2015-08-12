@@ -167,8 +167,8 @@ struct decl
     int locals_size;
 
     /* Store all symbols associated with a function declaration. */
-    list_t *params;
-    list_t *locals;
+    struct list *params;
+    struct list *locals;
 
     /* Store all associated nodes in a list to simplify deallocation. */
     struct block **nodes;

@@ -9,13 +9,16 @@ struct list
     size_t length;
 };
 
-list_t *list_init(void)
+struct list *list_init(void)
 {
-    list_t *list = calloc(1, sizeof(*list));
+    struct list *list = calloc(1, sizeof(*list));
+    if (!list) {
+        exit(1);
+    }
     return list;
 }
 
-void list_finalize(list_t *list)
+void list_finalize(struct list *list)
 {
     assert(list);
     if (list->elem) {
@@ -24,7 +27,7 @@ void list_finalize(list_t *list)
     free(list);
 }
 
-void list_push_back(list_t *list, void *elem)
+void list_push_back(struct list *list, void *elem)
 {
     assert(list);
     list->length++;
@@ -32,13 +35,13 @@ void list_push_back(list_t *list, void *elem)
     list->elem[list->length - 1] = elem;
 }
 
-void *list_get(const list_t *list, size_t i)
+void *list_get(const struct list *list, size_t i)
 {
     assert(i < list->length);
     return list->elem[i];
 }
 
-size_t list_length(const list_t *list)
+size_t list_length(const struct list *list)
 {
     assert(list);
     return list->length;
