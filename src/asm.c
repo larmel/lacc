@@ -8,7 +8,7 @@
 #include "string.h"
 #include "symbol.h"
 #include "error.h"
-#include "util/map.h"
+#include "util/memoize.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -904,13 +904,13 @@ static void asm_op(FILE *stream, const struct op *op)
 
 static void asm_block(
     FILE *stream,
-    map_t *memo,
+    struct memo *memo,
     const struct block *block,
     const enum param_class *res);
 
 static void tail_cmp_jump(
     FILE *stream,
-    map_t *memo,
+    struct memo *memo,
     const struct block *block,
     const enum param_class *res)
 {
@@ -940,7 +940,7 @@ static void tail_cmp_jump(
         assert(0);
     }
 
-    if (map_lookup(memo, block->jump[0]->label)) {
+    if (is_memoized(memo, block->jump[0]->label)) {
         fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
     }
 
@@ -950,7 +950,7 @@ static void tail_cmp_jump(
 
 static void tail_generic(
     FILE *stream,
-    map_t *memo,
+    struct memo *memo,
     const struct block *block,
     const enum param_class *res)
 {
@@ -963,7 +963,7 @@ static void tail_generic(
         fprintf(stream, "\tleaveq\n");
         fprintf(stream, "\tretq\n");
     } else if (!block->jump[1]) {
-        if (map_lookup(memo, block->jump[0]->label)) {
+        if (is_memoized(memo, block->jump[0]->label)) {
             fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
         }
 
@@ -972,7 +972,7 @@ static void tail_generic(
         load(stream, block->expr, AX);
         fprintf(stream, "\tcmpq\t$0, %%rax\n");
         fprintf(stream, "\tje\t%s\n", block->jump[0]->label);
-        if (map_lookup(memo, block->jump[1]->label)) {
+        if (is_memoized(memo, block->jump[1]->label)) {
             fprintf(stream, "\tjmp\t%s\n", block->jump[1]->label);
         }
 
@@ -983,16 +983,14 @@ static void tail_generic(
 
 static void asm_block(
     FILE *stream,
-    map_t *memo,
+    struct memo *memo,
     const struct block *block,
     const enum param_class *res)
 {
-    int i;
-
     assert(block && res);
+    if (memoize_guard(memo, block->label)) {
+        int i;
 
-    if (!map_lookup(memo, block->label)) {
-        map_insert(memo, block->label, (void*)"done");
         fprintf(stream, "%s:\n", block->label);
         for (i = 0; i < block->n - 1; ++i) {
             asm_op(stream, block->code + i);
@@ -1102,10 +1100,8 @@ static void assemble_data(FILE *stream, struct block *head)
 
 static void asm_function(FILE *stream, const struct decl *decl)
 {
-    map_t memo;
+    struct memo *memo = memoize_init();
     enum param_class *res;
-
-    map_init(&memo);
 
     fprintf(stream, "\t.text\n");
     if (decl->fun->linkage == LINK_EXTERN) {
@@ -1122,14 +1118,14 @@ static void asm_function(FILE *stream, const struct decl *decl)
     res = enter(stream, decl);
 
     /* Recursively assemble body. */
-    asm_block(stream, &memo, decl->body, res);
+    asm_block(stream, memo, decl->body, res);
 
     /* This is required to see function names in valgrind. */
     fprintf(stream, "\t.size\t%s, .-%s\n",
         sym_name(decl->fun), sym_name(decl->fun));
 
     free(res);
-    map_finalize(&memo);
+    memoize_free(memo);
 }
 
 void assemble(FILE *stream, const struct decl *decl)
