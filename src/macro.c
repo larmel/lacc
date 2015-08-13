@@ -1,62 +1,99 @@
 #include "macro.h"
 #include "error.h"
 #include "input.h"
-#include "util/map.h"
 
 #include <assert.h>
 #include <string.h>
 #include <ctype.h>
 
-static map_t definitions;
+static struct macro *definitions;
+static size_t n_defs;
 
-void define_macro(macro_t *macro)
+static int macrocmp(const struct macro *a, const struct macro *b)
 {
-    map_insert(&definitions, macro->name.strval, (void *) macro);
+    int i;
+    if (strcmp(a->name.strval, b->name.strval) ||
+        a->type != b->type ||
+        a->params != b->params)
+    {
+        return 1;
+    }
+
+    for (i = 0; i < a->size; ++i) {
+        if (a->replacement[i].param || b->replacement[i].param) {
+            if (a->replacement[i].param != b->replacement[i].param) {
+                return 1;
+            }
+        } else if (
+            a->replacement[i].token.token != b->replacement[i].token.token ||
+            strcmp(a->replacement[i].token.strval,
+                b->replacement[i].token.strval))
+        {
+            return 1;
+        }
+    }
+    return 0;
 }
 
-void define(struct token name, struct token subst)
+void define(struct macro macro)
 {
-    macro_t *macro;
-    assert(name.strval);
+    int i;
+    for (i = 0; i < n_defs; ++i)
+        if (!strcmp(definitions[i].name.strval, macro.name.strval))
+            break;
 
-    macro = map_lookup(&definitions, name.strval);
-    if (!macro) {
-        macro_t *p = calloc(1, sizeof(*p));
-        p->name = name;
-        p->type = OBJECT_LIKE;
-        p->replacement = malloc(1 * sizeof(struct macro_subst_t));
-        p->replacement[0].token = subst;
-        p->replacement[0].param = 0;
-        p->size = 1;
-        map_insert(&definitions, name.strval, (void *) p);
+    if (i < n_defs) {
+        if (macrocmp(&definitions[i], &macro)) {
+            error("Redefinition of macro '%s' with different substitution.",
+                macro.name.strval);
+            exit(1);
+        }
+        /* Already have this definition, but need to clean up memory that we
+         * took ownership of. */
+        if (macro.size) {
+            free(macro.replacement);
+        }
     } else {
-        error("Redefinition of macro %s.", name.strval);
+        n_defs++;
+        definitions = realloc(definitions, sizeof(*definitions) * n_defs);
+        definitions[n_defs - 1] = macro;
     }
 }
 
 void undef(struct token name)
 {
+    int i;
     assert(name.strval);
+    for (i = 0; i < n_defs; ++i)
+        if (!strcmp(definitions[i].name.strval, name.strval))
+            break;
 
-    /* No-op if name is not a macro. */
-    map_remove(&definitions, name.strval);
+    if (i < n_defs) {
+        n_defs--;
+        assert(n_defs - i >= 0);
+        if (definitions[i].size) {
+            free(definitions[i].replacement);
+        }
+        memmove(&definitions[i], &definitions[i + 1],
+            (n_defs - i) * sizeof(*definitions));
+    }
 }
 
-macro_t *definition(struct token name)
+const struct macro *definition(struct token name)
 {
-    macro_t *macro = NULL;
+    int i;
+    assert(name.strval);
+    for (i = 0; i < n_defs; ++i)
+        if (!strcmp(definitions[i].name.strval, name.strval))
+            break;
 
-    assert(name.token == IDENTIFIER);
-
-    if (name.strval) {
-        macro = map_lookup(&definitions, name.strval);
-        if (macro && macro->name.token == IDENTIFIER) {
-            if (!strcmp(macro->name.strval, "__LINE__")) {
-                macro->replacement[0].token.intval = current_file.line;
-            }
+    if (i < n_defs) {
+        if (!strcmp(definitions[i].name.strval, "__LINE__")) {
+            definitions[i].replacement[0].token.intval = current_file.line;
         }
+        return &definitions[i];
     }
-    return macro;
+    return NULL;
 }
 
 toklist_t *toklist_init()
@@ -255,7 +292,7 @@ static toklist_t *expand_paste_operators(toklist_t *list)
 
 /* Expand a macro with given arguments to a list of tokens.
  */
-static toklist_t *expand_macro(macro_t *def, toklist_t **args)
+static toklist_t *expand_macro(const struct macro *def, toklist_t **args)
 {
     int i, n;
     toklist_t *res, *prescanned;
@@ -295,7 +332,7 @@ toklist_t *expand(toklist_t *tl)
     assert(tl);
 
     for (i = 0; i < tl->length; ++i) {
-        macro_t *def;
+        const struct macro *def;
 
         if (tl->elem[i].token == IDENTIFIER &&
             (def = definition(tl->elem[i])) &&
@@ -384,66 +421,79 @@ toklist_t *expand(toklist_t *tl)
     return res;
 }
 
-static void register__builtin_va_end(void)
+static struct replacement *parse(char *str, size_t *out_size)
 {
     extern struct token tokenize(char *in, char **endptr);
 
-    macro_t *p;
-    struct token name = { IDENTIFIER, "__builtin_va_end" };
-    char *str =
-        "@[0].gp_offset=0;" /* Each line has 9 tokens. */
-        "@[0].fp_offset=0;"
-        "@[0].overflow_arg_area=(void*)0;" /* Each line has 13 tokens. */
-        "@[0].reg_save_area=(void*)0;";
     char *endptr;
-    int i;
+    size_t n = 0;
+    struct replacement *repl = NULL;
 
-    p = calloc(1, sizeof(*p));
-    p->name = name;
-    p->type = FUNCTION_LIKE;
-    p->params = 1;
-    p->size = 44;
-    p->replacement = calloc(p->size, sizeof(*p->replacement));
-    for (i = 0; i < p->size; ++i) {
+    while (*str) {
+        n++;
+        repl = realloc(repl, sizeof(*repl) * n);
+        memset(repl + n - 1, 0x0, sizeof(*repl));
         if (*str == '@') {
-            p->replacement[i].param = 1;
+            repl[n - 1].param = 1;
             str++;
         } else {
-            p->replacement[i].token = tokenize(str, &endptr);
+            repl[n - 1].token = tokenize(str, &endptr);
             assert(str != endptr);
             str = endptr;
         }
     }
-
-    define_macro(p);
+    *out_size = n;
+    return repl;
 }
 
-void register_builtin_definitions()
+static void register__builtin_va_end(void)
 {
-    struct token 
-        name = { IDENTIFIER, NULL, 0 },
-        valu = { INTEGER_CONSTANT, NULL, 0 };
+    struct macro macro = {
+        {IDENTIFIER, "__builtin_va_end"},
+        FUNCTION_LIKE,
+        1, /* parameters */
+    };
 
-    name.strval = "__STDC_VERSION__";
-    valu.intval = 199409L;
-    define( name, valu );
+    macro.replacement = parse(
+        "@[0].gp_offset=0;"
+        "@[0].fp_offset=0;"
+        "@[0].overflow_arg_area=(void*)0;"
+        "@[0].reg_save_area=(void*)0;", &macro.size);
 
-    name.strval = "__STDC__";
-    valu.intval = 1;
-    define( name, valu );
+    assert(macro.size == 44);
+    define(macro);
+}
 
-    name.strval = "__STDC_HOSTED__";
-    valu.intval = 1;
-    define( name, valu );
+void register_builtin_definitions(void)
+{
+    struct macro macro = {
+        {IDENTIFIER, NULL, 0},
+        OBJECT_LIKE,
+        0, /* parameters */
+    };
 
-    name.strval = "__LINE__";
-    valu.intval = 0;
-    define( name, valu );
+    macro.name.strval = "__STDC_VERSION__";
+    macro.replacement = parse("199409L", &macro.size);
+    define(macro);
 
-    name.strval = "__FILE__";
-    valu.token = STRING;
-    valu.strval = current_file.path;
-    define( name, valu );
+    macro.name.strval = "__STDC__";
+    macro.replacement = parse("1", &macro.size);
+    define(macro);
+
+    macro.name.strval = "__STDC_HOSTED__";
+    macro.replacement = parse("1", &macro.size);
+    define(macro);
+
+    macro.name.strval = "__LINE__";
+    macro.replacement = parse("0", &macro.size);
+    define(macro);
+
+    macro.name.strval = "__FILE__";
+    macro.replacement = calloc(1, sizeof(*macro.replacement));
+    macro.replacement[0].token.token = STRING;
+    macro.replacement[0].token.strval = current_file.path;
+    macro.replacement[0].token.intval = 0;
+    define(macro);
 
     register__builtin_va_end();
 }

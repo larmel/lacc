@@ -5,7 +5,7 @@
 
 #include <stdlib.h>
 
-typedef struct {
+struct macro {
     struct token name;
     enum { OBJECT_LIKE, FUNCTION_LIKE } type;
 
@@ -13,11 +13,11 @@ typedef struct {
     size_t size;
 
     /* A substitution is either a token or a parameter. */
-    struct macro_subst_t {
+    struct replacement {
         struct token token;
         int param;
     } *replacement;
-} macro_t;
+};
 
 typedef struct toklist {
     struct token *elem;
@@ -38,13 +38,19 @@ struct token toklist_to_string(toklist_t *list);
  */
 char *pastetok(char *, struct token);
 
-void define_macro(macro_t *);
+/* Add macro definition. Takes ownership of any dynamically allocated
+ * replacement list.
+ */
+void define(struct macro macro);
 
-void define(struct token, struct token);
-
+/* Remove macro definition corresponding to identifier. If the name has not
+ * previously been defined, this is a no-op.
+ */
 void undef(struct token name);
 
-macro_t *definition(struct token);
+/* Look up definition of identifier, or NULL if not defined.
+ */
+const struct macro *definition(struct token);
 
 /* Expand a list of tokens, replacing any macro definitions. 
  */

@@ -37,7 +37,7 @@ static void expect_next(toklist_t *list, enum token_type type)
  * 12), 20 ) should complete on the last parenthesis, which makes the expression
  * balanced. Read lines until full macro invocation is included.
  */
-static void read_macro_invocation(toklist_t *list, macro_t *macro)
+static void read_macro_invocation(toklist_t *list, const struct macro *macro)
 {
     int nesting = 1;
     assert(macro->type == FUNCTION_LIKE);
@@ -110,7 +110,7 @@ static void read_defined_operator(toklist_t *list)
 static struct token read_complete_line(toklist_t *list, struct token t)
 {
     int is_directive = (t.token == '#');
-    macro_t *def;
+    const struct macro *def;
 
     while (t.token != NEWLINE && t.token != END) {
         if (t.token == IDENTIFIER) {
@@ -201,7 +201,7 @@ static int eval_primary(struct token_stream *stream)
         ts_consume(stream, ')');
         break;
     default:
-        error("Invalid primary expression.");
+        error("Invalid primary expression '%s'.", t.strval);
         break;
     }
     return value;
@@ -463,12 +463,13 @@ static void preprocess_directive(toklist_t *list)
         push_condition(definition(t) && peek_condition());
     } else if (peek_condition()) {
         if (t.token == IDENTIFIER && !strcmp("define", t.strval)) {
-            macro_t *macro = calloc(1, sizeof(macro_t));
+            struct macro macro;
             toklist_t *params = toklist_init();
 
-            macro->name = ts_next(&stream);
-            macro->type = OBJECT_LIKE;
-            if (macro->name.token != IDENTIFIER) {
+            memset(&macro, 0x0, sizeof(macro));
+            macro.name = ts_next(&stream);
+            macro.type = OBJECT_LIKE;
+            if (macro.name.token != IDENTIFIER) {
                 error("Definition must be identifier.");
                 exit(1);
             }
@@ -476,7 +477,7 @@ static void preprocess_directive(toklist_t *list)
             /* Function-like macro iff parenthesis immediately after, access
              * input stream directly. */
             if (stream.list->elem[stream.next].token == '(') {
-                macro->type = FUNCTION_LIKE;
+                macro.type = FUNCTION_LIKE;
                 ts_consume(&stream, '(');
                 while (ts_peek(&stream) != ')') {
                     if (ts_peek(&stream) != IDENTIFIER) {
@@ -484,7 +485,7 @@ static void preprocess_directive(toklist_t *list)
                         exit(1);
                     }
                     toklist_push_back(params, ts_next(&stream));
-                    macro->params++;
+                    macro.params++;
                     if (ts_peek(&stream) != ',') {
                         break;
                     }
@@ -494,23 +495,23 @@ static void preprocess_directive(toklist_t *list)
             }
             while (ts_peek(&stream) != NEWLINE) {
                 struct token subs = ts_next(&stream);
-                macro->size++;
-                macro->replacement = 
-                    realloc(macro->replacement, 
-                        macro->size * sizeof(struct macro_subst_t));
-                macro->replacement[macro->size - 1].token = subs;
-                macro->replacement[macro->size - 1].param = 0;
+                macro.size++;
+                macro.replacement = 
+                    realloc(macro.replacement,
+                        macro.size * sizeof(*macro.replacement));
+                macro.replacement[macro.size - 1].token = subs;
+                macro.replacement[macro.size - 1].param = 0;
                 if (subs.token == IDENTIFIER) {
                     int i;
                     for (i = 0; i < params->length; ++i) {
                         if (!strcmp(subs.strval, params->elem[i].strval)) {
-                            macro->replacement[macro->size - 1].param = i + 1;
+                            macro.replacement[macro.size - 1].param = i + 1;
                             break;
                         }
                     }
                 }
             }
-            define_macro(macro);
+            define(macro);
         } else if (t.token == IDENTIFIER && !strcmp("undef", t.strval)) {
             struct token name = ts_next(&stream);
             undef(name);
