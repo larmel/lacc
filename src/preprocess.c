@@ -109,14 +109,28 @@ static void read_defined_operator(toklist_t *list)
  */
 static struct token read_complete_line(toklist_t *list, struct token t)
 {
-    int is_directive = (t.token == '#');
+    int directive = (t.token == '#');
+    int expandable = !directive;
     const struct macro *def;
+
+    if (directive) {
+        toklist_push_back(list, t);
+        t = get_next(list);
+        if (t.token == IF ||
+            (t.token == IDENTIFIER && !strcmp("elif", t.strval)))
+        {
+            expandable = 1;
+        }
+    }
 
     while (t.token != NEWLINE && t.token != END) {
         if (t.token == IDENTIFIER) {
-            if (!strcmp("defined", t.strval) && is_directive) {
+            if (!strcmp("defined", t.strval) && expandable) {
                 read_defined_operator(list);
-            } else if ((def = definition(t)) && def->type == FUNCTION_LIKE) {
+            } else if (
+                (def = definition(t)) && def->type == FUNCTION_LIKE &&
+                expandable)
+            {
                 toklist_push_back(list, t);
                 read_macro_invocation(list, def);
             } else {
@@ -432,6 +446,7 @@ static void preprocess_directive(toklist_t *list)
 {
     struct token t;
     struct token_stream stream;
+    int aborted_evaluation = 0;
 
     stream.list = list;
     stream.next = 0;
@@ -446,11 +461,21 @@ static void preprocess_directive(toklist_t *list)
     }
 
     if (t.token == IF) {
-        int val = expression(&stream);
-        push_condition(peek_condition() ? val : 0);
+        /* Expressions are not necessarily valid in dead blocks, for example
+         * can function like macros be undefined. */
+        if (peek_condition()) {
+            push_condition(expression(&stream));
+        } else {
+            push_condition(0);
+            aborted_evaluation = 1;
+        }
     } else if (t.token == IDENTIFIER && !strcmp("elif", t.strval)) {
-        int val = expression(&stream);
-        push_condition(!pop_condition() && peek_condition() ? val : 0);
+        if (!pop_condition() && peek_condition()) {
+            push_condition(expression(&stream));
+        } else {
+            push_condition(0);
+            aborted_evaluation = 1;
+        }
     } else if (t.token == ELSE) {
         push_condition(!pop_condition() && peek_condition());
     } else if (t.token == IDENTIFIER && !strcmp("endif", t.strval)) {
@@ -548,11 +573,12 @@ static void preprocess_directive(toklist_t *list)
             exit(1);
         }
     } else {
-        /* Skip dead code. */
-        while (ts_peek(&stream) != NEWLINE) {
-            ts_next(&stream);
-        }
+        aborted_evaluation = 1;
     }
+
+    if (aborted_evaluation)
+        while (ts_peek(&stream) != NEWLINE)
+            ts_next(&stream);
     ts_consume(&stream, NEWLINE);
 }
 
