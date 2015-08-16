@@ -122,13 +122,14 @@ void add_include_search_path(const char *path)
 {
     /* For the first time, add default search paths at the bottom. */
     if (!search_path) {
-        search_path = malloc(3 * sizeof(char *));
+        search_path = calloc(3, sizeof(*search_path));
         add_include_search_path("/usr/include");
         add_include_search_path("/usr/local/include");
     }
 
     search_path_count++;
-    search_path = realloc(search_path, search_path_count * sizeof(char *));
+    search_path = realloc(search_path,
+        search_path_count * sizeof(*search_path));
     search_path[search_path_count - 1] = path;
 }
 
@@ -186,7 +187,7 @@ static int getcleanline(char **lineptr, size_t *n, struct source *fn)
     /* Need to have room for terminating \0 byte. */
     if (!*n) {
         *n = 1;
-        *lineptr = malloc(sizeof(char));
+        *lineptr = calloc(1, sizeof(**lineptr));
     }
 
     while ((c = getc(stream)) != EOF) {
@@ -240,7 +241,7 @@ static int getcleanline(char **lineptr, size_t *n, struct source *fn)
         /* make sure we have room for trailing null byte, and copy character */
         if (i + 1 >= *n) {
             *n = (i + 1) * 2;
-            *lineptr = realloc(*lineptr, sizeof(char) * *n);
+            *lineptr = realloc(*lineptr, (*n) * sizeof(**lineptr));
         }
         (*lineptr)[i++] = c;
     }
