@@ -488,6 +488,10 @@ void register_builtin_definitions(void)
     macro.replacement = parse("0", &macro.size);
     define(macro);
 
+    macro.name.strval = "__x86_64__";
+    macro.replacement = parse("1", &macro.size);
+    define(macro);
+
     macro.name.strval = "__FILE__";
     macro.replacement = calloc(1, sizeof(*macro.replacement));
     macro.replacement[0].token.token = STRING;
