@@ -1,6 +1,6 @@
-#if _XOPEN_SOURCE < 700
+#if _XOPEN_SOURCE < 500
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 700 /* strdup, strndup */
+#  define _XOPEN_SOURCE 500 /* strdup, snprintf */
 #endif
 #include "string.h"
 
@@ -17,12 +17,12 @@ static struct {
 
 static const char *create_label(void)
 {
-    static int n;
-    static char name[16];
-
-    snprintf(name, 10, ".LC%d", n++);
-
-    return strndup(name, 15);
+    static unsigned int n;
+    /* Integer (32 bit) can be at most 10 digits. Leave 3 for constant prefix,
+     * and one for trailing null byte. */
+    char *name = calloc(14, sizeof(*name));
+    snprintf(name, 14, ".LC%d", n++);
+    return name;
 }
 
 const char *strlabel(const char *s)
