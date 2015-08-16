@@ -51,6 +51,7 @@ static long strtonum(char *in, char **endptr)
     if (end != in) {
         if (*end == 'u' || *end == 'U') end++;
         if (*end == 'l' || *end == 'L') end++;
+        if (*end == 'l' || *end == 'L') end++;
     }
 
     if (endptr)
