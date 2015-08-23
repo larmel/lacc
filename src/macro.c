@@ -227,7 +227,6 @@ void print_list(const struct toklist *list, unsigned i)
  */
 static struct token paste_tokens(struct token left, struct token right)
 {
-    extern struct token tokenize(char *in, char **endptr);
     struct token result;
     size_t length;
     char *data, *endptr;
@@ -426,8 +425,6 @@ struct toklist *expand(struct toklist *tl)
 
 static struct replacement *parse(char *str, size_t *out_size)
 {
-    extern struct token tokenize(char *in, char **endptr);
-
     char *endptr;
     size_t n = 0;
     struct replacement *repl = NULL;

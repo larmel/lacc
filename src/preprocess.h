@@ -91,6 +91,14 @@ struct token {
     long intval;
 };
 
+/* Parse and return next preprocessing token from given line. Assumes comments
+ * are removed and line continuations are applied. endptr is set to point to one
+ * index past the last character producing the token.
+ *
+ * NB: Destructively overwrites input buffer for string constants.
+ */
+struct token tokenize(char *in, char **endptr);
+
 /* Define standard macros.
  */
 void register_builtin_definitions(void);
