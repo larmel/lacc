@@ -96,12 +96,12 @@ const struct macro *definition(struct token name)
     return NULL;
 }
 
-toklist_t *toklist_init()
+struct toklist *toklist_init()
 {
-    return calloc(1, sizeof(toklist_t));
+    return calloc(1, sizeof(struct toklist));
 }
 
-void toklist_destroy(toklist_t *tl)
+void toklist_destroy(struct toklist *tl)
 {
     assert(tl);
     if (tl->elem) {
@@ -111,7 +111,7 @@ void toklist_destroy(toklist_t *tl)
     free(tl);
 }
 
-void toklist_push_back(toklist_t *tl, struct token t)
+void toklist_push_back(struct toklist *tl, struct token t)
 {
     assert(tl);
 
@@ -120,7 +120,7 @@ void toklist_push_back(toklist_t *tl, struct token t)
     tl->elem[tl->length - 1] = t;
 }
 
-void toklist_push_back_list(toklist_t *tl, toklist_t *tr)
+void toklist_push_back_list(struct toklist *tl, struct toklist *tr)
 {
     assert(tl && tr);
 
@@ -130,11 +130,11 @@ void toklist_push_back_list(toklist_t *tl, toklist_t *tr)
     tl->length += tr->length;
 }
 
-struct token toklist_to_string(toklist_t *tl)
+struct token toklist_to_string(struct toklist *tl)
 {
-    struct token t = {STRING, NULL, 0};
-    char *buf = calloc(1, sizeof *buf);
     int i, len;
+    struct token t = {STRING};
+    char *buf = calloc(1, sizeof(*buf));
 
     assert(tl);
     for (i = len = 0; i < tl->length; ++i) {
@@ -149,7 +149,8 @@ struct token toklist_to_string(toklist_t *tl)
     return t;
 }
 
-char *pastetok(char *buf, struct token t) {
+char *pastetok(char *buf, struct token t)
+{
     size_t len;
 
     if (!buf) {
@@ -207,7 +208,7 @@ static int is_macro_expanded(const char *macro_name)
     return 0;
 }
 
-void print_list(const toklist_t *list, unsigned i)
+void print_list(const struct toklist *list, unsigned i)
 {
     printf("[");
     if (i < list->length) {
@@ -250,11 +251,11 @@ static struct token paste_tokens(struct token left, struct token right)
 
 /* Resolve token pasting with '##' operator.
  */
-static toklist_t *expand_paste_operators(toklist_t *list)
+static struct toklist *expand_paste_operators(struct toklist *list)
 {
     int i = 1,  /* Index into list. */
         j = 0;  /* Index into result. */
-    toklist_t *res = (list->length) ? toklist_init() : list;
+    struct toklist *res = (list->length) ? toklist_init() : list;
 
     if (!list->length) {
         return res;
@@ -292,10 +293,12 @@ static toklist_t *expand_paste_operators(toklist_t *list)
 
 /* Expand a macro with given arguments to a list of tokens.
  */
-static toklist_t *expand_macro(const struct macro *def, toklist_t **args)
+static struct toklist *expand_macro(
+    const struct macro *def,
+    struct toklist **args)
 {
     int i, n;
-    toklist_t *res, *prescanned;
+    struct toklist *res, *prescanned;
     assert(def->type == FUNCTION_LIKE || !args);
 
     push_expand_stack(def->name.strval);
@@ -324,10 +327,10 @@ static toklist_t *expand_macro(const struct macro *def, toklist_t **args)
     return res;
 }
 
-toklist_t *expand(toklist_t *tl)
+struct toklist *expand(struct toklist *tl)
 {
     int i;
-    toklist_t *res = toklist_init();
+    struct toklist *res = toklist_init();
 
     assert(tl);
 
@@ -338,7 +341,7 @@ toklist_t *expand(toklist_t *tl)
             (def = definition(tl->elem[i])) &&
             !is_macro_expanded(def->name.strval))
         {
-            toklist_t **args = NULL;
+            struct toklist **args = NULL;
             if (def->type == FUNCTION_LIKE) {
                 int j,
                     nesting = 0;    /* Keep track parenthesis nesting level. */

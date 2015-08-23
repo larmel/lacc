@@ -10,7 +10,7 @@
 /* Add consecutive space tokens, returning the first token that is of another
  * type.
  */
-static struct token get_next(toklist_t *list)
+static struct token get_next(struct toklist *list)
 {
     struct token t = get_preprocessing_token();
     while (t.token == SPACE) {
@@ -23,7 +23,7 @@ static struct token get_next(toklist_t *list)
 /* Skip through whitespace and add token of expected type. Whitespace is also
  * added.
  */
-static void expect_next(toklist_t *list, enum token_type type)
+static void expect_next(struct toklist *list, enum token_type type)
 {
     struct token t = get_next(list);
     if (t.token != type) {
@@ -37,7 +37,9 @@ static void expect_next(toklist_t *list, enum token_type type)
  * 12), 20 ) should complete on the last parenthesis, which makes the expression
  * balanced. Read lines until full macro invocation is included.
  */
-static void read_macro_invocation(toklist_t *list, const struct macro *macro)
+static void read_macro_invocation(
+    struct toklist *list,
+    const struct macro *macro)
 {
     int nesting = 1;
     assert(macro->type == FUNCTION_LIKE);
@@ -71,7 +73,7 @@ static void read_macro_invocation(toklist_t *list, const struct macro *macro)
 
 /* Replace defined name and defined (name) with 0 or 1 constants.
  */
-static void read_defined_operator(toklist_t *list)
+static void read_defined_operator(struct toklist *list)
 {
     int is_parens = 0;
     struct token t = get_next(list);
@@ -107,7 +109,7 @@ static void read_defined_operator(toklist_t *list)
  * newline. Otherwise make sure macro invocations spanning multiple lines are
  * joined, and replace 'defined' directives with constants. Return newline or $.
  */
-static struct token read_complete_line(toklist_t *list, struct token t)
+static struct token read_complete_line(struct toklist *list, struct token t)
 {
     int directive = (t.token == '#');
     int expandable = !directive;
@@ -149,7 +151,7 @@ static struct token read_complete_line(toklist_t *list, struct token t)
 struct token_stream
 {
     unsigned next;
-    toklist_t *list;
+    struct toklist *list;
 };
 
 static void ts_skip_ws(struct token_stream *stream)
@@ -442,7 +444,7 @@ static int pop_condition() {
     return branch_stack.condition[--branch_stack.length];
 }
 
-static void preprocess_directive(toklist_t *list)
+static void preprocess_directive(struct toklist *list)
 {
     struct token t;
     struct token_stream stream;
@@ -489,7 +491,7 @@ static void preprocess_directive(toklist_t *list)
     } else if (peek_condition()) {
         if (t.token == IDENTIFIER && !strcmp("define", t.strval)) {
             struct macro macro;
-            toklist_t *params = toklist_init();
+            struct toklist *params = toklist_init();
 
             memset(&macro, 0x0, sizeof(macro));
             macro.name = ts_next(&stream);
@@ -629,7 +631,7 @@ static void preprocess_line(void)
 
     /* Consume and preprocess lines until lookahead is met, or end of input. */
     do {
-        toklist_t *tokens = toklist_init();
+        struct toklist *tokens = toklist_init();
 
         t = get_next(tokens);
         if (t.token == '#') {
