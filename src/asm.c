@@ -23,29 +23,27 @@ static char asmsuffix(const struct typetree *type)
     return 'q';
 }
 
-static const char* reg(enum reg r, int w)
-{
-    static const char *x86_64_regs[][5] = {
-        { "al", "ax", "eax", NULL, "rax" },
-        { "bl", "bx", "ebx", NULL, "rbx" },
-        { "cl", "cx", "ecx", NULL, "rcx" },
-        { "dl", "dx", "edx", NULL, "rdx" },
-        { NULL, NULL,  NULL, NULL, "rbp" },
-        { NULL, NULL,  NULL, NULL, "rsp" },
-        { NULL, "si", "esi", NULL, "rsi" },
-        { NULL, "di", "edi", NULL, "rdi" },
-        { "r8b",  "r8w",  "r8d",  NULL, "r8" },
-        { "r9b",  "r9w",  "r9d",  NULL, "r9" },
-        { "r10b", "r10w", "r10d", NULL, "r10" },
-        { "r11b", "r11w", "r11d", NULL, "r11" },
-        { "r12b", "r12w", "r12d", NULL, "r12" },
-        { "r13b", "r13w", "r13d", NULL, "r13" },
-        { "r14b", "r14w", "r14d", NULL, "r14" },
-        { "r15b", "r15w", "r15d", NULL, "r15" },
-    };
+static const char *x86_64_registers[][4] = {
+    { "al",   "ax",   "eax",  "rax" },
+    { "bl",   "bx",   "ebx",  "rbx" },
+    { "cl",   "cx",   "ecx",  "rcx" },
+    { "dl",   "dx",   "edx",  "rdx" },
+    { "bpl",  "bp",   "ebp",  "rbp" },
+    { "spl",  "sp",   "esp",  "rsp" },
+    { "sil",  "si",   "esi",  "rsi" },
+    { "dil",  "di",   "edi",  "rdi" },
+    { "r8b",  "r8w",  "r8d",  "r8"  },
+    { "r9b",  "r9w",  "r9d",  "r9"  },
+    { "r10b", "r10w", "r10d", "r10" },
+    { "r11b", "r11w", "r11d", "r11" },
+    { "r12b", "r12w", "r12d", "r12" },
+    { "r13b", "r13w", "r13d", "r13" },
+    { "r14b", "r14w", "r14d", "r14" },
+    { "r15b", "r15w", "r15d", "r15" },
+};
 
-    return x86_64_regs[(int) r][w / 2];
-}
+#define REG(r, w) \
+    x86_64_registers[(int) (r)][(w) == 8 ? 3 : (w) == 4 ? 2 : (w) - 1]
 
 /* Create a string representation of the given value, for example -16(%rbp), 
  * str(%rip), $.LC1+3, or $2. Format depending on type of variable.
@@ -96,7 +94,7 @@ static void load_address(FILE *s, struct var v, enum reg r)
             ((v.symbol->linkage != LINK_NONE && !v.offset &&
                 (v.type->type == ARRAY || v.type->type == FUNCTION)) ?
                 "movq" : "leaq"),
-            refer(v), reg(r, 8), v.symbol->name);
+            refer(v), REG(r, 8), v.symbol->name);
         break;
     case DEREF:
         /* Address of dereferenced variable is removed by evaluation. Exception
@@ -106,7 +104,7 @@ static void load_address(FILE *s, struct var v, enum reg r)
         assert(is_pointer(v.symbol->type));
         fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
         fprintf(s, "\tleaq\t%d(%%r10), %%%s\t# load (%s + %d)\n",
-            v.offset, reg(r, 8), v.symbol->name, v.offset);
+            v.offset, REG(r, 8), v.symbol->name, v.offset);
         break;
     }
 }
@@ -143,23 +141,23 @@ static void load_value(FILE *s, struct var v, enum reg r, unsigned int w)
     switch (v.kind) {
     case DIRECT:
         fprintf(s, "\t%s\t%s, %%%s\t# load %s\n",
-            mov, refer(v), reg(r, w), v.symbol->name);
+            mov, refer(v), REG(r, w), v.symbol->name);
         break;
     case DEREF:
         assert(is_pointer(v.symbol->type));
         load_value(s, var_direct(v.symbol), R11, v.symbol->type->size);
         if (v.offset) {
             fprintf(s, "\t%s\t%d(%%%s), %%%s\t# load *(%s + %d)\n",
-                mov, v.offset, reg(R11, 8), reg(r, w),
+                mov, v.offset, REG(R11, 8), REG(r, w),
                 v.symbol->name, v.offset);
         } else {
             fprintf(s, "\t%s\t(%%%s), %%%s\t# load *%s\n",
-                mov, reg(R11, 8), reg(r, w), v.symbol->name);
+                mov, REG(R11, 8), REG(r, w), v.symbol->name);
         }
         break;
     case IMMEDIATE:
         fprintf(s, "\tmov%c\t%s, %%%s\n",
-            (w == 4) ? 'l' : 'q', refer(v), reg(r, w));
+            (w == 4) ? 'l' : 'q', refer(v), REG(r, w));
         break;
     }
 }
@@ -181,18 +179,18 @@ static void store(FILE *s, enum reg r, struct var v)
     if (v.kind == DIRECT) {
         assert(v.type->type != ARRAY);
         fprintf(s, "\tmov%c\t%%%s, %s\t# store %s\n",
-            asmsuffix(v.type), reg(r, v.type->size), refer(v), v.symbol->name);
+            asmsuffix(v.type), REG(r, v.type->size), refer(v), v.symbol->name);
     } else {
         assert(v.kind == DEREF);
         assert(is_pointer(v.symbol->type));
         load_value(s, var_direct(v.symbol), R11, v.symbol->type->size);
         if (v.offset) {
             fprintf(s, "\tmov%c\t%%%s, %d(%%%s)\t# store *(%s + %d)\n",
-                asmsuffix(v.type), reg(r, v.type->size), v.offset, reg(R11, 8),
+                asmsuffix(v.type), REG(r, v.type->size), v.offset, REG(R11, 8),
                 v.symbol->name, v.offset);
         } else {
             fprintf(s, "\tmov%c\t%%%s, (%%%s)\t# store *%s\n",
-                asmsuffix(v.type), reg(r, v.type->size), reg(R11, 8),
+                asmsuffix(v.type), REG(r, v.type->size), REG(R11, 8),
                 v.symbol->name);
         }
     }
@@ -207,13 +205,13 @@ static void push(FILE *s, struct var v)
             fprintf(s, "\tpushq\t%s\n", refer(v));
         } else {
             load(s, v, AX);
-            fprintf(s, "\tpushq\t%%%s\n", reg(AX, 8));
+            fprintf(s, "\tpushq\t%%%s\n", REG(AX, 8));
         }
     } else {
         int slices = N_EIGHTBYTES(v.type);
 
         fprintf(s, "\tsubq\t$%d, %%rsp\n", slices * 8);
-        fprintf(s, "\tmovl\t$%d, %%%s\n", slices, reg(CX, 4));
+        fprintf(s, "\tmovl\t$%d, %%%s\n", slices, REG(CX, 4));
         fprintf(s, "\tmovq\t%%rsp, %%rdi\n");
         load_address(s, v, SI);
         fprintf(s, "\trep movsq\n");
@@ -422,7 +420,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
 
     /* Store return address to well known stack offset. */
     if (*ret == PC_MEMORY) {
-        fprintf(s, "\tmovq\t%%%s, -8(%%rbp)\n", reg(param_int_reg[0], 8));
+        fprintf(s, "\tmovq\t%%%s, -8(%%rbp)\n", REG(param_int_reg[0], 8));
     }
 
     /* Store all potential parameters to register save area. This includes
@@ -446,7 +444,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
         for (i = 0; i < 6; ++i) {
             reg_save_area_offset -= 8;
             fprintf(s, "\tmovq\t%%%s, %d(%%rbp)\n",
-                reg(param_int_reg[5 - i], 8), reg_save_area_offset);
+                REG(param_int_reg[5 - i], 8), reg_save_area_offset);
         }
     }
 
@@ -524,13 +522,13 @@ static void ret(FILE *s, struct var val, const enum param_class *pc)
         assert(size == 0);
     } else {
         /* Load return address from magic stack offset and copy result. */
-        fprintf(s, "\tmovq\t-8(%%rbp), %%%s\n", reg(DI, 8));
+        fprintf(s, "\tmovq\t-8(%%rbp), %%%s\n", REG(DI, 8));
         load_address(s, val, SI);
-        fprintf(s, "\tmovl\t$%d, %%%s\n", val.type->size, reg(DX, 4));
+        fprintf(s, "\tmovl\t$%d, %%%s\n", val.type->size, REG(DX, 4));
         fprintf(s, "\tcall\tmemcpy\n");
 
         /* The ABI specifies that the address should be in %rax on return. */
-        fprintf(s, "\tmovq\t-8(%%rbp), %%%s\n", reg(AX, 8));
+        fprintf(s, "\tmovq\t-8(%%rbp), %%%s\n", REG(AX, 8));
     }
 }
 
@@ -606,13 +604,13 @@ static void assemble__builtin_va_arg(FILE *s, struct var res, struct var args)
          * passed in. */
         if (num_gp) {
             load(s, var_gp_offset, CX);
-            fprintf(s, "\tcmpl\t$%d, %%%s\n", (6*8 - 8*num_gp), reg(CX, 4));
+            fprintf(s, "\tcmpl\t$%d, %%%s\n", (6*8 - 8*num_gp), REG(CX, 4));
             fprintf(s, "\tja %s\n", memory);
         }
         if (num_fp) {
             assert(0); /* No actual float support yet. */
             load(s, var_fp_offset, DX);
-            fprintf(s, "\tcmpl\t$%d, %%%s\n", (8*8 - 8*num_fp), reg(DX, 4));
+            fprintf(s, "\tcmpl\t$%d, %%%s\n", (8*8 - 8*num_fp), REG(DX, 4));
             fprintf(s, "\tja %s\n", memory);
         }
 
@@ -632,8 +630,8 @@ static void assemble__builtin_va_arg(FILE *s, struct var res, struct var args)
              * Base of registers are stored in %rsi, first pending register is
              * at offset %rcx, and i counts number of registers done. */
             fprintf(s, "\tmov%c\t%d(%%%s, %%%s, 1), %%%s\n",
-                asmsuffix(slice.type), (i * 8), reg(SI, 8), reg(CX, 8),
-                reg(AX, width));
+                asmsuffix(slice.type), (i * 8), REG(SI, 8), REG(CX, 8),
+                REG(AX, width));
             store(s, AX, slice);
         }
 
@@ -659,9 +657,9 @@ static void assemble__builtin_va_arg(FILE *s, struct var res, struct var args)
     if (res.type->size <= 8) {
         assert(res.kind == DIRECT);
         fprintf(s, "\tmov%c\t(%%%s), %%%s\n",
-            asmsuffix(res.type), reg(SI, 8), reg(AX, res.type->size));
+            asmsuffix(res.type), REG(SI, 8), REG(AX, res.type->size));
         fprintf(s, "\tmov%c\t%%%s, %s\t# Load vararg\n",
-            asmsuffix(res.type), reg(AX, res.type->size), refer(res));
+            asmsuffix(res.type), REG(AX, res.type->size), refer(res));
     } else {
         load_address(s, res, DI);
         fprintf(s, "\tmovq\t$%d, %%rdx\n", res.type->size);
@@ -700,7 +698,7 @@ static void asm_op(FILE *stream, const struct op *op)
              * that we can refer to. Add to string table, decay to address. */
             str.string = strlabel(str.string);
             str.type = type_init_pointer(str.type->next);
-            fprintf(stream, "\tmovq\t%s, %%%s\n", refer(str), reg(SI, 8));
+            fprintf(stream, "\tmovq\t%s, %%%s\n", refer(str), REG(SI, 8));
 
             load_address(stream, op->a, DI);
             fprintf(stream, "\tmovq\t$%d, %%rdx\n", op->a.type->size);
@@ -730,7 +728,7 @@ static void asm_op(FILE *stream, const struct op *op)
     case IR_DEREF:
         load(stream, op->b, BX);
         fprintf(stream, "\tmov%c\t(%%rbx), %%%s\n",
-            asmsuffix(op->a.type), reg(AX, op->a.type->size));
+            asmsuffix(op->a.type), REG(AX, op->a.type->size));
         store(stream, AX, op->a);
         break;
     case IR_PARAM:
@@ -753,16 +751,16 @@ static void asm_op(FILE *stream, const struct op *op)
         load(stream, op->b, AX);
         load(stream, op->c, BX);
         fprintf(stream, "\tadd%c\t%%%s, %%%s\n",
-            asmsuffix(op->a.type), reg(BX, op->a.type->size),
-            reg(AX, op->a.type->size));
+            asmsuffix(op->a.type), REG(BX, op->a.type->size),
+            REG(AX, op->a.type->size));
         store(stream, AX, op->a);
         break;
     case IR_OP_SUB:
         load(stream, op->b, AX);
         load(stream, op->c, BX);
         fprintf(stream, "\tsub%c\t%%%s, %%%s\n",
-            asmsuffix(op->a.type), reg(BX, op->a.type->size),
-            reg(AX, op->a.type->size));
+            asmsuffix(op->a.type), REG(BX, op->a.type->size),
+            REG(AX, op->a.type->size));
         store(stream, AX, op->a);
         break;
     case IR_OP_MUL:
@@ -773,14 +771,14 @@ static void asm_op(FILE *stream, const struct op *op)
         } else {
             load(stream, op->b, BX);
             fprintf(stream, "\tmul%c\t%%%s\n",
-                asmsuffix(op->b.type), reg(BX, op->b.type->size));
+                asmsuffix(op->b.type), REG(BX, op->b.type->size));
         }
         store(stream, AX, op->a);
         break;
     case IR_OP_DIV:
     case IR_OP_MOD:
         /* %rdx must be zero to avoid SIGFPE. */
-        fprintf(stream, "\txorq\t%%%s, %%%s\n", reg(DX, 8), reg(DX, 8));
+        fprintf(stream, "\txorq\t%%%s, %%%s\n", REG(DX, 8), REG(DX, 8));
         load(stream, op->b, AX);
         if (op->c.kind == DIRECT) {
             fprintf(stream, "\tdiv%c\t%s\n",
@@ -788,7 +786,7 @@ static void asm_op(FILE *stream, const struct op *op)
         } else {
             load(stream, op->c, BX);
             fprintf(stream, "\tdiv%c\t%%%s\n",
-                asmsuffix(op->c.type), reg(BX, op->c.type->size));
+                asmsuffix(op->c.type), REG(BX, op->c.type->size));
         }
         if (op->type == IR_OP_DIV) {
             store(stream, AX, op->a);
@@ -823,13 +821,13 @@ static void asm_op(FILE *stream, const struct op *op)
         if (is_unsigned(op->a.type)) {
             fprintf(stream, "\tshl%c\t%%%s, %%%s\n",
                 asmsuffix(op->a.type),
-                reg(CX, 1),
-                reg(AX, op->a.type->size));
+                REG(CX, 1),
+                REG(AX, op->a.type->size));
         } else {
             fprintf(stream, "\tsal%c\t%%%s, %%%s\n",
                 asmsuffix(op->a.type),
-                reg(CX, 1),
-                reg(AX, op->a.type->size));
+                REG(CX, 1),
+                REG(AX, op->a.type->size));
         }
         store(stream, AX, op->a);
         break;
@@ -839,13 +837,13 @@ static void asm_op(FILE *stream, const struct op *op)
         if (is_unsigned(op->a.type)) {
             fprintf(stream, "\tshr%c\t%%%s, %%%s\n",
                 asmsuffix(op->a.type),
-                reg(CX, 1),
-                reg(AX, op->a.type->size));
+                REG(CX, 1),
+                REG(AX, op->a.type->size));
         } else {
             fprintf(stream, "\tsar%c\t%%%s, %%%s\n",
                 asmsuffix(op->a.type),
-                reg(CX, 1),
-                reg(AX, op->a.type->size));
+                REG(CX, 1),
+                REG(AX, op->a.type->size));
         }
         store(stream, AX, op->a);
         break;
@@ -853,7 +851,7 @@ static void asm_op(FILE *stream, const struct op *op)
         load(stream, op->b, AX);
         load(stream, op->c, BX);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n",
-            reg(BX, op->a.type->size), reg(AX, op->a.type->size));
+            REG(BX, op->a.type->size), REG(AX, op->a.type->size));
         fprintf(stream, "\tsetz\t%%al\n");
         fprintf(stream, "\tmovzbl\t%%al, %%eax\n");
         store(stream, AX, op->a);
@@ -862,7 +860,7 @@ static void asm_op(FILE *stream, const struct op *op)
         load(stream, op->b, AX);
         load(stream, op->c, BX);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n",
-            reg(BX, op->a.type->size), reg(AX, op->a.type->size));
+            REG(BX, op->a.type->size), REG(AX, op->a.type->size));
         if (is_unsigned(op->b.type)) {
             assert(is_unsigned(op->c.type));
             fprintf(stream, "\tsetae\t%%al\n");
@@ -876,7 +874,7 @@ static void asm_op(FILE *stream, const struct op *op)
         load(stream, op->b, AX);
         load(stream, op->c, BX);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n",
-            reg(BX, op->a.type->size), reg(AX, op->a.type->size));
+            REG(BX, op->a.type->size), REG(AX, op->a.type->size));
         if (is_unsigned(op->b.type)) {
             assert( is_unsigned(op->c.type) );
             /* When comparison is unsigned, set flag without considering
@@ -923,7 +921,7 @@ static void tail_cmp_jump(
     load(stream, cmp->b, AX);
     load(stream, cmp->c, BX);
     fprintf(stream, "\tcmp\t%%%s, %%%s\n",
-        reg(BX, cmp->a.type->size), reg(AX, cmp->a.type->size));
+        REG(BX, cmp->a.type->size), REG(AX, cmp->a.type->size));
     switch (cmp->type) {
     case IR_OP_EQ:
         fprintf(stream, "\tje\t%s\n", block->jump[1]->label);
