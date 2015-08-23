@@ -23,7 +23,7 @@ static struct token get_next(struct toklist *list)
 /* Skip through whitespace and add token of expected type. Whitespace is also
  * added.
  */
-static void expect_next(struct toklist *list, enum token_type type)
+static void expect_next(struct toklist *list, int type)
 {
     struct token t = get_next(list);
     if (t.token != type) {
@@ -175,7 +175,7 @@ static struct token ts_next(struct token_stream *stream)
 /* Move past next token, failing with an error if it does not match the expected
  * type.
  */
-static void ts_consume(struct token_stream *stream, enum token_type type)
+static void ts_consume(struct token_stream *stream, int type)
 {
     struct token t = ts_next(stream);
     if (t.token != type) {
@@ -187,7 +187,7 @@ static void ts_consume(struct token_stream *stream, enum token_type type)
 
 /* Return next element or EOF, without changing pointer.
  */
-static enum token_type ts_peek(struct token_stream *stream)
+static int ts_peek(struct token_stream *stream)
 {
     ts_skip_ws(stream);
     if (stream->next == stream->list->length) {
@@ -695,7 +695,7 @@ struct token peekn(unsigned n)
     return lookahead.elem[cursor + n - 1];
 }
 
-struct token consume(enum token_type expected)
+struct token consume(int expected)
 {
     struct token t = next();
 

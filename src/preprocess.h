@@ -9,92 +9,87 @@
  * '+', which makes the parser more elegant. A sentinel value '$' is used to
  * denote end of file.
  */
-enum token_type
-{
-    AUTO = 256, BREAK, CASE, CHAR,
-    CONST, CONTINUE, DEFAULT, DO,
-    DOUBLE, ELSE, ENUM, EXTERN,
-    FLOAT, FOR, GOTO, IF,
-    INT, LONG, REGISTER, RETURN,
-    SHORT, SIGNED, SIZEOF, STATIC,
-    STRUCT, SWITCH, TYPEDEF, UNION,
-    UNSIGNED, VOID, VOLATILE, WHILE,
-
-    INTEGER_CONSTANT,
-    IDENTIFIER,
-    STRING,
-
-    DOTS, /* ... */
-    LOGICAL_OR, /* || */
-    LOGICAL_AND, /* && */
-    LEQ, /* <= */
-    GEQ, /* >= */
-    EQ, /* == */
-    NEQ, /* != */
-    ARROW, /* -> */
-    INCREMENT, /* ++ */
-    DECREMENT, /* -- */
-    LSHIFT, /* << */
-    RSHIFT, /* >> */
-
-    MUL_ASSIGN, /* *= */
-    DIV_ASSIGN, /* /= */
-    MOD_ASSIGN, /* %= */
-    PLUS_ASSIGN, /* += */
-    MINUS_ASSIGN, /* -= */
-    LSHIFT_ASSIGN, /* <<= */
-    RSHIFT_ASSIGN, /* >>= */
-    AND_ASSIGN, /* &= */
-    XOR_ASSIGN, /* ^= */
-    OR_ASSIGN, /* |= */
-
-    TOKEN_PASTE, /* ## */
-    SPACE,
-
-    OR = '|',
-    AND = '&',
-    XOR = '^',
-    MODULO = '%',
-    LT = '<',
-    GT = '>',
-    OPEN_PAREN = '(',
-    CLOSE_PAREN = ')',
-    COLON = ':',
-    SEMICOLON = ';',
-    OPEN_CURLY = '{',
-    CLOSE_CURLY = '}',
-    OPEN_BRACKET = '[',
-    CLOSE_BRACKET = ']',
-    COMMA = ',',
-    DOT = '.',
-    ASSIGN = '=',
-    STAR = '*',
-    SLASH = '/',
-    PLUS = '+',
-    MINUS = '-',
-    NOT = '!',
-    QUESTION = '?',
-    NEG = '~',
-
-    HASH = '#',
-    NEWLINE = '\n',
-
-    END = '$'
-};
-
 struct token {
-    enum token_type token;
+    enum {
+        AUTO = 256, BREAK, CASE, CHAR,
+        CONST, CONTINUE, DEFAULT, DO,
+        DOUBLE, ELSE, ENUM, EXTERN,
+        FLOAT, FOR, GOTO, IF,
+        INT, LONG, REGISTER, RETURN,
+        SHORT, SIGNED, SIZEOF, STATIC,
+        STRUCT, SWITCH, TYPEDEF, UNION,
+        UNSIGNED, VOID, VOLATILE, WHILE,
+
+        INTEGER_CONSTANT,
+        IDENTIFIER,
+        STRING,
+
+        DOTS, /* ... */
+        LOGICAL_OR, /* || */
+        LOGICAL_AND, /* && */
+        LEQ, /* <= */
+        GEQ, /* >= */
+        EQ, /* == */
+        NEQ, /* != */
+        ARROW, /* -> */
+        INCREMENT, /* ++ */
+        DECREMENT, /* -- */
+        LSHIFT, /* << */
+        RSHIFT, /* >> */
+
+        MUL_ASSIGN, /* *= */
+        DIV_ASSIGN, /* /= */
+        MOD_ASSIGN, /* %= */
+        PLUS_ASSIGN, /* += */
+        MINUS_ASSIGN, /* -= */
+        LSHIFT_ASSIGN, /* <<= */
+        RSHIFT_ASSIGN, /* >>= */
+        AND_ASSIGN, /* &= */
+        XOR_ASSIGN, /* ^= */
+        OR_ASSIGN, /* |= */
+
+        TOKEN_PASTE, /* ## */
+        SPACE,
+
+        OR = '|',
+        AND = '&',
+        XOR = '^',
+        MODULO = '%',
+        LT = '<',
+        GT = '>',
+        OPEN_PAREN = '(',
+        CLOSE_PAREN = ')',
+        COLON = ':',
+        SEMICOLON = ';',
+        OPEN_CURLY = '{',
+        CLOSE_CURLY = '}',
+        OPEN_BRACKET = '[',
+        CLOSE_BRACKET = ']',
+        COMMA = ',',
+        DOT = '.',
+        ASSIGN = '=',
+        STAR = '*',
+        SLASH = '/',
+        PLUS = '+',
+        MINUS = '-',
+        NOT = '!',
+        QUESTION = '?',
+        NEG = '~',
+
+        HASH = '#',
+        NEWLINE = '\n',
+
+        END = '$'
+    } token;
+
+    /* Textual representation of the token as it appears in code. For tokens
+     * that are not keywords or operators, the buffer is dynamically allocated.
+     */
     const char *strval;
+
+    /* Integer value for constants. */
     long intval;
 };
-
-#define debug_output_token(t)                                                  \
-    do {                                                                       \
-        if (t.token == INTEGER_CONSTANT)                                       \
-            printf("   token( %ld )\n", t.intval);                             \
-        else                                                                   \
-            printf("   token( %s )\n", t.strval);                              \
-    } while (0);
 
 /* Define standard macros.
  */
@@ -104,16 +99,32 @@ void register_builtin_definitions(void);
  */
 struct token get_preprocessing_token(void);
 
-/* Preprocessor interface exposed to the parser, return tokens where any macro
- * substitution and preprocessing directives have been handled.
+/* Peek lookahead of 1.
+ */
+struct token peek(void);
+
+/* Peek lookahead of n.
+ */
+struct token peekn(unsigned n);
+
+/* Consume and return next token.
  */
 struct token next(void);
-struct token peek(void);
-struct token peekn(unsigned n);
-struct token consume(enum token_type);
+
+/* Consume and return next token, or fail of not of expected type.
+ */
+struct token consume(int type);
 
 /* Output preprocessed input to provided stream, toggled by -E program option.
  */
 void preprocess(FILE *output);
+
+#define debug_output_token(t)                                                  \
+    do {                                                                       \
+        if (t.token == INTEGER_CONSTANT)                                       \
+            printf("   token( %ld )\n", t.intval);                             \
+        else                                                                   \
+            printf("   token( %s )\n", t.strval);                              \
+    } while (0);
 
 #endif

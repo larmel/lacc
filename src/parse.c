@@ -16,7 +16,7 @@
 #include <string.h>
 
 static struct block *declaration(struct block *);
-static struct typetree *declaration_specifiers(enum token_type *);
+static struct typetree *declaration_specifiers(int *stc);
 static struct typetree *declarator(struct typetree *, const char **);
 static struct typetree *pointer(const struct typetree *);
 static struct typetree *direct_declarator(struct typetree *, const char **);
@@ -100,7 +100,7 @@ declaration(struct block *parent)
 {
     struct typetree *base;
     struct symbol arg = {0};
-    enum token_type stc = '$';
+    int stc = '$';
 
     base = declaration_specifiers(&stc);
     switch (stc) {
@@ -391,7 +391,7 @@ static struct typetree *struct_or_union_declaration(void)
     const char *tag_name = NULL;
     struct typetree *tag_type = NULL;
     struct typetree *type;
-    enum token_type token = next().token;
+    struct token kind = next();
     int size;
 
     if (peek().token == IDENTIFIER) {
@@ -405,9 +405,9 @@ static struct typetree *struct_or_union_declaration(void)
         } else if (is_integer(tag->type)) {
             error("Tag '%s' was previously declared as enum.", tag->name);
             exit(1);
-        } else if (is_union(tag->type) != (token == UNION)) {
+        } else if (is_union(tag->type) != (kind.token == UNION)) {
             error("Tag '%s' was previously declared as %s.", tag->name,
-                (token == UNION) ? "struct" : "union");
+                (kind.token == UNION) ? "struct" : "union");
             exit(1);
         }
 
@@ -425,7 +425,7 @@ static struct typetree *struct_or_union_declaration(void)
         type = type_init_object();
     }
 
-    if (token == UNION) {
+    if (kind.token == UNION) {
         /* Magic value in type object to separate between struct and union. */
         type->flags |= 0x04;
     }
@@ -434,10 +434,10 @@ static struct typetree *struct_or_union_declaration(void)
         consume('{');
         size = struct_declaration_list(type);
         consume('}');
-        if (token == STRUCT) {
+        if (kind.token == STRUCT) {
             type_align_struct_members(type);
         } else {
-            assert(token == UNION);
+            assert(kind.token == UNION);
             type->size = size;
         }
     }
@@ -540,7 +540,7 @@ static struct typetree *enum_declaration(void)
  * value, unless the provided pointer is NULL, in which case the input is parsed
  * as specifier-qualifier-list.
  */
-static struct typetree *declaration_specifiers(enum token_type *stc)
+static struct typetree *declaration_specifiers(int *stc)
 {
     struct typetree *type = NULL;
     struct token tok;

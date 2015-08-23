@@ -168,7 +168,7 @@ struct token tokenize(char *in, char **endptr)
 {
     static struct {
         const char *value;
-        enum token_type type;
+        int type;
     } reserved[] = {
         { "auto", AUTO },
         { "break", BREAK },
