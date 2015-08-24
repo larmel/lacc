@@ -19,23 +19,9 @@ struct macro {
     } *replacement;
 };
 
-struct toklist {
-    struct token *elem;
-    size_t length;
-};
-
-struct toklist *toklist_init(void);
-void toklist_push_back(struct toklist *, struct token);
-void toklist_destroy(struct toklist *);
-
-/* Stringify a list of tokens.
+/* Stringify a list of tokens, returning a newtoken of type STRING.
  */
-struct token toklist_to_string(struct toklist *list);
-
-/* Append token string representation at the end of provided buffer. If NULL is
- * provided, a new buffer is allocated that must be free'd by caller.
- */
-char *pastetok(char *buf, struct token);
+struct token stringify(const struct token list[]);
 
 /* Add macro definition. Takes ownership of any dynamically allocated
  * replacement list.
@@ -53,6 +39,9 @@ const struct macro *definition(struct token);
 
 /* Expand a list of tokens, replacing any macro definitions. 
  */
-struct toklist *expand(struct toklist *tl);
+struct token *expand(const struct token list[]);
+
+/* DEBUG */
+void print_list(const struct token *list);
 
 #endif

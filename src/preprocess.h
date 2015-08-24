@@ -127,12 +127,4 @@ struct token consume(int type);
  */
 void preprocess(FILE *output);
 
-#define debug_output_token(t)                                                  \
-    do {                                                                       \
-        if (t.token == INTEGER_CONSTANT)                                       \
-            printf("   token( %ld )\n", t.intval);                             \
-        else                                                                   \
-            printf("   token( %s )\n", t.strval);                              \
-    } while (0);
-
 #endif

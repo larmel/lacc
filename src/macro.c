@@ -83,344 +83,332 @@ const struct macro *definition(struct token name)
 {
     int i;
     assert(name.strval);
-    for (i = 0; i < n_defs; ++i)
-        if (!strcmp(definitions[i].name.strval, name.strval))
-            break;
+    if (name.token == IDENTIFIER) {
+        for (i = 0; i < n_defs; ++i)
+            if (!strcmp(definitions[i].name.strval, name.strval))
+                break;
 
-    if (i < n_defs) {
-        if (!strcmp(definitions[i].name.strval, "__LINE__")) {
-            definitions[i].replacement[0].token.intval = current_file.line;
+        if (i < n_defs) {
+            if (!strcmp(definitions[i].name.strval, "__LINE__")) {
+                definitions[i].replacement[0].token.intval = current_file.line;
+            }
+            return &definitions[i];
         }
-        return &definitions[i];
     }
     return NULL;
-}
-
-struct toklist *toklist_init()
-{
-    return calloc(1, sizeof(struct toklist));
-}
-
-void toklist_destroy(struct toklist *tl)
-{
-    assert(tl);
-    if (tl->elem) {
-        free(tl->elem);
-        tl->elem = NULL;
-    }
-    free(tl);
-}
-
-void toklist_push_back(struct toklist *tl, struct token t)
-{
-    assert(tl);
-
-    tl->length++;
-    tl->elem = realloc(tl->elem, sizeof(struct token) * tl->length);
-    tl->elem[tl->length - 1] = t;
-}
-
-void toklist_push_back_list(struct toklist *tl, struct toklist *tr)
-{
-    assert(tl && tr);
-
-    tl->elem = 
-        realloc(tl->elem, sizeof(struct token) * (tl->length + tr->length));
-    memcpy(tl->elem + tl->length, tr->elem, tr->length * sizeof(struct token));
-    tl->length += tr->length;
-}
-
-struct token toklist_to_string(struct toklist *tl)
-{
-    int i, len;
-    struct token t = {STRING};
-    char *buf = calloc(1, sizeof(*buf));
-
-    assert(tl);
-    for (i = len = 0; i < tl->length; ++i) {
-        assert(tl->elem[i].strval);
-
-        len = len + strlen(tl->elem[i].strval) + 1;
-        buf = realloc(buf, len);
-        strcat(buf, tl->elem[i].strval);
-    }
-
-    t.strval = buf;
-    return t;
-}
-
-char *pastetok(char *buf, struct token t)
-{
-    size_t len;
-
-    if (!buf) {
-        buf = calloc(16, sizeof(char));
-        len = 0;
-    } else {
-        len = strlen(buf);
-        if (t.strval) {
-            buf = realloc(buf, len + strlen(t.strval) + 1);
-        } else {
-            buf = realloc(buf, len + 32);
-        }
-    }
-
-    if (t.strval) {
-        strcat(buf, t.strval);
-    } else if (t.intval) {
-        sprintf(buf + len, "%ld", t.intval);
-    } else {
-        assert(isprint(t.token));
-        sprintf(buf + len, "%c", t.token);
-    }
-
-    return buf;
 }
 
 /* Keep track of which macros have been expanded, avoiding recursion by looking
  * up in this list for each new expansion.
  */
-static struct {
-    const char *name;
-} *expand_stack;
-static int stack_size;
+static const struct macro **expand_stack;
+static size_t stack_size;
 
-static void push_expand_stack(const char *macro_name)
+static int is_macro_expanded(const struct macro *macro)
 {
+    size_t i = 0;
+    for (; i < stack_size; ++i)
+        if (!strcmp(expand_stack[i]->name.strval, macro->name.strval))
+            return 1;
+    return 0;
+}
+
+static void push_expand_stack(const struct macro *macro)
+{
+    assert(!is_macro_expanded(macro));
     stack_size++;
     expand_stack = realloc(expand_stack, stack_size * sizeof(*expand_stack));
-    expand_stack[stack_size - 1].name = macro_name;
+    expand_stack[stack_size - 1] = macro;
 }
 
 static void pop_expand_stack(void)
 {
     assert(stack_size);
     stack_size--;
-    expand_stack = realloc(expand_stack, stack_size * sizeof(*expand_stack));
-}
-
-static int is_macro_expanded(const char *macro_name)
-{
-    int i;
-    for (i = 0; i < stack_size; ++i)
-        if (!strcmp(expand_stack[i].name, macro_name))
-            return 1;
-    return 0;
-}
-
-void print_list(const struct toklist *list, unsigned i)
-{
-    printf("[");
-    if (i < list->length) {
-        printf("'%s'", list->elem[i].strval);
+    if (!stack_size) {
+        free(expand_stack);
+        expand_stack = NULL;
     }
-    i++;
-    while (i < list->length) {
-        printf(", '%s'", list->elem[i].strval);
-        i++;
-    }
-    printf("]\n");
 }
 
-/* Paste together two tokens, forming a new token which has to be re-scanned
- * by tokenizer.
+/* Calculate length of list, excluding trailing END marker.
  */
-static struct token paste_tokens(struct token left, struct token right)
+static size_t len(const struct token *list)
+{
+    size_t i = 0;
+    assert(list);
+    while (list[i].token != END)
+        i++;
+    return i;
+}
+
+void print_list(const struct token *list)
+{
+    int first = 1;
+    size_t l = len(list);
+    printf("[");
+    while (list->token != END) {
+        if (!first)
+            printf(", ");
+        printf("'%s'", list->strval);
+        first = 0;
+        list++;
+    }
+    printf("] (%lu)\n", l);
+}
+
+/* Extend input list with concatinating another list to it. Takes ownership of
+ * both arguments.
+ */
+static struct token *concat(struct token *list, struct token *other)
+{
+    size_t i = len(list);
+    size_t j = len(other);
+
+    list = realloc(list, (i + j + 1) * sizeof(*list));
+    memmove(list + i, other, (j + 1) * sizeof(*list));
+    assert(list[i + j].token == END);
+    free(other);
+    return list;
+}
+
+/* Extend input list by a single token. Take ownership of input.
+ */
+static struct token *append(struct token *list, struct token other)
+{
+    size_t i = len(list);
+    assert(list[i].token == END);
+    list = realloc(list, (i + 2) * sizeof(*list));
+    list[i + 1] = list[i];
+    list[i] = other;
+    return list;
+}
+
+/* Paste together two tokens.
+ */
+static struct token paste(struct token left, struct token right)
 {
     struct token result;
     size_t length;
     char *data, *endptr;
 
-    assert(left.strval && right.strval);
-
     length = strlen(left.strval) + strlen(right.strval);
-    data = calloc(length + 1, sizeof(char));
-    strcpy(data, left.strval);
-    strcat(data, right.strval);
+    data   = calloc(length + 1, sizeof(*data));
+    data   = strcpy(data, left.strval);
+    data   = strcat(data, right.strval);
     result = tokenize(data, &endptr);
     if (endptr != data + length) {
         error("Invalid token resulting from pasting '%s' and '%s'.",
             left.strval, right.strval);
         exit(1);
     }
-    free(data);
 
+    free(data);
     return result;
 }
 
-/* Resolve token pasting with '##' operator.
- */
-static struct toklist *expand_paste_operators(struct toklist *list)
+static struct token *skip_ws(struct token *list)
 {
-    int i = 1,  /* Index into list. */
-        j = 0;  /* Index into result. */
-    struct toklist *res = (list->length) ? toklist_init() : list;
+    while (list->token == SPACE) list++;
+    return list;
+}
 
-    if (!list->length) {
-        return res;
+#define SKIP_WS(lst) \
+    while (lst->token == SPACE) lst++;
+
+/* In-place expansion of token paste operators, '##'.
+ * ['foo', ' ', '##', '_f', ' ', '##', ' ', 'u', '##', 'nc']
+ * becomes
+ * ['foo_func']
+ *
+ * NB: Probably not preserving whitespace..
+ */
+static struct token *expand_paste_operators(struct token *list)
+{
+    struct token
+        *start = list,
+        *end;
+
+    if (list->token == END) {
+        return list;
     }
-    if (list->elem[0].token == TOKEN_PASTE) {
+
+    end = skip_ws(list + 1);
+
+    if (start->token == TOKEN_PASTE) {
         error("Invalid token paste operator at beginning of line.");
         exit(1);
     }
-    if (list->elem[list->length - 1].token == TOKEN_PASTE) {
-        error("Invalid token paste operator at end of line.");
-        exit(1);
-    }
 
-    /* Overwrite last element in result list for each paste occurrence. */
-    toklist_push_back(res, list->elem[0]);
-    for (; i < list->length - 1; ++i) {
-        if (list->elem[i].token == TOKEN_PASTE) {
-            struct token
-                left = res->elem[j],
-                right = list->elem[i + 1];
-            res->elem[j] = paste_tokens(left, right);
-            i += 1;
+    while (end->token != END) {
+        if (end->token == TOKEN_PASTE) {
+            end = skip_ws(end + 1);
+            if (end->token == END) {
+                error("Invalid paste operator at end of line.");
+                exit(1);
+            }
+            *start = paste(*start, *end);
+            end = skip_ws(end + 1);
         } else {
-            toklist_push_back(res, list->elem[i]);
-            j += 1;
+            do {
+                start++;
+                *start = *end++;
+            } while (end->token == SPACE);
         }
     }
 
-    /* Include last element unless it has already been pasted. */
-    if (i < list->length) {
-        toklist_push_back(res, list->elem[i]);
-    }
-    return res;
+    *(start + 1) = *end;
+    return list;
 }
 
-/* Expand a macro with given arguments to a list of tokens.
- */
-static struct toklist *expand_macro(
-    const struct macro *def,
-    struct toklist **args)
-{
-    int i, n;
-    struct toklist *res, *prescanned;
-    assert(def->type == FUNCTION_LIKE || !args);
+static struct token end_token = {END, "$"};
 
-    push_expand_stack(def->name.strval);
-    res = toklist_init();
-    for (i = 0; i < def->size; ++i) {
-        n = def->replacement[i].param;
+static struct token *expand_macro(
+    const struct macro *macro,
+    struct token *args[])
+{
+    size_t i;
+    struct token *res = calloc(1, sizeof(*res));
+
+    res[0] = end_token;
+    push_expand_stack(macro);
+    for (i = 0; i < macro->size; ++i) {
+        int n = macro->replacement[i].param;
         if (n) {
-            prescanned = expand(args[n - 1]);
-            toklist_push_back_list(res, prescanned);
+            res = concat(res, expand(args[n - 1]));
         } else if (
-            i < def->size - 1 &&
-            def->replacement[i].token.token == '#' &&
-            def->replacement[i + 1].param)
+            i < macro->size - 1 &&
+            macro->replacement[i].token.token == '#' &&
+            macro->replacement[i + 1].param)
         {
             i++;
-            n = def->replacement[i].param;
-            toklist_push_back(res, toklist_to_string(args[n - 1]));
+            n = macro->replacement[i].param;
+            res = append(res, stringify(args[n - 1]));
         } else {
-            toklist_push_back(res, def->replacement[i].token);
+            res = append(res, macro->replacement[i].token);
         }
     }
     res = expand_paste_operators(res);
     res = expand(res);
     pop_expand_stack();
 
+    for (i = 0; i < macro->params; ++i) {
+        free(args[i]);
+    }
+    free(args);
+
     return res;
 }
 
-struct toklist *expand(struct toklist *tl)
+static const struct token *skip_to(const struct token *list, int token)
 {
-    int i;
-    struct toklist *res = toklist_init();
+    while (list->token == SPACE) list++;
+    if (list->token != token) {
+        error("Unexpected '%c', expected '%c'.", list->strval);
+    }
+    return list;
+}
 
-    assert(tl);
+static const struct token *skip_past(const struct token *list, int token)
+{
+    list = skip_to(list, token) + 1;
+    while (list->token == SPACE) list++;
+    return list;
+}
 
-    for (i = 0; i < tl->length; ++i) {
-        const struct macro *def;
+/* Read argument in macro expansion, starting from one offset from the initial
+ * open parenthesis. Stop readin when reaching a comma, and nesting depth is
+ * zero. Track nesting depth to allow things like MAX( foo(a), b ).
+ */
+static struct token *read_arg(
+    const struct token *list,
+    const struct token **endptr)
+{
+    size_t n = 0;
+    struct token *arg = calloc(1, sizeof(*arg));
+    int nesting = 0;
 
-        if (tl->elem[i].token == IDENTIFIER &&
-            (def = definition(tl->elem[i])) &&
-            !is_macro_expanded(def->name.strval))
-        {
-            struct toklist **args = NULL;
-            if (def->type == FUNCTION_LIKE) {
-                int j,
-                    nesting = 0;    /* Keep track parenthesis nesting level. */
-
-                #define skip_ws(l, i)                                          \
-                    while (i < l->length && l->elem[i].token == SPACE) {       \
-                        i++;                                                   \
-                    }
-
-                #define expect_token_at(l, i, t)                               \
-                    if (i >= l->length || l->elem[i].token != t) {             \
-                        error("Unexpected input '%s', expected '%c'.",         \
-                            l->elem[i].strval, (char) (t));                    \
-                        exit(1);                                               \
-                    }
-
-                i++;
-                skip_ws(tl, i);
-                expect_token_at(tl, i, '(');
-                i++;
-                if (def->params) {
-                    args = calloc(def->params, sizeof(*args));
-                }
-                for (j = 0; j < def->params; ++j) {
-                    struct token next;
-                    args[j] = toklist_init();
-                    while (1) {
-                        if (i >= tl->length) {
-                            error("Unexpected end of input.");
-                            exit(1);
-                        }
-                        skip_ws(tl, i);
-                        next = tl->elem[i];
-                        if (!nesting &&
-                            (next.token == ',' || next.token == ')'))
-                        {
-                            /* Got a valid argument separator, next param. */
-                            break;
-                        }
-                        i++;
-                        if (next.token == ',' && !nesting) {
-                            error(
-                                "Expansion of '%s' does not match definition.",
-                                def->name.strval);
-                            exit(1);
-                        }
-                        if (next.token == '(') {
-                            nesting++;
-                        } else if (next.token == ')') {
-                            nesting--;
-                            if (nesting < 0) {
-                                error("Negative nesting depth in expansion.");
-                                exit(1);
-                            }
-                        }
-                        toklist_push_back(args[j], next);
-                    }
-                    if (j < def->params - 1) {
-                        skip_ws(tl, i);
-                        expect_token_at(tl, i, ',');
-                        i++;
-                        /* no i++ since it will be done next while iteration. */
-                    }
-                }
-                skip_ws(tl, i);
-                expect_token_at(tl, i, ')');
-                /* no i++, because reasons.. */
-
-                #undef skip_ws
-                #undef expect_token_at
-            }
-
-            /* Push result of macro expansion. */
-            toklist_push_back_list(res, expand_macro(def, args));
-        } else {
-            toklist_push_back(res, tl->elem[i]);
+    SKIP_WS(list);
+    do {
+        if (list->token == END) {
+            error("Unexpected end of input in expansion.");
+            exit(1);
         }
+        if (list->token == '(') {
+            nesting++;
+        } else if (list->token == ')') {
+            nesting--;
+            if (nesting < 0) {
+                error("Negative nesting depth in expansion.");
+                exit(1);
+            }
+        }
+        arg = realloc(arg, (++n + 1) * sizeof(*arg));
+        arg[n - 1] = *list++;
+        SKIP_WS(list);
+    } while (nesting || (list->token != ',' && list->token != ')'));
+
+    arg[n] = end_token;
+    *endptr = list;
+    return arg;
+}
+
+static struct token **read_args(
+    const struct token *list,
+    const struct token **endptr,
+    const struct macro *macro)
+{
+    struct token **args = calloc(macro->params, sizeof(*args));
+    int n = 0;
+
+    if (macro->type == FUNCTION_LIKE) {
+        list = skip_past(list, '(');
+        for (; n < macro->params; ++n) {
+            args[n] = read_arg(list, &list);
+            if (n < macro->params - 1) {
+                list = skip_past(list, ',');
+            }
+        }
+        list = skip_past(list, ')');
     }
 
+    *endptr = list;
+    return args;
+}
+
+struct token *expand(const struct token list[])
+{
+    struct token *res = calloc(1, sizeof(*res));
+
+    res[0] = end_token;
+    while (list->token != END) {
+        const struct macro *def = definition(*list);
+        struct token **args;
+
+        if (def && !is_macro_expanded(def)) {
+            args = read_args(list + 1, &list, def);
+            res = concat(res, expand_macro(def, args));
+        } else {
+            res = append(res, *list++);
+        }
+    }
     return res;
+}
+
+struct token stringify(const struct token list[])
+{
+    char *str = calloc(1, sizeof(*str));
+    size_t len = 0;
+    struct token t = {STRING};
+
+    while (list->token != END) {
+        len += strlen(list->strval);
+        str  = realloc(str, (len + 1) * sizeof(*str));
+        str  = strncat(str, list->strval, len);
+        list++;
+    }
+    t.strval = str;
+    return t;
 }
 
 static struct replacement *parse(char *str, size_t *out_size)
