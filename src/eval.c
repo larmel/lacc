@@ -148,6 +148,7 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
         }
     } else if (is_pointer(l.type) && is_pointer(r.type)) {
         struct typetree *type = type_init_unsigned(8);
+        size_t elem_size = r.type->next->size;
 
         if (!l.type->next->size || l.type->next->size != r.type->next->size) {
             error("Referenced type is incomplete.");
@@ -159,7 +160,7 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
         l = eval_cast(block, l, type);
         r = eval_cast(block, r, type);
         l = eval_expr(block, IR_OP_SUB, l, r);
-        l = eval_expr(block, IR_OP_DIV, l, var_int(r.type->next->size));
+        l = eval_expr(block, IR_OP_DIV, l, var_int(elem_size));
     } else {
         error("Incompatible arguments to subtraction operator, was %s and %s.",
             typetostr(l.type), typetostr(r.type));
