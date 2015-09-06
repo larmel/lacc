@@ -110,8 +110,8 @@ static struct var eval_expr_add(struct block *block, struct var l, struct var r)
             l = evaluate(block, IR_OP_ADD, l.type, l, r);
         }
     } else {
-        error("Incompatible arguments to addition operator, was %s and %s.",
-            typetostr(l.type), typetostr(r.type));
+        error("Incompatible arguments to addition operator, was %t and %t.",
+            l.type, r.type);
     }
 
     return l;
@@ -162,8 +162,8 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
         l = eval_expr(block, IR_OP_SUB, l, r);
         l = eval_expr(block, IR_OP_DIV, l, var_int(elem_size));
     } else {
-        error("Incompatible arguments to subtraction operator, was %s and %s.",
-            typetostr(l.type), typetostr(r.type));
+        error("Incompatible arguments to subtraction operator, was %t and %t.",
+            l.type, r.type);
     }
 
     return l;
@@ -191,8 +191,8 @@ static struct var eval_expr_eq(struct block *block, struct var l, struct var r)
                 !(l.type->next->type == NONE && r.type->next->size) &&
                 !(r.type->next->type == NONE && l.type->next->size))
             {
-                error("Comparison between incompatible types '%s' and '%s'.",
-                    typetostr(l.type), typetostr(r.type));
+                error("Comparison between incompatible types '%t' and '%t'.",
+                    l.type, r.type);
                 exit(1);
             }
         } else {
@@ -205,8 +205,8 @@ static struct var eval_expr_eq(struct block *block, struct var l, struct var r)
             }
         }
     } else {
-        error("Illegal comparison between types '%s' and '%s'.",
-            typetostr(l.type), typetostr(r.type));
+        error("Illegal comparison between types '%t' and '%t'.",
+            l.type, r.type);
         exit(1);
     }
 
@@ -402,8 +402,8 @@ struct var eval_addr(struct block *block, struct var var)
     switch (var.kind) {
     case IMMEDIATE:
         if (!var.string) {
-            error("Address of immediate other than string, was '%s'.",
-                typetostr(var.type));
+            error("Address of immediate other than string, was '%t'.",
+                var.type);
             exit(1);
         }
         /* Address of string literal can be done without evaluation, just decay
@@ -488,10 +488,10 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
     if (target.type->type == ARRAY) {
         /* Special case char [] = string in initializers. */
         if (!type_equal(target.type, var.type) || var.kind != IMMEDIATE) {
-            error("Invalid initializer assignment, was %s :: %s = %s.",
+            error("Invalid initializer assignment, was %s :: %t = %t.",
                 target.symbol->name,
-                typetostr(target.type),
-                typetostr(var.type));
+                target.type,
+                var.type);
             exit(1);
         }
     }
@@ -527,8 +527,8 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
          * the right is a null pointer constant. */
         !(is_pointer(target.type) && is_nullptr(var)))
     {
-        error("Incompatible operands to assignment expression, %s :: %s = %s.",
-            target.symbol->name, typetostr(target.type), typetostr(var.type));
+        error("Incompatible operands to assignment expression, %s :: %t = %t.",
+            target.symbol->name, target.type, var.type);
         exit(1);
     }
 
@@ -584,9 +584,9 @@ struct var eval_cast(struct block *b, struct var v, const struct typetree *t)
         }
     } else {
         error(
-            "Invalid type parameters to cast expression,"
-            " cannot convert %s to %s.",
-            typetostr(v.type), typetostr(t));
+            "Invalid type parameters to cast expression, "
+            "cannot convert %t to %t.",
+            v.type, t);
     }
     return v;
 }

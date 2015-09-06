@@ -94,21 +94,17 @@ static void register_in_scope(struct namespace *ns, int i)
 
 static void print_symbol(struct symbol *sym)
 {
-    printf("\t[type: %s",
-        sym->symtype == SYM_DEFINITION ? "definition" :
-        sym->symtype == SYM_TENTATIVE ? "tentative" :
-        sym->symtype == SYM_DECLARATION ? "declaration" :
-        sym->symtype == SYM_TYPEDEF ? "typedef" : "enum"
-    );
-    printf(", link: %s]\n",
-        sym->linkage == LINK_INTERN ? "intern" :
-        sym->linkage == LINK_EXTERN ? "extern" : "none"
-    );
-    printf("\t%s", sym->name);
-    if (sym->n) {
-        printf(".%d", sym->n);
-    }
-    printf(" :: %s\n", typetostr(sym->type));
+    verbose(
+        "\t[type: %s, link: %s]\n"
+        "\t%s :: %t",
+        (sym->symtype == SYM_DEFINITION ? "definition" :
+            sym->symtype == SYM_TENTATIVE ? "tentative" :
+            sym->symtype == SYM_DECLARATION ? "declaration" :
+            sym->symtype == SYM_TYPEDEF ? "typedef" : "enum"),
+        (sym->linkage == LINK_INTERN ? "intern" :
+            sym->linkage == LINK_EXTERN ? "extern" : "none"),
+        sym_name(sym),
+        sym->type);
 }
 
 /* Retrieve a symbol based on identifier name, or NULL of not registered or
@@ -138,7 +134,6 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
     int idx;
     struct symbol *s;
     static int svc;
-    extern int VERBOSE;
 
     if ((s = sym_lookup(ns, sym.name))) {
         if (
@@ -198,9 +193,7 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
     idx = create_symbol(ns, sym);
     register_in_scope(ns, idx);
     s = ns->symbol[idx];
-    if (VERBOSE) {
-        print_symbol(s);
-    }
+    print_symbol(s);
 
     return s;
 }
@@ -280,7 +273,7 @@ void output_symbols(FILE *stream, struct namespace *ns)
     char *tstr;
 
     if (ns->size) {
-        fprintf(stream, "namespace %s:\n", ns->name);
+        verbose("namespace %s:", ns->name);
     }
     for (i = 0; i < ns->size; ++i) {
         enum symtype st = ns->symbol[i]->symtype;

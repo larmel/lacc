@@ -335,8 +335,8 @@ static void zero_initialize(struct block *block, struct var target)
         eval_assign(block, target, var);
         break;
     default:
-        internal_error("Invalid type to zero-initialize, was '%s'.",
-            typetostr(target.type));
+        error("Invalid type to zero-initialize, was '%t'.",
+            target.type);
         exit(1);
     }
 }

@@ -316,11 +316,10 @@ const struct member *find_type_member(
     return NULL;
 }
 
-/* Print type to buffer, returning how many characters were written.
- */
-static int snprinttype(const struct typetree *tree, char *s, int size)
+int snprinttype(const struct typetree *tree, char *s, size_t size)
 {
-    int i, w = 0;
+    size_t w = 0;
+    int i;
 
     if (!tree) {
         return w;

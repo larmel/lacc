@@ -111,8 +111,13 @@ void type_align_struct_members(struct typetree *type);
 /* Find type member of the given name, meaning struct or union field, or
  * function parameter. Returns NULL in the case no member is found.
  */
-const struct member *
-find_type_member(const struct typetree *type, const char *name);
+const struct member *find_type_member(
+    const struct typetree *type,
+    const char *name);
+
+/* Print type to buffer, returning how many characters were written.
+ */
+int snprinttype(const struct typetree *type, char *str, size_t size);
 
 /* Serialize type to string. Allocates memory with malloc, caller is responsible
  * for calling free.
