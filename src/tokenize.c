@@ -1,9 +1,10 @@
 #if _XOPEN_SOURCE < 700
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 700 /* strdup, strndup, isblank */
+#  define _XOPEN_SOURCE 700 /* strndup, isblank */
 #endif
 #include "error.h"
 #include "preprocess.h"
+#include "string.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -139,26 +140,14 @@ static const char *strtostr(char *in, char **endptr)
     return start;
 }
 
-/* Parse string as whitespace tokens, consuming space and tab characters. Return
- * a new heap allocated string.
+/* Parse string as whitespace tokens, consuming space and tab characters.
  */
-static const char *strtospace(char *in, char **endptr)
+static void strtospace(char *in, char **endptr)
 {
-    char *start = in;
-    char *ws = NULL;
-
-    while (isblank(*in)) {
+    while (isblank(*in))
         in++;
-    }
-
-    if (start < in) {
-        size_t length = in - start;
-        ws = calloc(length, sizeof(*ws) + 1);
-        ws = strncpy(ws, start, length);
-    }
 
     *endptr = in;
-    return ws;
 }
 
 static struct token keywords[] = {
@@ -263,8 +252,9 @@ struct token tokenize(char *in, char **endptr)
         return end;
     } else if (isspace(*in)) {
         res.token = SPACE;
-        res.strval = strtospace(in, endptr);
+        strtospace(in, endptr);
         if (*endptr != in) {
+            res.strval = str_register_n(in, *endptr - in);
             return res;
         }
         error("Invalid whitespace sequence: '%s'.", in);
@@ -284,7 +274,7 @@ struct token tokenize(char *in, char **endptr)
         res.strval = strtoident(in, endptr);
         if (*endptr != in) {
             res.token = IDENTIFIER;
-            res.strval = strdup(res.strval);
+            res.strval = str_register(res.strval);
             return res;
         }
         error("Invalid identifier: '%s'.", in);
@@ -292,7 +282,7 @@ struct token tokenize(char *in, char **endptr)
         res.intval = strtonum(in, endptr);
         if (*endptr != in) {
             res.token = INTEGER_CONSTANT;
-            res.strval = strndup(in, *endptr - in);
+            res.strval = str_register_n(in, *endptr - in);
             return res;
         }
         error("Invalid number literal: '%s'.", in);
@@ -300,7 +290,7 @@ struct token tokenize(char *in, char **endptr)
         res.strval = strtostr(in, endptr);
         if (*endptr != in) {
             res.token = STRING;
-            res.strval = strdup(res.strval);
+            res.strval = str_register(res.strval);
             return res;
         }
         error("Invalid string literal: '%s'.", in);
@@ -308,7 +298,7 @@ struct token tokenize(char *in, char **endptr)
         res.intval = strtochar(in, endptr);
         if (*endptr != in) {
             res.token = INTEGER_CONSTANT;
-            res.strval = strndup(in, *endptr - in);
+            res.strval = str_register_n(in, *endptr - in);
             return res;
         }
         error("Invalid character literal: '%s'.", in);

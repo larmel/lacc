@@ -1,6 +1,6 @@
 #if _XOPEN_SOURCE < 500
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 500 /* strdup, snprintf */
+#  define _XOPEN_SOURCE 700 /* strndup, snprintf */
 #endif
 #include "string.h"
 
@@ -9,15 +9,33 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int count;
-static struct {
-    const char *label;
-    const char *string;
+/* List of all dynamically allocated strings produced.
+ */
+static size_t count;
+static struct string {
+    size_t length;
+    char *label;
+    char *string;
 } *strings;
 
-static const char *create_label(void)
+static void cleanup(void)
+{
+    size_t i;
+    for (i = 0; i < count; ++i) {
+        if (strings[i].label)
+            free(strings[i].label);
+        free(strings[i].string);
+    }
+    if (count)
+        free(strings);
+    count = 0;
+    strings = NULL;
+}
+
+static char *create_label(void)
 {
     static unsigned int n;
+
     /* Integer (32 bit) can be at most 10 digits. Leave 3 for constant prefix,
      * and one for trailing null byte. */
     char *name = calloc(14, sizeof(*name));
@@ -25,30 +43,50 @@ static const char *create_label(void)
     return name;
 }
 
-const char *strlabel(const char *s)
+static struct string *get_or_add(const char *s, size_t n)
 {
-    int i;
-    const char *label;
-    static int capacity;
+    size_t i;
+    static size_t capacity;
 
-    for (i = 0; i < count; ++i) {
-        if (!strcmp(strings[i].string, s)) {
-            return strings[i].label;
-        }
-    }
+    for (i = 0; i < count; ++i)
+        if (strings[i].length == n && !strncmp(strings[i].string, s, n))
+            return &strings[i];
+
+    /* There are going to be some strings in this program; register exit handler
+     * to free memory in the end. */
+    if (!count)
+        atexit(cleanup);
 
     if (count == capacity) {
         capacity += 16;
         strings = realloc(strings, sizeof(*strings) * capacity);
     }
 
-    label = create_label();
+    strings[count].length = n;
+    strings[count].string = strndup(s, n);
+    strings[count].label = NULL;
+    return &strings[count++];
+}
 
-    strings[count].string = strdup(s);
-    strings[count].label = label;
-    count++;
+const char *str_register(const char *s)
+{
+    struct string *str = get_or_add(s, strlen(s));
+    return str->string;
+}
 
-    return label;
+const char *str_register_n(const char *s, size_t n)
+{
+    struct string *str = get_or_add(s, n);
+    return str->string;
+}
+
+const char *strlabel(const char *s)
+{
+    struct string *str = get_or_add(s, strlen(s));
+    if (!str->label)
+        str->label = create_label();
+
+    return str->label;
 }
 
 void output_string(FILE *stream, const char *str)
@@ -63,18 +101,17 @@ void output_string(FILE *stream, const char *str)
     }
 }
 
-/* Assemble strings readonly data section, GNU assembler syntax.
- */
 void output_strings(FILE *stream)
 {
-    int i;
-    if (count) {
+    size_t i;
+    if (count)
         fprintf(stream, "\t.section .rodata\n");
-        for (i = 0; i < count; ++i) {
-            fprintf(stream, "%s:\n", strings[i].label);
-            fprintf(stream, "\t.string \"");
-            output_string(stream, strings[i].string);
-            fprintf(stream, "\"\n");
-        }
+    for (i = 0; i < count; ++i) {
+        if (!strings[i].label)
+            continue;
+        fprintf(stream, "%s:\n", strings[i].label);
+        fprintf(stream, "\t.string \"");
+        output_string(stream, strings[i].string);
+        fprintf(stream, "\"\n");
     }
 }
