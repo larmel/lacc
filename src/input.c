@@ -168,32 +168,32 @@ void init(char *path)
     atexit(finalize);
 }
 
-/* Read characters from stream and assemble a line. Keep track of and remove
- * comments, join lines ending with '\', and ignore all-whitespace lines.
- * Increment line counter in fnt structure for each line consumed.
+/* Read characters from stream and assemble a line.
+ *
+ *  - Keep track of and remove comments.
+ *  - Join lines ending with '\'.
+ *
+ * Increment line counter in fnt structure for each line consumed. Ignore all-
+ * whitespace lines.
  */
 static int getcleanline(char **lineptr, size_t *n, struct source *fn)
 {
     enum { NORMAL, COMMENT } state = 0;
-    int c, next;            /* getc return values */
-    int i = 0,              /* chars written to output buffer */
-        nonwhitespace = 0;  /* non-whitespace characters written */
-    FILE *stream;
-
+    int c, next;            /* Return value of getc. */
+    int i = 0,              /* Number of chars written to output buffer. */
+        last = '\0';        /* Last non-whitespace character consumed. */
     assert(fn);
 
-    stream = fn->file;
-
-    /* Need to have room for terminating \0 byte. */
+    /* Need to have room for terminating '\0' byte. */
     if (!*n) {
         *n = 1;
         *lineptr = calloc(1, sizeof(**lineptr));
     }
 
-    while ((c = getc(stream)) != EOF) {
-        /* line continuation */
+    while ((c = getc(fn->file)) != EOF) {
+        /* Line continuation */
         if (c == '\\') {
-            next = getc(stream);
+            next = getc(fn->file);
             if (next == EOF) {
                 error("Invalid end of file after line continuation.");
                 exit(1);
@@ -202,43 +202,43 @@ static int getcleanline(char **lineptr, size_t *n, struct source *fn)
                 fn->line++;
                 continue;
             }
-            ungetc(next, stream);
+            ungetc(next, fn->file);
         }
-        /* end of comment */
+        /* End of comment. */
         if (state == COMMENT) {
             if (c == '*') {
-                next = getc(stream);
+                next = getc(fn->file);
                 if (next == '/')
                     state = NORMAL;
                 else
-                    ungetc(next, stream);
+                    ungetc(next, fn->file);
             } else if (c == '\n')
                 fn->line++;
             continue;
         }
-        /* start of comment */
+        /* Start of comment. */
         if (c == '/') {
-            next = getc(stream);
+            next = getc(fn->file);
             if (next == '*') {
                 state = COMMENT;
                 continue;
             }
-            ungetc(next, stream);
+            ungetc(next, fn->file);
         }
-        /* end of line, return if we have some content */
+        /* End of line, return if we have some content. */
         if (c == '\n') {
             fn->line++;
-            if (nonwhitespace > 0)
+            if (last != '\0')
                 break;
             else
                 continue;
         }
         /* Count non-whitespace. */
         if (!isblank(c)) {
-            nonwhitespace++;
+            last = c;
         }
 
-        /* make sure we have room for trailing null byte, and copy character */
+        /* Make sure we have room for trailing null byte, and copy character. */
         if (i + 1 >= *n) {
             *n = (i + 1) * 2;
             *lineptr = realloc(*lineptr, (*n) * sizeof(**lineptr));
