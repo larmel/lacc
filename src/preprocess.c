@@ -1,6 +1,7 @@
 #include "error.h"
 #include "input.h"
 #include "macro.h"
+#include "string.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -649,15 +650,33 @@ static int preserve_whitespace;
 static void add(struct token t)
 {
     extern int VERBOSE;
+    size_t i = length;
+    char *str = NULL;
 
-    length++;
-    lookahead = realloc(lookahead, length * sizeof(*lookahead));
-    lookahead[length - 1] = t;
+    /* Combine adjacent string literals. This step is done after preprocessing
+     * and macro expansion; logic in preprocess_line will guarantee that we keep
+     * preprocessing lines and filling up the lookahead buffer for as long as
+     * there can be string continuations. */
+    if (t.token == STRING) {
+        while (i && lookahead[--i].token == SPACE)
+            ;
+        if (lookahead[i].token == STRING) {
+            str = pastetok(str, lookahead[i]);
+            str = pastetok(str, t);
+            t.strval = str_register(str);
+            lookahead[i] = t;
+            free(str);
+        }
+    }
+
+    if (!str) {
+        length++;
+        lookahead = realloc(lookahead, length * sizeof(*lookahead));
+        lookahead[length - 1] = t;
+    }
+
     if (VERBOSE) {
-        if (t.token == INTEGER_CONSTANT)
-            printf("   token( %ld )\n", t.intval);
-        else
-            printf("   token( %s )\n", t.strval);
+        printf("   token( %s )\n", t.strval);
     }
 }
 
@@ -681,7 +700,7 @@ static void rewind_lookahead_buffer(void)
  */
 static void preprocess_line(void)
 {
-    struct token t;
+    struct token t = {0};
 
     rewind_lookahead_buffer();
 
@@ -705,6 +724,8 @@ static void preprocess_line(void)
             line = expanded;
             while (line->token != END) {
                 if (line->token != SPACE || preserve_whitespace) {
+                    if (line->token != SPACE)
+                        t = *line;
                     add(*line);
                 }
                 line++;
@@ -715,7 +736,7 @@ static void preprocess_line(void)
                 t = get_preprocessing_token();
             }
         }
-    } while (length < K && t.token != END);
+    } while ((length < K || t.token == STRING) && t.token != END);
 
     /* Fill remainder of lookahead buffer. */
     while (length < K) {

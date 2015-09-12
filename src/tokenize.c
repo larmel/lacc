@@ -117,7 +117,7 @@ static char strtochar(char *in, char **endptr)
 
 /* Parse string literal inputs delimited by quotation marks, handling escaped
  * quotes. The input buffer is destructively overwritten while resolving escape
- * sequences.
+ * sequences. Concatenate string literals separated by whitespace.
  */
 static const char *strtostr(char *in, char **endptr)
 {
@@ -126,16 +126,23 @@ static const char *strtostr(char *in, char **endptr)
     start = str = in;
     *endptr = in;
 
-    if (*in++ == '"') {
-        while (*in != '"' && *in) {
-            *str++ = escpchar(in, &in);
+    do {
+        if (*in++ == '"') {
+            while (*in != '"' && *in) {
+                *str++ = escpchar(in, &in);
+            }
+
+            if (*in++ == '"') {
+                *str = '\0';
+                *endptr = in;
+            }
         }
 
-        if (*in++ == '"') {
-            *str = '\0';
-            *endptr = in;
-        }
-    }
+        /* See if there is another string after this one. */
+        while (isspace(*in)) in++;
+        if (*in != '"')
+            break;
+    } while (1);
 
     return start;
 }
