@@ -1589,6 +1589,11 @@ static struct block *unary_expression(struct block *block)
         block = cast_expression(block);
         block->expr = eval_expr(block, IR_OP_EQ, var_int(0), block->expr);
         break;
+    case '~':
+        consume('~');
+        block = cast_expression(block);
+        block->expr = eval_expr(block, IR_NOT, block->expr);
+        break;
     case '+':
         consume('+');
         block = cast_expression(block);

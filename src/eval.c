@@ -301,6 +301,16 @@ static struct var eval_shift_right(
     return evaluate(block, IR_OP_SHR, promote_integer(l.type), l, r);
 }
 
+static struct var eval_not(struct block *block, struct var var)
+{
+    if (!is_integer(var.type)) {
+        error("Bitwise complement operand must have integer type.");
+        exit(1);
+    }
+
+    return evaluate(block, IR_NOT, promote_integer(var.type), var);
+}
+
 /* Convert variables of type ARRAY or FUNCTION to addresses when used in
  * expressions. 'array of T' is converted (decay) to pointer to T. Not the same
  * as taking the address of an array, which would give 'pointer to array of T'.
@@ -347,6 +357,9 @@ struct var eval_expr(struct block *block, enum optype op, ...)
     va_end(args);
 
     switch (op) {
+    case IR_NOT:
+        l = eval_not(block, l);
+        break;
     case IR_OP_MOD:
         l = eval_expr_mod(block, l, r);
         break;

@@ -82,6 +82,7 @@ enum optype
     IR_ASSIGN,   /* a = b      */
     IR_DEREF,    /* a = *b     */
     IR_ADDR,     /* a = &b     */
+    IR_NOT,      /* a = ~b     */
     IR_CALL,     /* a = b()    */
     IR_CAST,     /* a = (T) b  */
 
@@ -113,9 +114,9 @@ enum optype
 /* Find the number of operands to a given operation type, using the fact that
  * enumeration constants are sorted by operand count. 
  */
-#define NOPERANDS(t) ((t) > 5 ? 2 : (t) > 1)
+#define NOPERANDS(t) ((t) > IR_CAST ? 2 : (t) > IR_PARAM)
 
-#define IS_COMPARISON(t) ((t) > 15)
+#define IS_COMPARISON(t) ((t) == IR_OP_EQ || (t) == IR_OP_GE || (t) == IR_OP_GT)
 
 /* CFG block.
  */

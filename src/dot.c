@@ -102,6 +102,10 @@ static void foutputnode(
                 fprintf(stream, " | %s = &%s",
                     vartostr(op.a), vartostr(op.b));
                 break;
+            case IR_NOT:
+                fprintf(stream, " | %s = ~%s",
+                    vartostr(op.a), vartostr(op.b));
+                break;
             case IR_PARAM:
                 fprintf(stream, " | param %s",
                     vartostr(op.a));

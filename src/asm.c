@@ -743,6 +743,12 @@ static void asm_op(FILE *stream, const struct op *op)
         load_address(stream, op->b, AX);
         store(stream, AX, op->a);
         break;
+    case IR_NOT:
+        load(stream, op->b, AX);
+        fprintf(stream, "\tnot%c\t%%%s\n",
+            SUFFIX(op->a.type), REG(AX, op->a.type->size));
+        store(stream, AX, op->a);
+        break;
     case IR_OP_ADD:
         load(stream, op->b, AX);
         load(stream, op->c, CX);
