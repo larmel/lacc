@@ -426,8 +426,8 @@ static enum param_class *enter(FILE *s, const struct decl *func)
         extern const char *mklabel(void);
         const char *label = mklabel();
 
-        /* It is desireable to skip touching floating point unit if possible, al
-         * holds the number of floating point registers passed. */
+        /* It is desireable to skip touching floating point unit if possible,
+         * %al holds the number of floating point registers passed. */
         fprintf(s, "\ttestb\t%%al, %%al\n");
         fprintf(s, "\tjz %s\n", label);
         reg_save_area_offset = -8; /* Skip address of return value. */
@@ -722,9 +722,9 @@ static void asm_op(FILE *stream, const struct op *op)
         store(stream, AX, op->a);
         break;
     case IR_DEREF:
-        load(stream, op->b, BX);
-        fprintf(stream, "\tmov%c\t(%%rbx), %%%s\n",
-            SUFFIX(op->a.type), REG(AX, op->a.type->size));
+        load(stream, op->b, CX);
+        fprintf(stream, "\tmov%c\t(%%%s), %%%s\n",
+            SUFFIX(op->a.type), REG(CX, 8), REG(AX, op->a.type->size));
         store(stream, AX, op->a);
         break;
     case IR_PARAM:
@@ -745,17 +745,17 @@ static void asm_op(FILE *stream, const struct op *op)
         break;
     case IR_OP_ADD:
         load(stream, op->b, AX);
-        load(stream, op->c, BX);
+        load(stream, op->c, CX);
         fprintf(stream, "\tadd%c\t%%%s, %%%s\n",
-            SUFFIX(op->a.type), REG(BX, op->a.type->size),
+            SUFFIX(op->a.type), REG(CX, op->a.type->size),
             REG(AX, op->a.type->size));
         store(stream, AX, op->a);
         break;
     case IR_OP_SUB:
         load(stream, op->b, AX);
-        load(stream, op->c, BX);
+        load(stream, op->c, CX);
         fprintf(stream, "\tsub%c\t%%%s, %%%s\n",
-            SUFFIX(op->a.type), REG(BX, op->a.type->size),
+            SUFFIX(op->a.type), REG(CX, op->a.type->size),
             REG(AX, op->a.type->size));
         store(stream, AX, op->a);
         break;
@@ -765,9 +765,9 @@ static void asm_op(FILE *stream, const struct op *op)
             fprintf(stream, "\tmul%c\t%s\n",
                 SUFFIX(op->b.type), refer(op->b));
         } else {
-            load(stream, op->b, BX);
+            load(stream, op->b, CX);
             fprintf(stream, "\tmul%c\t%%%s\n",
-                SUFFIX(op->b.type), REG(BX, op->b.type->size));
+                SUFFIX(op->b.type), REG(CX, op->b.type->size));
         }
         store(stream, AX, op->a);
         break;
@@ -780,9 +780,9 @@ static void asm_op(FILE *stream, const struct op *op)
             fprintf(stream, "\tdiv%c\t%s\n",
                 SUFFIX(op->c.type), refer(op->c));
         } else {
-            load(stream, op->c, BX);
+            load(stream, op->c, CX);
             fprintf(stream, "\tdiv%c\t%%%s\n",
-                SUFFIX(op->c.type), REG(BX, op->c.type->size));
+                SUFFIX(op->c.type), REG(CX, op->c.type->size));
         }
         if (op->type == IR_OP_DIV) {
             store(stream, AX, op->a);
@@ -792,20 +792,23 @@ static void asm_op(FILE *stream, const struct op *op)
         break;
     case IR_OP_AND:
         load(stream, op->b, AX);
-        load(stream, op->c, BX);
-        fprintf(stream, "\tand\t%%rbx, %%rax\n");
+        load(stream, op->c, CX);
+        fprintf(stream, "\tand\t%%%s, %%%s\n",
+            REG(CX, 8), REG(AX, 8));
         store(stream, AX, op->a);
         break;
     case IR_OP_OR:
         load(stream, op->b, AX);
-        load(stream, op->c, BX);
-        fprintf(stream, "\tor\t%%rbx, %%rax\n");
+        load(stream, op->c, CX);
+        fprintf(stream, "\tor\t%%%s, %%%s\n",
+            REG(CX, 8), REG(AX, 8));
         store(stream, AX, op->a);
         break;
     case IR_OP_XOR:
         load(stream, op->b, AX);
-        load(stream, op->c, BX);
-        fprintf(stream, "\txor\t%%rbx, %%rax\n");
+        load(stream, op->c, CX);
+        fprintf(stream, "\txor\t%%%s, %%%s\n",
+            REG(CX, 8), REG(AX, 8));
         store(stream, AX, op->a);
         break;
     case IR_OP_SHL:
@@ -845,18 +848,18 @@ static void asm_op(FILE *stream, const struct op *op)
         break;
     case IR_OP_EQ:
         load(stream, op->b, AX);
-        load(stream, op->c, BX);
+        load(stream, op->c, CX);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n",
-            REG(BX, op->a.type->size), REG(AX, op->a.type->size));
+            REG(CX, op->a.type->size), REG(AX, op->a.type->size));
         fprintf(stream, "\tsetz\t%%al\n");
         fprintf(stream, "\tmovzbl\t%%al, %%eax\n");
         store(stream, AX, op->a);
         break;
     case IR_OP_GE:
         load(stream, op->b, AX);
-        load(stream, op->c, BX);
+        load(stream, op->c, CX);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n",
-            REG(BX, op->a.type->size), REG(AX, op->a.type->size));
+            REG(CX, op->a.type->size), REG(AX, op->a.type->size));
         if (is_unsigned(op->b.type)) {
             assert(is_unsigned(op->c.type));
             fprintf(stream, "\tsetae\t%%al\n");
@@ -868,9 +871,9 @@ static void asm_op(FILE *stream, const struct op *op)
         break;
     case IR_OP_GT:
         load(stream, op->b, AX);
-        load(stream, op->c, BX);
+        load(stream, op->c, CX);
         fprintf(stream, "\tcmp\t%%%s, %%%s\n",
-            REG(BX, op->a.type->size), REG(AX, op->a.type->size));
+            REG(CX, op->a.type->size), REG(AX, op->a.type->size));
         if (is_unsigned(op->b.type)) {
             assert( is_unsigned(op->c.type) );
             /* When comparison is unsigned, set flag without considering
@@ -915,9 +918,9 @@ static void tail_cmp_jump(
     assert(!cmp->a.lvalue);
 
     load(stream, cmp->b, AX);
-    load(stream, cmp->c, BX);
+    load(stream, cmp->c, CX);
     fprintf(stream, "\tcmp\t%%%s, %%%s\n",
-        REG(BX, cmp->a.type->size), REG(AX, cmp->a.type->size));
+        REG(CX, cmp->a.type->size), REG(AX, cmp->a.type->size));
     switch (cmp->type) {
     case IR_OP_EQ:
         fprintf(stream, "\tje\t%s\n", block->jump[1]->label);

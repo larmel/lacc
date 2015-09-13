@@ -12,7 +12,14 @@ SOURCES := $(foreach sdir,$(SRC_DIRS),$(wildcard $(sdir)/*.c))
 OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(SOURCES))
 
 # Bootstrap build subset of files
-BOOTSTRAP_SOURCES := src/abi.c src/error.c src/lcc.c
+BOOTSTRAP_SOURCES := \
+	src/abi.c \
+	src/error.c \
+	src/lcc.c \
+	src/symtab.c \
+	src/type.c \
+	src/util/memoize.c \
+	src/util/list.c
 BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))
 REMAINING_SOURCES := $(filter-out $(BOOTSTRAP_SOURCES), $(SOURCES))
 REMAINING_OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(REMAINING_SOURCES))
