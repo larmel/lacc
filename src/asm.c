@@ -134,6 +134,12 @@ static void load_value(FILE *s, struct var v, enum reg r, unsigned int w)
 
     assert(mov);
 
+    /* Special case for unsigned extension from 32 to 64 bit, for which there is
+     * no instruction 'movzlq', but rather just 'movl'. */
+    if (v.type->size == 4 && is_unsigned(v.type) && w == 8) {
+        w = 4;
+    }
+
     switch (v.kind) {
     case DIRECT:
         fprintf(s, "\t%s\t%s, %%%s\t# load %s\n",
