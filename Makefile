@@ -17,6 +17,7 @@ BOOTSTRAP_SOURCES := \
 	src/error.c \
 	src/lcc.c \
 	src/symtab.c \
+	src/tokenize.c \
 	src/type.c \
 	src/util/memoize.c \
 	src/util/list.c

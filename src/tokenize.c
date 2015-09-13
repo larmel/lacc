@@ -79,7 +79,7 @@ static char escpchar(char *in, char **endptr)
         case 'r': return 0xd;
         case '\\': return '\\';
         case '?': return '\?';
-        case '`': return '`';
+        case '\'': return '\'';
         case '\"': return '\"';
         case '0':
             if (isdigit(in[2]) && in[2] < '8')
