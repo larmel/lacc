@@ -18,7 +18,6 @@ BOOTSTRAP_SOURCES := \
 	src/lcc.c \
 	src/symtab.c \
 	src/tokenize.c \
-	src/type.c \
 	src/util/memoize.c \
 	src/util/list.c
 BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))

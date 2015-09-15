@@ -71,69 +71,40 @@ struct typetree type_from_specifier(unsigned short spec)
     }
 }
 
-struct typetree *type_init_integer(int width)
+static struct typetree **type_registry;
+static size_t length;
+static size_t cap;
+
+static void cleanup(void)
 {
-    struct typetree *type = calloc(1, sizeof(*type));
-    type->type = INTEGER;
-    type->size = width;
-    return type;
+    size_t i = 0;
+    struct typetree *t;
+
+    for ( ; i < length; ++i) {
+        t = type_registry[i];
+        free(t);
+    }
 }
 
-struct typetree *type_init_unsigned(int width)
+static struct typetree *alloctype(struct typetree args)
 {
-    struct typetree *type = calloc(1, sizeof(*type));
-    type->type = INTEGER;
-    type->size = width;
-    type->flags = 0x01;
-    return type;
-}
+    if (!length)
+        atexit(cleanup);
 
-struct typetree *type_init_pointer(const struct typetree *to)
-{
-    struct typetree *type = calloc(1, sizeof(*type));
-    type->type = POINTER;
-    type->size = 8;
-    type->next = to;
-    return type;
-}
+    if (length == cap) {
+        cap = (!cap) ? 32 : cap * 2;
+        type_registry = realloc(type_registry, cap * sizeof(*type_registry));
+    }
 
-struct typetree *type_init_array(const struct typetree *of, int n)
-{
-    struct typetree *type = calloc(1, sizeof(*type));
-    type->type = ARRAY;
-    type->size = n * of->size;
-    type->next = of;
-    return type;
-}
-
-struct typetree *type_init_function(void)
-{
-    struct typetree *type = calloc(1, sizeof(*type));
-    type->type = FUNCTION;
-    return type;
-}
-
-struct typetree *type_init_object(void)
-{
-    struct typetree *type = calloc(1, sizeof(*type));
-    type->type = OBJECT;
-    return type;
-}
-
-struct typetree *type_init_void(void)
-{
-    struct typetree *type = calloc(1, sizeof(*type));
-    type->type = NONE;
-    return type;
-}
-
-const struct typetree *type_init_string(size_t length)
-{
-    return type_init_array(&I1, length);
+    type_registry[length] = calloc(1, sizeof(**type_registry));
+    *type_registry[length] = args;
+    return type_registry[length++];
 }
 
 void type_add_member(
-    struct typetree *type, const struct typetree *member, const char *name)
+    struct typetree *type,
+    const struct typetree *member,
+    const char *name)
 {
     type->n++;
     type->member = realloc(type->member, sizeof(*type->member) * type->n);
@@ -141,6 +112,67 @@ void type_add_member(
     type->member[type->n - 1].type = member;
     type->member[type->n - 1].name = name;
     type->member[type->n - 1].offset = 0;
+}
+
+struct typetree *type_init_integer(int width)
+{
+    struct typetree arg = { INTEGER };
+    arg.size = width;
+    assert(width == 1 || width == 2 || width == 4 || width == 8);
+
+    return alloctype(arg);
+}
+
+struct typetree *type_init_unsigned(int width)
+{
+    struct typetree arg = { INTEGER, 0, 0x01 };
+    arg.size = width;
+    assert(width == 1 || width == 2 || width == 4 || width == 8);
+
+    return alloctype(arg);
+}
+
+struct typetree *type_init_pointer(const struct typetree *to)
+{
+    struct typetree arg = { POINTER, 8 };
+    arg.next = to;
+
+    return alloctype(arg);
+}
+
+struct typetree *type_init_array(const struct typetree *child, int n)
+{
+    struct typetree arg = { ARRAY };
+    arg.size = n * child->size;
+    arg.next = child;
+
+    return alloctype(arg);
+}
+
+struct typetree *type_init_function(void)
+{
+    struct typetree arg = { FUNCTION };
+
+    return alloctype(arg);
+}
+
+struct typetree *type_init_object(void)
+{
+    struct typetree arg = { OBJECT };
+
+    return alloctype(arg);
+}
+
+struct typetree *type_init_void(void)
+{
+    struct typetree arg = { NONE };
+
+    return alloctype(arg);
+}
+
+const struct typetree *type_init_string(size_t length)
+{
+    return type_init_array(&I1, length);
 }
 
 void type_align_struct_members(struct typetree *type)
@@ -228,11 +260,12 @@ int type_equal(const struct typetree *a, const struct typetree *b)
 static const struct typetree *remove_qualifiers(const struct typetree *type)
 {
     if (type->qualifier) {
-        struct typetree *copy = calloc(1, sizeof (*copy));
-        *copy = *type;
+        struct typetree *copy = alloctype(*type);
+        assert(!type->n);
         copy->qualifier = 0;
         type = copy;
     }
+
     return type;
 }
 
