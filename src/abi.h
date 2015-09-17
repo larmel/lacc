@@ -34,7 +34,7 @@ enum reg ret_int_reg[2];
 
 /* Number of eightbytes required for a given type.
  */
-#define N_EIGHTBYTES(t) (((t)->size + 7) / 8)
+#define N_EIGHTBYTES(t) ((size_of(t) + 7) / 8)
 
 /* Parameter class of an 8-byte slice of an object.
  */

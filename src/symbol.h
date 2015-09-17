@@ -12,7 +12,11 @@
 struct symbol
 {
     const char *name;
-    const struct typetree *type;
+
+    /* Top-level type is inlined in the symbol. Partial declarations are updated
+     * by writing directly to this object. Members are still const, and should
+     * never be mutated. */
+    struct typetree type;
 
     enum symtype {
         SYM_DEFINITION = 0,

@@ -179,6 +179,7 @@ void type_align_struct_members(struct typetree *type)
 {
     int i = 0, m = 1;
 
+    assert(!is_tagged(type));
     assert(type->type == OBJECT && type->n);
 
     for ( ; i < type->n; ++i) {
@@ -211,20 +212,22 @@ void type_align_struct_members(struct typetree *type)
     }
 }
 
-#define is_tagged(t) ((t)->type == OBJECT && (t)->next)
-
-/* Some object types are represented with a tag, and indirectly pointing to a
- * typedef'ed value. Returns a copy of the typedef, with qualifiers applied.
- */
-const struct typetree *unwrap_if_indirection(const struct typetree *type)
+const struct typetree *unwrapped(const struct typetree *type)
 {
-    if (type->type == OBJECT && type->next) {
-        struct typetree *obj = type_init_object();
-        *obj = *type->next;
-        obj->qualifier = type->qualifier;
-        type = obj;
-    }
-    return type;
+    return is_tagged(type) ? type->next : type;
+}
+
+struct typetree *type_tagged_copy(const struct typetree *type, const char *name)
+{
+    struct typetree *tag;
+
+    assert(!is_tagged(type));
+    assert(type->type == OBJECT);
+
+    tag = type_init_object();
+    tag->tag_name = name;
+    tag->next = type;
+    return tag;
 }
 
 /* Determine whether two types are the same, disregarding qualifiers.
@@ -236,8 +239,8 @@ int type_equal(const struct typetree *a, const struct typetree *b)
     if (is_tagged(a) && is_tagged(b))
         return a->next == b->next;
 
-    a = unwrap_if_indirection(a);
-    b = unwrap_if_indirection(b);
+    a = unwrapped(a);
+    b = unwrapped(b);
 
     if (a->type == b->type
         && a->size == b->size
@@ -291,13 +294,12 @@ const struct typetree *usual_arithmetic_conversion(
     t2 = promote_integer(t2);
 
     if (t1->size > t2->size)
+        /* TODO: This can be done without extra copies. */
         return remove_qualifiers(t1);
     else if (t2->size > t1->size)
         return remove_qualifiers(t2);
 
-    return (is_unsigned(t1)) ?
-        remove_qualifiers(t1) :
-        remove_qualifiers(t2);
+    return is_unsigned(t1) ? remove_qualifiers(t1) : remove_qualifiers(t2);
 }
 
 /* 6.2.7 Compatible types. Simplified rules.
@@ -307,43 +309,48 @@ int is_compatible(const struct typetree *l, const struct typetree *r)
     return type_equal(l, r);
 }
 
-const struct typetree *type_deref(const struct typetree *ptr)
+int size_of(const struct typetree *type)
 {
-    assert(ptr->type == POINTER);
-    return unwrap_if_indirection(ptr->next);
+    return is_tagged(type) ? type->next->size : type->size;
 }
 
-/* Validate that type p can be completed by applying size from q, and return q
- * as the result.
- */
-const struct typetree *
-type_complete(const struct typetree *p, const struct typetree *q)
+void type_complete(struct typetree *type, const struct typetree *apply)
 {
     /* Functions have no size, quick fix to avoid rejecting functions that are
      * declared more than once. */
-    assert(p->type == FUNCTION || (!p->size && q->size));
+    assert(type->type == FUNCTION || (!type->size && apply->size));
 
-    if (p->type != q->type || !type_equal(p->next, q->next)) {
-        error("Incompatible specification of incomplete type.");
+    if (type->type != apply->type || !type_equal(type->next, apply->next)) {
+        error("Incompatible specification of incomplete type %t.", type);
         exit(1);
     }
 
-    return q;
+    if (type->type == FUNCTION) {
+        /* Is this correct? */
+        type->n = apply->n;
+        type->member = apply->member;
+    } else {
+        type->size = apply->size;
+    }
+}
+
+const struct typetree *type_deref(const struct typetree *type)
+{
+    assert(is_pointer(type));
+    return unwrapped(type->next);
 }
 
 const struct member *find_type_member(
     const struct typetree *type,
     const char *name)
 {
-    int i;
+    int i = 0;
+    assert(is_struct_or_union(type));
 
-    if (type->type != OBJECT) {
-        error("Cannot access field of non-object type.");
-    } else {
-        for (i = 0; i < type->n; ++i) {
-            if (!strcmp(name, type->member[i].name)) {
-                return type->member + i;
-            }
+    type = unwrapped(type);
+    for (; i < type->n; ++i) {
+        if (!strcmp(name, type->member[i].name)) {
+            return type->member + i;
         }
     }
     return NULL;

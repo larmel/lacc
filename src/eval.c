@@ -76,7 +76,10 @@ static struct var eval_expr_mod(struct block *block, struct var l, struct var r)
 
 /* 6.5.6 Additive Operators.
  */
-static struct var eval_expr_add(struct block *block, struct var l, struct var r)
+static struct var eval_expr_add(
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     const struct typetree *type;
 
@@ -93,7 +96,7 @@ static struct var eval_expr_add(struct block *block, struct var l, struct var r)
         /* Make sure pointer is left, and integer right. */
         l = eval_expr_add(block, r, l);
     } else if (is_pointer(l.type) && is_integer(r.type)) {
-        if (!l.type->next->size) {
+        if (!size_of(l.type->next)) {
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
@@ -106,18 +109,21 @@ static struct var eval_expr_add(struct block *block, struct var l, struct var r)
         }
         /* No evaluation if r is zero. */
         else if (r.kind != IMMEDIATE || r.value.i4) {
-            r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
+            r = eval_expr(block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
             l = evaluate(block, IR_OP_ADD, l.type, l, r);
         }
     } else {
-        error("Incompatible arguments to addition operator, was %t and %t.",
+        error("Incompatible arguments to addition operator, was '%t' and '%t'.",
             l.type, r.type);
     }
 
     return l;
 }
 
-static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
+static struct var eval_expr_sub(
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
@@ -130,7 +136,7 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
             l = evaluate(block, IR_OP_SUB, type, l, r);
         }
     } else if (is_pointer(l.type) && is_integer(r.type)) {
-        if (!l.type->next->size) {
+        if (!size_of(l.type->next)) {
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
@@ -143,14 +149,16 @@ static struct var eval_expr_sub(struct block *block, struct var l, struct var r)
         }
         /* No evaluation if r is zero. */
         else if (r.kind != IMMEDIATE || r.value.i4) {
-            r = eval_expr(block, IR_OP_MUL, var_int(l.type->next->size), r);
+            r = eval_expr(block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
             l = evaluate(block, IR_OP_SUB, l.type, l, r);
         }
     } else if (is_pointer(l.type) && is_pointer(r.type)) {
         struct typetree *type = type_init_unsigned(8);
-        size_t elem_size = r.type->next->size;
+        size_t elem_size = size_of(r.type->next);
 
-        if (!l.type->next->size || l.type->next->size != r.type->next->size) {
+        if (!size_of(l.type->next) ||
+            size_of(l.type->next) != size_of(r.type->next))
+        {
             error("Referenced type is incomplete.");
         }
 
@@ -188,8 +196,8 @@ static struct var eval_expr_eq(struct block *block, struct var l, struct var r)
          * pointer to object type and void *, pointer and null constant. */
         if (is_pointer(r.type)) {
             if (!is_compatible(l.type, r.type) &&
-                !(l.type->next->type == NONE && r.type->next->size) &&
-                !(r.type->next->type == NONE && l.type->next->size))
+                !(l.type->next->type == NONE && size_of(r.type->next)) &&
+                !(r.type->next->type == NONE && size_of(l.type->next)))
             {
                 error("Comparison between incompatible types '%t' and '%t'.",
                     l.type, r.type);
@@ -266,8 +274,8 @@ static struct var eval_expr_cmp(
         l = eval_cast(block, l, type);
         r = eval_cast(block, r, type);
     } else if (
-        !(is_pointer(l.type) && is_pointer(r.type) &&
-            l.type->next->size && l.type->next->size == r.type->next->size))
+        !(is_pointer(l.type) && is_pointer(r.type) && size_of(l.type->next) &&
+            size_of(l.type->next) == size_of(r.type->next)))
     {
         error("Incompatible operand types for relational expression.");
     }
@@ -431,7 +439,7 @@ struct var eval_addr(struct block *block, struct var var)
         var = evaluate(block, IR_ADDR, type_init_pointer(var.type), var);
         break;
     case DEREF:
-        assert(is_pointer(var.symbol->type));
+        assert(is_pointer(&var.symbol->type));
         tmp = var_direct(var.symbol);
         if (var.offset) {
             /* Address of *(sym + offset) is (sym + offset), but without pointer
@@ -455,19 +463,19 @@ struct var eval_deref(struct block *block, struct var var)
 
     var = array_or_func_to_addr(block, var);
     if (var.kind == DEREF) {
-        assert(is_pointer(var.symbol->type));
+        assert(is_pointer(&var.symbol->type));
 
         /* Cast to char pointer temporarily to avoid pointer arithmetic calling
          * eval_expr. No actual evaluation is performed by this. */
         ptr = var_direct(var.symbol);
         ptr = eval_cast(block, ptr, type_init_pointer(type_init_integer(1)));
         ptr = eval_expr(block, IR_OP_ADD, ptr, var_int(var.offset));
-        ptr.type = var.symbol->type;
+        ptr.type = &var.symbol->type;
 
         var = evaluate(block, IR_DEREF, var.type, ptr);
     } else if (
         var.kind == DIRECT &&
-        (var.offset || !is_pointer(var.symbol->type)))
+        (var.offset || !is_pointer(&var.symbol->type)))
     {
         /* Cannot immediately dereference a pointer which is at a direct offset
          * from another symbol. Also, pointers that are the result of indexing
@@ -477,7 +485,7 @@ struct var eval_deref(struct block *block, struct var var)
     }
 
     assert(var.kind == DIRECT && !var.offset);
-    assert(is_pointer(var.type) && is_pointer(var.symbol->type));
+    assert(is_pointer(var.type) && is_pointer(&var.symbol->type));
 
     var.kind = DEREF;
     var.type = type_deref(var.type);
@@ -560,10 +568,11 @@ struct var eval_call(struct block *block, struct var var)
     struct op op;
     struct var res;
 
+    assert(var.type->type == FUNCTION);
     if (var.type->next->type == NONE) {
         res = var_void();
     } else {
-        res = create_var(unwrap_if_indirection(var.type->next));
+        res = create_var(var.type->next);
     }
 
     op.type = IR_CALL;
@@ -590,7 +599,7 @@ struct var eval_cast(struct block *b, struct var v, const struct typetree *t)
     if (t->type == NONE) {
         v = var_void();
     } else if (is_scalar(v.type) && is_scalar(t)) {
-        if (v.type->size == t->size) {
+        if (size_of(v.type) == size_of(t)) {
             v.type = t;
         } else {
             v = evaluate(b, IR_CAST, t, v);

@@ -104,7 +104,7 @@ static void print_symbol(struct symbol *sym)
         (sym->linkage == LINK_INTERN ? "intern" :
             sym->linkage == LINK_EXTERN ? "extern" : "none"),
         sym_name(sym),
-        sym->type);
+        &sym->type);
 }
 
 /* Retrieve a symbol based on identifier name, or NULL of not registered or
@@ -140,8 +140,8 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
             sym.linkage == LINK_EXTERN && sym.symtype == SYM_DECLARATION &&
             (s->symtype == SYM_TENTATIVE || s->symtype == SYM_DEFINITION)
         ) {
-            if (!s->type->size) {
-                s->type = type_complete(s->type, sym.type);
+            if (!s->type.size) {
+                type_complete(&s->type, &sym.type);
             }
             return s;
         }
@@ -150,8 +150,8 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
                 (s->symtype == SYM_TENTATIVE && sym.symtype == SYM_DEFINITION) || 
                 (s->symtype == SYM_DEFINITION && sym.symtype == SYM_TENTATIVE))
             ) {
-                if (!s->type->size) {
-                    s->type = type_complete(s->type, sym.type);
+                if (!s->type.size) {
+                    type_complete(&s->type, &sym.type);
                 }
                 s->symtype = SYM_DEFINITION;
             } else if (
@@ -159,8 +159,8 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
                 s->symtype == SYM_DECLARATION &&
                 sym.symtype == SYM_TENTATIVE
             ) {
-                if (!s->type->size) {
-                    s->type = type_complete(s->type, sym.type);
+                if (!s->type.size) {
+                    type_complete(&s->type, &sym.type);
                 }
                 s->symtype = SYM_TENTATIVE;
             } else if (
@@ -170,8 +170,8 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
                     sym.name);
                 exit(1);
             } else {
-                if (!s->type->size) {
-                    s->type = type_complete(s->type, sym.type);
+                if (!s->type.size) {
+                    type_complete(&s->type, &sym.type);
                 }
             }
             return s;
@@ -182,7 +182,7 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
     }
 
     /* Might not be needed. */
-    sym.name = strdup(sym.name);
+    sym.name = sym.name;
 
     /* Scoped static variable must get unique name in order to not collide with
      * other external declarations. */
@@ -206,7 +206,7 @@ struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
     int idx;
     struct symbol sym = {0};
     sym.name = unique_identifier_name();
-    sym.type = type;
+    sym.type = *((struct typetree *) type); /* hack! */
     idx = create_symbol(ns, sym);
     register_in_scope(ns, idx);
     return ns->symbol[idx];
@@ -214,35 +214,40 @@ struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
 
 /* Register compiler internal builtin symbols, that are assumed to exists by
  * standard library headers.
+ * Add symbols with dummy types just to reserve them, and make them resolve
+ * during parsing. Define va_list, as described in System V ABI.
  */
 void register_builtin_types(struct namespace *ns)
 {
-    /* Define va_list, as described in System V ABI. */
-    struct symbol sym = {"__builtin_va_list", NULL, SYM_TYPEDEF};
-    struct typetree *type = type_init_object();
-    type_add_member(type, type_init_unsigned(4), "gp_offset");
-    type_add_member(type, type_init_unsigned(4), "fp_offset");
-    type_add_member(type, type_init_pointer(type_init_void()),
-        "overflow_arg_area");
-    type_add_member(type, type_init_pointer(type_init_void()), "reg_save_area");
-    type_align_struct_members(type);
-    sym.type = type_init_array(type, 1);
-    sym_add(ns, sym);
+    {
+        struct symbol sym = {"__builtin_va_list", { ARRAY }, SYM_TYPEDEF};
+        struct typetree *type = type_init_object();
+        type_add_member(type, type_init_unsigned(4), "gp_offset");
+        type_add_member(type, type_init_unsigned(4), "fp_offset");
+        type_add_member(type, type_init_pointer(type_init_void()),
+            "overflow_arg_area");
+        type_add_member(type, type_init_pointer(type_init_void()), "reg_save_area");
+        type_align_struct_members(type);
 
-    /* Register symbols with dummy types just to reserve them, and make them
-     * resolve during parsing. */
-    sym.name = "__builtin_va_start";
-    sym.type = type_init_void();
-    sym.symtype = SYM_DECLARATION;
-    sym_add(ns, sym);
+        sym.type.size = type->size;
+        sym.type.next = type;
+        sym_add(ns, sym);
+    }
 
-    sym.name = "__builtin_va_arg";
-    sym_add(ns, sym);
+    {
+        struct symbol sym = {"__builtin_va_start", { NONE }, SYM_DECLARATION};
+        sym_add(ns, sym);
+    }
+
+    {
+        struct symbol sym = {"__builtin_va_arg", { NONE }, SYM_DECLARATION};
+        sym_add(ns, sym);
+    }
 }
 
 static int sym_asm_alignment(const struct symbol *sym)
 {
-    int w = sym->type->size;
+    int w = size_of(&sym->type);
     if (w >= 16) return 16;
     if (w >= 8) return 8;
     return 4;
@@ -250,19 +255,17 @@ static int sym_asm_alignment(const struct symbol *sym)
 
 void assemble_tentative_definitions(FILE *stream)
 {
-    extern struct namespace ns_ident;
-
     int i;
     struct symbol *sym;
 
     for (i = 0; i < ns_ident.size; ++i) {
         sym = ns_ident.symbol[i];
-        if (sym->symtype == SYM_TENTATIVE && is_object(sym->type)) {
+        if (sym->symtype == SYM_TENTATIVE && is_object(&sym->type)) {
             if (sym->linkage == LINK_INTERN) {
                 fprintf(stream, "\t.local %s\n", sym_name(sym));
             }
             fprintf(stream, "\t.comm %s, %d, %d\n",
-                sym_name(sym), sym->type->size, sym_asm_alignment(sym));
+                sym_name(sym), size_of(&sym->type), sym_asm_alignment(sym));
         }
     }
 }
@@ -290,11 +293,11 @@ void output_symbols(FILE *stream, struct namespace *ns)
             (st == SYM_TYPEDEF) ? "typedef" : "enum");
 
         fprintf(stream, "%s :: ", ns->symbol[i]->name);
-        tstr = typetostr(ns->symbol[i]->type);
+        tstr = typetostr(&ns->symbol[i]->type);
         fprintf(stream, "%s", tstr);
         free(tstr);
 
-        fprintf(stream, ", size=%d", ns->symbol[i]->type->size);
+        fprintf(stream, ", size=%d", size_of(&ns->symbol[i]->type));
         if (ns->symbol[i]->stack_offset) {
             fprintf(stream, " (stack_offset: %d)", ns->symbol[i]->stack_offset);
         }

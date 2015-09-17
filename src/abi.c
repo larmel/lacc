@@ -11,10 +11,12 @@ enum reg ret_int_reg[] = {AX, DX};
 static int has_unaligned_fields(const struct typetree *t)
 {
     int i;
-    if (t->type == OBJECT)
+    if (t->type == OBJECT) {
+        t = unwrapped(t);
         for (i = 0; i < t->n; ++i)
-            if (t->member[i].offset % t->member[i].type->size)
+            if (t->member[i].offset % size_of(t->member[i].type))
                 return 1;
+    }
     return 0;
 }
 
@@ -41,11 +43,12 @@ static void flatten(enum param_class *l, const struct typetree *t, int offset)
     case POINTER:
         /* All fields should be aligned, i.e. a type cannot span multiple eight
          * byte boundaries. */
-        assert( t->size <= 8 /*&& (offset + t->size) / 8 == idx*/ );
+        assert(size_of(t) <= 8 /*&& (offset + t->size) / 8 == idx*/);
 
         l[i] = combine(l[i], t->type == REAL ? PC_SSE : PC_INTEGER);
         break;
     case OBJECT:
+        t = unwrapped(t);
         for (i = 0; i < t->n; ++i) {
             flatten(l, t->member[i].type, t->member[i].offset + offset);
         }

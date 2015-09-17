@@ -49,18 +49,20 @@ struct typetree
  * macros that mimic semantics given in standardese. */
 #define is_object(t) ((t)->type != FUNCTION)
 #define is_struct_or_union(t) ((t)->type == OBJECT)
-#define is_integer(t) (t->type == INTEGER)
-#define is_pointer(t) (t->type == POINTER)
-#define is_arithmetic(t) (is_integer(t) || t->type == REAL)
-#define is_scalar(t) (is_arithmetic(t) || t->type == POINTER)
+#define is_integer(t) ((t)->type == INTEGER)
+#define is_pointer(t) ((t)->type == POINTER)
+#define is_arithmetic(t) (is_integer(t) || (t)->type == REAL)
+#define is_scalar(t) (is_arithmetic(t) || (t)->type == POINTER)
 #define is_aggregate(t) ((t)->type == ARRAY || is_object(t))
 #define is_void(t) ((t)->type == NONE)
 
-#define is_const(t) (t->qualifier & 0x01)
-#define is_volatile(t) (t->qualifier & 0x02)
-#define is_unsigned(t) (t->flags & 0x01)
-#define is_vararg(t) (t->flags & 0x02)
+#define is_const(t) ((t)->qualifier & 0x01)
+#define is_volatile(t) ((t)->qualifier & 0x02)
+#define is_unsigned(t) ((t)->flags & 0x01)
+#define is_vararg(t) ((t)->flags & 0x02)
 #define is_union(t) (((t)->flags & 0x04) != 0)
+
+#define is_tagged(t) ((t)->type == OBJECT && (t)->next)
 
 struct typetree type_from_specifier(unsigned short spec);
 
@@ -78,18 +80,23 @@ int type_equal(const struct typetree *l, const struct typetree *r);
 
 int is_compatible(const struct typetree *l, const struct typetree *r);
 
-/* Instances of OBJECT types can be represented as indirections in the form of
- * a tag. Return the complete object if tagged.
+/* Return tagged type if this is an indirection, ignoring cv-qualifiers. The tag
+ * is immutable.
  */
-const struct typetree *unwrap_if_indirection(const struct typetree *type);
+const struct typetree *unwrapped(const struct typetree *type);
+
+/* Return size of type. If indirection, return size of tagged type.
+ */
+int size_of(const struct typetree *type);
 
 /* Get the type the given POINTER is pointing to. Handles tag indirections for
  * pointers to typedef'ed object types.
  */
 const struct typetree *type_deref(const struct typetree *ptr);
 
-const struct typetree *
-type_complete(const struct typetree *, const struct typetree *);
+/* Apply properties to incomplete type.
+ */
+void type_complete(struct typetree *type, const struct typetree *apply);
 
 /* Find a common real type between operands used in an expression, giving the
  * type of the result.
@@ -112,6 +119,16 @@ void type_align_struct_members(struct typetree *type);
  * function parameter. Returns NULL in the case no member is found.
  */
 const struct member *find_type_member(
+    const struct typetree *type,
+    const char *name);
+
+/* Create a tag type pointing to the provided object. Input type must be of
+ * struct or union type.
+ *
+ * Usage of this is to avoid circular typetree graphs, and to let tagged types
+ * be cv-qualified without mutating the original definition.
+ */
+struct typetree *type_tagged_copy(
     const struct typetree *type,
     const char *name);
 

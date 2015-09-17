@@ -81,12 +81,12 @@ static void define_builtin__func__(const char *name)
 {
     struct var str = var_string(name);
     struct symbol
-         farg = { "__func__", NULL, SYM_DEFINITION, LINK_INTERN },
+         farg = { "__func__", { ARRAY }, SYM_DEFINITION, LINK_INTERN },
         *func;
 
     assert(ns_ident.current_depth == 1);
 
-    farg.type = str.type;
+    farg.type = *str.type;
     func = sym_add(&ns_ident, farg);
 
     /* Initialize special case, setting char[] = char[]. */
@@ -130,14 +130,13 @@ declaration(struct block *parent)
         struct symbol *sym;
 
         arg.name = NULL;
-        arg.type = declarator(base, &arg.name);
+        arg.type = *declarator(base, &arg.name);
         if (!arg.name) {
             consume(';');
             return parent;
         }
 
         sym = sym_add(&ns_ident, arg);
-        assert(sym->type);
         if (ns_ident.current_depth) {
             assert(ns_ident.current_depth > 1);
             list_push_back(decl->locals, (void *)sym);
@@ -150,6 +149,7 @@ declaration(struct block *parent)
         case '=':
             if (sym->symtype == SYM_DECLARATION) {
                 error("Extern symbol '%s' cannot be initialized.", sym->name);
+                exit(1);
             }
             if (!sym->depth && sym->symtype == SYM_DEFINITION) {
                 error("Symbol '%s' was already defined.", sym->name);
@@ -162,7 +162,7 @@ declaration(struct block *parent)
             } else {
                 parent = initializer(parent, var_direct(sym));
             }
-            assert(sym->type->size);
+            assert(size_of(&sym->type) > 0);
             if (peek().token != ',') {
                 consume(';');
                 return parent;
@@ -170,7 +170,7 @@ declaration(struct block *parent)
             break;
         case '{': {
             int i;
-            if (sym->type->type != FUNCTION || sym->depth) {
+            if (sym->type.type != FUNCTION || sym->depth) {
                 error("Invalid function definition.");
                 exit(1);
             }
@@ -179,13 +179,12 @@ declaration(struct block *parent)
 
             push_scope(&ns_ident);
             define_builtin__func__(sym->name);
-            for (i = 0; i < sym->type->n; ++i) {
-                struct symbol sarg = {
-                    SYM_DEFINITION,
-                    LINK_NONE
-                };
-                sarg.name = arg.type->member[i].name;
-                sarg.type = sym->type->member[i].type;
+            for (i = 0; i < sym->type.n; ++i) {
+                struct symbol sarg = {0};
+                sarg.name = arg.type.member[i].name;
+                sarg.type = *sym->type.member[i].type;
+                sarg.symtype = SYM_DEFINITION;
+                sarg.linkage = LINK_NONE;
                 if (!sarg.name) {
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
@@ -212,15 +211,21 @@ static struct block *initializer(struct block *block, struct var target)
 {
     assert(target.kind == DIRECT);
 
+    /* Do not care about cv-qualifiers here. */
+    target.type = unwrapped(target.type);
+
     if (peek().token == '{') {
-        int i, base = target.offset; /* Initially filled offset. */
+        int i = 0,
+            base = target.offset; /* Initially filled offset. */
         const struct typetree *type = target.type;
+
+        assert(!is_tagged(type));
 
         consume('{');
         target.lvalue = 1;
         switch (type->type) {
         case OBJECT:
-            for (i = 0; i < type->n; ++i) {
+            for (; i < type->n; ++i) {
                 target.type = type->member[i].type;
                 target.offset = base + type->member[i].offset;
                 block = initializer(block, target);
@@ -239,8 +244,8 @@ static struct block *initializer(struct block *block, struct var target)
             break;
         case ARRAY:
             target.type = type->next;
-            for (i = 0; !type->size || i < type->size / type->next->size; ++i) {
-                target.offset = base + i * type->next->size;
+            for (; !type->size || i < type->size / size_of(type->next); ++i) {
+                target.offset = base + i * size_of(type->next);
                 block = initializer(block, target);
                 if (peek().token == ',') {
                     consume(',');
@@ -250,16 +255,16 @@ static struct block *initializer(struct block *block, struct var target)
                 }
             }
             if (!type->size) {
-                assert(!target.symbol->type->size);
-                assert(target.symbol->type->type == ARRAY);
+                assert(!target.symbol->type.size);
+                assert(target.symbol->type.type == ARRAY);
 
                 /* Incomplete array type can only be in the root level of target
-                 * type tree, thus safe to overwrite type directly in symbol. */
-                ((struct typetree *) target.symbol->type)->size =
-                    (i + 1) * type->next->size;
+                 * type tree, overwrite type directly in symbol. */
+                ((struct symbol *) target.symbol)->type.size =
+                    (i + 1) * size_of(type->next);
             } else {
-                while (++i < type->size / type->next->size) {
-                    target.offset = base + i * type->next->size;
+                while (++i < type->size / size_of(type->next)) {
+                    target.offset = base + i * size_of(type->next);
                     zero_initialize(block, target);
                 }
             }
@@ -276,17 +281,16 @@ static struct block *initializer(struct block *block, struct var target)
             error("Initializer must be computable at load time.");
             exit(1);
         }
+        /* Complete type based on string literal. */
         if (target.kind == DIRECT && !target.type->size) {
-            const struct typetree *type =
-                type_complete(target.symbol->type, block->expr.type);
-            
+            struct symbol *sym = (struct symbol *) target.symbol;
+
             assert(!target.offset);
             assert(block->expr.kind == IMMEDIATE);
             assert(block->expr.type->type == ARRAY && block->expr.string);
 
-            /* Complete type based on string literal. */
-            target.type = type;
-            ((struct symbol *) target.symbol)->type = type;
+            type_complete(&sym->type, block->expr.type);
+            target.type = block->expr.type;
         }
         eval_assign(block, target, block->expr);
     }
@@ -307,7 +311,7 @@ static void zero_initialize(struct block *block, struct var target)
 
     switch (target.type->type) {
     case OBJECT:
-        target.type = unwrap_if_indirection(target.type);
+        target.type = unwrapped(target.type);
         var = target;
         for (i = 0; i < var.type->n; ++i) {
             target.type = var.type->member[i].type;
@@ -335,8 +339,7 @@ static void zero_initialize(struct block *block, struct var target)
         eval_assign(block, target, var);
         break;
     default:
-        error("Invalid type to zero-initialize, was '%t'.",
-            target.type);
+        error("Invalid type to zero-initialize, was '%t'.", target.type);
         exit(1);
     }
 }
@@ -352,29 +355,28 @@ static int struct_declaration_list(struct typetree *obj)
 
     push_scope(&ns);
     do {
-        struct typetree *base = declaration_specifiers(NULL);
+        struct typetree *type = declaration_specifiers(NULL);
 
         do {
             struct symbol sym = {0};
 
-            sym.type = declarator(base, &sym.name);
+            type = declarator(type, &sym.name);
             if (!sym.name) {
                 error("Missing name in struct member declarator.");
-            } else if (!sym.type->size) {
+            } else if (!size_of(type)) {
                 error("Field '%s' has incomplete type.", sym.name);
             } else {
                 sym_add(&ns, sym);
-                type_add_member(obj, sym.type, sym.name);
+                type_add_member(obj, type, sym.name);
             }
-            if (sym.type->size > size) {
-                size = sym.type->size;
+            if (size_of(type) > size) {
+                size = size_of(type);
             }
             if (peek().token == ',') {
                 consume(',');
                 continue;
             }
         } while (peek().token != ';');
-
         consume(';');
     } while (peek().token != '}');
 
@@ -388,107 +390,93 @@ static int struct_declaration_list(struct typetree *obj)
  */
 static struct typetree *struct_or_union_declaration(void)
 {
-    const char *tag_name = NULL;
-    struct typetree *tag_type = NULL;
-    struct typetree *type;
-    struct token kind = next();
+    struct symbol *sym = NULL;
+    struct typetree *type = NULL;
+
+    int kind = next().token;
     int size;
 
     if (peek().token == IDENTIFIER) {
-        struct token ident = consume(IDENTIFIER);
-        struct symbol *tag = sym_lookup(&ns_tag, ident.strval);
-        if (!tag) {
-            struct symbol arg = { NULL, NULL, SYM_TYPEDEF };
-            arg.name = strdup(ident.strval);
-            arg.type = (type = type_init_object());
-            tag = sym_add(&ns_tag, arg);
-        } else if (is_integer(tag->type)) {
-            error("Tag '%s' was previously declared as enum.", tag->name);
+        struct symbol arg = {NULL, {OBJECT}, SYM_TYPEDEF};
+
+        arg.name = consume(IDENTIFIER).strval;
+        sym = sym_lookup(&ns_tag, arg.name);
+        if (!sym) {
+            sym = sym_add(&ns_tag, arg);
+        } else if (is_integer(&sym->type)) {
+            error("Tag '%s' was previously declared as enum.", sym->name);
             exit(1);
-        } else if (is_union(tag->type) != (kind.token == UNION)) {
-            error("Tag '%s' was previously declared as %s.", tag->name,
-                (kind.token == UNION) ? "struct" : "union");
+        } else if (is_union(&sym->type) != (kind == UNION)) {
+            error("Tag '%s' was previously declared as %s.",
+                sym->name, (kind == UNION) ? "struct" : "union");
             exit(1);
         }
 
-        /* Retrieve type from existing tag, possibly providing a complete
+        /* Retrieve type from existing symbol, possibly providing a complete
          * definition that will be available for later declarations. Overwrites
          * existing type information from symbol table. */
-        type = (struct typetree *) tag->type;
-        tag_type = type;
-        tag_name = tag->name;
+        type = &sym->type;
         if (peek().token == '{' && type->size) {
-            error("Redefiniton of object '%s'.", tag->name);
+            error("Redefiniton of object '%s'.", sym->name);
             exit(1);
         }
-    } else {
-        type = type_init_object();
-    }
-
-    if (kind.token == UNION) {
-        /* Magic value in type object to separate between struct and union. */
-        type->flags |= 0x04;
     }
 
     if (peek().token == '{') {
         consume('{');
+
+        /* Anonymous structure; allocate a new standalone type, not part of any
+         * symbol. */
+        if (!type)
+            type = type_init_object();
+
         size = struct_declaration_list(type);
         consume('}');
-        if (kind.token == STRUCT) {
+
+        if (kind == STRUCT) {
             type_align_struct_members(type);
         } else {
-            assert(kind.token == UNION);
+            assert(kind == UNION);
             type->size = size;
         }
     }
 
-    /* Return to the caller a copy of the root node, which can be overwritten
-     * with new type qualifiers without altering the tag registration. */
-    if (tag_type) {
-        type = calloc(1, sizeof(*type));
-        *type = *tag_type;
-        type->next = tag_type;
-        type->tag_name = tag_name;
+    /* Magic value in type object to separate between struct and union. */
+    if (kind == UNION) {
+        type->flags |= 0x04;
     }
 
-    return type;
+    /* Return to the caller a copy of the root node, which can be overwritten
+     * with new type qualifiers without altering the tag registration. */
+    return (sym) ? type_tagged_copy(type, sym->name) : type;
 }
 
 /* Parse enumerator list.
  *
- *      { FOO = 1; BAR; }
+ *      { FOO = 1, BAR }
  */
 static void enumerator_list(void)
 {
-    struct token tok;
-    struct symbol arg = { NULL, NULL, SYM_ENUM_VALUE };
+    struct var val;
+    struct symbol arg = { NULL, {INTEGER, 4}, SYM_ENUM_VALUE };
 
     consume('{');
-    arg.type = type_init_integer(4);
-    while (1) {
-        tok = consume(IDENTIFIER);
-        arg.name = strdup(tok.strval);
+    do {
+        arg.name = consume(IDENTIFIER).strval;
         if (peek().token == '=') {
-            struct var val;
-
             consume('=');
             val = constant_expression();
-            if (val.type->type != INTEGER) {
+            if (!is_integer(val.type)) {
                 error("Implicit conversion from non-integer type in enum.");
             }
             arg.enum_value = val.value.i4;
         }
-
         sym_add(&ns_ident, arg);
         arg.enum_value++;
-        if (peek().token != '}') {
-            consume(',');
-            continue;
-        }
-
-        break;
-    }
-
+        if (peek().token != ',')
+            break;
+        consume(',');
+    } while (peek().token != '}');
     consume('}');
 }
 
@@ -498,41 +486,37 @@ static void enumerator_list(void)
  */
 static struct typetree *enum_declaration(void)
 {
-    struct typetree *type = type_init_integer(4);
-    struct symbol *tag = NULL;
-
     consume(ENUM);
     if (peek().token == IDENTIFIER) {
-        struct token ident = next();
-        struct symbol arg = { NULL, NULL, SYM_TYPEDEF };
+        struct symbol *tag = NULL;
+        struct symbol arg = {NULL, {INTEGER, 4}, SYM_TYPEDEF};
 
-        arg.name = strdup(ident.strval); /* Remove strdup ? */
-        arg.type = type;
-        tag = sym_lookup(&ns_tag, ident.strval);
-        if (!tag || (tag->depth < ns_tag.current_depth && peek().token == '{'))
-        {
+        arg.name = consume(IDENTIFIER).strval;
+        tag = sym_lookup(&ns_tag, arg.name);
+        if (!tag || tag->depth < ns_tag.current_depth) {
             tag = sym_add(&ns_tag, arg);
-        } else if (!is_integer(tag->type)) {
-            error("Tag '%s' was previously defined as object type.", tag->name);
+        } else if (!is_integer(&tag->type)) {
+            error("Tag '%s' was previously defined as aggregate type.",
+                tag->name);
             exit(1);
         }
 
-        if (peek().token == '{' && tag->enum_value) {
-            error("Redefiniton of enum '%s'.", tag->name);
-            exit(1);
-        }
-    }
-
-    if (peek().token == '{') {
-        enumerator_list();
-        if (tag) {
-            /* Use enum_value as a sentinel to represent definition, checked on 
-             * lookup to detect duplicate definitions. */
+        /* Use enum_value as a sentinel to represent definition, checked on 
+         * lookup to detect duplicate definitions. */
+        if (peek().token == '{') {
+            if (tag->enum_value) {
+                error("Redefiniton of enum '%s'.", tag->name);
+            }
+            enumerator_list();
             tag->enum_value = 1;
         }
+    } else {
+        enumerator_list();
     }
 
-    return type;
+    /* Result is always integer. Do not care about the actual enum definition,
+     * all enums are ints and no type checking is done. */
+    return type_init_integer(4);
 }
 
 /* Parse type, qualifiers and storage class. Do not assume int by default, but
@@ -588,8 +572,8 @@ static struct typetree *declaration_specifiers(int *stc)
             struct symbol *tag = sym_lookup(&ns_ident, tok.strval);
             if (tag && tag->symtype == SYM_TYPEDEF && !type) {
                 consume(IDENTIFIER);
-                type = calloc(1, sizeof(*type));
-                *type = *tag->type;
+                type = calloc(1, sizeof(*type)); /* Leak! */
+                *type = tag->type;
             } else {
                 done = 1;
             }
@@ -709,7 +693,7 @@ direct_declarator_array(struct typetree *base)
         consume(']');
 
         base = direct_declarator_array(base);
-        if (!base->size) {
+        if (!size_of(base)) {
             error("Array has incomplete element type.");
             exit(1);
         }
@@ -1088,12 +1072,9 @@ static struct block *statement(struct block *parent)
         break;
     case RETURN:
         consume(RETURN);
-        /* Expression is return iff return type of function is not void. */
-        if (!is_void(decl->fun->type->next)) {
+        if (!is_void(decl->fun->type.next)) {
             parent = expression(parent);
-            parent->expr =
-                eval_return(parent,
-                    unwrap_if_indirection(decl->fun->type->next));
+            parent->expr = eval_return(parent, decl->fun->type.next);
         }
         consume(';');
         parent = cfg_block_init(decl); /* orphan */
@@ -1630,10 +1611,10 @@ static struct block *unary_expression(struct block *block)
         if (type->type == FUNCTION) {
             error("Cannot apply 'sizeof' to function type.");
         }
-        if (!type->size) {
+        if (!size_of(type)) {
             error("Cannot apply 'sizeof' to incomplete type.");
         }
-        block->expr = var_int(type->size);
+        block->expr = var_int(size_of(type));
         break;
     }
     case INCREMENT:
@@ -1740,7 +1721,7 @@ static struct block *postfix_expression(struct block *block)
             } else {
                 field = find_type_member(type_deref(root.type), tok.strval);
                 if (!field) {
-                    error("Invalid field access, no member named %s.",
+                    error("Invalid field access, no member named '%s'.",
                         tok.strval);
                     exit(1);
                 }
@@ -1788,8 +1769,8 @@ static struct block *parse__builtin_va_start(struct block *block)
     consume(',');
     param = consume(IDENTIFIER);
     sym = sym_lookup(&ns_ident, param.strval);
-    if (!sym || sym->depth != 1 || !decl->fun || !decl->fun->type->n ||
-        strcmp(decl->fun->type->member[decl->fun->type->n - 1].name,
+    if (!sym || sym->depth != 1 || !decl->fun || !decl->fun->type.n ||
+        strcmp(decl->fun->type.member[decl->fun->type.n - 1].name,
             param.strval))
     {
         error("Second parameter of va_start must be last function argument.");
