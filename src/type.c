@@ -230,7 +230,8 @@ struct typetree *type_tagged_copy(const struct typetree *type, const char *name)
     return tag;
 }
 
-/* Determine whether two types are the same, disregarding qualifiers.
+/* Determine whether two types are the same. Disregarding qualifiers, and names
+ * of function parameters.
  */
 int type_equal(const struct typetree *a, const struct typetree *b)
 {
@@ -253,6 +254,12 @@ int type_equal(const struct typetree *a, const struct typetree *b)
             if (!type_equal(a->member[i].type, b->member[i].type)) {
                 return 0;
             }
+            if (is_struct_or_union(a)
+                && strcmp(a->member[i].name, b->member[i].name))
+            {
+                return 0;
+            }
+            assert(a->member[i].offset == b->member[i].offset);
         }
         return 1;   
     }
@@ -312,26 +319,6 @@ int is_compatible(const struct typetree *l, const struct typetree *r)
 int size_of(const struct typetree *type)
 {
     return is_tagged(type) ? type->next->size : type->size;
-}
-
-void type_complete(struct typetree *type, const struct typetree *apply)
-{
-    /* Functions have no size, quick fix to avoid rejecting functions that are
-     * declared more than once. */
-    assert(type->type == FUNCTION || (!type->size && apply->size));
-
-    if (type->type != apply->type || !type_equal(type->next, apply->next)) {
-        error("Incompatible specification of incomplete type %t.", type);
-        exit(1);
-    }
-
-    if (type->type == FUNCTION) {
-        /* Is this correct? */
-        type->n = apply->n;
-        type->member = apply->member;
-    } else {
-        type->size = apply->size;
-    }
 }
 
 const struct typetree *type_deref(const struct typetree *type)

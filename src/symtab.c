@@ -107,6 +107,56 @@ static void print_symbol(struct symbol *sym)
         &sym->type);
 }
 
+/* Symbols can be declared multiple times, with incomplete or complete types.
+ * Only functions and arrays can exist as incomplete declarations. Other symbols
+ * can be re-declared, but must have identical type each time.
+ *
+ * For functions, the last parameter list is applied for as long as the symbol
+ * is still tentative.
+ */
+static void apply_type(struct symbol *sym, const struct typetree *type)
+{
+    int conflict = 1;
+
+    if (type_equal(&sym->type, type)
+        && !(sym->type.type == FUNCTION && sym->symtype != SYM_DEFINITION))
+        return;
+
+    switch (sym->type.type) {
+    case FUNCTION:
+        if (sym->type.type == type->type
+            && sym->type.flags == type->flags
+            && type_equal(sym->type.next, type->next))
+        {
+            conflict = 0;
+            if (!sym->type.n || sym->type.n == type->n) {
+                sym->type.n = type->n;
+                sym->type.member = type->member;
+            } else
+                conflict = 1;
+        }
+        break;
+    case ARRAY:
+        if (sym->type.type == type->type
+            && type_equal(sym->type.next, type->next))
+        {
+            conflict = 0;
+            if (!sym->type.size) {
+                assert(type->size);
+                sym->type.size = type->size;
+            }
+        }
+    default:
+        break;
+    }
+
+    if (conflict) {
+        error("Incompatible declaration of %s :: %t, cannot apply type '%t'.",
+            sym->name, &sym->type, type);
+        exit(1);
+    }
+}
+
 /* Retrieve a symbol based on identifier name, or NULL of not registered or
  * visible from current scope.
  */
@@ -140,9 +190,7 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
             sym.linkage == LINK_EXTERN && sym.symtype == SYM_DECLARATION &&
             (s->symtype == SYM_TENTATIVE || s->symtype == SYM_DEFINITION)
         ) {
-            if (!s->type.size) {
-                type_complete(&s->type, &sym.type);
-            }
+            apply_type(s, &sym.type);
             return s;
         }
         if (s->depth == ns->current_depth && ns->current_depth == 0) {
@@ -150,18 +198,14 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
                 (s->symtype == SYM_TENTATIVE && sym.symtype == SYM_DEFINITION) || 
                 (s->symtype == SYM_DEFINITION && sym.symtype == SYM_TENTATIVE))
             ) {
-                if (!s->type.size) {
-                    type_complete(&s->type, &sym.type);
-                }
+                apply_type(s, &sym.type);
                 s->symtype = SYM_DEFINITION;
             } else if (
                 s->linkage == sym.linkage &&
                 s->symtype == SYM_DECLARATION &&
                 sym.symtype == SYM_TENTATIVE
             ) {
-                if (!s->type.size) {
-                    type_complete(&s->type, &sym.type);
-                }
+                apply_type(s, &sym.type);
                 s->symtype = SYM_TENTATIVE;
             } else if (
                 s->symtype != sym.symtype || s->linkage != sym.linkage
@@ -170,9 +214,7 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
                     sym.name);
                 exit(1);
             } else {
-                if (!s->type.size) {
-                    type_complete(&s->type, &sym.type);
-                }
+                apply_type(s, &sym.type);
             }
             return s;
         } else if (s->depth == ns->current_depth && ns->current_depth) {
@@ -180,9 +222,6 @@ struct symbol *sym_add(struct namespace *ns, struct symbol sym)
             exit(1);
         }
     }
-
-    /* Might not be needed. */
-    sym.name = sym.name;
 
     /* Scoped static variable must get unique name in order to not collide with
      * other external declarations. */

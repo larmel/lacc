@@ -281,15 +281,14 @@ static struct block *initializer(struct block *block, struct var target)
             error("Initializer must be computable at load time.");
             exit(1);
         }
-        /* Complete type based on string literal. */
         if (target.kind == DIRECT && !target.type->size) {
-            struct symbol *sym = (struct symbol *) target.symbol;
-
             assert(!target.offset);
             assert(block->expr.kind == IMMEDIATE);
             assert(block->expr.type->type == ARRAY && block->expr.string);
 
-            type_complete(&sym->type, block->expr.type);
+            /* Complete type based on string literal. */
+            ((struct symbol *) target.symbol)->type.size =
+                block->expr.type->size;
             target.type = block->expr.type;
         }
         eval_assign(block, target, block->expr);

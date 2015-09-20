@@ -94,10 +94,6 @@ int size_of(const struct typetree *type);
  */
 const struct typetree *type_deref(const struct typetree *ptr);
 
-/* Apply properties to incomplete type.
- */
-void type_complete(struct typetree *type, const struct typetree *apply);
-
 /* Find a common real type between operands used in an expression, giving the
  * type of the result.
  */
