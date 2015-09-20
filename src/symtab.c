@@ -92,21 +92,6 @@ static void register_in_scope(struct namespace *ns, int i)
     scope->size++;
 }
 
-static void print_symbol(struct symbol *sym)
-{
-    verbose(
-        "\t[type: %s, link: %s]\n"
-        "\t%s :: %t",
-        (sym->symtype == SYM_DEFINITION ? "definition" :
-            sym->symtype == SYM_TENTATIVE ? "tentative" :
-            sym->symtype == SYM_DECLARATION ? "declaration" :
-            sym->symtype == SYM_TYPEDEF ? "typedef" : "enum"),
-        (sym->linkage == LINK_INTERN ? "intern" :
-            sym->linkage == LINK_EXTERN ? "extern" : "none"),
-        sym_name(sym),
-        &sym->type);
-}
-
 /* Symbols can be declared multiple times, with incomplete or complete types.
  * Only functions and arrays can exist as incomplete declarations. Other symbols
  * can be re-declared, but must have identical type each time.
@@ -179,62 +164,76 @@ struct symbol *sym_lookup(struct namespace *ns, const char *name)
 /* Add symbol to current scope, or resolve to or complete existing symbols when
  * they occur repeatedly.
  */
-struct symbol *sym_add(struct namespace *ns, struct symbol sym)
+struct symbol *sym_add(struct namespace *ns, struct symbol arg)
 {
     int idx;
-    struct symbol *s;
+    struct symbol *sym;
     static int svc;
 
-    if ((s = sym_lookup(ns, sym.name))) {
-        if (
-            sym.linkage == LINK_EXTERN && sym.symtype == SYM_DECLARATION &&
-            (s->symtype == SYM_TENTATIVE || s->symtype == SYM_DEFINITION)
-        ) {
-            apply_type(s, &sym.type);
-            return s;
+    if ((sym = sym_lookup(ns, arg.name))) {
+        if (arg.linkage == LINK_EXTERN && arg.symtype == SYM_DECLARATION
+            && (sym->symtype == SYM_TENTATIVE
+                || sym->symtype == SYM_DEFINITION))
+        {
+            apply_type(sym, &arg.type);
+            return sym;
         }
-        if (s->depth == ns->current_depth && ns->current_depth == 0) {
-            if (s->linkage == sym.linkage && (
-                (s->symtype == SYM_TENTATIVE && sym.symtype == SYM_DEFINITION) || 
-                (s->symtype == SYM_DEFINITION && sym.symtype == SYM_TENTATIVE))
-            ) {
-                apply_type(s, &sym.type);
-                s->symtype = SYM_DEFINITION;
+        if (sym->depth == ns->current_depth && !ns->current_depth) {
+            if (sym->linkage == arg.linkage
+                && ((sym->symtype == SYM_TENTATIVE
+                        && arg.symtype == SYM_DEFINITION)
+                    || (sym->symtype == SYM_DEFINITION
+                        && arg.symtype == SYM_TENTATIVE)))
+            {
+                apply_type(sym, &arg.type);
+                sym->symtype = SYM_DEFINITION;
             } else if (
-                s->linkage == sym.linkage &&
-                s->symtype == SYM_DECLARATION &&
-                sym.symtype == SYM_TENTATIVE
-            ) {
-                apply_type(s, &sym.type);
-                s->symtype = SYM_TENTATIVE;
+                sym->linkage == arg.linkage
+                && sym->symtype == SYM_DECLARATION
+                && arg.symtype == SYM_TENTATIVE)
+            {
+                apply_type(sym, &arg.type);
+                sym->symtype = SYM_TENTATIVE;
             } else if (
-                s->symtype != sym.symtype || s->linkage != sym.linkage
-            ) {
+                sym->symtype != arg.symtype
+                || sym->linkage != arg.linkage)
+            {
                 error("Declaration of '%s' does not match prior declaration.",
-                    sym.name);
+                    arg.name);
                 exit(1);
             } else {
-                apply_type(s, &sym.type);
+                apply_type(sym, &arg.type);
             }
-            return s;
-        } else if (s->depth == ns->current_depth && ns->current_depth) {
-            error("Duplicate definition of symbol '%s'", sym.name);
+            return sym;
+        } else if (sym->depth == ns->current_depth && ns->current_depth) {
+            error("Duplicate definition of symbol '%s'", arg.name);
             exit(1);
         }
     }
 
     /* Scoped static variable must get unique name in order to not collide with
      * other external declarations. */
-    if (sym.linkage == LINK_INTERN && ns->current_depth) {
-        sym.n = ++svc;
+    if (arg.linkage == LINK_INTERN && ns->current_depth) {
+        arg.n = ++svc;
     }
 
-    idx = create_symbol(ns, sym);
+    idx = create_symbol(ns, arg);
     register_in_scope(ns, idx);
-    s = ns->symbol[idx];
-    print_symbol(s);
+    sym = ns->symbol[idx];
 
-    return s;
+    verbose(
+        "\t[type: %s, link: %s]\n"
+        "\t%s :: %t",
+        (sym->symtype == SYM_DEFINITION ? "definition" :
+            sym->symtype == SYM_TENTATIVE ? "tentative" :
+            sym->symtype == SYM_DECLARATION ? "declaration" :
+            sym->symtype == SYM_TYPEDEF ? "typedef" : "enum"),
+        (sym->linkage == LINK_INTERN ? "intern" :
+            sym->linkage == LINK_EXTERN ? "extern" : "none"),
+        sym_name(sym),
+        &sym->type);
+
+    return sym;
 }
 
 /* Create a symbol with the provided type and add it to current scope. Used to
@@ -265,7 +264,8 @@ void register_builtin_types(struct namespace *ns)
         type_add_member(type, type_init_unsigned(4), "fp_offset");
         type_add_member(type, type_init_pointer(type_init_void()),
             "overflow_arg_area");
-        type_add_member(type, type_init_pointer(type_init_void()), "reg_save_area");
+        type_add_member(type, type_init_pointer(type_init_void()),
+            "reg_save_area");
         type_align_struct_members(type);
 
         sym.type.size = type->size;
