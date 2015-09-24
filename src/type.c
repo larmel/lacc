@@ -412,7 +412,7 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
     case ARRAY:
         if (tree->size > 0) {
             w += snprintf(s + w, size - w, "[%u] ",
-                tree->size / tree->next->size);
+                tree->size / size_of(tree->next));
         } else {
             w += snprintf(s + w, size - w, "[] ");
         }
