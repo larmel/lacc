@@ -15,8 +15,11 @@ OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(SOURCES))
 BOOTSTRAP_SOURCES := \
 	src/abi.c \
 	src/error.c \
+	src/input.c \
 	src/lcc.c \
+	src/string.c \
 	src/tokenize.c \
+	src/type.c \
 	src/util/memoize.c \
 	src/util/list.c
 BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))

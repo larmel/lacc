@@ -69,6 +69,8 @@ static char *refer(const struct var var)
                     sym_name(var.symbol),
                     (var.offset > 0) ? "+" : "",
                     var.offset);
+            } else if (var.symbol->type.type == FUNCTION) {
+                sprintf(str, "$%s", var.symbol->name);
             } else {
                 sprintf(str, "%s(%%rip)", sym_name(var.symbol));
             }
@@ -298,8 +300,14 @@ static void call(
         fprintf(s, "\tmovl\t$0, %%eax\n");
     }
 
-    assert(func.kind == DIRECT);
-    fprintf(s, "\tcall\t%s\n", func.symbol->name);
+    if (func.kind == DIRECT) {
+        fprintf(s, "\tcall\t%s\n", func.symbol->name);
+    } else {
+        assert(func.kind == DEREF);
+        load_address(s, func, R11);
+        fprintf(s, "\tcall\t*%%%s\n", REG(R11, 8));
+    }
+
     if (mem_used) {
         fprintf(s, "\taddq\t$%d, %%rsp\n", mem_used);
     }
