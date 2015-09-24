@@ -4,7 +4,7 @@ TESTS := $(wildcard test/*.c)
 
 LD := cc
 CC := cc
-CCFLAGS := -Wall -pedantic -std=c89
+CCFLAGS := -Wall -pedantic -std=c89 -g
 LCCFLAGS := -I /usr/include/x86_64-linux-musl/
 
 # Normal build with gcc
