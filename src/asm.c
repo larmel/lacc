@@ -79,32 +79,6 @@ static char *refer(const struct var var)
     return str;
 }
 
-static void load_address(FILE *s, struct var v, enum reg r)
-{
-    switch (v.kind) {
-    case IMMEDIATE:
-        assert(0);
-        break;
-    case DIRECT:
-        fprintf(s, "\t%s\t%s, %%%s\t# load &%s\n",
-            ((v.symbol->linkage != LINK_NONE && !v.offset &&
-                (v.type->type == ARRAY || v.type->type == FUNCTION)) ?
-                "movq" : "leaq"),
-            refer(v), REG(r, 8), v.symbol->name);
-        break;
-    case DEREF:
-        /* Address of dereferenced variable is removed by evaluation. Exception
-         * is loading plain array or function values, which decay into loading
-         * their address. */
-        assert(v.symbol->stack_offset);
-        assert(is_pointer(&v.symbol->type));
-        fprintf(s, "\tmovq\t%d(%%rbp), %%r10\n", v.symbol->stack_offset);
-        fprintf(s, "\tleaq\t%d(%%r10), %%%s\t# load (%s + %d)\n",
-            v.offset, REG(r, 8), v.symbol->name, v.offset);
-        break;
-    }
-}
-
 /* Load variable v to register r, sign extended to fit register size. Width must
  * be either 4 (as in %eax) or 8 (as in %rax).
  */
@@ -172,6 +146,27 @@ static void load(FILE *s, struct var v, enum reg r)
     unsigned int w = (size_of(v.type) < 4) ? 4 : size_of(v.type);
     assert(w == 4 || w == 8);
     load_value(s, v, r, w);
+}
+
+static void load_address(FILE *s, struct var v, enum reg r)
+{
+    assert(v.kind != IMMEDIATE);
+    if (v.kind == DIRECT) {
+        fprintf(s, "\t%s\t%s, %%%s\t# load &%s\n",
+            ((v.symbol->linkage != LINK_NONE && !v.offset &&
+                (v.type->type == ARRAY || v.type->type == FUNCTION)) ?
+                "movq" : "leaq"),
+            refer(v), REG(r, 8), v.symbol->name);
+    } else {
+        assert(v.kind == DEREF);
+        assert(v.symbol->stack_offset);
+        assert(is_pointer(&v.symbol->type));
+        load(s, var_direct(v.symbol), r);
+        if (v.offset) {
+            fprintf(s, "\taddq\t%d, %%%s\t# offset address (%s + %d)\n",
+                v.offset, REG(r, 8), v.symbol->name, v.offset);
+        }
+    }
 }
 
 static void store(FILE *s, enum reg r, struct var v)
