@@ -483,32 +483,21 @@ static struct macro preprocess_define(
     return macro;
 }
 
-static char *pastetok(char *buf, struct token t)
+/* Concatenate token to string buffer. Allocate new buffer if input is NULL.
+ */
+static char *pastetok(char *str, struct token t)
 {
-    size_t len;
+    size_t len = (str) ? strlen(str) : 0;
 
-    if (!buf) {
-        buf = calloc(16, sizeof(*buf));
-        len = 0;
+    assert(t.strval);
+    len += strlen(t.strval) + 1;
+    if (str) {
+        str = realloc(str, len * sizeof(*str));
     } else {
-        len = strlen(buf);
-        if (t.strval) {
-            buf = realloc(buf, len + strlen(t.strval) + 1);
-        } else {
-            buf = realloc(buf, len + 32);
-        }
+        str = calloc(len, sizeof(*str));
     }
 
-    if (t.strval) {
-        strcat(buf, t.strval);
-    } else if (t.intval) {
-        sprintf(buf + len, "%ld", t.intval);
-    } else {
-        assert(isprint(t.token));
-        sprintf(buf + len, "%c", t.token);
-    }
-
-    return buf;
+    return strncat(str, t.strval, len);
 }
 
 static void preprocess_include(const struct token line[])
