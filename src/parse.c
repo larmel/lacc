@@ -354,16 +354,18 @@ static int struct_declaration_list(struct typetree *obj)
 
     push_scope(&ns);
     do {
-        struct typetree *type = declaration_specifiers(NULL);
+        struct typetree *base = declaration_specifiers(NULL);
 
         do {
             struct symbol sym = {0};
+            struct typetree *type = declarator(base, &sym.name);
 
-            type = declarator(type, &sym.name);
             if (!sym.name) {
                 error("Missing name in struct member declarator.");
+                exit(1);
             } else if (!size_of(type)) {
-                error("Field '%s' has incomplete type.", sym.name);
+                error("Field '%s' has incomplete type '%t'.", sym.name, type);
+                exit(1);
             } else {
                 sym_add(&ns, sym);
                 type_add_member(obj, type, sym.name);
