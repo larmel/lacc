@@ -80,63 +80,62 @@ struct decl *parse()
 static void define_builtin__func__(const char *name)
 {
     struct var str = var_string(name);
-    struct symbol
-         farg = { "__func__", { ARRAY }, SYM_DEFINITION, LINK_INTERN },
-        *func;
+    struct symbol *sym =
+        sym_add(&ns_ident, "__func__", str.type, SYM_DEFINITION, LINK_INTERN);
 
     assert(ns_ident.current_depth == 1);
 
-    farg.type = *str.type;
-    func = sym_add(&ns_ident, farg);
-
     /* Initialize special case, setting char[] = char[]. */
-    eval_assign(decl->head, var_direct(func), str);
+    eval_assign(decl->head, var_direct(sym), str);
 }
 
 /* Cover both external declarations, functions, and local declarations (with
- * optional initialization code) inside functions. */
-static struct block *
-declaration(struct block *parent)
+ * optional initialization code) inside functions.
+ */
+static struct block *declaration(struct block *parent)
 {
     struct typetree *base;
-    struct symbol arg = {0};
+    enum symtype symtype;
+    enum linkage linkage;
     int stc = '$';
 
     base = declaration_specifiers(&stc);
     switch (stc) {
     case EXTERN:
-        arg.symtype = SYM_DECLARATION;
-        arg.linkage = LINK_EXTERN;
+        symtype = SYM_DECLARATION;
+        linkage = LINK_EXTERN;
         break;
     case STATIC:
-        arg.symtype = SYM_TENTATIVE;
-        arg.linkage = LINK_INTERN;
+        symtype = SYM_TENTATIVE;
+        linkage = LINK_INTERN;
         break;
     case TYPEDEF:
-        arg.symtype = SYM_TYPEDEF;
+        symtype = SYM_TYPEDEF;
+        linkage = LINK_NONE;
         break;
     default:
         if (!ns_ident.current_depth) {
-            arg.symtype = SYM_TENTATIVE;
-            arg.linkage = LINK_EXTERN;
+            symtype = SYM_TENTATIVE;
+            linkage = LINK_EXTERN;
         } else {
-            arg.symtype = SYM_DEFINITION;
-            arg.linkage = LINK_NONE;
+            symtype = SYM_DEFINITION;
+            linkage = LINK_NONE;
         }
         break;
     }
 
     while (1) {
+        const char *name = NULL;
+        const struct typetree *type;
         struct symbol *sym;
 
-        arg.name = NULL;
-        arg.type = *declarator(base, &arg.name);
-        if (!arg.name) {
+        type = declarator(base, &name);
+        if (!name) {
             consume(';');
             return parent;
         }
 
-        sym = sym_add(&ns_ident, arg);
+        sym = sym_add(&ns_ident, name, type, symtype, linkage);
         if (ns_ident.current_depth) {
             assert(ns_ident.current_depth > 1);
             list_push_back(decl->locals, (void *)sym);
@@ -180,16 +179,16 @@ declaration(struct block *parent)
             push_scope(&ns_ident);
             define_builtin__func__(sym->name);
             for (i = 0; i < sym->type.n; ++i) {
-                struct symbol sarg = {0};
-                sarg.name = arg.type.member[i].name;
-                sarg.type = *sym->type.member[i].type;
-                sarg.symtype = SYM_DEFINITION;
-                sarg.linkage = LINK_NONE;
-                if (!sarg.name) {
+                name = sym->type.member[i].name;
+                type = sym->type.member[i].type;
+                symtype = SYM_DEFINITION;
+                linkage = LINK_NONE;
+                if (!name) {
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
                 }
-                list_push_back(decl->params, (void *) sym_add(&ns_ident, sarg));
+                list_push_back(decl->params,
+                    (void *) sym_add(&ns_ident, name, type, symtype, linkage));
             }
             parent = block(parent);
             pop_scope(&ns_ident);
@@ -357,18 +356,18 @@ static int struct_declaration_list(struct typetree *obj)
         struct typetree *base = declaration_specifiers(NULL);
 
         do {
-            struct symbol sym = {0};
-            struct typetree *type = declarator(base, &sym.name);
+            const char *name = NULL;
+            const struct typetree *type = declarator(base, &name);
 
-            if (!sym.name) {
+            if (!name) {
                 error("Missing name in struct member declarator.");
                 exit(1);
             } else if (!size_of(type)) {
-                error("Field '%s' has incomplete type '%t'.", sym.name, type);
+                error("Field '%s' has incomplete type '%t'.", name, type);
                 exit(1);
             } else {
-                sym_add(&ns, sym);
-                type_add_member(obj, type, sym.name);
+                sym_add(&ns, name, type, SYM_DECLARATION, LINK_NONE);
+                type_add_member(obj, type, name);
             }
             if (size_of(type) > size) {
                 size = size_of(type);
@@ -398,12 +397,11 @@ static struct typetree *struct_or_union_declaration(void)
     int size;
 
     if (peek().token == IDENTIFIER) {
-        struct symbol arg = {NULL, {OBJECT}, SYM_TYPEDEF};
-
-        arg.name = consume(IDENTIFIER).strval;
-        sym = sym_lookup(&ns_tag, arg.name);
+        const char *name = consume(IDENTIFIER).strval;
+        sym = sym_lookup(&ns_tag, name);
         if (!sym) {
-            sym = sym_add(&ns_tag, arg);
+            type = type_init_object();
+            sym = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
         } else if (is_integer(&sym->type)) {
             error("Tag '%s' was previously declared as enum.", sym->name);
             exit(1);
@@ -459,21 +457,24 @@ static struct typetree *struct_or_union_declaration(void)
 static void enumerator_list(void)
 {
     struct var val;
-    struct symbol arg = { NULL, {INTEGER, 4}, SYM_ENUM_VALUE };
+    struct symbol *sym;
+    int enum_value = 0;
+    const struct typetree *type = type_init_integer(4);
 
     consume('{');
     do {
-        arg.name = consume(IDENTIFIER).strval;
+        const char *name = consume(IDENTIFIER).strval;
+
         if (peek().token == '=') {
             consume('=');
             val = constant_expression();
             if (!is_integer(val.type)) {
                 error("Implicit conversion from non-integer type in enum.");
             }
-            arg.enum_value = val.value.i4;
+            enum_value = val.value.i4;
         }
-        sym_add(&ns_ident, arg);
-        arg.enum_value++;
+        sym = sym_add(&ns_ident, name, type, SYM_ENUM_VALUE, LINK_NONE);
+        sym->enum_value = enum_value++;
         if (peek().token != ',')
             break;
         consume(',');
@@ -487,15 +488,16 @@ static void enumerator_list(void)
  */
 static struct typetree *enum_declaration(void)
 {
+    struct typetree *type = type_init_integer(4);
+
     consume(ENUM);
     if (peek().token == IDENTIFIER) {
         struct symbol *tag = NULL;
-        struct symbol arg = {NULL, {INTEGER, 4}, SYM_TYPEDEF};
+        const char *name = consume(IDENTIFIER).strval;
 
-        arg.name = consume(IDENTIFIER).strval;
-        tag = sym_lookup(&ns_tag, arg.name);
+        tag = sym_lookup(&ns_tag, name);
         if (!tag || tag->depth < ns_tag.current_depth) {
-            tag = sym_add(&ns_tag, arg);
+            tag = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
         } else if (!is_integer(&tag->type)) {
             error("Tag '%s' was previously defined as aggregate type.",
                 tag->name);
@@ -517,7 +519,7 @@ static struct typetree *enum_declaration(void)
 
     /* Result is always integer. Do not care about the actual enum definition,
      * all enums are ints and no type checking is done. */
-    return type_init_integer(4);
+    return type;
 }
 
 /* Parse type, qualifiers and storage class. Do not assume int by default, but

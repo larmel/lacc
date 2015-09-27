@@ -1,6 +1,6 @@
 #if _XOPEN_SOURCE < 500
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 500 /* strdup */
+#  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
 #include "error.h"
 #include "symbol.h"
@@ -48,19 +48,20 @@ const char *sym_name(const struct symbol *sym)
 }
 
 /* Create and add symbol to symbol table, but not to any scope. Symbol address
- * needs to be stable, so they are stored as a realloc'able list of pointers.
+ * needs to be stable, so they are stored as a realloc-safe list of pointers.
  */
-static int create_symbol(struct namespace *ns, struct symbol sym)
+static int create_symbol(struct namespace *ns, struct symbol arg)
 {
-    sym.depth = ns->current_depth;
+    struct symbol *sym = calloc(1, sizeof(*sym));
+
+    arg.depth = ns->current_depth;
     if (ns->size == ns->cap) {
         ns->cap += 64;
-        ns->symbol = realloc(ns->symbol, sizeof(struct symbol*) * ns->cap);
+        ns->symbol = realloc(ns->symbol, sizeof(*ns->symbol) * ns->cap);
     }
 
-    ns->symbol[ns->size] = calloc(1, sizeof(struct symbol));
-    *(ns->symbol[ns->size]) = sym;
-
+    *sym = arg;
+    ns->symbol[ns->size] = sym;
     return ns->size++;
 }
 
@@ -78,7 +79,7 @@ static char *unique_identifier_name(void)
 /* Add symbol to current scope, making it possible to look up. Name must be non-
  * NULL, i.e. immediate values do not belong to any scope.
  */
-static void register_in_scope(struct namespace *ns, int i)
+static struct symbol *register_in_scope(struct namespace *ns, int i)
 {
     struct scope *scope;
 
@@ -90,6 +91,8 @@ static void register_in_scope(struct namespace *ns, int i)
     }
     scope->idx[scope->size] = i;
     scope->size++;
+
+    return ns->symbol[i];
 }
 
 /* Symbols can be declared multiple times, with incomplete or complete types.
@@ -142,14 +145,9 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
     }
 }
 
-/* Retrieve a symbol based on identifier name, or NULL of not registered or
- * visible from current scope.
- */
 struct symbol *sym_lookup(struct namespace *ns, const char *name)
 {
     int i, d;
-
-    assert(ns);
     for (d = ns->current_depth; d >= 0; --d) {
         for (i = 0; i < ns->scope[d].size; ++i) {
             int idx = ns->scope[d].idx[i];
@@ -161,66 +159,68 @@ struct symbol *sym_lookup(struct namespace *ns, const char *name)
     return NULL;
 }
 
-/* Add symbol to current scope, or resolve to or complete existing symbols when
- * they occur repeatedly.
- */
-struct symbol *sym_add(struct namespace *ns, struct symbol arg)
+struct symbol *sym_add(
+    struct namespace *ns,
+    const char *name,
+    const struct typetree *type,
+    enum symtype symtype,
+    enum linkage linkage)
 {
-    int idx;
-    struct symbol *sym;
-    static int svc;
+    struct symbol
+        *sym = NULL,
+        arg = {0};
 
-    if ((sym = sym_lookup(ns, arg.name))) {
-        if (arg.linkage == LINK_EXTERN && arg.symtype == SYM_DECLARATION
+    if ((sym = sym_lookup(ns, name))) {
+        if (linkage == LINK_EXTERN && symtype == SYM_DECLARATION
             && (sym->symtype == SYM_TENTATIVE
                 || sym->symtype == SYM_DEFINITION))
         {
-            apply_type(sym, &arg.type);
+            apply_type(sym, type);
             return sym;
         }
         if (sym->depth == ns->current_depth && !ns->current_depth) {
-            if (sym->linkage == arg.linkage
+            if (sym->linkage == linkage
                 && ((sym->symtype == SYM_TENTATIVE
-                        && arg.symtype == SYM_DEFINITION)
+                        && symtype == SYM_DEFINITION)
                     || (sym->symtype == SYM_DEFINITION
-                        && arg.symtype == SYM_TENTATIVE)))
+                        && symtype == SYM_TENTATIVE)))
             {
-                apply_type(sym, &arg.type);
+                apply_type(sym, type);
                 sym->symtype = SYM_DEFINITION;
             } else if (
-                sym->linkage == arg.linkage
+                sym->linkage == linkage
                 && sym->symtype == SYM_DECLARATION
-                && arg.symtype == SYM_TENTATIVE)
+                && symtype == SYM_TENTATIVE)
             {
-                apply_type(sym, &arg.type);
+                apply_type(sym, type);
                 sym->symtype = SYM_TENTATIVE;
-            } else if (
-                sym->symtype != arg.symtype
-                || sym->linkage != arg.linkage)
-            {
+            } else if (sym->symtype != symtype || sym->linkage != linkage) {
                 error("Declaration of '%s' does not match prior declaration.",
-                    arg.name);
+                    name);
                 exit(1);
             } else {
-                apply_type(sym, &arg.type);
+                apply_type(sym, type);
             }
             return sym;
         } else if (sym->depth == ns->current_depth && ns->current_depth) {
-            error("Duplicate definition of symbol '%s'", arg.name);
+            error("Duplicate definition of symbol '%s'", name);
             exit(1);
         }
     }
 
+    arg.name = name;
+    arg.type = *type;
+    arg.symtype = symtype;
+    arg.linkage = linkage;
+
     /* Scoped static variable must get unique name in order to not collide with
      * other external declarations. */
-    if (arg.linkage == LINK_INTERN && ns->current_depth) {
-        arg.n = ++svc;
+    if (linkage == LINK_INTERN && ns->current_depth) {
+        static int counter;
+        arg.n = ++counter;
     }
 
-    idx = create_symbol(ns, arg);
-    register_in_scope(ns, idx);
-    sym = ns->symbol[idx];
-
+    sym = register_in_scope(ns, create_symbol(ns, arg));
     verbose(
         "\t[type: %s, link: %s]\n"
         "\t%s :: %t",
@@ -236,52 +236,37 @@ struct symbol *sym_add(struct namespace *ns, struct symbol arg)
     return sym;
 }
 
-/* Create a symbol with the provided type and add it to current scope. Used to
- * hold temporary values in expression evaluation.
- */
 struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
 {
-    int idx;
     struct symbol sym = {0};
+
+    sym.symtype = SYM_DEFINITION;
+    sym.linkage = LINK_NONE;
     sym.name = unique_identifier_name();
-    sym.type = *((struct typetree *) type); /* hack! */
-    idx = create_symbol(ns, sym);
-    register_in_scope(ns, idx);
-    return ns->symbol[idx];
+    sym.type = *type;
+    return register_in_scope(ns, create_symbol(ns, sym));
 }
 
-/* Register compiler internal builtin symbols, that are assumed to exists by
- * standard library headers.
- * Add symbols with dummy types just to reserve them, and make them resolve
- * during parsing. Define va_list, as described in System V ABI.
- */
 void register_builtin_types(struct namespace *ns)
 {
-    {
-        struct symbol sym = {"__builtin_va_list", { ARRAY }, SYM_TYPEDEF};
-        struct typetree *type = type_init_object();
-        type_add_member(type, type_init_unsigned(4), "gp_offset");
-        type_add_member(type, type_init_unsigned(4), "fp_offset");
-        type_add_member(type, type_init_pointer(type_init_void()),
-            "overflow_arg_area");
-        type_add_member(type, type_init_pointer(type_init_void()),
-            "reg_save_area");
-        type_align_struct_members(type);
+    struct typetree
+        *type = type_init_object(),
+        *none = type_init_void();
 
-        sym.type.size = type->size;
-        sym.type.next = type;
-        sym_add(ns, sym);
-    }
+    type_add_member(type, type_init_unsigned(4), "gp_offset");
+    type_add_member(type, type_init_unsigned(4), "fp_offset");
+    type_add_member(type, type_init_pointer(none), "overflow_arg_area");
+    type_add_member(type, type_init_pointer(none), "reg_save_area");
+    type_align_struct_members(type);
+    type = type_init_array(type, 1);
 
-    {
-        struct symbol sym = {"__builtin_va_start", { NONE }, SYM_DECLARATION};
-        sym_add(ns, sym);
-    }
+    /* Define va_list as described in System V ABI. */
+    sym_add(ns, "__builtin_va_list", type, SYM_TYPEDEF, LINK_NONE);
 
-    {
-        struct symbol sym = {"__builtin_va_arg", { NONE }, SYM_DECLARATION};
-        sym_add(ns, sym);
-    }
+    /* Add symbols with dummy types just to reserve them, and make them resolve
+     * during parsing. These are implemented as compiler intrinsics. */
+    sym_add(ns, "__builtin_va_start", none, SYM_DECLARATION, LINK_NONE);
+    sym_add(ns, "__builtin_va_arg", none, SYM_DECLARATION, LINK_NONE);
 }
 
 static int sym_asm_alignment(const struct symbol *sym)

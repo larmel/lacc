@@ -81,10 +81,29 @@ extern struct namespace
 void push_scope(struct namespace *);
 void pop_scope(struct namespace *);
 
+/* Retrieve a symbol based on identifier name, or NULL of not registered or
+ * visible from current scope.
+ */
 struct symbol *sym_lookup(struct namespace *, const char *);
-struct symbol *sym_add(struct namespace *, struct symbol);
+
+/* Add symbol to current scope, or resolve to or complete existing symbols when
+ * they occur repeatedly.
+ */
+struct symbol *sym_add(
+    struct namespace *ns,
+    const char *name,
+    const struct typetree *type,
+    enum symtype symtype,
+    enum linkage linkage);
+
+/* Create a symbol with the provided type and add it to current scope. Used to
+ * hold temporary values in expression evaluation.
+ */
 struct symbol *sym_temp(struct namespace *, const struct typetree *);
 
+/* Register compiler internal builtin symbols, that are assumed to exists by
+ * standard library headers.
+ */
 void register_builtin_types(struct namespace *);
 
 /* Output tentative definitions, symbols that have not been assigned a value in
