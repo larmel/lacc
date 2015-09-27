@@ -1,6 +1,6 @@
 #if _XOPEN_SOURCE < 600
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 600 /* strdup, isblank */
+#  define _XOPEN_SOURCE 600 /* isblank */
 #endif
 #include "error.h"
 #include "input.h"
@@ -63,7 +63,7 @@ static void include_file_internal(const char *name, int incurrent)
 {
     struct source source = {0};
 
-    source.name = strdup(name);
+    source.name = name;
 
     /* First check in current directory. */
     if (incurrent) {

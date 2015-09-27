@@ -1,7 +1,3 @@
-#if _XOPEN_SOURCE < 500
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 500 /* strdup */
-#endif
 #include "error.h"
 #include "eval.h"
 #include "type.h"
@@ -728,7 +724,7 @@ direct_declarator(struct typetree *base, const char **symbol)
             error("Unexpected identifier in abstract declarator.");
             exit(1);
         }
-        *symbol = strdup(ident.strval);
+        *symbol = ident.strval;
         break;
     case '(':
         consume('(');
