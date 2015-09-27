@@ -95,9 +95,6 @@ int main(int argc, char* argv[])
             }
         }
 
-        pop_scope(&ns_tag);
-        pop_scope(&ns_ident);
-
         if (output_mode == OUT_ASSEMBLY) {
             assemble_tentative_definitions(output);
             output_strings(output);
@@ -107,6 +104,9 @@ int main(int argc, char* argv[])
             output_symbols(stdout, &ns_ident);
             output_symbols(stdout, &ns_tag);
         }
+
+        pop_scope(&ns_tag);
+        pop_scope(&ns_ident);
     }
 
     return errors;

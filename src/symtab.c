@@ -11,12 +11,13 @@
 #include <string.h>
 
 void push_scope(struct namespace *ns) {
-    assert(ns);
     ns->current_depth++;
     if (!ns->scope) {
         ns->current_depth = 0;
     }
-    ns->scope = realloc(ns->scope, sizeof(*ns->scope) * (ns->current_depth+1));
+
+    ns->scope =
+        realloc(ns->scope, sizeof(*ns->scope) * (ns->current_depth + 1));
     memset(&ns->scope[ns->current_depth], 0x0, sizeof(struct scope));
 }
 
@@ -28,23 +29,24 @@ void pop_scope(struct namespace *ns) {
         memset(&ns->scope[ns->current_depth], 0x0, sizeof(struct scope));
         ns->current_depth--;
     }
+
     if (ns->current_depth == -1) {
+        int i;
+
         if (ns->scope) {
             free(ns->scope);
+            ns->scope = NULL;
         }
-        ns->scope = NULL;
+        if (ns->symbol) {
+            for (i = 0; i < ns->size; ++i) {
+                free(ns->symbol[i]);
+            }
+            free(ns->symbol);
+            ns->symbol = NULL;
+            ns->size = 0;
+            ns->cap = 0;
+        }
     }
-}
-
-const char *sym_name(const struct symbol *sym)
-{
-    if (sym->n) {
-        static char name[128];
-        snprintf(name, 127, "%s.%d", sym->name, sym->n);
-        return name;
-    }
-
-    return sym->name;
 }
 
 /* Create and add symbol to symbol table, but not to any scope. Symbol address
@@ -65,17 +67,6 @@ static int create_symbol(struct namespace *ns, struct symbol arg)
     return ns->size++;
 }
 
-/* Create a temporary identifier name. Use a fixed prefix '.' to all temporary 
- * variables, which will never collide with real symbols.
- */
-static char *unique_identifier_name(void)
-{
-    static int n;
-    char *c = malloc(16);
-    snprintf(c, 16, ".t%d", n++);
-    return c;
-}
-
 /* Add symbol to current scope, making it possible to look up. Name must be non-
  * NULL, i.e. immediate values do not belong to any scope.
  */
@@ -93,6 +84,28 @@ static struct symbol *register_in_scope(struct namespace *ns, int i)
     scope->size++;
 
     return ns->symbol[i];
+}
+
+/* Create a temporary identifier name. Use a fixed prefix '.' to all temporary 
+ * variables, which will never collide with real symbols.
+ */
+static char *unique_identifier_name(void)
+{
+    static int n;
+    char *c = malloc(16);
+    snprintf(c, 16, ".t%d", n++);
+    return c;
+}
+
+const char *sym_name(const struct symbol *sym)
+{
+    if (sym->n) {
+        static char name[128];
+        snprintf(name, 127, "%s.%d", sym->name, sym->n);
+        return name;
+    }
+
+    return sym->name;
 }
 
 /* Symbols can be declared multiple times, with incomplete or complete types.
