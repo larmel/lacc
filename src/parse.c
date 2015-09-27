@@ -575,7 +575,7 @@ static struct typetree *declaration_specifiers(int *stc)
             struct symbol *tag = sym_lookup(&ns_ident, tok.strval);
             if (tag && tag->symtype == SYM_TYPEDEF && !type) {
                 consume(IDENTIFIER);
-                type = calloc(1, sizeof(*type)); /* Leak! */
+                type = type_init_object();
                 *type = tag->type;
             } else {
                 done = 1;
@@ -627,7 +627,7 @@ static struct typetree *declaration_specifiers(int *stc)
                 (qual & 0x02) ? " volatile" : "");
         }
     } else if (spec) {
-        type = calloc(1, sizeof(*type));
+        type = type_init_object();
         *type = type_from_specifier(spec);
     } else {
         error("Missing type specifier.");
