@@ -120,27 +120,21 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
     int conflict = 1;
 
     if (type_equal(&sym->type, type)
-        && !(sym->type.type == FUNCTION && sym->symtype != SYM_DEFINITION))
+        && !(is_function(&sym->type) && sym->symtype != SYM_DEFINITION))
         return;
 
     switch (sym->type.type) {
-    case FUNCTION:
-        if (sym->type.type == type->type
-            && sym->type.flags == type->flags
-            && type_equal(sym->type.next, type->next))
-        {
+    case T_FUNCTION:
+        if (is_function(type) && type_equal(sym->type.next, type->next)) {
             conflict = 0;
             if (!sym->type.n || sym->type.n == type->n) {
                 sym->type.n = type->n;
                 sym->type.member = type->member;
-            } else
-                conflict = 1;
+            } else conflict = 1;
         }
         break;
-    case ARRAY:
-        if (sym->type.type == type->type
-            && type_equal(sym->type.next, type->next))
-        {
+    case T_ARRAY:
+        if (is_array(type) && type_equal(sym->type.next, type->next)) {
             conflict = 0;
             if (!sym->type.size) {
                 assert(type->size);

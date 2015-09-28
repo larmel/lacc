@@ -48,7 +48,7 @@ static char *refer(const struct var var)
 {
     static char str[256];
     if (var.kind == IMMEDIATE) {
-        assert(var.type->type != ARRAY);
+        assert(!is_array(var.type));
         if (is_pointer(var.type) && var.string) {
             if (var.offset) {
                 sprintf(str, "$%s%s%d", var.string,
@@ -69,7 +69,7 @@ static char *refer(const struct var var)
                     sym_name(var.symbol),
                     (var.offset > 0) ? "+" : "",
                     var.offset);
-            } else if (var.symbol->type.type == FUNCTION) {
+            } else if (is_function(&var.symbol->type)) {
                 sprintf(str, "$%s", var.symbol->name);
             } else {
                 sprintf(str, "%s(%%rip)", sym_name(var.symbol));
@@ -156,8 +156,7 @@ static void load_address(FILE *s, struct var v, enum reg r)
     if (v.kind == DIRECT) {
         fprintf(s, "\t%s\t%s, %%%s\t# load &%s\n",
             ((v.symbol->linkage != LINK_NONE && !v.offset &&
-                (v.type->type == ARRAY || v.type->type == FUNCTION)) ?
-                "movq" : "leaq"),
+                (is_array(v.type) || is_function(v.type))) ? "movq" : "leaq"),
             refer(v), REG(r, 8), v.symbol->name);
     } else {
         assert(v.kind == DEREF);
@@ -176,7 +175,7 @@ static void store(FILE *s, enum reg r, struct var v)
     assert(is_scalar(v.type) || size_of(v.type) <= 8);
 
     if (v.kind == DIRECT) {
-        assert(v.type->type != ARRAY);
+        assert(!is_array(v.type));
         fprintf(s, "\tmov%c\t%%%s, %s\t# store %s\n",
             SUFFIX(v.type), REG(r, size_of(v.type)), refer(v), v.symbol->name);
     } else {
@@ -269,7 +268,7 @@ static void call(
         /*dump_classification(eightbyte, args[i].type);*/
 
         if (*eightbyte != PC_MEMORY) {
-            if (args[i].type->type == OBJECT) {
+            if (is_struct_or_union(args[i].type)) {
                 int chunks = N_EIGHTBYTES(args[i].type),
                     size = size_of(args[i].type),
                     j;
@@ -693,7 +692,7 @@ static void asm_op(FILE *stream, const struct op *op)
          * handled before this. At no other point should array types be seen in
          * assembly backend. We handle these assignments with memcpy, other
          * compilers load the string into register as ascii numbers. */
-        if (op->a.type->type == ARRAY || op->b.type->type == ARRAY) {
+        if (is_array(op->a.type) || is_array(op->b.type)) {
             struct var str = op->b;
             assert(type_equal(op->a.type, op->b.type));
             assert(op->a.kind == DIRECT);
@@ -968,7 +967,7 @@ static void tail_generic(
 {
     if (!block->jump[0] && !block->jump[1]) {
         if (*res != PC_NO_CLASS && block->has_return_value) {
-            assert(block->expr.type && block->expr.type->type != NONE);
+            assert(block->expr.type && !is_void(block->expr.type));
             ret(stream, block->expr, res);
         }
 
@@ -1031,7 +1030,8 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
     assert(val.kind == IMMEDIATE);
 
     switch (target.type->type) {
-    case INTEGER:
+    case T_SIGNED:
+    case T_UNSIGNED:
         switch (size_of(target.type)) {
         case 1:
             fprintf(stream, "\t.byte\t%d\n", val.value.i1);
@@ -1048,7 +1048,7 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
             break;
         }
         break;
-    case POINTER:
+    case T_POINTER:
         fprintf(stream, "\t.quad\t");
         if (val.string) {
             fprintf(stream, "%s\n", refer(val) + 1); /* Skip the leading '$' */
@@ -1056,7 +1056,7 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
             fprintf(stream, "%lu\n", val.value.u8);
         }
         break;
-    case ARRAY:
+    case T_ARRAY:
         if (val.string) {
             fprintf(stream, "\t.string\t\"");
             output_string(stream, val.string);
@@ -1146,7 +1146,7 @@ void assemble(FILE *stream, const struct decl *decl)
         assemble_data(stream, decl->head);
     }
     if (decl->fun) {
-        assert(decl->fun->type.type == FUNCTION);
+        assert(is_function(&decl->fun->type));
         asm_function(stream, decl);
     }
 }

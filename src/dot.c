@@ -32,7 +32,7 @@ static char *vartostr(const struct var var)
     switch (var.kind) {
     case IMMEDIATE:
         switch (var.type->type) {
-        case POINTER:
+        case T_POINTER:
             if (var.string) {
                 if (var.offset) {
                     sprintf(buffer, "$%s%s%d", var.string,
@@ -42,10 +42,11 @@ static char *vartostr(const struct var var)
                 }
                 break;
             }
-        case INTEGER:
+        case T_UNSIGNED:
+        case T_SIGNED:
             sprintf(buffer, "%ld", var.value.i8);
             break;
-        case ARRAY:
+        case T_ARRAY:
             sprintf(buffer, "\\\"%s\\\"", var.string);
             break;
         default:
@@ -111,7 +112,7 @@ static void foutputnode(
                     vartostr(op.a));
                 break;
             case IR_CALL:
-                if (op.a.type->type == NONE) {
+                if (is_void(op.a.type)) {
                     fprintf(stream, " | call %s",
                         vartostr(op.b));    
                 } else {

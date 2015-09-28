@@ -11,7 +11,7 @@ enum reg ret_int_reg[] = {AX, DX};
 static int has_unaligned_fields(const struct typetree *t)
 {
     int i;
-    if (t->type == OBJECT) {
+    if (is_struct_or_union(t)) {
         t = unwrapped(t);
         for (i = 0; i < t->n; ++i)
             if (t->member[i].offset % size_of(t->member[i].type))
@@ -38,22 +38,24 @@ static void flatten(enum param_class *l, const struct typetree *t, int offset)
     int i = offset / 8;
 
     switch (t->type) {
-    case REAL:
-    case INTEGER:
-    case POINTER:
+    case T_REAL:
+    case T_UNSIGNED:
+    case T_SIGNED:
+    case T_POINTER:
         /* All fields should be aligned, i.e. a type cannot span multiple eight
          * byte boundaries. */
         assert(size_of(t) <= 8 /*&& (offset + t->size) / 8 == idx*/);
 
-        l[i] = combine(l[i], t->type == REAL ? PC_SSE : PC_INTEGER);
+        l[i] = combine(l[i], t->type == T_REAL ? PC_SSE : PC_INTEGER);
         break;
-    case OBJECT:
+    case T_STRUCT:
+    case T_UNION:
         t = unwrapped(t);
         for (i = 0; i < t->n; ++i) {
             flatten(l, t->member[i].type, t->member[i].offset + offset);
         }
         break;
-    case ARRAY:
+    case T_ARRAY:
         internal_error("%s", "Not yet support for array parameters.");
         exit(1);
     default:
@@ -90,14 +92,14 @@ enum param_class *classify(const struct typetree *t)
 {
     enum param_class *eb = calloc(1, sizeof(*eb));
 
-    assert( t->type != FUNCTION );
-    assert( t->type != NONE );
+    assert(t->type != T_FUNCTION);
+    assert(t->type != T_VOID);
 
     if (is_integer(t) || is_pointer(t)) {
         *eb = PC_INTEGER;
     } else if (N_EIGHTBYTES(t) > 4 || has_unaligned_fields(t)) {
         *eb = PC_MEMORY;
-    } else if (t->type == OBJECT) {
+    } else if (is_struct_or_union(t)) {
         int n = N_EIGHTBYTES(t);
 
         eb = realloc(eb, n * sizeof(*eb));
@@ -135,7 +137,7 @@ classify_call(const struct typetree **args,
         params[i] = classify(args[i]);
     }
 
-    if (ret->type != NONE) {
+    if (ret->type != T_VOID) {
         res = classify(ret);
 
         /* When return value is MEMORY, pass a pointer to stack as hidden first
@@ -176,7 +178,7 @@ classify_signature(const struct typetree *func, enum param_class **out)
     enum param_class **params;
     const struct typetree **args;
 
-    assert( func->type == FUNCTION );
+    assert(is_function(func));
 
     args = calloc(func->n, sizeof(*args));
     for (i = 0; i < func->n; ++i) {

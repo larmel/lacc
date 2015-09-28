@@ -10,17 +10,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-static struct typetree V0 = { NONE };
-static struct typetree I1 = { INTEGER, 1 };
-static struct typetree I2 = { INTEGER, 2 };
-static struct typetree I4 = { INTEGER, 4 };
-static struct typetree I8 = { INTEGER, 8 };
-static struct typetree U1 = { INTEGER, 1, 0x00, 0x01 };
-static struct typetree U2 = { INTEGER, 2, 0x00, 0x01 };
-static struct typetree U4 = { INTEGER, 4, 0x00, 0x01 };
-static struct typetree U8 = { INTEGER, 8, 0x00, 0x01 };
-static struct typetree F4 = { REAL, 4 };
-static struct typetree F8 = { REAL, 8 };
+static struct typetree V0 = { T_VOID };
+static struct typetree I1 = { T_SIGNED, 1 };
+static struct typetree I2 = { T_SIGNED, 2 };
+static struct typetree I4 = { T_SIGNED, 4 };
+static struct typetree I8 = { T_SIGNED, 8 };
+static struct typetree U1 = { T_UNSIGNED, 1 };
+static struct typetree U2 = { T_UNSIGNED, 2 };
+static struct typetree U4 = { T_UNSIGNED, 4 };
+static struct typetree U8 = { T_UNSIGNED, 8 };
+static struct typetree F4 = { T_REAL, 4 };
+static struct typetree F8 = { T_REAL, 8 };
 
 struct typetree type_from_specifier(unsigned short spec)
 {
@@ -84,6 +84,12 @@ static void cleanup(void)
         t = type_registry[i];
         free(t);
     }
+
+    if (type_registry) {
+        free(type_registry);
+        type_registry = NULL;
+        length = cap = 0;
+    }
 }
 
 static struct typetree *alloctype(struct typetree args)
@@ -116,7 +122,7 @@ void type_add_member(
 
 struct typetree *type_init_integer(int width)
 {
-    struct typetree arg = { INTEGER };
+    struct typetree arg = { T_SIGNED };
     arg.size = width;
     assert(width == 1 || width == 2 || width == 4 || width == 8);
 
@@ -125,7 +131,7 @@ struct typetree *type_init_integer(int width)
 
 struct typetree *type_init_unsigned(int width)
 {
-    struct typetree arg = { INTEGER, 0, 0x01 };
+    struct typetree arg = { T_SIGNED, 0, 0x01 };
     arg.size = width;
     assert(width == 1 || width == 2 || width == 4 || width == 8);
 
@@ -134,7 +140,7 @@ struct typetree *type_init_unsigned(int width)
 
 struct typetree *type_init_pointer(const struct typetree *to)
 {
-    struct typetree arg = { POINTER, 8 };
+    struct typetree arg = { T_POINTER, 8 };
     arg.next = to;
 
     return alloctype(arg);
@@ -142,7 +148,7 @@ struct typetree *type_init_pointer(const struct typetree *to)
 
 struct typetree *type_init_array(const struct typetree *child, int n)
 {
-    struct typetree arg = { ARRAY };
+    struct typetree arg = { T_ARRAY };
     arg.size = n * child->size;
     arg.next = child;
 
@@ -151,21 +157,21 @@ struct typetree *type_init_array(const struct typetree *child, int n)
 
 struct typetree *type_init_function(void)
 {
-    struct typetree arg = { FUNCTION };
+    struct typetree arg = { T_FUNCTION };
 
     return alloctype(arg);
 }
 
 struct typetree *type_init_object(void)
 {
-    struct typetree arg = { OBJECT };
+    struct typetree arg = { T_STRUCT };
 
     return alloctype(arg);
 }
 
 struct typetree *type_init_void(void)
 {
-    struct typetree arg = { NONE };
+    struct typetree arg = { T_VOID };
 
     return alloctype(arg);
 }
@@ -180,18 +186,19 @@ void type_align_struct_members(struct typetree *type)
     int i = 0, m = 1;
 
     assert(!is_tagged(type));
-    assert(type->type == OBJECT && type->n);
+    assert(type->type == T_STRUCT && type->n);
 
     for ( ; i < type->n; ++i) {
         struct member *field = &type->member[i];
         int alignment = field->type->size;
 
         switch (field->type->type) {
-        case ARRAY:
+        case T_ARRAY:
             alignment = field->type->next->size;
-        case INTEGER:
-        case REAL:
-        case POINTER:
+        case T_SIGNED:
+        case T_UNSIGNED:
+        case T_REAL:
+        case T_POINTER:
             if (type->size % alignment) {
                 type->size += alignment - (type->size % alignment);
             }
@@ -222,7 +229,7 @@ struct typetree *type_tagged_copy(const struct typetree *type, const char *name)
     struct typetree *tag;
 
     assert(!is_tagged(type));
-    assert(type->type == OBJECT);
+    assert(is_struct_or_union(type));
 
     tag = type_init_object();
     tag->tag_name = name;
@@ -357,15 +364,14 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
 
     if (is_tagged(tree)) {
         w += snprintf(s + w, size - w, "%s %s",
-            (tree->flags & 0x04) ? "union" : "struct", tree->tag_name);
-        assert( tree->type == OBJECT );
+            (is_union(tree)) ? "union" : "struct", tree->tag_name);
         return w;
     }
 
-    if (is_unsigned(tree))  w += snprintf(s + w, size - w, "unsigned ");
-
     switch (tree->type) {
-    case INTEGER:
+    case T_UNSIGNED:
+        w += snprintf(s + w, size - w, "unsigned ");
+    case T_SIGNED:
         switch (tree->size) {
         case 1:
             w += snprintf(s + w, size - w, "char");
@@ -381,7 +387,7 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
             break;
         }
         break;
-    case REAL:
+    case T_REAL:
         switch (tree->size) {
         case 4:
             w += snprintf(s + w, size - w, "float");
@@ -391,14 +397,14 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
             break;
         }
         break;
-    case NONE:
+    case T_VOID:
         w += snprintf(s + w, size - w, "void");
         break;
-    case POINTER:
+    case T_POINTER:
         w += snprintf(s + w, size - w, "* ");
         w += snprinttype(tree->next, s + w, size - w);
         break;
-    case FUNCTION:
+    case T_FUNCTION:
         w += snprintf(s + w, size - w, "(");
         for (i = 0; i < tree->n; ++i) {
             w += snprinttype(tree->member[i].type, s + w, size - w);
@@ -406,10 +412,13 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
                 w += snprintf(s + w, size - w, ", ");
             }
         }
+        if (is_vararg(tree)) {
+            w += snprintf(s + w, size - w, ", ...");
+        }
         w += snprintf(s + w, size - w, ") -> ");
         w += snprinttype(tree->next, s + w, size - w);
         break;
-    case ARRAY:
+    case T_ARRAY:
         if (tree->size > 0) {
             w += snprintf(s + w, size - w, "[%u] ",
                 tree->size / size_of(tree->next));
@@ -418,7 +427,8 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
         }
         w += snprinttype(tree->next, s + w, size - w);
         break;
-    case OBJECT:
+    case T_STRUCT:
+    case T_UNION:
         w += snprintf(s + w, size - w, "{");
         for (i = 0; i < tree->n; ++i) {
             w += snprintf(s + w, size - w, ".%s::", tree->member[i].name);
@@ -429,8 +439,6 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
             }
         }
         w += snprintf(s + w, size - w, "}");
-        break;
-    default:
         break;
     }
 

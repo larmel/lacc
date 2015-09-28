@@ -2,34 +2,38 @@
 #define TYPE_H
 
 #include <stdlib.h>
+#include <string.h>
 
 /* Internal representation of a type.
  */
 struct typetree
 {
-    enum {
-        INTEGER,
-        REAL,
-        POINTER,
-        FUNCTION,
-        ARRAY,
-        OBJECT,
-        NONE
+    enum type {
+        T_SIGNED,
+        T_UNSIGNED,
+        T_REAL,
+        T_POINTER,
+        T_FUNCTION,
+        T_ARRAY,
+        T_STRUCT,
+        T_UNION,
+        T_VOID
     } type;
 
-    /* Total storage size in bytes, returned for sizeof */
+    /* Total storage size in bytes, returned for sizeof. */
     int size;
 
-    /* Bitfield representing const and volatile qualifiers. */
-    unsigned short qualifier;
+    enum qualifier {
+        Q_NONE = 0,
+        Q_CONST = 1,
+        Q_VOLATILE = 2,
+        Q_CONST_VOLATILE = Q_CONST | Q_VOLATILE
+    } qualifier;
 
-    /* Bitfield representing union, vararg, and unsigned. */
-    unsigned short flags;
-
-    /* Number of function parameters or object members */
+    /* Number of members. */
     int n;
 
-    /* Function parameters or struct/union members. */
+    /* Function parameters, or struct/union members. */
     struct member {
         const struct typetree *type;
         const char *name;
@@ -45,27 +49,35 @@ struct typetree
     const char *tag_name;
 };
 
-/* 6.2.5 Types. Types are separated into object types and function types. Define
- * macros that mimic semantics given in standardese. */
-#define is_object(t) ((t)->type != FUNCTION)
-#define is_struct_or_union(t) ((t)->type == OBJECT)
-#define is_integer(t) ((t)->type == INTEGER)
-#define is_pointer(t) ((t)->type == POINTER)
-#define is_arithmetic(t) (is_integer(t) || (t)->type == REAL)
-#define is_scalar(t) (is_arithmetic(t) || (t)->type == POINTER)
-#define is_aggregate(t) ((t)->type == ARRAY || is_object(t))
-#define is_void(t) ((t)->type == NONE)
+/* Reflect semantics given in standardese.
+ */
+#define is_object(t) (!is_function(t))
+#define is_function(t) ((t)->type == T_FUNCTION)
+#define is_struct_or_union(t) ((t)->type == T_STRUCT || (t)->type == T_UNION)
+#define is_integer(t) ((t)->type == T_SIGNED || is_unsigned(t))
+#define is_unsigned(t) ((t)->type == T_UNSIGNED)
+#define is_pointer(t) ((t)->type == T_POINTER)
+#define is_arithmetic(t) (is_integer(t) || (t)->type == T_REAL)
+#define is_scalar(t) (is_arithmetic(t) || (t)->type == T_POINTER)
+#define is_aggregate(t) ((t)->type == T_ARRAY || ((t)->type == T_STRUCT))
+#define is_void(t) ((t)->type == T_VOID)
+#define is_array(t) ((t)->type == T_ARRAY)
+#define is_struct(t) ((t)->type == T_STRUCT)
+#define is_union(t) ((t)->type == T_UNION)
+#define is_const(t) ((t)->qualifier & Q_CONST)
+#define is_volatile(t) ((t)->qualifier & Q_VOLATILE)
 
-#define is_const(t) ((t)->qualifier & 0x01)
-#define is_volatile(t) ((t)->qualifier & 0x02)
-#define is_unsigned(t) ((t)->flags & 0x01)
-#define is_vararg(t) ((t)->flags & 0x02)
-#define is_union(t) (((t)->flags & 0x04) != 0)
+/* A function takes variable arguments if last parameter is '...'. Store this
+ * with a sentinel -1 value as offset of the first argument.
+ */
+#define is_vararg(t) \
+    (is_function(t) && (t)->n && (t)->member[0].offset == -1)
 
-#define is_tagged(t) ((t)->type == OBJECT && (t)->next)
+/* Tag indirections on struct and union to avoid loops in type trees.
+ */
+#define is_tagged(t) (is_struct_or_union(t) && (t)->next)
 
 struct typetree type_from_specifier(unsigned short spec);
-
 struct typetree *type_init_integer(int size);
 struct typetree *type_init_unsigned(int size);
 struct typetree *type_init_pointer(const struct typetree *to);

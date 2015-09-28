@@ -11,7 +11,7 @@ extern struct decl *decl;
 static int is_nullptr(struct var val)
 {
     return 
-        (val.type->type == INTEGER || val.type->type == POINTER) &&
+        (is_integer(val.type) || is_pointer(val.type)) &&
         (val.kind == IMMEDIATE && !val.value.i4);
 }
 
@@ -196,8 +196,8 @@ static struct var eval_expr_eq(struct block *block, struct var l, struct var r)
          * pointer to object type and void *, pointer and null constant. */
         if (is_pointer(r.type)) {
             if (!is_compatible(l.type, r.type) &&
-                !(l.type->next->type == NONE && size_of(r.type->next)) &&
-                !(r.type->next->type == NONE && size_of(l.type->next)))
+                !(is_void(l.type->next) && size_of(r.type->next)) &&
+                !(is_void(r.type->next) && size_of(l.type->next)))
             {
                 error("Comparison between incompatible types '%t' and '%t'.",
                     l.type, r.type);
@@ -378,7 +378,7 @@ static struct var array_or_func_to_addr(struct block *block, struct var var)
 {
     /* Convert IMMEDIATE string values of type char [n] to char *, adding the
      * string to strings table and generating a unique label. */
-    if (var.string && var.type->type == ARRAY) {
+    if (var.string && is_array(var.type)) {
         assert(var.kind == IMMEDIATE);
         var.string = strlabel(var.string);
         var.type = type_init_pointer(var.type->next);
@@ -388,13 +388,13 @@ static struct var array_or_func_to_addr(struct block *block, struct var var)
      * before doing regular address evaluation, this way backend does not need
      * to handle address of array in any special way. The memory location
      * represented by var can also be seen as the first element. */
-    else if (var.type->type == ARRAY) {
+    else if (is_array(var.type)) {
         var.type = var.type->next;
         var = eval_addr(block, var);
     }
 
     /* It is unclear what this does, never tested function pointers :p */
-    else if (var.type->type == FUNCTION) {
+    else if (is_function(var.type)) {
         var = eval_addr(block, var);
     }
 
@@ -479,7 +479,7 @@ struct var eval_addr(struct block *block, struct var var)
         }
         /* Address of string literal can be done without evaluation, just decay
          * the variable to pointer. */
-        if (var.type->type == ARRAY) {
+        if (is_array(var.type)) {
             var = array_or_func_to_addr(block, var);
             assert(var.kind == IMMEDIATE);
             break;
@@ -552,11 +552,11 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
         exit(1);
     }
 
-    if (target.type->type != ARRAY) {
+    if (!is_array(target.type)) {
         var = array_or_func_to_addr(block, var);
     }
 
-    if (target.type->type == ARRAY) {
+    if (is_array(target.type)) {
         /* Special case char [] = string in initializers. */
         if (!type_equal(target.type, var.type) || var.kind != IMMEDIATE) {
             error("Invalid initializer assignment, was %s :: %t = %t.",
@@ -618,8 +618,8 @@ struct var eval_call(struct block *block, struct var var)
     struct op op;
     struct var res;
 
-    assert(var.type->type == FUNCTION);
-    if (var.type->next->type == NONE) {
+    assert(is_function(var.type));
+    if (is_void(var.type->next)) {
         res = var_void();
     } else {
         res = create_var(var.type->next);
@@ -634,7 +634,7 @@ struct var eval_call(struct block *block, struct var var)
 
 struct var eval_return(struct block *block, const struct typetree *type)
 {
-    assert(type->type != NONE);
+    assert(!is_void(type));
 
     if (!type_equal(type, block->expr.type)) {
         block->expr = eval_assign(block, create_var(type), block->expr);
@@ -646,7 +646,7 @@ struct var eval_return(struct block *block, const struct typetree *type)
 
 struct var eval_cast(struct block *b, struct var v, const struct typetree *t)
 {
-    if (t->type == NONE) {
+    if (is_void(t)) {
         v = var_void();
     } else if (is_scalar(v.type) && is_scalar(t)) {
         if (size_of(v.type) == size_of(t)) {
@@ -681,13 +681,13 @@ struct var eval_conditional(struct var a, struct block *b, struct block *c)
     if (is_arithmetic(t1) && is_arithmetic(t2)) {
         type = usual_arithmetic_conversion(t1, t2);
     } else if (
-        (t1->type == NONE && t2->type == NONE) ||
-        (t1->type == OBJECT && type_equal(t1, t2)) ||
-        (t1->type == POINTER && t2->type == POINTER && is_compatible(t1, t2)) ||
-        (t1->type == POINTER && is_nullptr(c->expr)))
+        (is_void(t1) && is_void(t2)) ||
+        (is_struct_or_union(t1) && type_equal(t1, t2)) ||
+        (is_pointer(t1) && is_pointer(t2) && is_compatible(t1, t2)) ||
+        (is_pointer(t1) && is_nullptr(c->expr)))
     {
         type = t1;
-    } else if (t2->type == POINTER && is_nullptr(b->expr)) {
+    } else if (is_pointer(t2) && is_nullptr(b->expr)) {
         type = t2;
     } else {
         /* The rules are more complex than this, revisit later. */

@@ -165,7 +165,7 @@ static struct block *declaration(struct block *parent)
             break;
         case '{': {
             int i;
-            if (sym->type.type != FUNCTION || sym->depth) {
+            if (!is_function(&sym->type) || sym->depth) {
                 error("Invalid function definition.");
                 exit(1);
             }
@@ -219,7 +219,8 @@ static struct block *initializer(struct block *block, struct var target)
         consume('{');
         target.lvalue = 1;
         switch (type->type) {
-        case OBJECT:
+        case T_STRUCT:
+        case T_UNION:
             for (; i < type->n; ++i) {
                 target.type = type->member[i].type;
                 target.offset = base + type->member[i].offset;
@@ -237,7 +238,7 @@ static struct block *initializer(struct block *block, struct var target)
                 zero_initialize(block, target);
             }
             break;
-        case ARRAY:
+        case T_ARRAY:
             target.type = type->next;
             for (; !type->size || i < type->size / size_of(type->next); ++i) {
                 target.offset = base + i * size_of(type->next);
@@ -251,7 +252,7 @@ static struct block *initializer(struct block *block, struct var target)
             }
             if (!type->size) {
                 assert(!target.symbol->type.size);
-                assert(target.symbol->type.type == ARRAY);
+                assert(is_array(&target.symbol->type));
 
                 /* Incomplete array type can only be in the root level of target
                  * type tree, overwrite type directly in symbol. */
@@ -265,7 +266,7 @@ static struct block *initializer(struct block *block, struct var target)
             }
             break;
         default:
-            error("Block initializer only apply to array or object type.");
+            error("Block initializer only apply to aggregate or union type.");
             exit(1);
         }
         target.lvalue = 0;
@@ -279,7 +280,7 @@ static struct block *initializer(struct block *block, struct var target)
         if (target.kind == DIRECT && !target.type->size) {
             assert(!target.offset);
             assert(block->expr.kind == IMMEDIATE);
-            assert(block->expr.type->type == ARRAY && block->expr.string);
+            assert(is_array(block->expr.type) && block->expr.string);
 
             /* Complete type based on string literal. */
             ((struct symbol *) target.symbol)->type.size =
@@ -304,7 +305,8 @@ static void zero_initialize(struct block *block, struct var target)
     assert(target.kind == DIRECT);
 
     switch (target.type->type) {
-    case OBJECT:
+    case T_STRUCT:
+    case T_UNION:
         target.type = unwrapped(target.type);
         var = target;
         for (i = 0; i < var.type->n; ++i) {
@@ -313,22 +315,23 @@ static void zero_initialize(struct block *block, struct var target)
             zero_initialize(block, target);
         }
         break;
-    case ARRAY:
+    case T_ARRAY:
         assert(target.type->size);
         var = target;
         target.type = target.type->next;
-        assert(target.type->type != OBJECT || !target.type->next);
+        assert(is_struct(target.type) || !target.type->next);
         for (i = 0; i < var.type->size / var.type->next->size; ++i) {
             target.offset = var.offset + i * var.type->next->size;
             zero_initialize(block, target);
         }
         break;
-    case POINTER:
+    case T_POINTER:
         var = var_zero(8);
         var.type = type_init_pointer(type_init_void());
         eval_assign(block, target, var);
         break;
-    case INTEGER:
+    case T_UNSIGNED:
+    case T_SIGNED:
         var = var_zero(target.type->size);
         eval_assign(block, target, var);
         break;
@@ -389,7 +392,7 @@ static struct typetree *struct_or_union_declaration(void)
     struct symbol *sym = NULL;
     struct typetree *type = NULL;
 
-    int kind = next().token;
+    enum type kind = (next().token == STRUCT) ? T_STRUCT : T_UNION;
     int size;
 
     if (peek().token == IDENTIFIER) {
@@ -397,13 +400,14 @@ static struct typetree *struct_or_union_declaration(void)
         sym = sym_lookup(&ns_tag, name);
         if (!sym) {
             type = type_init_object();
+            type->type = kind;
             sym = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
         } else if (is_integer(&sym->type)) {
             error("Tag '%s' was previously declared as enum.", sym->name);
             exit(1);
-        } else if (is_union(&sym->type) != (kind == UNION)) {
+        } else if (sym->type.type != kind) {
             error("Tag '%s' was previously declared as %s.",
-                sym->name, (kind == UNION) ? "struct" : "union");
+                sym->name, (sym->type.type == T_STRUCT) ? "struct" : "union");
             exit(1);
         }
 
@@ -412,7 +416,7 @@ static struct typetree *struct_or_union_declaration(void)
          * existing type information from symbol table. */
         type = &sym->type;
         if (peek().token == '{' && type->size) {
-            error("Redefiniton of object '%s'.", sym->name);
+            error("Redefiniton of '%s'.", sym->name);
             exit(1);
         }
     }
@@ -422,28 +426,25 @@ static struct typetree *struct_or_union_declaration(void)
 
         /* Anonymous structure; allocate a new standalone type, not part of any
          * symbol. */
-        if (!type)
+        if (!type) {
             type = type_init_object();
+            type->type = kind;
+        }
 
         size = struct_declaration_list(type);
         consume('}');
 
-        if (kind == STRUCT) {
+        if (kind == T_STRUCT) {
             type_align_struct_members(type);
         } else {
-            assert(kind == UNION);
+            assert(kind == T_UNION);
             type->size = size;
         }
     }
 
-    /* Magic value in type object to separate between struct and union. */
-    if (kind == UNION) {
-        type->flags |= 0x04;
-    }
-
     /* Return to the caller a copy of the root node, which can be overwritten
      * with new type qualifiers without altering the tag registration. */
-    return (sym) ? type_tagged_copy(type, sym->name) : type;
+    return (sym) ? type_tagged_copy(&sym->type, sym->name) : type;
 }
 
 /* Parse enumerator list.
@@ -530,9 +531,9 @@ static struct typetree *declaration_specifiers(int *stc)
     int done = 0;
 
     /* Use a compact bit representation to hold state about declaration 
-     * specifiers and qualifiers. Initialize storage class to sentinel value. */
+     * specifiers. Initialize storage class to sentinel value. */
     unsigned short spec = 0x0000;
-    unsigned short qual = 0x0000;
+    enum qualifier qual = Q_NONE;
     if (stc)       *stc =    '$';
 
     #define set_specifier(d) \
@@ -565,8 +566,8 @@ static struct typetree *declaration_specifiers(int *stc)
             break;
         case FLOAT:     set_specifier(0x100); break;
         case DOUBLE:    set_specifier(0x200); break;
-        case CONST:     set_qualifier(0x01); break;
-        case VOLATILE:  set_qualifier(0x02); break;
+        case CONST:     set_qualifier(Q_CONST); break;
+        case VOLATILE:  set_qualifier(Q_VOLATILE); break;
         case IDENTIFIER: {
             struct symbol *tag = sym_lookup(&ns_ident, tok.strval);
             if (tag && tag->symtype == SYM_TYPEDEF && !type) {
@@ -619,8 +620,8 @@ static struct typetree *declaration_specifiers(int *stc)
     if (type) {
         if (qual & type->qualifier) {
             error("Duplicate type qualifier:%s%s.",
-                (qual & 0x01) ? " const" : "",
-                (qual & 0x02) ? " volatile" : "");
+                (qual & Q_CONST) ? " const" : "",
+                (qual & Q_VOLATILE) ? " volatile" : "");
         }
     } else if (spec) {
         type = type_init_object();
@@ -655,9 +656,9 @@ static struct typetree *pointer(const struct typetree *base)
     consume('*');
     while (1) {
         if (peek().token == CONST) {
-            set_qualifier(0x01);
+            set_qualifier(Q_CONST);
         } else if (peek().token == VOLATILE) {
-            set_qualifier(0x02);
+            set_qualifier(Q_VOLATILE);
         } else break;
         next();
     }
@@ -683,7 +684,7 @@ direct_declarator_array(struct typetree *base)
         if (peek().token != ']') {
             struct var expr = constant_expression();
             assert(expr.kind == IMMEDIATE);
-            if (expr.type->type != INTEGER || expr.value.i4 < 1) {
+            if (!is_integer(expr.type) || expr.value.i4 < 1) {
                 error("Array dimension must be a natural number.");
                 exit(1);
             }
@@ -767,31 +768,28 @@ direct_declarator(struct typetree *base, const char **symbol)
  */
 static struct typetree *parameter_list(const struct typetree *base)
 {
-    struct typetree *type;
-
-    type = type_init_function();
-    type->next = base;
+    struct typetree *func = type_init_function();
+    func->next = base;
 
     while (peek().token != ')') {
-        const char *name;
-        struct typetree *decl;
+        const char *name = NULL;
+        struct typetree *type;
 
-        name = NULL;
-        decl = declaration_specifiers(NULL);
-        decl = declarator(decl, &name);
-        if (decl->type == NONE) {
-            if (type->n) {
+        type = declaration_specifiers(NULL);
+        type = declarator(type, &name);
+        if (is_void(type)) {
+            if (func->n) {
                 error("Incomplete type in parameter list.");
             }
             break;
         }
 
-        if (decl->type == ARRAY) {
-            decl = type_init_pointer(decl->next);
+        /* Array parameter reduces to pointer. */
+        if (is_array(type)) {
+            type = type_init_pointer(type->next);
         }
 
-        type_add_member(type, decl, name);
-
+        type_add_member(func, type, name);
         if (peek().token != ',') {
             break;
         }
@@ -802,12 +800,14 @@ static struct typetree *parameter_list(const struct typetree *base)
             exit(1);
         } else if (peek().token == DOTS) {
             consume(DOTS);
-            type->flags |= 0x02;
+            assert(func->n);
+            func->member[0].offset = -1;
+            assert(is_vararg(func));
             break;
         }
     }
 
-    return type;
+    return func;
 }
 
 /* Treat statements and declarations equally, allowing declarations in between
@@ -885,11 +885,11 @@ static struct block *statement(struct block *parent)
 
     #define is_immediate_true(e) \
         (e).kind == IMMEDIATE && \
-        (e).type->type == INTEGER && (e).value.i4
+        is_integer((e).type) && (e).value.i4
 
     #define is_immediate_false(e) \
         (e).kind == IMMEDIATE && \
-        (e).type->type == INTEGER && !(e).value.i4
+        is_integer((e).type) && !(e).value.i4
 
     #define set_break_target(brk) \
         old_break_target = break_target; \
@@ -1607,7 +1607,7 @@ static struct block *unary_expression(struct block *block)
             tail = unary_expression(head);
             type = (struct typetree *) tail->expr.type;
         }
-        if (type->type == FUNCTION) {
+        if (is_function(type)) {
             error("Cannot apply 'sizeof' to function type.");
         }
         if (!size_of(type)) {
@@ -1665,12 +1665,12 @@ static struct block *postfix_expression(struct block *block)
             break;
         case '(':
             /* Evaluation function call. */
-            if (root.type->type != FUNCTION) {
+            if (!is_function(root.type)) {
                 error("Calling non-function symbol.");
                 exit(1);
             }
             consume('(');
-            arg = malloc(sizeof(struct var) * root.type->n);
+            arg = calloc(root.type->n, sizeof(struct var));
             for (i = 0; i < root.type->n; ++i) {
                 if (peek().token == ')') {
                     error("Too few arguments to %s, expected %d but got %d.",
@@ -1714,10 +1714,7 @@ static struct block *postfix_expression(struct block *block)
         case ARROW:
             consume(ARROW);
             tok = consume(IDENTIFIER);
-            if (!is_pointer(root.type) || root.type->next->type != OBJECT) {
-                error("Cannot access field of non-object type.");
-                exit(1);
-            } else {
+            if (is_pointer(root.type) && is_struct_or_union(root.type->next)) {
                 field = find_type_member(type_deref(root.type), tok.strval);
                 if (!field) {
                     error("Invalid field access, no member named '%s'.",
@@ -1730,6 +1727,9 @@ static struct block *postfix_expression(struct block *block)
                 root.type = type_init_pointer(field->type);
                 root = eval_deref(block, root);
                 root.offset = field->offset;
+            } else {
+                error("Invalid field access.");
+                exit(1);
             }
             break;
         case INCREMENT:
