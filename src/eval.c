@@ -283,6 +283,57 @@ static struct var eval_expr_cmp(
     return evaluate(block, e ? IR_OP_GE : IR_OP_GT, type_init_integer(4), l, r);
 }
 
+static struct var eval_bitwise_or(
+    struct block *block,
+    struct var l,
+    struct var r)
+{
+    if (!is_integer(l.type) || !is_integer(r.type)) {
+        error("Operands to bitwise or must have integer type.");
+        exit(1);
+    }
+
+    return
+        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+            ? var_int(l.value.i4 | r.value.i4)
+            : evaluate(block, IR_OP_OR,
+                usual_arithmetic_conversion(l.type, r.type), l, r);
+}
+
+static struct var eval_bitwise_xor(
+    struct block *block,
+    struct var l,
+    struct var r)
+{
+    if (!is_integer(l.type) || !is_integer(r.type)) {
+        error("Operands to bitwise xor must have integer type.");
+        exit(1);
+    }
+
+    return
+        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+            ? var_int(l.value.i4 ^ r.value.i4)
+            : evaluate(block, IR_OP_XOR,
+                usual_arithmetic_conversion(l.type, r.type), l, r);
+}
+
+static struct var eval_bitwise_and(
+    struct block *block,
+    struct var l,
+    struct var r)
+{
+    if (!is_integer(l.type) || !is_integer(r.type)) {
+        error("Operands to bitwise xor must have integer type.");
+        exit(1);
+    }
+
+    return
+        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+            ? var_int(l.value.i4 & r.value.i4)
+            : evaluate(block, IR_OP_AND,
+                usual_arithmetic_conversion(l.type, r.type), l, r);
+}
+
 static struct var eval_shift_left(
     struct block *block,
     struct var l,
@@ -393,14 +444,13 @@ struct var eval_expr(struct block *block, enum optype op, ...)
         l = eval_expr_cmp(block, l, r, 0);
         break;
     case IR_OP_AND:
+        l = eval_bitwise_and(block, l, r);
+        break;
     case IR_OP_XOR:
+        l = eval_bitwise_xor(block, l, r);
+        break;
     case IR_OP_OR:
-        /* Ignore immediate evaluation. */
-        if (!is_integer(l.type) || !is_integer(r.type)) {
-            error("Operands must have integer type.");
-        }
-        l = evaluate(block, op,
-            usual_arithmetic_conversion(l.type, r.type), l, r);
+        l = eval_bitwise_or(block, l, r);
         break;
     case IR_OP_SHL:
         l = eval_shift_left(block, l, r);
