@@ -14,10 +14,15 @@ OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(SOURCES))
 # Bootstrap build subset of files
 BOOTSTRAP_SOURCES := \
 	src/abi.c \
+	src/dot.c \
 	src/error.c \
 	src/input.c \
+	src/ir.c \
 	src/lcc.c \
+	src/macro.c \
+	src/preprocess.c \
 	src/string.c \
+	src/symtab.c \
 	src/tokenize.c \
 	src/type.c \
 	src/util/memoize.c \

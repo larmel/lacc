@@ -119,9 +119,13 @@ const struct typetree *usual_arithmetic_conversion(
  */
 const struct typetree *promote_integer(const struct typetree *type);
 
+/* Alignment in bytes.
+ */
+int type_alignment(const struct typetree *type);
+
 void type_add_member(struct typetree *, const struct typetree *, const char *);
 
-void type_align_struct_members(struct typetree *type);
+int type_align_struct_members(struct typetree *type);
 
 /* Find type member of the given name, meaning struct or union field, or
  * function parameter. Returns NULL in the case no member is found.

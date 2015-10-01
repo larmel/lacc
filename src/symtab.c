@@ -276,14 +276,6 @@ void register_builtin_types(struct namespace *ns)
     sym_add(ns, "__builtin_va_arg", none, SYM_DECLARATION, LINK_NONE);
 }
 
-static int sym_asm_alignment(const struct symbol *sym)
-{
-    int w = size_of(&sym->type);
-    if (w >= 16) return 16;
-    if (w >= 8) return 8;
-    return 4;
-}
-
 void assemble_tentative_definitions(FILE *stream)
 {
     int i;
@@ -295,8 +287,8 @@ void assemble_tentative_definitions(FILE *stream)
             if (sym->linkage == LINK_INTERN) {
                 fprintf(stream, "\t.local %s\n", sym_name(sym));
             }
-            fprintf(stream, "\t.comm %s, %d, %d\n",
-                sym_name(sym), size_of(&sym->type), sym_asm_alignment(sym));
+            fprintf(stream, "\t.comm %s,%d,%d\n",
+                sym_name(sym), size_of(&sym->type), type_alignment(&sym->type));
         }
     }
 }

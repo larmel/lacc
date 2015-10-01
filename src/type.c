@@ -181,42 +181,58 @@ const struct typetree *type_init_string(size_t length)
     return type_init_array(&I1, length);
 }
 
-void type_align_struct_members(struct typetree *type)
+int type_alignment(const struct typetree *type)
 {
-    int i = 0, m = 1;
+    int i = 0, m = 0, d;
+    assert(is_object(type));
+
+    switch (type->type) {
+    case T_ARRAY:
+        return (type->size < 16) ? type_alignment(type->next) : 16;
+    case T_STRUCT:
+    case T_UNION:
+        type = unwrapped(type);
+        for (; i < type->n; ++i) {
+            d = type_alignment(type->member[i].type);
+            if (d > m) m = d;
+        }
+        assert(m);
+        return m;
+    default:
+        return type->size;
+    }
+}
+
+int type_align_struct_members(struct typetree *type)
+{
+    int i, alignment;
+    struct member *field;
 
     assert(!is_tagged(type));
-    assert(type->type == T_STRUCT && type->n);
+    assert(is_struct(type) && type->n);
 
-    for ( ; i < type->n; ++i) {
-        struct member *field = &type->member[i];
-        int alignment = field->type->size;
+    for (i = 0; i < type->n; ++i) {
+        field = &type->member[i];
+        alignment = type_alignment(field->type);
 
-        switch (field->type->type) {
-        case T_ARRAY:
-            alignment = field->type->next->size;
-        case T_SIGNED:
-        case T_UNSIGNED:
-        case T_REAL:
-        case T_POINTER:
-            if (type->size % alignment) {
-                type->size += alignment - (type->size % alignment);
-            }
-            if (alignment > m) {
-                m = alignment;
-            }
-            break;
-        default:
-            break;
+        /* Add padding until size matches alignment. */
+        if (type->size % alignment) {
+            type->size += alignment - (type->size % alignment);
         }
 
+        assert(!(type->size % alignment));
+
         field->offset = type->size;
-        type->size += field->type->size;
+        type->size += size_of(field->type);
     }
 
-    if (type->size % m) {
-        type->size += m - (type->size % m);
+    /* Total size must be a multiple of strongest alignment. */
+    alignment = type_alignment(type);
+    if (type->size % alignment) {
+        type->size += alignment - (type->size % alignment);
     }
+
+    return alignment;
 }
 
 const struct typetree *unwrapped(const struct typetree *type)

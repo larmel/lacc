@@ -1093,18 +1093,16 @@ static void assemble_data(FILE *stream, struct block *head)
             if (symbol->linkage == LINK_EXTERN) {
                 fprintf(stream, "\t.globl\t%s\n", sym_name(symbol));
             }
-            if (is_aggregate(&symbol->type)) {
-                fprintf(stream, "\t.align\t16\n");
-            }
+            fprintf(stream, "\t.align\t%d\n", type_alignment(&symbol->type));
             fprintf(stream, "%s:\n", sym_name(symbol));
         }
 
         /* Insert necessary padding bytes before emitting initializer, which
          * does not handle offsets in any way. */
         if (op->a.offset > initialized) {
-            fprintf(stream, "\t.zero\t%d\n",
-                op->a.offset - initialized);
+            fprintf(stream, "\t.zero\t%d\n", op->a.offset - initialized);
         }
+
         asm_immediate(stream, op->a, op->b);
         initialized = op->a.offset + size_of(op->a.type);
     }
