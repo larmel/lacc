@@ -43,8 +43,10 @@ static char *vartostr(const struct var var)
                 break;
             }
         case T_UNSIGNED:
+            sprintf(buffer, "%lu", var.imm.u);
+            break;
         case T_SIGNED:
-            sprintf(buffer, "%ld", var.value.i8);
+            sprintf(buffer, "%ld", var.imm.i);
             break;
         case T_ARRAY:
             sprintf(buffer, "\\\"%s\\\"", var.string);

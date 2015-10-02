@@ -468,7 +468,7 @@ static void enumerator_list(void)
             if (!is_integer(val.type)) {
                 error("Implicit conversion from non-integer type in enum.");
             }
-            enum_value = val.value.i4;
+            enum_value = val.imm.i;
         }
         sym = sym_add(&ns_ident, name, type, SYM_ENUM_VALUE, LINK_NONE);
         sym->enum_value = enum_value++;
@@ -684,11 +684,11 @@ direct_declarator_array(struct typetree *base)
         if (peek().token != ']') {
             struct var expr = constant_expression();
             assert(expr.kind == IMMEDIATE);
-            if (!is_integer(expr.type) || expr.value.i4 < 1) {
+            if (!is_integer(expr.type) || expr.imm.i < 1) {
                 error("Array dimension must be a natural number.");
                 exit(1);
             }
-            length = expr.value.i4;
+            length = expr.imm.i;
         }
         consume(']');
 
@@ -885,11 +885,11 @@ static struct block *statement(struct block *parent)
 
     #define is_immediate_true(e) \
         (e).kind == IMMEDIATE && \
-        is_integer((e).type) && (e).value.i4
+        is_integer((e).type) && (e).imm.i
 
     #define is_immediate_false(e) \
         (e).kind == IMMEDIATE && \
-        is_integer((e).type) && !(e).value.i4
+        is_integer((e).type) && !(e).imm.i
 
     #define set_break_target(brk) \
         old_break_target = break_target; \

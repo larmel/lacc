@@ -59,7 +59,7 @@ static char *refer(const struct var var)
         } else {
             assert(!var.offset);
             assert(is_scalar(var.type));
-            sprintf(str, "$%ld", var.value.i8);
+            sprintf(str, "$%ld", var.imm.u);
         }
     } else {
         assert(var.kind == DIRECT);
@@ -1026,34 +1026,27 @@ static void asm_block(
 
 static void asm_immediate(FILE *stream, struct var target, struct var val)
 {
+    const char *elem =
+        (target.type->size == 1) ? "byte" :
+        (target.type->size == 2) ? "short" :
+        (target.type->size == 4) ? "int" : "quad";
+
     assert(target.kind == DIRECT);
     assert(val.kind == IMMEDIATE);
 
     switch (target.type->type) {
     case T_SIGNED:
+        fprintf(stream, "\t.%s\t%ld\n", elem, val.imm.i);
+        break;
     case T_UNSIGNED:
-        switch (size_of(target.type)) {
-        case 1:
-            fprintf(stream, "\t.byte\t%d\n", val.value.i1);
-            break;
-        case 2:
-            fprintf(stream, "\t.short\t%d\n", val.value.i2);
-            break;
-        case 4:
-            fprintf(stream, "\t.int\t%d\n", val.value.i4);
-            break;
-        default:
-            assert(size_of(target.type) == 8);
-            fprintf(stream, "\t.quad\t%ld\n", val.value.i8);
-            break;
-        }
+        fprintf(stream, "\t.%s\t%lu\n", elem, val.imm.u);
         break;
     case T_POINTER:
         fprintf(stream, "\t.quad\t");
         if (val.string) {
             fprintf(stream, "%s\n", refer(val) + 1); /* Skip the leading '$' */
         } else {
-            fprintf(stream, "%lu\n", val.value.u8);
+            fprintf(stream, "%lu\n", val.imm.u);
         }
         break;
     case T_ARRAY:
@@ -1064,9 +1057,8 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
             break;
         }
     default:
-        internal_error("Invalid assignment of type '%s'.",
-            typetostr(target.type));
-        exit(1);
+        assert(0);
+        break;
     }
 }
 

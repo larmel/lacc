@@ -27,16 +27,10 @@ struct var
         IMMEDIATE
     } kind;
 
-    union immediate {
-        signed char i1;
-        signed short i2;
-        signed int i4;
-        signed long i8;
-        unsigned char u1;
-        unsigned short u2;
-        unsigned int u4;
-        unsigned long u8;
-    } value;
+    union value {
+        long i;
+        unsigned long u;
+    } imm;
 
     /* Represent string constant value, or label, for IMMEDIATE values. If type
      * is char [], this is the literal string constant. If type is char *, this
