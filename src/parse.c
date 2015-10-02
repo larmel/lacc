@@ -219,8 +219,27 @@ static struct block *initializer(struct block *block, struct var target)
         consume('{');
         target.lvalue = 1;
         switch (type->type) {
-        case T_STRUCT:
         case T_UNION:
+            /* C89 states that only the first element of a union can be
+             * initialized. Zero the whole thing first if there is padding. */
+            if (size_of(type->member[0].type) < type->size) {
+                if (type->size % 8) {
+                    target.type =
+                        type_init_array(type_init_integer(1), type->size);
+                } else {
+                    target.type =
+                        type_init_array(type_init_integer(8), type->size / 8);
+                }
+                zero_initialize(block, target);
+            }
+            target.type = type->member[0].type;
+            block = initializer(block, target);
+            if (peek().token != '}') {
+                error("Excess elements in union initializer.");
+                exit(1);
+            }
+            break;
+        case T_STRUCT:
             for (; i < type->n; ++i) {
                 target.type = type->member[i].type;
                 target.offset = base + type->member[i].offset;
