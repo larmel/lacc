@@ -164,7 +164,7 @@ static void load_address(FILE *s, struct var v, enum reg r)
         assert(is_pointer(&v.symbol->type));
         load(s, var_direct(v.symbol), r);
         if (v.offset) {
-            fprintf(s, "\taddq\t%d, %%%s\t# offset address (%s + %d)\n",
+            fprintf(s, "\taddq\t$%d, %%%s\t# offset address (%s + %d)\n",
                 v.offset, REG(r, 8), v.symbol->name, v.offset);
         }
     }
