@@ -34,10 +34,14 @@ BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES
 REMAINING_SOURCES := $(filter-out $(BOOTSTRAP_SOURCES), $(SOURCES))
 REMAINING_OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(REMAINING_SOURCES))
 
-.PHONY: all bootstrap test test-bootstrap clean
+# Selfhosted, compiler built with itself
+SELFHOST_OBJECTS := $(patsubst src/%.c,$(BIN)/%-selfhost.o,$(SOURCES))
+
+.PHONY: all bootstrap selfhost test test-bootstrap test-selfhost clean
 
 all: $(BIN)/lcc
 bootstrap: $(BIN)/bootstrap
+selfhost: $(BIN)/selfhost
 
 $(BIN)/%.o: src/%.c
 	@mkdir -p $(dir $@)
@@ -51,16 +55,30 @@ $(BIN)/%-bootstrap.s: src/%.c $(BIN)/lcc
 	@mkdir -p $(dir $@)
 	$(BIN)/lcc $(LCCFLAGS) -S $< -o $@
 
+$(BIN)/%-selfhost.o: $(BIN)/%-selfhost.s
+	@mkdir -p $(dir $@)
+	$(CC) -c $< -o $@
+
+$(BIN)/%-selfhost.s: src/%.c $(BIN)/bootstrap
+	@mkdir -p $(dir $@)
+	$(BIN)/bootstrap $(LCCFLAGS) -S $< -o $@
+
 $(BIN)/lcc: $(OBJECTS)
 	$(LD) $^ -o $@
 
 $(BIN)/bootstrap: $(BOOTSTRAP_OBJECTS) $(REMAINING_OBJECTS)
 	$(LD) $^ -o $@
 
+$(BIN)/selfhost: $(SELFHOST_OBJECTS)
+	$(LD) $^ -o $@
+
 test: $(BIN)/lcc
 	@$(foreach file,$(TESTS),./check.sh $< $(file);)
 
 test-bootstrap: $(BIN)/bootstrap
+	@$(foreach file,$(TESTS),./check.sh $< $(file);)
+
+test-selfhost: $(BIN)/selfhost
 	@$(foreach file,$(TESTS),./check.sh $< $(file);)
 
 clean:
