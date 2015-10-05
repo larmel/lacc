@@ -89,15 +89,32 @@ const char *strlabel(const char *s)
     return str->label;
 }
 
+static void unescape(FILE *stream, int c)
+{
+    if (isprint(c) && c != '"' && c != '\\') {
+        putc(c, stream);
+        return;
+    }
+
+    switch (c) {
+    case '\b': fprintf(stream, "\\b"); break;
+    case '\t': fprintf(stream, "\\t"); break;
+    case '\n': fprintf(stream, "\\n"); break;
+    case '\f': fprintf(stream, "\\f"); break;
+    case '\r': fprintf(stream, "\\r"); break;
+    case '\\': fprintf(stream, "\\\\"); break;
+    case '"': fprintf(stream, "\\\""); break;
+    default:
+        fprintf(stream, "\\0%02o", c);
+        break;
+    }
+}
+
 void output_string(FILE *stream, const char *str)
 {
     char c;
-
     while ((c = *str++) != '\0') {
-        if (isprint(c) && c != '"' && c != '\\')
-            putc(c, stream);
-        else
-            fprintf(stream, "\\x%x", (int) c);
+        unescape(stream, c);
     }
 }
 
