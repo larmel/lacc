@@ -16,10 +16,12 @@ BOOTSTRAP_SOURCES := \
 	src/abi.c \
 	src/dot.c \
 	src/error.c \
+	src/eval.c \
 	src/input.c \
 	src/ir.c \
 	src/lcc.c \
 	src/macro.c \
+	src/parse.c \
 	src/preprocess.c \
 	src/string.c \
 	src/symtab.c \

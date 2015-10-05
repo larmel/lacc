@@ -191,6 +191,18 @@ classify_signature(const struct typetree *func, enum param_class **out)
     return params;
 }
 
+int sym_alignment(const struct symbol *sym)
+{
+    int align = type_alignment(&sym->type);
+    if (is_array(&sym->type) && align < 16) {
+        /* A local or global array variable of at least 16 bytes should have
+         * alignment of 16. */
+        align = 16;
+    }
+
+    return align;
+}
+
 void dump_classification(const enum param_class *c, const struct typetree *t) {
     int i;
 

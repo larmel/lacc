@@ -1085,7 +1085,7 @@ static void assemble_data(FILE *stream, struct block *head)
             if (symbol->linkage == LINK_EXTERN) {
                 fprintf(stream, "\t.globl\t%s\n", sym_name(symbol));
             }
-            fprintf(stream, "\t.align\t%d\n", type_alignment(&symbol->type));
+            fprintf(stream, "\t.align\t%d\n", sym_alignment(symbol));
             fprintf(stream, "%s:\n", sym_name(symbol));
         }
 

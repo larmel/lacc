@@ -188,7 +188,7 @@ int type_alignment(const struct typetree *type)
 
     switch (type->type) {
     case T_ARRAY:
-        return (type->size < 16) ? type_alignment(type->next) : 16;
+        return type_alignment(type->next);
     case T_STRUCT:
     case T_UNION:
         type = unwrapped(type);

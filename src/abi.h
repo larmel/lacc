@@ -1,7 +1,7 @@
 #ifndef ABI_H
 #define ABI_H
 
-#include "type.h"
+#include "symbol.h"
 
 /* Registers in x86_64 assembly.
  */
@@ -67,6 +67,10 @@ enum param_class **classify_call(
 enum param_class **classify_signature(
     const struct typetree *func,
     enum param_class **out);
+
+/* Alignment of symbol in bytes.
+ */
+int sym_alignment(const struct symbol *sym);
 
 /* DEBUG
  */
