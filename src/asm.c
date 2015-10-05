@@ -152,12 +152,16 @@ static void load(FILE *s, struct var v, enum reg r)
 
 static void load_address(FILE *s, struct var v, enum reg r)
 {
+    const char *mov = "leaq";
+
     assert(v.kind != IMMEDIATE);
     if (v.kind == DIRECT) {
+        if (v.symbol->linkage != LINK_NONE && is_function(v.type)) {
+            assert(!v.offset);
+            mov = "movq";
+        }
         fprintf(s, "\t%s\t%s, %%%s\t# load &%s\n",
-            ((v.symbol->linkage != LINK_NONE && !v.offset &&
-                (is_array(v.type) || is_function(v.type))) ? "movq" : "leaq"),
-            refer(v), REG(r, 8), v.symbol->name);
+            mov, refer(v), REG(r, 8), v.symbol->name);
     } else {
         assert(v.kind == DEREF);
         assert(v.symbol->stack_offset);
