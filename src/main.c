@@ -14,10 +14,10 @@
 
 int VERBOSE = 0;
 
-void help(void)
+void help(const char *prog)
 {
-    fprintf(stderr,
-        "Usage: lcc [-S] [-E] [-v] [-I <path>] [-o <file>] [file]\n");
+    fprintf(stderr, "Usage: %s [-S] [-E] [-v] [-I <path>] [-o <file>] <file>\n",
+        prog);
 }
 
 extern struct decl *parse();
@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
             add_include_search_path(optarg);
             break;
         default:
-            help();
+            help(argv[0]);
             return 1;
         }
     }
@@ -61,7 +61,7 @@ int main(int argc, char* argv[])
     if (optind == argc - 1) {
         input = argv[optind];
     } else if (optind < argc - 1) {
-        help();
+        help(argv[0]);
         return 1;
     }
 

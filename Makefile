@@ -5,7 +5,7 @@ TESTS := $(wildcard test/*.c)
 LD := cc
 CC := cc
 CCFLAGS := -Wall -pedantic -std=c89 -g
-LCCFLAGS := -I /usr/include/x86_64-linux-musl/
+LACCFLAGS := -I /usr/include/x86_64-linux-musl/
 
 # Normal build with gcc
 SOURCES := $(foreach sdir,$(SRC_DIRS),$(wildcard $(sdir)/*.c))
@@ -20,8 +20,8 @@ BOOTSTRAP_SOURCES := \
 	src/eval.c \
 	src/input.c \
 	src/ir.c \
-	src/lcc.c \
 	src/macro.c \
+	src/main.c \
 	src/parse.c \
 	src/preprocess.c \
 	src/string.c \
@@ -39,7 +39,7 @@ SELFHOST_OBJECTS := $(patsubst src/%.c,$(BIN)/%-selfhost.o,$(SOURCES))
 
 .PHONY: all bootstrap selfhost test test-bootstrap test-selfhost clean
 
-all: $(BIN)/lcc
+all: $(BIN)/lacc
 bootstrap: $(BIN)/bootstrap
 selfhost: $(BIN)/selfhost
 
@@ -51,9 +51,9 @@ $(BIN)/%-bootstrap.o: $(BIN)/%-bootstrap.s
 	@mkdir -p $(dir $@)
 	$(CC) -c $< -o $@
 
-$(BIN)/%-bootstrap.s: src/%.c $(BIN)/lcc
+$(BIN)/%-bootstrap.s: src/%.c $(BIN)/lacc
 	@mkdir -p $(dir $@)
-	$(BIN)/lcc $(LCCFLAGS) -S $< -o $@
+	$(BIN)/lacc $(LACCFLAGS) -S $< -o $@
 
 $(BIN)/%-selfhost.o: $(BIN)/%-selfhost.s
 	@mkdir -p $(dir $@)
@@ -61,9 +61,9 @@ $(BIN)/%-selfhost.o: $(BIN)/%-selfhost.s
 
 $(BIN)/%-selfhost.s: src/%.c $(BIN)/bootstrap
 	@mkdir -p $(dir $@)
-	$(BIN)/bootstrap $(LCCFLAGS) -S $< -o $@
+	$(BIN)/bootstrap $(LACCFLAGS) -S $< -o $@
 
-$(BIN)/lcc: $(OBJECTS)
+$(BIN)/lacc: $(OBJECTS)
 	$(LD) $^ -o $@
 
 $(BIN)/bootstrap: $(BOOTSTRAP_OBJECTS) $(REMAINING_OBJECTS)
@@ -72,7 +72,7 @@ $(BIN)/bootstrap: $(BOOTSTRAP_OBJECTS) $(REMAINING_OBJECTS)
 $(BIN)/selfhost: $(SELFHOST_OBJECTS)
 	$(LD) $^ -o $@
 
-test: $(BIN)/lcc
+test: $(BIN)/lacc
 	@$(foreach file,$(TESTS),./check.sh $< $(file);)
 
 test-bootstrap: $(BIN)/bootstrap
