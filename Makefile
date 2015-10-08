@@ -1,11 +1,12 @@
 BIN := bin
-SRC_DIRS := src src/util
+SRC_ROOT := src
+SRC_DIRS := ${shell find ${SRC_ROOT} -type d -print}
 TESTS := $(wildcard test/*.c)
 
 LD := cc
 CC := cc
-CCFLAGS := -Wall -pedantic -std=c89 -g
-LACCFLAGS := -I /usr/include/x86_64-linux-musl/
+CCFLAGS := -Wall -pedantic -std=c89 -g -I src/
+LACCFLAGS := -I src/ -I /usr/include/x86_64-linux-musl/
 
 # Normal build with gcc
 SOURCES := $(foreach sdir,$(SRC_DIRS),$(wildcard $(sdir)/*.c))
@@ -13,23 +14,23 @@ OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(SOURCES))
 
 # Bootstrap build subset of files
 BOOTSTRAP_SOURCES := \
-	src/abi.c \
-	src/asm.c \
-	src/dot.c \
-	src/error.c \
-	src/eval.c \
-	src/input.c \
-	src/ir.c \
-	src/macro.c \
-	src/main.c \
-	src/parse.c \
-	src/preprocess.c \
-	src/string.c \
-	src/symtab.c \
-	src/tokenize.c \
-	src/type.c \
+	src/backend/abi.c \
+	src/backend/asm.c \
+	src/backend/dot.c \
+	src/core/error.c \
+	src/core/eval.c \
+	src/core/ir.c \
+	src/core/parse.c \
+	src/core/string.c \
+	src/core/symtab.c \
+	src/core/type.c \
+	src/frontend/input.c \
+	src/frontend/macro.c \
+	src/frontend/preprocess.c \
+	src/frontend/tokenize.c \
 	src/util/memoize.c \
-	src/util/list.c
+	src/util/list.c \
+	src/main.c
 BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))
 REMAINING_SOURCES := $(filter-out $(BOOTSTRAP_SOURCES), $(SOURCES))
 REMAINING_OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(REMAINING_SOURCES))

@@ -3,11 +3,11 @@
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
 #include "abi.h"
-#include "ir.h"
-#include "type.h"
-#include "string.h"
-#include "symbol.h"
-#include "error.h"
+#include "core/ir.h"
+#include "core/type.h"
+#include "core/string.h"
+#include "core/symbol.h"
+#include "core/error.h"
 #include "util/memoize.h"
 
 #include <assert.h>

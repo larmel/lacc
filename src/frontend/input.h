@@ -4,18 +4,25 @@
 #include <stdio.h>
 #include <stddef.h>
 
-struct source {
+struct source
+{
     FILE *file;
-    const char *name;
-    const char *directory;
+
+    /* Full path, or relative to invocation directory. */
     const char *path;
+
+    /* Number of characters into path occupied by directory, 
+     * not including the last slash. */
+    int dirlen;
+
+    /* Current line. */
     int line;
 };
 
 /* Initialize with root file name, and store relative path to resolve later
- * includes. Default to stdin.
+ * includes. Passing NULL defaults to taking input from stdin.
  */
-void init(char *);
+void init(const char *);
 
 /* Paths specified with -I, append to list of directories to search when
  * resolving includes.

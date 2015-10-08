@@ -1,5 +1,5 @@
-#include "ir.h"
-#include "symbol.h"
+#include "core/ir.h"
+#include "core/symbol.h"
 #include "util/memoize.h"
 
 #include <assert.h>

@@ -1,8 +1,9 @@
 #if _XOPEN_SOURCE < 600
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 600 /* isblank */
+#  define _XOPEN_SOURCE 700 /* strndup */
 #endif
-#include "error.h"
+#include "core/error.h"
+#include "core/string.h"
 #include "input.h"
 
 #include <assert.h>
@@ -21,11 +22,19 @@ struct source current_file;
 static const char **search_path;
 static size_t search_path_count;
 
-/* Keep stack of file descriptors as resolved by includes. Push and pop from the
- * end of the list.
+/* Keep stack of file descriptors as resolved by includes. Push and pop from
+ * the end of the list.
  */
 static struct source *src_stack;
 static size_t src_count;
+
+static struct source push(struct source source)
+{
+    src_count++;
+    src_stack = realloc(src_stack, src_count * sizeof(*src_stack));
+    src_stack[src_count - 1] = source;
+    return source;
+}
 
 static int pop(void)
 {
@@ -43,128 +52,137 @@ static int pop(void)
     return EOF;
 }
 
-static void push(struct source source)
+static void finalize(void)
 {
-    src_count++;
-    src_stack = realloc(src_stack, src_count * sizeof(*src_stack));
-    src_stack[src_count - 1] = source;
-}
+    assert(src_stack);
 
-static char *create_path(const char *dir, const char *name)
-{
-    char *path = malloc(strlen(dir) + 1 + strlen(name) + 1);
-    strcpy(path, dir);
-    strcat(path, "/");
-    strcat(path, name);
-    return path;
-}
+    while (pop() != EOF)
+        ;
 
-static void include_file_internal(const char *name, int incurrent)
-{
-    struct source source = {0};
-
-    source.name = name;
-
-    /* First check in current directory. */
-    if (incurrent) {
-        source.path = create_path(current_file.directory, name);
-        source.file = fopen(source.path, "r");
-        source.directory = current_file.directory;
-    }
-
-    /* Go through list of include paths. */
-    if (!source.file) {
-        int i = search_path_count - 1;
-        if (!incurrent) {
-            i--; /* skip invocation dir for system files. */
-        }
-        for (; i >= 0 && !source.file; --i) {
-            if (source.path) {
-                free((void *) source.path);
-                source.path = NULL;
-            }
-            source.path = create_path(search_path[i], name);
-            source.file = fopen(source.path, "r");
-            source.directory = search_path[i];
-        }
-    }
-
-    if (!source.file) {
-        error("Unable to resolve include file %s.", name);
-        exit(1);
-    }
-
-    current_file = source;
-    push(source);
+    free(src_stack);
+    if (search_path)
+        free(search_path);
 }
 
 void include_file(const char *name)
 {
-    include_file_internal(name, 1);
+    struct source source = {0};
+
+    /* Construct path by combining current directory and include name, which
+     * itself can include folders. */
+    if (current_file.dirlen) {
+        int length = current_file.dirlen + strlen(name) + 1;
+        char *path = calloc(length + 1, sizeof(*path));
+
+        strncpy(path, current_file.path, current_file.dirlen);
+        path[current_file.dirlen] = '/';
+        strcpy(path + current_file.dirlen + 1, name);
+        source.path = str_register_n(path, length);
+        free(path);
+
+        path = strrchr(source.path, '/');
+        source.dirlen = path - source.path;
+    } else {
+        source.path = name;
+    }
+
+    source.file = fopen(source.path, "r");
+    if (source.file) {
+        current_file = push(source);
+    } else {
+        include_system_file(name);
+    }
 }
 
 void include_system_file(const char *name)
 {
-    include_file_internal(name, 0);
-}
+    /* Re-use static buffer to save some allocations. Each lookup constructs
+     * new strings by combining include directory and filename. There is no
+     * specific limit on the length of file names. */
+    static char *path;
+    static size_t length;
 
-/* Clean up all dynamically allocated resources.
- */
-static void finalize()
-{
-    assert(src_stack);
-    while (pop() != EOF)
-        ;
-    free(src_stack);
+    struct source source = {0};
+    int i;
+
+    assert(search_path_count);
+
+    for (i = 0; i < search_path_count; ++i) {
+        size_t dir = strlen(search_path[i]);
+        size_t len = dir + strlen(name) + 1;
+
+        if (len > length) {
+            length = len * 2;
+            path = realloc(path, length * sizeof(*path));
+        }
+
+        strcpy(path, search_path[i]);
+        if (path[dir - 1] == '/') {
+            /* Include paths can be specified with or without trailing slash.
+             * Do not normalize initially, but handle it here. */
+            dir--;
+        } else {
+            path[dir] = '/';
+        }
+
+        strcpy(path + dir + 1, name);
+        source.file = fopen(path, "r");
+        if (source.file) {
+            char *end = strrchr(path, '/');
+            source.path = str_register_n(path, len);
+            source.dirlen = end - path;
+            break;
+        }
+    }
+
+    if (source.file) {
+        current_file = push(source);
+    } else {
+        error("Unable to resolve include file '%s'.", name);
+        exit(1);
+    }
 }
 
 void add_include_search_path(const char *path)
 {
-    /* For the first time, add default search paths at the bottom. */
-    if (!search_path) {
-        search_path = calloc(3, sizeof(*search_path));
-        add_include_search_path("/usr/include");
-        add_include_search_path("/usr/local/include");
+    static size_t cap;
+
+    if (!cap) {
+        cap = 16;
+        search_path = calloc(cap, sizeof(*search_path));
+    } else if (search_path_count + 1 == cap) {
+        cap *= 2;
+        search_path = realloc(search_path, cap * sizeof(*search_path));
     }
 
+    assert(search_path_count < cap);
     search_path_count++;
-    search_path = realloc(search_path,
-        search_path_count * sizeof(*search_path));
     search_path[search_path_count - 1] = path;
 }
 
-void init(char *path)
+void init(const char *path)
 {
     struct source source = {0};
 
-    source.file = stdin;
-    source.path = "<stdin>";
-    source.name = "<stdin>";
-    source.directory = ".";
-    source.line = 0;
-
     if (path) {
-        char *sep;
-
-        source.name = path;
-        sep = strrchr(path, '/');
+        const char *sep = strrchr(path, '/');
+        source.path = path;
+        source.file = fopen(path, "r");
         if (sep) {
-            *sep = '\0';
-            source.name = sep + 1;
-            source.directory = path;
+            source.dirlen = sep - path;
         }
-
-        source.path = create_path(source.directory, source.name);
-        source.file = fopen(source.path, "r");
         if (!source.file) {
-            error("Unable to open file %s.", source.path);
+            error("Unable to open file %s.", path);
             exit(1);
         }
+    } else {
+        source.file = stdin;
+        source.path = "<stdin>";
     }
 
-    current_file = source;
-    push(source);
-    add_include_search_path(source.directory);
+    current_file = push(source);
+
+    /* Make sure file handles are closed on exit. */
     atexit(finalize);
 }
 
@@ -280,7 +298,7 @@ int getprepline(char **buffer)
     current_file = src_stack[src_count - 1];
 
     if (VERBOSE) {
-        printf("(%s, %d): `%s`\n", current_file.name, current_file.line, line);
+        printf("(%s, %d): `%s`\n", current_file.path, current_file.line, line);
     }
 
     return processed;

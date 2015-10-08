@@ -2,8 +2,8 @@
 #include "eval.h"
 #include "type.h"
 #include "string.h"
-#include "preprocess.h"
 #include "symbol.h"
+#include "frontend/preprocess.h"
 #include "util/list.h"
 
 #include <stdio.h>

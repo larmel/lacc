@@ -1,5 +1,5 @@
+#include "core/error.h"
 #include "macro.h"
-#include "error.h"
 #include "input.h"
 
 #include <assert.h>

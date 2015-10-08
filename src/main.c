@@ -1,12 +1,12 @@
 #ifndef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* getopt */
 #endif
-#include "error.h"
-#include "ir.h"
-#include "string.h"
-#include "symbol.h"
-#include "input.h"
-#include "preprocess.h"
+#include "core/error.h"
+#include "core/ir.h"
+#include "core/string.h"
+#include "core/symbol.h"
+#include "frontend/input.h"
+#include "frontend/preprocess.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -35,6 +35,7 @@ int main(int argc, char* argv[])
         OUT_PREPROCESSED
     } output_mode = OUT_DOT;
 
+    /* Handle command line parameters. */
     while ((c = getopt(argc, argv, "SEo:vI:")) != -1) {
         switch (c) {
         case 'S':
@@ -64,6 +65,11 @@ int main(int argc, char* argv[])
         help(argv[0]);
         return 1;
     }
+
+    /* Add default search paths last, with lowest priority. These are searched
+     * after anything specified with -I. */
+    add_include_search_path("/usr/include");
+    add_include_search_path("/usr/local/include");
 
     init(input);
     register_builtin_definitions();
