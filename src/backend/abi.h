@@ -46,27 +46,35 @@ enum param_class {
     PC_MEMORY
 };
 
-/* Classify a type as a list of eightbytes, used for parameter passing and
- * return values. Algorithm specified in System V ABI (3.2.3), part of calling
- * convention of the x86_64 architecture.
+/* Classify parameter as a series of eightbytes used for parameter passing and
+ * return value. If the first element is not PC_MEMORY, the number of elements
+ * in the list can be determined by N_EIGHTBYTES(t).
+ *
  * Returns a list of parameter classes, allocated dynamically. Caller should
  * free memory.
  */
 enum param_class *classify(const struct typetree *t);
 
-/*
+/* Classify function call, required as separate from classifying signature
+ * because of variable length argument list.
+ *
+ * Returns a list of dynamically allocated classifications for parameters, and
+ * writes return type class to output argument. Both must be free'd by caller.
  */
 enum param_class **classify_call(
     const struct typetree **args,
     const struct typetree *ret,
     int n_args,
-    enum param_class **out);
+    enum param_class **res);
 
-/*
+/* Classify parameters and return value of function type.
+ *
+ * Returns a list of dynamically allocated classifications for parameters, and
+ * writes return type class to output argument. Both must be free'd by caller.
  */
 enum param_class **classify_signature(
     const struct typetree *func,
-    enum param_class **out);
+    enum param_class **res);
 
 /* Alignment of symbol in bytes.
  */

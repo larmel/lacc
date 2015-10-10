@@ -339,6 +339,11 @@ static void call(
 
         assert( size == 0 );
     }
+
+    for (i = 0; i < n; ++i)
+        free(argc[i]);
+    free(argc);
+    free(resc);
 }
 
 /* Assign storage to local variables.
@@ -487,6 +492,10 @@ static enum param_class *enter(FILE *s, const struct decl *func)
         fp_offset = 0;
         overflow_arg_area_offset = mem_offset;
     }
+
+    for (i = 0; i < list_length(func->params); ++i)
+        free(params[i]);
+    free(params);
 
     return ret;
 }

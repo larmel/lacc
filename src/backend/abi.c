@@ -116,35 +116,33 @@ enum param_class *classify(const struct typetree *t)
     return eb;
 }
 
-/* Classify function call, required as separate from classifying signature
- * because of variable length argument list.
- */
-enum param_class **
-classify_call(const struct typetree **args,
-              const struct typetree *ret,
-              int n_args,
-              enum param_class **out)
+enum param_class **classify_call(
+    const struct typetree **args,
+    const struct typetree *ret,
+    int n_args,
+    enum param_class **res)
 {
-    int i,
-        next_integer_reg = 0;
+    int i, next_integer_reg = 0;
+    enum param_class **params;
 
-    enum param_class
-        **params = calloc(n_args, sizeof(*params)),
-        *res = calloc(1, sizeof(*res));
+    assert(res);
 
     /* Classify parameters and return value. */
+    params = calloc(n_args, sizeof(*params));
     for (i = 0; i < n_args; ++i) {
         params[i] = classify(args[i]);
     }
 
     if (ret->type != T_VOID) {
-        res = classify(ret);
+        *res = classify(ret);
 
         /* When return value is MEMORY, pass a pointer to stack as hidden first
          * argument. */
-        if (*res == PC_MEMORY) {
+        if (**res == PC_MEMORY) {
             next_integer_reg = 1;
         }
+    } else {
+        *res = calloc(1, sizeof(**res));
     }
 
     /* Place arguments in registers from left to right, partitioned into
@@ -163,16 +161,12 @@ classify_call(const struct typetree **args,
         }
     }
 
-    assert(out);
-
-    *out = res;
     return params;
 }
 
-/* Classify parameters and return value of function type.
- */
-enum param_class **
-classify_signature(const struct typetree *func, enum param_class **out)
+enum param_class **classify_signature(
+    const struct typetree *func,
+    enum param_class **res)
 {
     int i;
     enum param_class **params;
@@ -185,7 +179,7 @@ classify_signature(const struct typetree *func, enum param_class **out)
         args[i] = func->member[i].type;
     }
 
-    params = classify_call(args, func->next, func->n, out);
+    params = classify_call(args, func->next, func->n, res);
     free(args);
 
     return params;
