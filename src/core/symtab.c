@@ -256,12 +256,11 @@ struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
 
 void register_builtin_types(struct namespace *ns)
 {
-    struct typetree
-        *type = type_init_object(),
-        *none = type_init_void();
+    struct typetree *type = type_init_object();
+    const struct typetree *none = &basic_type__void;
 
-    type_add_member(type, type_init_unsigned(4), "gp_offset");
-    type_add_member(type, type_init_unsigned(4), "fp_offset");
+    type_add_member(type, &basic_type__unsigned_int, "gp_offset");
+    type_add_member(type, &basic_type__unsigned_int, "fp_offset");
     type_add_member(type, type_init_pointer(none), "overflow_arg_area");
     type_add_member(type, type_init_pointer(none), "reg_save_area");
     type_align_struct_members(type);

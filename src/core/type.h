@@ -49,6 +49,31 @@ struct typetree
     const char *tag_name;
 };
 
+/* Singleton unqualified instances of common types.
+ */
+extern const struct typetree
+    basic_type__void,
+    basic_type__char,
+    basic_type__short,
+    basic_type__int,
+    basic_type__long,
+    basic_type__unsigned_char,
+    basic_type__unsigned_short,
+    basic_type__unsigned_int,
+    basic_type__unsigned_long,
+    basic_type__float,
+    basic_type__double;
+
+#define BASIC_TYPE_SIGNED(w) \
+    ((w) == 1) ? &basic_type__char :                                           \
+    ((w) == 2) ? &basic_type__short :                                          \
+    ((w) == 4) ? &basic_type__int : &basic_type__long;
+
+#define BASIC_TYPE_UNSIGNED(w) \
+    ((w) == 1) ? &basic_type__unsigned_char :                                  \
+    ((w) == 2) ? &basic_type__unsigned_short :                                 \
+    ((w) == 4) ? &basic_type__unsigned_int : &basic_type__unsigned_long;
+
 /* Reflect semantics given in standardese.
  */
 #define is_object(t) (!is_function(t))
@@ -77,7 +102,6 @@ struct typetree
  */
 #define is_tagged(t) (is_struct_or_union(t) && (t)->next)
 
-struct typetree type_from_specifier(unsigned short spec);
 struct typetree *type_init_integer(int size);
 struct typetree *type_init_unsigned(int size);
 struct typetree *type_init_pointer(const struct typetree *to);

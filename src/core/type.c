@@ -10,66 +10,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-static struct typetree V0 = { T_VOID };
-static struct typetree I1 = { T_SIGNED, 1 };
-static struct typetree I2 = { T_SIGNED, 2 };
-static struct typetree I4 = { T_SIGNED, 4 };
-static struct typetree I8 = { T_SIGNED, 8 };
-static struct typetree U1 = { T_UNSIGNED, 1 };
-static struct typetree U2 = { T_UNSIGNED, 2 };
-static struct typetree U4 = { T_UNSIGNED, 4 };
-static struct typetree U8 = { T_UNSIGNED, 8 };
-static struct typetree F4 = { T_REAL, 4 };
-static struct typetree F8 = { T_REAL, 8 };
-
-struct typetree type_from_specifier(unsigned short spec)
-{
-    switch (spec) {
-    case 0x0001: /* void */
-        return V0;
-    case 0x0002: /* char */
-    case 0x0012: /* signed char */
-        return I1;
-    case 0x0022: /* unsigned char */
-        return U1;
-    case 0x0004: /* short */
-    case 0x0014: /* signed short */
-    case 0x000C: /* short int */
-    case 0x001C: /* signed short int */
-        return I2;
-    case 0x0024: /* unsigned short */
-    case 0x002C: /* unsigned short int */
-        return U2;
-    case 0x0008: /* int */
-    case 0x0010: /* signed */
-    case 0x0018: /* signed int */
-        return I4;
-    case 0x0020: /* unsigned */
-    case 0x0028: /* unsigned int */
-        return U4;
-    case 0x0040: /* long */
-    case 0x0050: /* signed long */
-    case 0x0048: /* long int */
-    case 0x0058: /* signed long int */
-    case 0x00C0: /* long long */
-    case 0x00D0: /* signed long long */
-    case 0x00D8: /* signed long long int */
-        return I8;
-    case 0x0060: /* unsigned long */
-    case 0x0068: /* unsigned long int */
-    case 0x00E0: /* unsigned long long */
-    case 0x00E8: /* unsigned long long int */
-        return U8;
-    case 0x0100: /* float */
-        return F4;
-    case 0x0200: /* double */
-    case 0x0240: /* long double */
-        return F8;
-    default:
-        error("Invalid type specification.");
-        exit(1); 
-    }
-}
+const struct typetree
+    basic_type__void = { T_VOID },
+    basic_type__char = { T_SIGNED, 1 },
+    basic_type__short = { T_SIGNED, 2 },
+    basic_type__int = { T_SIGNED, 4 },
+    basic_type__long = { T_SIGNED, 8 },
+    basic_type__unsigned_char = { T_UNSIGNED, 1 },
+    basic_type__unsigned_short = { T_UNSIGNED, 2 },
+    basic_type__unsigned_int = { T_UNSIGNED, 4 },
+    basic_type__unsigned_long = { T_UNSIGNED, 8 },
+    basic_type__float = { T_REAL, 4 },
+    basic_type__double = { T_REAL, 8 };
 
 static struct typetree **type_registry;
 static size_t length;
@@ -131,7 +83,7 @@ struct typetree *type_init_integer(int width)
 
 struct typetree *type_init_unsigned(int width)
 {
-    struct typetree arg = { T_SIGNED, 0, 0x01 };
+    struct typetree arg = { T_UNSIGNED };
     arg.size = width;
     assert(width == 1 || width == 2 || width == 4 || width == 8);
 
@@ -178,7 +130,7 @@ struct typetree *type_init_void(void)
 
 const struct typetree *type_init_string(size_t length)
 {
-    return type_init_array(&I1, length);
+    return type_init_array(&basic_type__char, length);
 }
 
 int type_alignment(const struct typetree *type)
@@ -305,9 +257,12 @@ static const struct typetree *remove_qualifiers(const struct typetree *type)
 const struct typetree *promote_integer(const struct typetree *type)
 {
     assert(is_integer(type));
+
     if (type->size < 4) {
-        type = (is_unsigned(type)) ? &U4 : &I4;
+        type = (is_unsigned(type)) ?
+            &basic_type__unsigned_int : &basic_type__int;
     }
+
     return type;
 }
 

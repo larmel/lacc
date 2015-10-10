@@ -285,7 +285,7 @@ static void call(
                     assert(eightbyte[j] == PC_INTEGER);
                     assert(w == 1 || w == 2 || w == 4 || w == 8);
 
-                    slice.type = type_init_integer(w);
+                    slice.type = BASIC_TYPE_UNSIGNED(w);
                     slice.offset = args[i].offset + j * 8;
                     load(s, slice, param_int_reg[next_integer_reg++]);
                 }
@@ -332,7 +332,7 @@ static void call(
             size -= width;
             assert( resc[i] == PC_INTEGER );
 
-            slice.type = type_init_integer(width);
+            slice.type = BASIC_TYPE_UNSIGNED(width);
             slice.offset = i * 8;
             store(s, ret_int_reg[next_integer_reg++], slice);
         }
@@ -476,7 +476,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
             ref.symbol = (struct symbol *) list_get(func->params, i);
             for (j = 0; j < n; ++j) {
                 int width = (size < 8) ? size : 8;
-                ref.type = type_init_integer(width);
+                ref.type = BASIC_TYPE_UNSIGNED(width);
                 ref.offset = j * 8;
                 store(s, param_int_reg[next_integer_reg++], ref);
                 size -= width;
@@ -531,7 +531,7 @@ static void ret(FILE *s, struct var val, const enum param_class *pc)
             assert(pc[i] == PC_INTEGER);
             assert(width == 1 || width == 2 || width == 4 || width == 8);
 
-            slice.type = type_init_integer(width);
+            slice.type = BASIC_TYPE_UNSIGNED(width);
             slice.offset = val.offset + i * 8;
             load(s, slice, ret_int_reg[next_int_reg++]);
         }
@@ -587,13 +587,13 @@ static void assemble__builtin_va_arg(FILE *s, struct var res, struct var args)
     assert(args.kind == DIRECT);
 
     /* References into va_list object. */
-    var_gp_offset.type = type_init_unsigned(4);
+    var_gp_offset.type = &basic_type__unsigned_int;
     var_fp_offset.offset += 4;
-    var_fp_offset.type = type_init_unsigned(4);
+    var_fp_offset.type = &basic_type__unsigned_int;
     var_overflow_arg_area.offset += 8;
-    var_overflow_arg_area.type = type_init_unsigned(8);
+    var_overflow_arg_area.type = &basic_type__unsigned_long;
     var_reg_save_area.offset += 16;
-    var_reg_save_area.type = type_init_unsigned(8);
+    var_reg_save_area.type = &basic_type__unsigned_long;
 
     /* Integer or SSE parameters are read from registers, if there are enough of
      * them left. Otherwise read from overflow area. */
@@ -640,7 +640,7 @@ static void assemble__builtin_va_arg(FILE *s, struct var res, struct var args)
             assert(pc[i] == PC_INTEGER);
             assert(width == 1 || width == 2 || width == 4 || width == 8);
 
-            slice.type = type_init_unsigned(width);
+            slice.type = BASIC_TYPE_UNSIGNED(width);
             slice.offset = res.offset + i * 8;
 
             /* Advanced addressing, loading (%rsi + 8*i + (%rcx * 1)) into %rax.

@@ -105,7 +105,7 @@ struct var var_int(int value)
     struct var var = {0};
 
     var.kind = IMMEDIATE;
-    var.type = type_init_integer(4);
+    var.type = &basic_type__int;
     var.imm.i = value;
     return var;
 }
@@ -115,7 +115,7 @@ struct var var_zero(int size)
     struct var var = {0};
 
     var.kind = IMMEDIATE;
-    var.type = type_init_integer(size);
+    var.type = BASIC_TYPE_SIGNED(size);
     var.imm.i = 0;
     return var;
 }
@@ -125,7 +125,7 @@ struct var var_void(void)
     struct var var = {0};
 
     var.kind = IMMEDIATE;
-    var.type = type_init_void();
+    var.type = &basic_type__void;
     return var;
 }
 

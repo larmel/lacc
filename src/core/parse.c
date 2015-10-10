@@ -225,10 +225,10 @@ static struct block *initializer(struct block *block, struct var target)
             if (size_of(type->member[0].type) < type->size) {
                 if (type->size % 8) {
                     target.type =
-                        type_init_array(type_init_integer(1), type->size);
+                        type_init_array(&basic_type__char, type->size);
                 } else {
                     target.type =
-                        type_init_array(type_init_integer(8), type->size / 8);
+                        type_init_array(&basic_type__long, type->size / 8);
                 }
                 zero_initialize(block, target);
             }
@@ -346,7 +346,7 @@ static void zero_initialize(struct block *block, struct var target)
         break;
     case T_POINTER:
         var = var_zero(8);
-        var.type = type_init_pointer(type_init_void());
+        var.type = type_init_pointer(&basic_type__void);
         eval_assign(block, target, var);
         break;
     case T_UNSIGNED:
@@ -475,7 +475,6 @@ static void enumerator_list(void)
     struct var val;
     struct symbol *sym;
     int enum_value = 0;
-    const struct typetree *type = type_init_integer(4);
 
     consume('{');
     do {
@@ -489,8 +488,15 @@ static void enumerator_list(void)
             }
             enum_value = val.imm.i;
         }
-        sym = sym_add(&ns_ident, name, type, SYM_ENUM_VALUE, LINK_NONE);
+
+        sym = sym_add(
+            &ns_ident,
+            name,
+            &basic_type__int,
+            SYM_ENUM_VALUE,
+            LINK_NONE);
         sym->enum_value = enum_value++;
+
         if (peek().token != ',')
             break;
         consume(',');
@@ -536,6 +542,55 @@ static struct typetree *enum_declaration(void)
     /* Result is always integer. Do not care about the actual enum definition,
      * all enums are ints and no type checking is done. */
     return type;
+}
+
+static struct typetree get_basic_type_from_specifier(unsigned short spec)
+{
+    switch (spec) {
+    case 0x0001: /* void */
+        return basic_type__void;
+    case 0x0002: /* char */
+    case 0x0012: /* signed char */
+        return basic_type__char;
+    case 0x0022: /* unsigned char */
+        return basic_type__unsigned_char;
+    case 0x0004: /* short */
+    case 0x0014: /* signed short */
+    case 0x000C: /* short int */
+    case 0x001C: /* signed short int */
+        return basic_type__short;
+    case 0x0024: /* unsigned short */
+    case 0x002C: /* unsigned short int */
+        return basic_type__unsigned_short;
+    case 0x0008: /* int */
+    case 0x0010: /* signed */
+    case 0x0018: /* signed int */
+        return basic_type__int;
+    case 0x0020: /* unsigned */
+    case 0x0028: /* unsigned int */
+        return basic_type__unsigned_int;
+    case 0x0040: /* long */
+    case 0x0050: /* signed long */
+    case 0x0048: /* long int */
+    case 0x0058: /* signed long int */
+    case 0x00C0: /* long long */
+    case 0x00D0: /* signed long long */
+    case 0x00D8: /* signed long long int */
+        return basic_type__long;
+    case 0x0060: /* unsigned long */
+    case 0x0068: /* unsigned long int */
+    case 0x00E0: /* unsigned long long */
+    case 0x00E8: /* unsigned long long int */
+        return basic_type__unsigned_long;
+    case 0x0100: /* float */
+        return basic_type__float;
+    case 0x0200: /* double */
+    case 0x0240: /* long double */
+        return basic_type__double;
+    default:
+        error("Invalid type specification.");
+        exit(1); 
+    }
 }
 
 /* Parse type, qualifiers and storage class. Do not assume int by default, but
@@ -644,7 +699,7 @@ static struct typetree *declaration_specifiers(int *stc)
         }
     } else if (spec) {
         type = type_init_object();
-        *type = type_from_specifier(spec);
+        *type = get_basic_type_from_specifier(spec);
     } else {
         error("Missing type specifier.");
         exit(1);
