@@ -86,26 +86,21 @@ static struct symbol *register_in_scope(struct namespace *ns, int i)
     return ns->symbol[i];
 }
 
-/* Create a temporary identifier name. Use a fixed prefix '.' to all temporary 
- * variables, which will never collide with real symbols.
- */
-static char *unique_identifier_name(void)
-{
-    static int n;
-    char *c = malloc(16);
-    snprintf(c, 16, ".t%d", n++);
-    return c;
-}
-
 const char *sym_name(const struct symbol *sym)
 {
-    if (sym->n) {
-        static char name[128];
+    static char name[128];
+
+    if (!sym->n)
+        return sym->name;
+
+    if (sym->name[0] == '.') {
+        assert(sym->name[1] == 't');
+        snprintf(name, 127, "%s%d", sym->name, sym->n);
+    } else {
         snprintf(name, 127, "%s.%d", sym->name, sym->n);
-        return name;
     }
 
-    return sym->name;
+    return name;
 }
 
 /* Symbols can be declared multiple times, with incomplete or complete types.
@@ -245,11 +240,16 @@ struct symbol *sym_add(
 
 struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
 {
+    /* Count number of temporary variables, giving each new one a unique name
+     * by setting the counter instead of creating a string. */
+    static int n;
+
     struct symbol sym = {0};
 
     sym.symtype = SYM_DEFINITION;
     sym.linkage = LINK_NONE;
-    sym.name = unique_identifier_name();
+    sym.name = ".t";
+    sym.n = n++;
     sym.type = *type;
     return register_in_scope(ns, create_symbol(ns, sym));
 }
