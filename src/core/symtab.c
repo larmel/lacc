@@ -314,7 +314,7 @@ void output_symbols(FILE *stream, struct namespace *ns)
             (st == SYM_DECLARATION) ? "declaration" :
             (st == SYM_TYPEDEF) ? "typedef" : "enum");
 
-        fprintf(stream, "%s :: ", ns->symbol[i]->name);
+        fprintf(stream, "%s :: ", sym_name(ns->symbol[i]));
         tstr = typetostr(&ns->symbol[i]->type);
         fprintf(stream, "%s", tstr);
         free(tstr);

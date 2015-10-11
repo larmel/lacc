@@ -56,18 +56,18 @@ static char *vartostr(const struct var var)
         break;
     case DIRECT:
         if (var.offset) {
-            sprintf(buffer, "%s[%d]", var.symbol->name, var.offset);    
+            sprintf(buffer, "%s[%d]", sym_name(var.symbol), var.offset);    
         } else {
-            sprintf(buffer, "%s", var.symbol->name);
+            sprintf(buffer, "%s", sym_name(var.symbol));
         }
         break;
     case DEREF:
         if (!var.offset)
-            sprintf(buffer, "*(%s)", var.symbol->name);
+            sprintf(buffer, "*(%s)", sym_name(var.symbol));
         else if (var.offset > 0)
-            sprintf(buffer, "*(%s + %d)", var.symbol->name, var.offset);
+            sprintf(buffer, "*(%s + %d)", sym_name(var.symbol), var.offset);
         else
-            sprintf(buffer, "*(%s - %d)", var.symbol->name, -var.offset);
+            sprintf(buffer, "*(%s - %d)", sym_name(var.symbol), -var.offset);
         break;
     }
 
