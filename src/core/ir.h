@@ -1,9 +1,7 @@
 #ifndef IR_H
 #define IR_H
 
-#include "type.h"
 #include "symbol.h"
-#include "util/list.h"
 
 #include <stddef.h>
 
@@ -155,15 +153,22 @@ struct decl
 {
     /* Function symbol or NULL if list of declarations. */
     const struct symbol *fun;
-    struct block *head;
-    struct block *body;
+
+    /* References to blocks holding global declarations and head of function
+     * CFG, respectively. */
+    struct block *head, *body;
 
     /* Number of bytes to allocate to local variables on stack. */
     int locals_size;
 
-    /* Store all symbols associated with a function declaration. */
-    struct list *params;
-    struct list *locals;
+    /* Store all symbols associated with a function declaration. Need non-const
+     * references, as backend will use this to assign stack offset of existing
+     * symbols. */
+    struct {
+        struct symbol **symbol;
+        size_t length;
+        size_t capacity;
+    } params, locals;
 
     /* Store all associated nodes in a list to simplify deallocation. */
     struct block **nodes;
@@ -185,6 +190,14 @@ struct block *cfg_block_init(struct decl *);
  * for each block.
  */
 void cfg_ir_append(struct block *, struct op);
+
+/* Add local variable to symbol list, required for assembly.
+ */
+void cfg_register_local(struct decl *decl, struct symbol *symbol);
+
+/* Add function parameter to symbol list, required for assembly.
+ */
+void cfg_register_param(struct decl *decl, struct symbol *symbol);
 
 /* Release all resources related to the control flow graph. Calls free on all
  * blocks and their labels, and finally the struct decl object itself.

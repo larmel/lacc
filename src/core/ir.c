@@ -21,8 +21,6 @@ const char *mklabel(void)
 struct decl *cfg_create(void)
 {
     struct decl *decl = calloc(1, sizeof(*decl));
-    decl->params = list_init();
-    decl->locals = list_init();
     return decl;
 }
 
@@ -46,8 +44,11 @@ void cfg_finalize(struct decl *decl)
 {
     assert(decl);
 
-    list_finalize(decl->params);
-    list_finalize(decl->locals);
+    if (decl->params.capacity)
+        free(decl->params.symbol);
+    if (decl->locals.capacity)
+        free(decl->locals.symbol);
+
     if (decl->capacity) {
         int i;
         for (i = 0; i < decl->size; ++i) {
@@ -58,6 +59,7 @@ void cfg_finalize(struct decl *decl)
         }
         free(decl->nodes);
     }
+
     free(decl);
 }
 
@@ -128,6 +130,30 @@ struct var var_void(void)
     return var;
 }
 
+void cfg_register_local(struct decl *decl, struct symbol *symbol)
+{
+    if (decl->locals.capacity <= decl->locals.length) {
+        decl->locals.capacity += 64;
+        decl->locals.symbol =
+            realloc(decl->locals.symbol,
+                decl->locals.capacity * sizeof(*decl->locals.symbol));
+    }
+
+    decl->locals.symbol[decl->locals.length++] = symbol;
+}
+
+void cfg_register_param(struct decl *decl, struct symbol *symbol)
+{
+    if (decl->params.capacity <= decl->params.length) {
+        decl->params.capacity += 8;
+        decl->params.symbol =
+            realloc(decl->params.symbol,
+                decl->params.capacity * sizeof(*decl->params.symbol));
+    }
+
+    decl->params.symbol[decl->params.length++] = symbol;
+}
+
 struct var create_var(const struct typetree *type)
 {
     extern struct decl *decl;
@@ -135,7 +161,7 @@ struct var create_var(const struct typetree *type)
     struct symbol *temp = sym_temp(&ns_ident, type);
     struct var res = var_direct(temp);
 
-    list_push_back(decl->locals, (void *) temp);
+    cfg_register_local(decl, temp);
     res.lvalue = 1;
     return res;
 }

@@ -352,8 +352,8 @@ static int assign_locals_storage(const struct decl *fun, int offset)
 {
     int i;
 
-    for (i = 0; i < list_length(fun->locals); ++i) {
-        struct symbol *sym = (struct symbol *) list_get(fun->locals, i);
+    for (i = 0; i < fun->locals.length; ++i) {
+        struct symbol *sym = fun->locals.symbol[i];
         assert(!sym->stack_offset);
 
         if (sym->linkage == LINK_NONE) {
@@ -407,11 +407,11 @@ static enum param_class *enter(FILE *s, const struct decl *func)
     }
 
     /* Assign storage to parameters. */
-    for (i = 0; i < list_length(func->params); ++i) {
-        struct symbol *sym = (struct symbol *) list_get(func->params, i);
+    for (i = 0; i < func->params.length; ++i) {
+        struct symbol *sym = func->params.symbol[i];
 
-        assert( !sym->stack_offset );
-        assert( sym->linkage == LINK_NONE );
+        assert(!sym->stack_offset);
+        assert(sym->linkage == LINK_NONE);
 
         /* Guarantee that parameters are 8-byte aligned also for those passed by
          * register, which makes it easier to store in local frame after
@@ -462,7 +462,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
     }
 
     /* Move arguments from register to stack. */
-    for (i = 0; i < list_length(func->params); ++i) {
+    for (i = 0; i < func->params.length; ++i) {
         enum param_class *eightbyte = params[i];
 
         /* Here it is ok to not separate between object and other types. Data in
@@ -473,7 +473,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
                 j;
             struct var ref = { NULL, NULL, DIRECT };
 
-            ref.symbol = (struct symbol *) list_get(func->params, i);
+            ref.symbol = func->params.symbol[i];
             for (j = 0; j < n; ++j) {
                 int width = (size < 8) ? size : 8;
                 ref.type = BASIC_TYPE_UNSIGNED(width);
@@ -493,7 +493,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
         overflow_arg_area_offset = mem_offset;
     }
 
-    for (i = 0; i < list_length(func->params); ++i)
+    for (i = 0; i < func->params.length; ++i)
         free(params[i]);
     free(params);
 

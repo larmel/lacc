@@ -4,7 +4,6 @@
 #include "string.h"
 #include "symbol.h"
 #include "frontend/preprocess.h"
-#include "util/list.h"
 
 #include <stdio.h>
 #include <assert.h>
@@ -134,7 +133,7 @@ static struct block *declaration(struct block *parent)
         sym = sym_add(&ns_ident, name, type, symtype, linkage);
         if (ns_ident.current_depth) {
             assert(ns_ident.current_depth > 1);
-            list_push_back(decl->locals, (void *)sym);
+            cfg_register_local(decl, sym);
         }
 
         switch (peek().token) {
@@ -183,8 +182,8 @@ static struct block *declaration(struct block *parent)
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
                 }
-                list_push_back(decl->params,
-                    (void *) sym_add(&ns_ident, name, type, symtype, linkage));
+                cfg_register_param(decl,
+                    sym_add(&ns_ident, name, type, symtype, linkage));
             }
             parent = block(parent);
             pop_scope(&ns_ident);
