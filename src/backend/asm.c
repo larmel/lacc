@@ -8,7 +8,6 @@
 #include "core/string.h"
 #include "core/symbol.h"
 #include "core/error.h"
-#include "util/memoize.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -928,13 +927,11 @@ static void asm_op(FILE *stream, const struct op *op)
 
 static void asm_block(
     FILE *stream,
-    struct memo *memo,
-    const struct block *block,
+    struct block *block,
     const enum param_class *res);
 
 static void tail_cmp_jump(
     FILE *stream,
-    struct memo *memo,
     const struct block *block,
     const enum param_class *res)
 {
@@ -948,6 +945,7 @@ static void tail_cmp_jump(
     load(stream, cmp->c, CX);
     fprintf(stream, "\tcmp\t%%%s, %%%s\n",
         REG(CX, size_of(cmp->a.type)), REG(AX, size_of(cmp->a.type)));
+
     switch (cmp->type) {
     case IR_OP_EQ:
         fprintf(stream, "\tje\t%s\n", block->jump[1]->label);
@@ -964,18 +962,17 @@ static void tail_cmp_jump(
         assert(0);
     }
 
-    if (is_memoized(memo, block->jump[0]->label)) {
+    if (block->jump[0]->color == BLACK) {
         fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
     }
 
-    asm_block(stream, memo, block->jump[0], res);
-    asm_block(stream, memo, block->jump[1], res);
+    asm_block(stream, block->jump[0], res);
+    asm_block(stream, block->jump[1], res);
 }
 
 static void tail_generic(
     FILE *stream,
-    struct memo *memo,
-    const struct block *block,
+    struct block *block,
     const enum param_class *res)
 {
     if (!block->jump[0] && !block->jump[1]) {
@@ -987,53 +984,54 @@ static void tail_generic(
         fprintf(stream, "\tleaveq\n");
         fprintf(stream, "\tretq\n");
     } else if (!block->jump[1]) {
-        if (is_memoized(memo, block->jump[0]->label)) {
+        if (block->jump[0]->color == BLACK) {
             fprintf(stream, "\tjmp\t%s\n", block->jump[0]->label);
         }
 
-        asm_block(stream, memo, block->jump[0], res);
+        asm_block(stream, block->jump[0], res);
     } else {
         load(stream, block->expr, AX);
         fprintf(stream, "\tcmpq\t$0, %%rax\n");
         fprintf(stream, "\tje\t%s\n", block->jump[0]->label);
-        if (is_memoized(memo, block->jump[1]->label)) {
+        if (block->jump[1]->color == BLACK) {
             fprintf(stream, "\tjmp\t%s\n", block->jump[1]->label);
         }
 
-        asm_block(stream, memo, block->jump[1], res);
-        asm_block(stream, memo, block->jump[0], res);
+        asm_block(stream, block->jump[1], res);
+        asm_block(stream, block->jump[0], res);
     }
 }
 
 static void asm_block(
     FILE *stream,
-    struct memo *memo,
-    const struct block *block,
+    struct block *block,
     const enum param_class *res)
 {
-    assert(block && res);
-    if (memoize_guard(memo, block->label)) {
-        int i;
+    int i;
 
-        fprintf(stream, "%s:\n", block->label);
-        for (i = 0; i < block->n - 1; ++i) {
+    assert(block);
+    assert(res);
+
+    if (block->color == BLACK)
+        return;
+
+    block->color = BLACK;
+    fprintf(stream, "%s:\n", block->label);
+    for (i = 0; i < block->n - 1; ++i) {
+        asm_op(stream, block->code + i);
+    }
+
+    /* Special case on comparison + jump, saving some space by not writing
+     * the result of comparison (always a temporary). */
+    if (block->n && IS_COMPARISON(block->code[i].type) &&
+        block->jump[0] && block->jump[1])
+    {
+        tail_cmp_jump(stream, block, res);
+    } else {
+        if (block->n) {
             asm_op(stream, block->code + i);
         }
-
-        /* Special case on comparison + jump, saving some space by not writing
-         * the result of comparison (always a temporary). */
-        if (
-            block->n && IS_COMPARISON(block->code[i].type) &&
-            block->jump[0] && block->jump[1])
-        {
-            tail_cmp_jump(stream, memo, block, res);
-        } else {
-            if (block->n) {
-                asm_op(stream, block->code + i);
-            }
-
-            tail_generic(stream, memo, block, res);
-        }
+        tail_generic(stream, block, res);
     }
 }
 
@@ -1115,8 +1113,13 @@ static void assemble_data(FILE *stream, struct block *head)
 
 static void asm_function(FILE *stream, const struct decl *decl)
 {
-    struct memo *memo = memoize_init();
+    int i;
     enum param_class *res;
+
+    /* Reset coloring before traversal. */
+    for (i = 0; i < decl->size; ++i) {
+        decl->nodes[i]->color = WHITE;
+    }
 
     fprintf(stream, "\t.text\n");
     if (decl->fun->linkage == LINK_EXTERN) {
@@ -1133,14 +1136,13 @@ static void asm_function(FILE *stream, const struct decl *decl)
     res = enter(stream, decl);
 
     /* Recursively assemble body. */
-    asm_block(stream, memo, decl->body, res);
+    asm_block(stream, decl->body, res);
 
-    /* This is required to see function names in valgrind. */
+    /* This is required to see function names with valgrind. */
     fprintf(stream, "\t.size\t%s, .-%s\n",
         sym_name(decl->fun), sym_name(decl->fun));
 
     free(res);
-    memoize_free(memo);
 }
 
 void assemble(FILE *stream, const struct decl *decl)

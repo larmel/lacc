@@ -142,9 +142,14 @@ struct block
     /* Branch targets.
      * - (NULL, NULL): Terminal node, return expr from function.
      * - (x, NULL)   : Unconditional jump, f.ex break, goto, or bottom of loop.
-     * - (x, y)      : False and true branch targets, respectively.
-     */
-    const struct block *jump[2];
+     * - (x, y)      : False and true branch targets, respectively. */
+    struct block *jump[2];
+
+    /* Used to mark nodes as visited during graph traversal. */
+    enum color {
+        WHITE,
+        BLACK
+    } color;
 };
 
 /* Represents an external declaration list or a function definition.

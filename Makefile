@@ -28,7 +28,6 @@ BOOTSTRAP_SOURCES := \
 	src/frontend/macro.c \
 	src/frontend/preprocess.c \
 	src/frontend/tokenize.c \
-	src/util/memoize.c \
 	src/main.c
 BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))
 REMAINING_SOURCES := $(filter-out $(BOOTSTRAP_SOURCES), $(SOURCES))
