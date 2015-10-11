@@ -110,8 +110,6 @@ struct typetree *type_init_function(void);
 struct typetree *type_init_object(void);
 struct typetree *type_init_void(void);
 
-const struct typetree *type_init_string(size_t length);
-
 int type_equal(const struct typetree *l, const struct typetree *r);
 
 int is_compatible(const struct typetree *l, const struct typetree *r);

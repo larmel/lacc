@@ -128,11 +128,6 @@ struct typetree *type_init_void(void)
     return alloctype(arg);
 }
 
-const struct typetree *type_init_string(size_t length)
-{
-    return type_init_array(&basic_type__char, length);
-}
-
 int type_alignment(const struct typetree *type)
 {
     int i = 0, m = 0, d;

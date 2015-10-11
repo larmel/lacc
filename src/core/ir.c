@@ -92,10 +92,9 @@ struct var var_direct(const struct symbol *sym)
 struct var var_string(const char *str)
 {
     struct var var = {0};
-    unsigned int length = strlen(str) + 1;
 
     var.kind = IMMEDIATE;
-    var.type = type_init_string(length);
+    var.type = type_init_array(&basic_type__char, strlen(str) + 1);
     var.string = str;
     return var;
 }
