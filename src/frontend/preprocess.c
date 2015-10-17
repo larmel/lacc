@@ -483,46 +483,50 @@ static struct macro preprocess_define(
     return macro;
 }
 
-/* Concatenate token to string buffer. Allocate new buffer if input is NULL.
+/* Concatenate tokens to produce a new string token.
  */
-static char *pastetok(char *str, struct token t)
+static struct token pastetok(struct token a, struct token b)
 {
-    size_t len = (str) ? strlen(str) : 0;
+    size_t len;
+    char *str;
+    struct token t = {STRING};
 
-    assert(t.strval);
-    len += strlen(t.strval) + 1;
-    if (str) {
-        str = realloc(str, len * sizeof(*str));
-    } else {
-        str = calloc(len, sizeof(*str));
-    }
+    assert(a.strval && b.strval);
 
-    return strncat(str, t.strval, len);
+    len = strlen(a.strval) + strlen(b.strval);
+    str = calloc(len + 1, sizeof(*str));
+    strcpy(str, a.strval);
+    strcat(str, b.strval);
+
+    t.strval = str_register_n(str, len);
+    free(str);
+    return t;
 }
 
 static void preprocess_include(const struct token line[])
 {
+    struct token t = {STRING, ""};
+
     line = skip_ws(line);
     if (line->token == STRING) {
         include_file(line->strval);
     } else if (line->token == '<') {
-        char *path = NULL;
-
         line = skip_ws(line + 1);
         while (line->token != END) {
             if (line->token == '>') {
                 break;
             }
             line = skip_ws(line);
-            path = pastetok(path, *line++);
+            t = pastetok(t, *line++);
         }
 
-        if (!path) {
+        if (!strlen(t.strval)) {
             error("Invalid include directive.");
             exit(1);
         }
+
         assert(line->token == '>');
-        include_system_file(path);
+        include_system_file(t.strval);
     }
 }
 
@@ -640,7 +644,7 @@ static void add(struct token t)
 {
     extern int VERBOSE;
     size_t i = length;
-    char *str = NULL;
+    int added = 0;
 
     /* Combine adjacent string literals. This step is done after preprocessing
      * and macro expansion; logic in preprocess_line will guarantee that we keep
@@ -650,15 +654,12 @@ static void add(struct token t)
         while (i && lookahead[--i].token == SPACE)
             ;
         if (lookahead[i].token == STRING) {
-            str = pastetok(str, lookahead[i]);
-            str = pastetok(str, t);
-            t.strval = str_register(str);
-            lookahead[i] = t;
-            free(str);
+            lookahead[i] = pastetok(lookahead[i], t);
+            added = 1;
         }
     }
 
-    if (!str) {
+    if (!added) {
         length++;
         lookahead = realloc(lookahead, length * sizeof(*lookahead));
         lookahead[length - 1] = t;
