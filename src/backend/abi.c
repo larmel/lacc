@@ -10,13 +10,18 @@ enum reg ret_int_reg[] = {AX, DX};
 
 static int has_unaligned_fields(const struct typetree *t)
 {
+    const struct member *member;
     int i;
+
     if (is_struct_or_union(t)) {
         t = unwrapped(t);
-        for (i = 0; i < t->n; ++i)
-            if (t->member[i].offset % size_of(t->member[i].type))
+        for (i = 0; i < nmembers(t); ++i) {
+            member = get_member(t, i);
+            if (member->offset % size_of(member->type))
                 return 1;
+        }
     }
+
     return 0;
 }
 
@@ -35,6 +40,7 @@ static enum param_class combine(enum param_class a, enum param_class b)
  */
 static void flatten(enum param_class *l, const struct typetree *t, int offset)
 {
+    const struct member *member;
     int i = offset / 8;
 
     switch (t->type) {
@@ -51,8 +57,9 @@ static void flatten(enum param_class *l, const struct typetree *t, int offset)
     case T_STRUCT:
     case T_UNION:
         t = unwrapped(t);
-        for (i = 0; i < t->n; ++i) {
-            flatten(l, t->member[i].type, t->member[i].offset + offset);
+        for (i = 0; i < nmembers(t); ++i) {
+            member = get_member(t, i);
+            flatten(l, member->type, member->offset + offset);
         }
         break;
     case T_ARRAY:
@@ -168,18 +175,19 @@ enum param_class **classify_signature(
     const struct typetree *func,
     enum param_class **res)
 {
-    int i;
+    int i, n;
     enum param_class **params;
     const struct typetree **args;
 
     assert(is_function(func));
 
-    args = calloc(func->n, sizeof(*args));
-    for (i = 0; i < func->n; ++i) {
-        args[i] = func->member[i].type;
+    n = nmembers(func);
+    args = calloc(n, sizeof(*args));
+    for (i = 0; i < n; ++i) {
+        args[i] = get_member(func, i)->type;
     }
 
-    params = classify_call(args, func->next, func->n, res);
+    params = classify_call(args, func->next, n, res);
     free(args);
 
     return params;

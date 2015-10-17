@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+struct member_list;
+
 /* Internal representation of a type.
  */
 struct typetree
@@ -30,24 +32,48 @@ struct typetree
         Q_CONST_VOLATILE = Q_CONST | Q_VOLATILE
     } qualifier;
 
-    /* Number of members. */
-    int n;
-
     /* Function parameters, or struct/union members. */
-    struct member {
-        const struct typetree *type;
-        const char *name;
-        int offset;
-    } *member;
+    const struct member_list *member_list;
 
     /* Function return value, pointer target, array base, or pointer to tagged
-     * struct or union type. */
+     * struct or union type. Tag indirections are used to avoid loops in type
+     * trees. */
     const struct typetree *next;
 
     /* Struct or union tag name, taken from symbol table in order to be able to
      * print the reference. */
     const char *tag_name;
 };
+
+struct member {
+    const char *name;
+    const struct typetree *type;
+    int offset;
+};
+
+/* Get the number of struct or union members, or function parameters.
+ */
+int nmembers(const struct typetree *type);
+
+/* Return the n-th struct or union member, or function parameter.
+ */
+const struct member *get_member(const struct typetree *type, int n);
+
+/* Add member to struct, union or function type. Update size and alignment of
+ * fields. For functions taking variable number of arguments, the last member
+ * should be passed as "...".
+ */
+void type_add_member(
+    struct typetree *type,
+    const char *member_name,
+    const struct typetree *member_type);
+
+/* Find type member of the given name, meaning struct or union field, or
+ * function parameter. Returns NULL in the case no member is found.
+ */
+const struct member *find_type_member(
+    const struct typetree *type,
+    const char *name);
 
 /* Singleton unqualified instances of common types.
  */
@@ -91,15 +117,6 @@ extern const struct typetree
 #define is_union(t) ((t)->type == T_UNION)
 #define is_const(t) ((t)->qualifier & Q_CONST)
 #define is_volatile(t) ((t)->qualifier & Q_VOLATILE)
-
-/* A function takes variable arguments if last parameter is '...'. Store this
- * with a sentinel -1 value as offset of the first argument.
- */
-#define is_vararg(t) \
-    (is_function(t) && (t)->n && (t)->member[0].offset == -1)
-
-/* Tag indirections on struct and union to avoid loops in type trees.
- */
 #define is_tagged(t) (is_struct_or_union(t) && (t)->next)
 
 struct typetree *type_init_integer(int size);
@@ -114,19 +131,37 @@ int type_equal(const struct typetree *l, const struct typetree *r);
 
 int is_compatible(const struct typetree *l, const struct typetree *r);
 
-/* Return tagged type if this is an indirection, ignoring cv-qualifiers. The tag
- * is immutable.
+/* A function takes variable arguments if last parameter is '...'.
  */
-const struct typetree *unwrapped(const struct typetree *type);
+int is_vararg(const struct typetree *type);
 
 /* Return size of type. If indirection, return size of tagged type.
  */
 int size_of(const struct typetree *type);
 
+/* Alignment in bytes.
+ */
+int type_alignment(const struct typetree *type);
+
+/* Create a tag type pointing to the provided object. Input type must be of
+ * struct or union type.
+ *
+ * Usage of this is to avoid circular typetree graphs, and to let tagged types
+ * be cv-qualified without mutating the original definition.
+ */
+struct typetree *type_tagged_copy(
+    const struct typetree *type,
+    const char *name);
+
+/* Return tagged type if this is an indirection, ignoring cv-qualifiers. The tag
+ * is immutable.
+ */
+const struct typetree *unwrapped(const struct typetree *type);
+
 /* Get the type the given POINTER is pointing to. Handles tag indirections for
  * pointers to typedef'ed object types.
  */
-const struct typetree *type_deref(const struct typetree *ptr);
+const struct typetree *type_deref(const struct typetree *type);
 
 /* Find a common real type between operands used in an expression, giving the
  * type of the result.
@@ -140,31 +175,6 @@ const struct typetree *usual_arithmetic_conversion(
  * to int.
  */
 const struct typetree *promote_integer(const struct typetree *type);
-
-/* Alignment in bytes.
- */
-int type_alignment(const struct typetree *type);
-
-void type_add_member(struct typetree *, const struct typetree *, const char *);
-
-int type_align_struct_members(struct typetree *type);
-
-/* Find type member of the given name, meaning struct or union field, or
- * function parameter. Returns NULL in the case no member is found.
- */
-const struct member *find_type_member(
-    const struct typetree *type,
-    const char *name);
-
-/* Create a tag type pointing to the provided object. Input type must be of
- * struct or union type.
- *
- * Usage of this is to avoid circular typetree graphs, and to let tagged types
- * be cv-qualified without mutating the original definition.
- */
-struct typetree *type_tagged_copy(
-    const struct typetree *type,
-    const char *name);
 
 /* Print type to buffer, returning how many characters were written.
  */

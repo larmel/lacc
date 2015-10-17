@@ -121,11 +121,11 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
     switch (sym->type.type) {
     case T_FUNCTION:
         if (is_function(type) && type_equal(sym->type.next, type->next)) {
-            conflict = 0;
-            if (!sym->type.n || sym->type.n == type->n) {
-                sym->type.n = type->n;
-                sym->type.member = type->member;
-            } else conflict = 1;
+            conflict =
+                sym->type.member_list &&
+                nmembers(&sym->type) != nmembers(type);
+            if (!conflict)
+                sym->type.member_list = type->member_list;
         }
         break;
     case T_ARRAY:
@@ -259,11 +259,10 @@ void register_builtin_types(struct namespace *ns)
     struct typetree *type = type_init_object();
     const struct typetree *none = &basic_type__void;
 
-    type_add_member(type, &basic_type__unsigned_int, "gp_offset");
-    type_add_member(type, &basic_type__unsigned_int, "fp_offset");
-    type_add_member(type, type_init_pointer(none), "overflow_arg_area");
-    type_add_member(type, type_init_pointer(none), "reg_save_area");
-    type_align_struct_members(type);
+    type_add_member(type, "gp_offset", &basic_type__unsigned_int);
+    type_add_member(type, "fp_offset", &basic_type__unsigned_int);
+    type_add_member(type, "overflow_arg_area", type_init_pointer(none));
+    type_add_member(type, "reg_save_area", type_init_pointer(none));
     type = type_init_array(type, 1);
 
     /* Define va_list as described in System V ABI. */

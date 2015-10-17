@@ -173,9 +173,9 @@ static struct block *declaration(struct block *parent)
 
             push_scope(&ns_ident);
             define_builtin__func__(sym->name);
-            for (i = 0; i < sym->type.n; ++i) {
-                name = sym->type.member[i].name;
-                type = sym->type.member[i].type;
+            for (i = 0; i < nmembers(&sym->type); ++i) {
+                name = get_member(&sym->type, i)->name;
+                type = get_member(&sym->type, i)->type;
                 symtype = SYM_DEFINITION;
                 linkage = LINK_NONE;
                 if (!name) {
@@ -221,7 +221,7 @@ static struct block *initializer(struct block *block, struct var target)
         case T_UNION:
             /* C89 states that only the first element of a union can be
              * initialized. Zero the whole thing first if there is padding. */
-            if (size_of(type->member[0].type) < type->size) {
+            if (size_of(get_member(type, 0)->type) < type->size) {
                 if (type->size % 8) {
                     target.type =
                         type_init_array(&basic_type__char, type->size);
@@ -231,7 +231,7 @@ static struct block *initializer(struct block *block, struct var target)
                 }
                 zero_initialize(block, target);
             }
-            target.type = type->member[0].type;
+            target.type = get_member(type, 0)->type;
             block = initializer(block, target);
             if (peek().token != '}') {
                 error("Excess elements in union initializer.");
@@ -239,9 +239,9 @@ static struct block *initializer(struct block *block, struct var target)
             }
             break;
         case T_STRUCT:
-            for (; i < type->n; ++i) {
-                target.type = type->member[i].type;
-                target.offset = base + type->member[i].offset;
+            for (; i < nmembers(type); ++i) {
+                target.type = get_member(type, i)->type;
+                target.offset = base + get_member(type, i)->offset;
                 block = initializer(block, target);
                 if (peek().token == ',') {
                     consume(',');
@@ -250,9 +250,9 @@ static struct block *initializer(struct block *block, struct var target)
                     break;
                 }
             }
-            while (++i < type->n) {
-                target.type = type->member[i].type;
-                target.offset = base + type->member[i].offset;
+            while (++i < nmembers(type)) {
+                target.type = get_member(type, i)->type;
+                target.offset = base + get_member(type, i)->offset;
                 zero_initialize(block, target);
             }
             break;
@@ -327,9 +327,9 @@ static void zero_initialize(struct block *block, struct var target)
     case T_UNION:
         target.type = unwrapped(target.type);
         var = target;
-        for (i = 0; i < var.type->n; ++i) {
-            target.type = var.type->member[i].type;
-            target.offset = var.offset + var.type->member[i].offset;
+        for (i = 0; i < nmembers(var.type); ++i) {
+            target.type = get_member(var.type, i)->type;
+            target.offset = var.offset + get_member(var.type, i)->offset;
             zero_initialize(block, target);
         }
         break;
@@ -359,46 +359,46 @@ static void zero_initialize(struct block *block, struct var target)
     }
 }
 
-/* Parse struct declaration list. Return size of largest member.
+/* Parse declaration list for struct or union members.
  *
  *      { int a; long b; }
  */
-static int struct_declaration_list(struct typetree *obj)
+static void member_declaration_list(struct typetree *type)
 {
     struct namespace ns = {0};
-    int size = 0;
+    struct typetree *decl_base, *decl_type;
+    const char *name;
 
     push_scope(&ns);
+
     do {
-        struct typetree *base = declaration_specifiers(NULL);
+        decl_base = declaration_specifiers(NULL);
 
         do {
-            const char *name = NULL;
-            const struct typetree *type = declarator(base, &name);
+            name = NULL;
+            decl_type = declarator(decl_base, &name);
 
             if (!name) {
-                error("Missing name in struct member declarator.");
+                error("Missing name in member declarator.");
                 exit(1);
-            } else if (!size_of(type)) {
-                error("Field '%s' has incomplete type '%t'.", name, type);
+            } else if (!size_of(decl_type)) {
+                error("Field '%s' has incomplete type '%t'.", name, decl_type);
                 exit(1);
             } else {
-                sym_add(&ns, name, type, SYM_DECLARATION, LINK_NONE);
-                type_add_member(obj, type, name);
+                sym_add(&ns, name, decl_type, SYM_DECLARATION, LINK_NONE);
+                type_add_member(type, name, decl_type);
             }
-            if (size_of(type) > size) {
-                size = size_of(type);
-            }
+
             if (peek().token == ',') {
                 consume(',');
                 continue;
             }
         } while (peek().token != ';');
+
         consume(';');
     } while (peek().token != '}');
 
     pop_scope(&ns);
-    return size;
 }
 
 /* Parse struct or union declaration.
@@ -409,9 +409,8 @@ static struct typetree *struct_or_union_declaration(void)
 {
     struct symbol *sym = NULL;
     struct typetree *type = NULL;
-
-    enum type kind = (next().token == STRUCT) ? T_STRUCT : T_UNION;
-    int size;
+    enum type kind =
+        (next().token == STRUCT) ? T_STRUCT : T_UNION;
 
     if (peek().token == IDENTIFIER) {
         const char *name = consume(IDENTIFIER).strval;
@@ -440,24 +439,17 @@ static struct typetree *struct_or_union_declaration(void)
     }
 
     if (peek().token == '{') {
-        consume('{');
-
-        /* Anonymous structure; allocate a new standalone type, not part of any
-         * symbol. */
         if (!type) {
+            /* Anonymous structure; allocate a new standalone type,
+             * not part of any symbol. */
             type = type_init_object();
             type->type = kind;
         }
 
-        size = struct_declaration_list(type);
+        consume('{');
+        member_declaration_list(type);
+        assert(type->size);
         consume('}');
-
-        if (kind == T_STRUCT) {
-            type_align_struct_members(type);
-        } else {
-            assert(kind == T_UNION);
-            type->size = size;
-        }
     }
 
     /* Return to the caller a copy of the root node, which can be overwritten
@@ -851,18 +843,13 @@ static struct typetree *parameter_list(const struct typetree *base)
         type = declaration_specifiers(NULL);
         type = declarator(type, &name);
         if (is_void(type)) {
-            if (func->n) {
+            if (nmembers(func)) {
                 error("Incomplete type in parameter list.");
             }
             break;
         }
 
-        /* Array parameter reduces to pointer. */
-        if (is_array(type)) {
-            type = type_init_pointer(type->next);
-        }
-
-        type_add_member(func, type, name);
+        type_add_member(func, name, type);
         if (peek().token != ',') {
             break;
         }
@@ -873,8 +860,8 @@ static struct typetree *parameter_list(const struct typetree *base)
             exit(1);
         } else if (peek().token == DOTS) {
             consume(DOTS);
-            assert(func->n);
-            func->member[0].offset = -1;
+            assert(!is_vararg(func));
+            type_add_member(func, "...", NULL);
             assert(is_vararg(func));
             break;
         }
@@ -1743,17 +1730,17 @@ static struct block *postfix_expression(struct block *block)
                 exit(1);
             }
             consume('(');
-            arg = calloc(root.type->n, sizeof(struct var));
-            for (i = 0; i < root.type->n; ++i) {
+            arg = calloc(nmembers(root.type), sizeof(struct var));
+            for (i = 0; i < nmembers(root.type); ++i) {
                 if (peek().token == ')') {
                     error("Too few arguments to %s, expected %d but got %d.",
-                        root.symbol->name, root.type->n, i);
+                        root.symbol->name, nmembers(root.type), i);
                     exit(1);
                 }
                 block = assignment_expression(block);
                 arg[i] = block->expr;
                 /* todo: type check here. */
-                if (i < root.type->n - 1) {
+                if (i < nmembers(root.type) - 1) {
                     consume(',');
                 }
             }
@@ -1835,19 +1822,24 @@ static struct block *parse__builtin_va_start(struct block *block)
 {
     struct symbol *sym;
     struct token param;
+    int is_invalid;
 
     consume('(');
     block = assignment_expression(block);
     consume(',');
     param = consume(IDENTIFIER);
     sym = sym_lookup(&ns_ident, param.strval);
-    if (!sym || sym->depth != 1 || !decl->fun || !decl->fun->type.n ||
-        strcmp(decl->fun->type.member[decl->fun->type.n - 1].name,
-            param.strval))
-    {
+
+    is_invalid = !sym || sym->depth != 1 || !decl->fun;
+    is_invalid = is_invalid || !nmembers(&decl->fun->type);
+    is_invalid = is_invalid || strcmp(
+            get_member(&decl->fun->type, nmembers(&decl->fun->type) - 1)->name,
+            param.strval);
+    if (is_invalid) {
         error("Second parameter of va_start must be last function argument.");
         exit(1);
     }
+
     consume(')');
     block->expr = eval__builtin_va_start(block, block->expr);
     return block;

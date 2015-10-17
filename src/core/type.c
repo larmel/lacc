@@ -2,7 +2,6 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
-#include "error.h"
 #include "type.h"
 
 #include <assert.h>
@@ -23,9 +22,22 @@ const struct typetree
     basic_type__float = { T_REAL, 4 },
     basic_type__double = { T_REAL, 8 };
 
+/* Store member list separate from type to make memory ownership easier, types
+ * do not own their member list.
+ */
+struct member_list {
+    int length;
+    int cap;
+    int func_vararg;
+    struct member *member;
+};
+
 static struct typetree **type_registry;
 static size_t length;
 static size_t cap;
+
+static struct member_list **mem_list_registry;
+static size_t mem_length, mem_cap;
 
 static void cleanup(void)
 {
@@ -42,11 +54,23 @@ static void cleanup(void)
         type_registry = NULL;
         length = cap = 0;
     }
+
+    for (i = 0; i < mem_length; ++i) {
+        free(mem_list_registry[i]->member);
+        free(mem_list_registry[i]);
+    }
+
+    if (mem_list_registry) {
+        free(mem_list_registry);
+        mem_list_registry = NULL;
+        mem_length = 0;
+        mem_cap = 0;
+    }
 }
 
 static struct typetree *alloctype(struct typetree args)
 {
-    if (!length)
+    if (!length && !mem_length)
         atexit(cleanup);
 
     if (length == cap) {
@@ -59,17 +83,144 @@ static struct typetree *alloctype(struct typetree args)
     return type_registry[length++];
 }
 
+static struct member_list *allocmembers(void)
+{
+    if (!length && !mem_length)
+        atexit(cleanup);
+
+    if (mem_length == mem_cap) {
+        mem_cap = (!mem_cap) ? 32 : mem_cap * 2;
+        mem_list_registry =
+            realloc(mem_list_registry, mem_cap * sizeof(*mem_list_registry));
+    }
+
+    mem_list_registry[mem_length] = calloc(1, sizeof(**mem_list_registry));
+    return mem_list_registry[mem_length++];
+}
+
+int type_alignment(const struct typetree *type)
+{
+    int i = 0, m = 0, d;
+    assert(is_object(type));
+
+    switch (type->type) {
+    case T_ARRAY:
+        return type_alignment(type->next);
+    case T_STRUCT:
+    case T_UNION:
+        type = unwrapped(type);
+        for (; i < nmembers(type); ++i) {
+            d = type_alignment(get_member(type, i)->type);
+            if (d > m) m = d;
+        }
+        assert(m);
+        return m;
+    default:
+        return type->size;
+    }
+}
+
+static int align_struct_members(struct member_list *list)
+{
+    int i,
+        size = 0,
+        alignment,
+        max_alignment = 0;
+    struct member *field;
+
+    for (i = 0; i < list->length; ++i) {
+        field = &list->member[i];
+        alignment = type_alignment(field->type);
+        if (alignment > max_alignment) {
+            max_alignment = alignment;
+        }
+
+        /* Add padding until size matches alignment. */
+        if (size % alignment) {
+            size += alignment - (size % alignment);
+        }
+
+        assert(!(size % alignment));
+        field->offset = size;
+        size += size_of(field->type);
+    }
+
+    /* Total size must be a multiple of strongest alignment. */
+    if (size % max_alignment) {
+        size += max_alignment - (size % max_alignment);
+    }
+
+    return size;
+}
+
+int nmembers(const struct typetree *type)
+{
+    return (type->member_list) ? type->member_list->length : 0;
+}
+
+const struct member *get_member(const struct typetree *type, int n)
+{
+    if (!type->member_list || type->member_list->length <= n)
+        return NULL;
+    return type->member_list->member + n;
+}
+
 void type_add_member(
     struct typetree *type,
-    const struct typetree *member,
-    const char *name)
+    const char *member_name,
+    const struct typetree *member_type)
 {
-    type->n++;
-    type->member = realloc(type->member, sizeof(*type->member) * type->n);
+    struct member_list *list;
 
-    type->member[type->n - 1].type = member;
-    type->member[type->n - 1].name = name;
-    type->member[type->n - 1].offset = 0;
+    assert(is_struct_or_union(type) || is_function(type));
+    assert(!is_function(type) || !is_vararg(type));
+    assert(!is_tagged(type));
+
+    if (!type->member_list)
+        type->member_list = allocmembers();
+
+    list = (struct member_list *) type->member_list;
+
+    /* Adding function parameters have special case for "..." meaning variable
+     * argument list, and array types decaying to pointer. */
+    if (is_function(type)) {
+        if (member_name && !strcmp(member_name, "...")) {
+            list->func_vararg = 1;
+            return;
+        }
+        if (is_array(member_type))
+            member_type = type_init_pointer(member_type->next);
+    }
+
+    if (list->length == list->cap) {
+        list->cap += 16;
+        list->member = realloc(list->member, list->cap * sizeof(*list->member));
+    }
+
+    assert(list->length < list->cap);
+    list->member[list->length].name = member_name;
+    list->member[list->length].type = member_type;
+    list->member[list->length].offset = 0;
+    list->length++;
+
+    /* Align new struct members immediately. */
+    if (is_struct(type)) {
+        type->size = align_struct_members(list);
+    }
+
+    /* Size of union is the largest of the fields. */
+    if (is_union(type)) {
+        if (type->size < size_of(member_type)) {
+            type->size = size_of(member_type);
+        }
+    }
+}
+
+int is_vararg(const struct typetree *type)
+{
+    assert(is_function(type));
+
+    return (type->member_list) ? type->member_list->func_vararg : 0;
 }
 
 struct typetree *type_init_integer(int width)
@@ -128,60 +279,6 @@ struct typetree *type_init_void(void)
     return alloctype(arg);
 }
 
-int type_alignment(const struct typetree *type)
-{
-    int i = 0, m = 0, d;
-    assert(is_object(type));
-
-    switch (type->type) {
-    case T_ARRAY:
-        return type_alignment(type->next);
-    case T_STRUCT:
-    case T_UNION:
-        type = unwrapped(type);
-        for (; i < type->n; ++i) {
-            d = type_alignment(type->member[i].type);
-            if (d > m) m = d;
-        }
-        assert(m);
-        return m;
-    default:
-        return type->size;
-    }
-}
-
-int type_align_struct_members(struct typetree *type)
-{
-    int i, alignment;
-    struct member *field;
-
-    assert(!is_tagged(type));
-    assert(is_struct(type) && type->n);
-
-    for (i = 0; i < type->n; ++i) {
-        field = &type->member[i];
-        alignment = type_alignment(field->type);
-
-        /* Add padding until size matches alignment. */
-        if (type->size % alignment) {
-            type->size += alignment - (type->size % alignment);
-        }
-
-        assert(!(type->size % alignment));
-
-        field->offset = type->size;
-        type->size += size_of(field->type);
-    }
-
-    /* Total size must be a multiple of strongest alignment. */
-    alignment = type_alignment(type);
-    if (type->size % alignment) {
-        type->size += alignment - (type->size % alignment);
-    }
-
-    return alignment;
-}
-
 const struct typetree *unwrapped(const struct typetree *type)
 {
     return is_tagged(type) ? type->next : type;
@@ -215,21 +312,21 @@ int type_equal(const struct typetree *a, const struct typetree *b)
 
     if (a->type == b->type
         && a->size == b->size
-        && a->n == b->n
+        && nmembers(a) == nmembers(b)
         && is_unsigned(a) == is_unsigned(b)
         && type_equal(a->next, b->next))
     {
         int i;
-        for (i = 0; i < a->n; ++i) {
-            if (!type_equal(a->member[i].type, b->member[i].type)) {
+        for (i = 0; i < nmembers(a); ++i) {
+            if (!type_equal(get_member(a, i)->type, get_member(b, i)->type)) {
                 return 0;
             }
             if (is_struct_or_union(a)
-                && strcmp(a->member[i].name, b->member[i].name))
+                && strcmp(get_member(a, i)->name, get_member(b, i)->name))
             {
                 return 0;
             }
-            assert(a->member[i].offset == b->member[i].offset);
+            assert(get_member(a, i)->offset == get_member(b, i)->offset);
         }
         return 1;   
     }
@@ -241,7 +338,7 @@ static const struct typetree *remove_qualifiers(const struct typetree *type)
 {
     if (type->qualifier) {
         struct typetree *copy = alloctype(*type);
-        assert(!type->n);
+        assert(!nmembers(type));
         copy->qualifier = 0;
         type = copy;
     }
@@ -304,15 +401,19 @@ const struct member *find_type_member(
     const struct typetree *type,
     const char *name)
 {
-    int i = 0;
+    int i;
+    const struct member *member;
+
     assert(is_struct_or_union(type));
 
     type = unwrapped(type);
-    for (; i < type->n; ++i) {
-        if (!strcmp(name, type->member[i].name)) {
-            return type->member + i;
+    for (i = 0; i < nmembers(type); ++i) {
+        member = get_member(type, i);
+        if (!strcmp(name, member->name)) {
+            return member;
         }
     }
+
     return NULL;
 }
 
@@ -325,8 +426,8 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
         return w;
     }
 
-    if (is_const(tree))     w += snprintf(s + w, size - w, "const ");
-    if (is_volatile(tree))  w += snprintf(s + w, size - w, "volatile ");
+    if (is_const(tree)) w += snprintf(s + w, size - w, "const ");
+    if (is_volatile(tree)) w += snprintf(s + w, size - w, "volatile ");
 
     if (is_tagged(tree)) {
         w += snprintf(s + w, size - w, "%s %s",
@@ -372,9 +473,9 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
         break;
     case T_FUNCTION:
         w += snprintf(s + w, size - w, "(");
-        for (i = 0; i < tree->n; ++i) {
-            w += snprinttype(tree->member[i].type, s + w, size - w);
-            if (i < tree->n - 1) {
+        for (i = 0; i < nmembers(tree); ++i) {
+            w += snprinttype(get_member(tree, i)->type, s + w, size - w);
+            if (i < nmembers(tree) - 1) {
                 w += snprintf(s + w, size - w, ", ");
             }
         }
@@ -396,11 +497,12 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
     case T_STRUCT:
     case T_UNION:
         w += snprintf(s + w, size - w, "{");
-        for (i = 0; i < tree->n; ++i) {
-            w += snprintf(s + w, size - w, ".%s::", tree->member[i].name);
-            w += snprinttype(tree->member[i].type, s + w, size - w);
-            w += snprintf(s + w, size - w, " (+%d)", tree->member[i].offset);
-            if (i < tree->n - 1) {
+        for (i = 0; i < nmembers(tree); ++i) {
+            const struct member *member = get_member(tree, i);
+            w += snprintf(s + w, size - w, ".%s::", member->name);
+            w += snprinttype(member->type, s + w, size - w);
+            w += snprintf(s + w, size - w, " (+%d)", member->offset);
+            if (i < nmembers(tree) - 1) {
                 w += snprintf(s + w, size - w, ", ");
             }
         }

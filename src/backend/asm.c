@@ -467,8 +467,8 @@ static enum param_class *enter(FILE *s, const struct decl *func)
         /* Here it is ok to not separate between object and other types. Data in
          * registers can always be treated as integer type. */
         if (*eightbyte != PC_MEMORY) {
-            int n = N_EIGHTBYTES(func->fun->type.member[i].type),
-                size = size_of(func->fun->type.member[i].type),
+            int n = N_EIGHTBYTES(get_member(&func->fun->type, i)->type),
+                size = size_of(get_member(&func->fun->type, i)->type),
                 j;
             struct var ref = { NULL, NULL, DIRECT };
 
