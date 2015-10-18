@@ -408,11 +408,31 @@ static struct token **read_args(
     return args;
 }
 
+static int needs_expansion(const struct token *list)
+{
+    const struct macro *def;
+
+    while (list->token != END) {
+        def = definition(*list);
+        if (def && !is_macro_expanded(def))
+            return 1;
+        list++;
+    }
+
+    return 0;
+}
+
 struct token *expand(struct token *original)
 {
-    const struct token *list = original;
-    struct token *res = calloc(1, sizeof(*res));
+    const struct token *list;
+    struct token *res;
 
+    /* Do nothing if there is nothing to expand. */
+    if (!needs_expansion(original))
+        return original;
+
+    list = original;
+    res = calloc(1, sizeof(*res));
     res[0] = end_token;
     while (list->token != END) {
         const struct macro *def = definition(*list);
