@@ -22,6 +22,19 @@ struct source current_file;
 static const char **search_path;
 static size_t search_path_count;
 
+/* Re-use static buffer to save some allocations. Each lookup constructs
+ * new strings by combining include directory and filename. There is no
+ * specific limit on the length of file names.
+ */
+static char *inc_path;
+static size_t inc_path_len;
+
+/* Scratchpad buffer for assembling lines to return. The same buffer is
+ * resized if needed, enforcing no specific limit on how long a line can be.
+ */
+static char *input_line;
+static size_t input_line_len;
+
 /* Keep stack of file descriptors as resolved by includes. Push and pop from
  * the end of the list.
  */
@@ -60,8 +73,24 @@ static void finalize(void)
         ;
 
     free(src_stack);
-    if (search_path)
+
+    if (search_path) {
         free(search_path);
+        search_path = NULL;
+        search_path_count = 0;
+    }
+
+    if (inc_path) {
+        free(inc_path);
+        inc_path = NULL;
+        inc_path_len = 0;
+    }
+
+    if (input_line) {
+        free(input_line);
+        input_line = NULL;
+        input_line_len = 0;
+    }
 }
 
 void include_file(const char *name)
@@ -96,12 +125,6 @@ void include_file(const char *name)
 
 void include_system_file(const char *name)
 {
-    /* Re-use static buffer to save some allocations. Each lookup constructs
-     * new strings by combining include directory and filename. There is no
-     * specific limit on the length of file names. */
-    static char *path;
-    static size_t length;
-
     struct source source = {0};
     int i;
 
@@ -111,26 +134,26 @@ void include_system_file(const char *name)
         size_t dir = strlen(search_path[i]);
         size_t len = dir + strlen(name) + 1;
 
-        if (len > length) {
-            length = len * 2;
-            path = realloc(path, length * sizeof(*path));
+        if (len > inc_path_len) {
+            inc_path_len = len * 2;
+            inc_path = realloc(inc_path, inc_path_len * sizeof(*inc_path));
         }
 
-        strcpy(path, search_path[i]);
-        if (path[dir - 1] == '/') {
+        strcpy(inc_path, search_path[i]);
+        if (inc_path[dir - 1] == '/') {
             /* Include paths can be specified with or without trailing slash.
              * Do not normalize initially, but handle it here. */
             dir--;
         } else {
-            path[dir] = '/';
+            inc_path[dir] = '/';
         }
 
-        strcpy(path + dir + 1, name);
-        source.file = fopen(path, "r");
+        strcpy(inc_path + dir + 1, name);
+        source.file = fopen(inc_path, "r");
         if (source.file) {
-            char *end = strrchr(path, '/');
-            source.path = str_register_n(path, len);
-            source.dirlen = end - path;
+            char *end = strrchr(inc_path, '/');
+            source.path = str_register_n(inc_path, len);
+            source.dirlen = end - inc_path;
             break;
         }
     }
@@ -182,7 +205,7 @@ void init(const char *path)
 
     current_file = push(source);
 
-    /* Make sure file handles are closed on exit. */
+    /* Make sure file handles are closed on exit, and free string buffers. */
     atexit(finalize);
 }
 
@@ -271,18 +294,20 @@ static int getcleanline(char **lineptr, size_t *n, struct source *fn)
 int getprepline(char **buffer)
 {
     extern int VERBOSE;
-
-    static char *line;
-    static size_t size;
-
-    int read, processed;
+    int read,
+        processed;
 
     while (1) {
         if (!src_count) {
             return -1;
         }
 
-        read = getcleanline(&line, &size, &src_stack[src_count - 1]);
+        read =
+            getcleanline(
+                &input_line,
+                &input_line_len,
+                &src_stack[src_count - 1]);
+
         if (read == 0) {
             if (pop() == EOF) {
                 return -1;
@@ -294,11 +319,12 @@ int getprepline(char **buffer)
         break;
     }
 
-    *buffer = line;
+    *buffer = input_line;
     current_file = src_stack[src_count - 1];
 
     if (VERBOSE) {
-        printf("(%s, %d): `%s`\n", current_file.path, current_file.line, line);
+        printf("(%s, %d): `%s`\n",
+            current_file.path, current_file.line, input_line);
     }
 
     return processed;
