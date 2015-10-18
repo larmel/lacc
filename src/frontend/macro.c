@@ -10,6 +10,20 @@
 static struct macro *definitions;
 static size_t n_defs;
 
+static void cleanup(void)
+{
+    int i;
+    if (!n_defs) return;
+
+    for (i = 0; i < n_defs; ++i) {
+        free(definitions[i].replacement);
+    }
+
+    free(definitions);
+    definitions = NULL;
+    n_defs = 0;
+}
+
 static int macrocmp(const struct macro *a, const struct macro *b)
 {
     int i;
@@ -38,7 +52,9 @@ static int macrocmp(const struct macro *a, const struct macro *b)
 
 void define(struct macro macro)
 {
+    static int clean_on_exit;
     int i;
+
     for (i = 0; i < n_defs; ++i)
         if (!strcmp(definitions[i].name.strval, macro.name.strval))
             break;
@@ -55,6 +71,11 @@ void define(struct macro macro)
             free(macro.replacement);
         }
     } else {
+        if (!clean_on_exit) {
+            clean_on_exit = 1;
+            atexit(cleanup);
+        }
+
         n_defs++;
         definitions = realloc(definitions, sizeof(*definitions) * n_defs);
         definitions[n_defs - 1] = macro;
