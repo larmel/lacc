@@ -193,7 +193,7 @@ void type_add_member(
     }
 
     if (list->length == list->cap) {
-        list->cap += 16;
+        list->cap = 2 * list->cap + 2;
         list->member = realloc(list->member, list->cap * sizeof(*list->member));
     }
 
