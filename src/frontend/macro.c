@@ -1,4 +1,5 @@
 #include "core/error.h"
+#include "core/string.h"
 #include "macro.h"
 #include "input.h"
 
@@ -416,11 +417,13 @@ struct token stringify(const struct token list[])
 
     while (list->token != END) {
         len += strlen(list->strval);
-        str  = realloc(str, (len + 1) * sizeof(*str));
-        str  = strncat(str, list->strval, len);
+        str = realloc(str, (len + 1) * sizeof(*str));
+        str = strncat(str, list->strval, len);
         list++;
     }
-    t.strval = str;
+
+    t.strval = str_register_n(str, len);
+    free(str);
     return t;
 }
 
