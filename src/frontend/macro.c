@@ -177,11 +177,20 @@ static struct token *concat(struct token *list, struct token *other)
 static struct token *append(struct token *list, struct token other)
 {
     size_t i = len(list);
+
     assert(list[i].token == END);
     list = realloc(list, (i + 2) * sizeof(*list));
     list[i + 1] = list[i];
     list[i] = other;
     return list;
+}
+
+static struct token *copy(const struct token *list)
+{
+    size_t i = len(list) + 1;
+    struct token *c = calloc(i, sizeof(*c));
+
+    return memcpy(c, list, i * sizeof(*c));
 }
 
 /* Paste together two tokens.
@@ -275,7 +284,9 @@ static struct token *expand_macro(
     for (i = 0; i < macro->size; ++i) {
         int n = macro->replacement[i].param;
         if (n) {
-            res = concat(res, expand(args[n - 1]));
+            /* Create a copy of args before expanding to avoid it being
+             * free'd. */
+            res = concat(res, expand(copy(args[n - 1])));
         } else if (
             i < macro->size - 1 &&
             macro->replacement[i].token.token == '#' &&
@@ -296,7 +307,6 @@ static struct token *expand_macro(
         free(args[i]);
     }
     free(args);
-
     return res;
 }
 
@@ -376,8 +386,9 @@ static struct token **read_args(
     return args;
 }
 
-struct token *expand(const struct token list[])
+struct token *expand(struct token *original)
 {
+    const struct token *list = original;
     struct token *res = calloc(1, sizeof(*res));
 
     res[0] = end_token;
@@ -392,6 +403,8 @@ struct token *expand(const struct token list[])
             res = append(res, *list++);
         }
     }
+
+    free(original);
     return res;
 }
 

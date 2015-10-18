@@ -563,9 +563,9 @@ static int cnd_pop(void) {
  *
  * Assumes input is END terminated, and not containing newline.
  */
-static void preprocess_directive(const struct token *line)
+static void preprocess_directive(struct token *original)
 {
-    struct token *expanded = NULL;
+    const struct token *line = original;
 
     line = skip_to(line, '#');
     line = skip_ws(line + 1);
@@ -574,8 +574,10 @@ static void preprocess_directive(const struct token *line)
     {
         /* Perform macro expansion only for if and elif directives, before doing
          * the expression parsing. */
-        expanded = expand(line);
-        line = expanded;
+        original = expand(original);
+        line = original;
+        line = skip_to(line, '#');
+        line = skip_ws(line + 1);
     }
 
     if (line->token == IF) {
@@ -617,7 +619,7 @@ static void preprocess_directive(const struct token *line)
         }
     }
 
-    free(expanded);
+    free(original);
 }
 
 /* Buffer of preprocessed tokens, ready to be consumed by the parser. Configured
@@ -696,8 +698,7 @@ static void preprocess_line(void)
 
     do {
         struct token
-            *line = NULL,
-            *expanded = NULL;
+            *line, *expanded;
 
         do {
             t = get_preprocessing_token();
@@ -706,11 +707,9 @@ static void preprocess_line(void)
         if (t.token == '#') {
             line = read_complete_line(t);
             preprocess_directive(line);
-            free(line);
         } else if (cnd_peek()) {
             line = read_complete_line(t);
             expanded = expand(line);
-            free(line);
             line = expanded;
             while (line->token != END) {
                 if (line->token != SPACE || preserve_whitespace) {

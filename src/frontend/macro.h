@@ -39,7 +39,7 @@ const struct macro *definition(struct token);
 
 /* Expand a list of tokens, replacing any macro definitions. 
  */
-struct token *expand(const struct token list[]);
+struct token *expand(struct token *list);
 
 /* DEBUG */
 void print_list(const struct token *list);
