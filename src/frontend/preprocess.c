@@ -640,6 +640,23 @@ static const int K = 2;
  */
 static int preserve_whitespace;
 
+static void cleanup(void)
+{
+    if (lookahead) {
+        free(lookahead);
+        lookahead = NULL;
+        length = 0;
+        cursor = 0;
+    }
+
+    if (branch_stack.condition) {
+        free(branch_stack.condition);
+        branch_stack.condition = NULL;
+        branch_stack.length = 0;
+        branch_stack.cap = 0;
+    }
+}
+
 /* Add preprocessed token to lookahead buffer.
  */
 static void add(struct token t)
@@ -692,7 +709,13 @@ static void rewind_lookahead_buffer(void)
  */
 static void preprocess_line(void)
 {
+    static int call_cleanup;
     struct token t = {0};
+
+    if (!call_cleanup) {
+        call_cleanup = 1;
+        atexit(cleanup);
+    }
 
     rewind_lookahead_buffer();
 
