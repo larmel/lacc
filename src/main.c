@@ -115,5 +115,8 @@ int main(int argc, char* argv[])
         pop_scope(&ns_ident);
     }
 
+    if (output != stdout)
+        fclose(output);
+
     return errors;
 }
