@@ -256,14 +256,14 @@ struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
 
 void register_builtin_types(struct namespace *ns)
 {
-    struct typetree *type = type_init_object();
+    struct typetree *type = type_init(T_STRUCT);
     const struct typetree *none = &basic_type__void;
 
     type_add_member(type, "gp_offset", &basic_type__unsigned_int);
     type_add_member(type, "fp_offset", &basic_type__unsigned_int);
-    type_add_member(type, "overflow_arg_area", type_init_pointer(none));
-    type_add_member(type, "reg_save_area", type_init_pointer(none));
-    type = type_init_array(type, 1);
+    type_add_member(type, "overflow_arg_area", type_init(T_POINTER, none));
+    type_add_member(type, "reg_save_area", type_init(T_POINTER, none));
+    type = type_init(T_ARRAY, type, 1);
 
     /* Define va_list as described in System V ABI. */
     sym_add(ns, "__builtin_va_list", type, SYM_TYPEDEF, LINK_NONE);

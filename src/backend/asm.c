@@ -713,7 +713,7 @@ static void asm_op(FILE *stream, const struct op *op)
             /* The string value is an immediate, that has not yet gotten a label
              * that we can refer to. Add to string table, decay to address. */
             str.string = strlabel(str.string);
-            str.type = type_init_pointer(str.type->next);
+            str.type = type_init(T_POINTER, str.type->next);
             fprintf(stream, "\tmovq\t%s, %%%s\n", refer(str), REG(SI, 8));
 
             load_address(stream, op->a, DI);

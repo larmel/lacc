@@ -224,10 +224,10 @@ static struct block *initializer(struct block *block, struct var target)
             if (size_of(get_member(type, 0)->type) < type->size) {
                 if (type->size % 8) {
                     target.type =
-                        type_init_array(&basic_type__char, type->size);
+                        type_init(T_ARRAY, &basic_type__char, type->size);
                 } else {
                     target.type =
-                        type_init_array(&basic_type__long, type->size / 8);
+                        type_init(T_ARRAY, &basic_type__long, type->size / 8);
                 }
                 zero_initialize(block, target);
             }
@@ -345,7 +345,7 @@ static void zero_initialize(struct block *block, struct var target)
         break;
     case T_POINTER:
         var = var_zero(8);
-        var.type = type_init_pointer(&basic_type__void);
+        var.type = type_init(T_POINTER, &basic_type__void);
         eval_assign(block, target, var);
         break;
     case T_UNSIGNED:
@@ -416,8 +416,7 @@ static struct typetree *struct_or_union_declaration(void)
         const char *name = consume(IDENTIFIER).strval;
         sym = sym_lookup(&ns_tag, name);
         if (!sym) {
-            type = type_init_object();
-            type->type = kind;
+            type = type_init(kind);
             sym = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
         } else if (is_integer(&sym->type)) {
             error("Tag '%s' was previously declared as enum.", sym->name);
@@ -442,8 +441,7 @@ static struct typetree *struct_or_union_declaration(void)
         if (!type) {
             /* Anonymous structure; allocate a new standalone type,
              * not part of any symbol. */
-            type = type_init_object();
-            type->type = kind;
+            type = type_init(kind);
         }
 
         consume('{');
@@ -501,7 +499,7 @@ static void enumerator_list(void)
  */
 static struct typetree *enum_declaration(void)
 {
-    struct typetree *type = type_init_integer(4);
+    struct typetree *type = type_init(T_SIGNED, 4);
 
     consume(ENUM);
     if (peek().token == IDENTIFIER) {
@@ -637,7 +635,7 @@ static struct typetree *declaration_specifiers(int *stc)
             struct symbol *tag = sym_lookup(&ns_ident, tok.strval);
             if (tag && tag->symtype == SYM_TYPEDEF && !type) {
                 consume(IDENTIFIER);
-                type = type_init_object();
+                type = type_init(T_STRUCT);
                 *type = tag->type;
             } else {
                 done = 1;
@@ -689,7 +687,7 @@ static struct typetree *declaration_specifiers(int *stc)
                 (qual & Q_VOLATILE) ? " volatile" : "");
         }
     } else if (spec) {
-        type = type_init_object();
+        type = type_init(T_STRUCT);
         *type = get_basic_type_from_specifier(spec);
     } else {
         error("Missing type specifier.");
@@ -711,7 +709,7 @@ static struct typetree *declarator(struct typetree *base, const char **symbol)
 
 static struct typetree *pointer(const struct typetree *base)
 {
-    struct typetree *type = type_init_pointer(base);
+    struct typetree *type = type_init(T_POINTER, base);
 
     #define set_qualifier(d) \
         if (type->qualifier & d) \
@@ -763,7 +761,7 @@ direct_declarator_array(struct typetree *base)
             exit(1);
         }
 
-        base = type_init_array(base, length);
+        base = type_init(T_ARRAY, base, length);
     }
 
     return base;
@@ -833,7 +831,7 @@ direct_declarator(struct typetree *base, const char **symbol)
  */
 static struct typetree *parameter_list(const struct typetree *base)
 {
-    struct typetree *func = type_init_function();
+    struct typetree *func = type_init(T_FUNCTION);
     func->next = base;
 
     while (peek().token != ')') {
@@ -1784,7 +1782,7 @@ static struct block *postfix_expression(struct block *block)
 
                 /* Make it look like a pointer to the field type, then perform
                  * normal dereferencing. */
-                root.type = type_init_pointer(field->type);
+                root.type = type_init(T_POINTER, field->type);
                 root = eval_deref(block, root);
                 root.offset = field->offset;
             } else {

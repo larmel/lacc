@@ -96,7 +96,7 @@ struct var var_string(const char *str)
     struct var var = {0};
 
     var.kind = IMMEDIATE;
-    var.type = type_init_array(&basic_type__char, strlen(str) + 1);
+    var.type = type_init(T_ARRAY, &basic_type__char, strlen(str) + 1);
     var.string = str;
     return var;
 }

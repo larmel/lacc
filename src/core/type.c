@@ -5,6 +5,7 @@
 #include "type.h"
 
 #include <assert.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,7 +69,7 @@ static void cleanup(void)
     }
 }
 
-static struct typetree *alloctype(struct typetree args)
+static struct typetree *calloc_type(void)
 {
     if (!length && !mem_length)
         atexit(cleanup);
@@ -79,7 +80,6 @@ static struct typetree *alloctype(struct typetree args)
     }
 
     type_registry[length] = calloc(1, sizeof(**type_registry));
-    *type_registry[length] = args;
     return type_registry[length++];
 }
 
@@ -189,7 +189,7 @@ void type_add_member(
             return;
         }
         if (is_array(member_type))
-            member_type = type_init_pointer(member_type->next);
+            member_type = type_init(T_POINTER, member_type->next);
     }
 
     if (list->length == list->cap) {
@@ -223,60 +223,29 @@ int is_vararg(const struct typetree *type)
     return (type->member_list) ? type->member_list->func_vararg : 0;
 }
 
-struct typetree *type_init_integer(int width)
+struct typetree *type_init(enum type tt, ...)
 {
-    struct typetree arg = { T_SIGNED };
-    arg.size = width;
-    assert(width == 1 || width == 2 || width == 4 || width == 8);
+    struct typetree *type;
+    va_list args;
+    va_start(args, tt);
 
-    return alloctype(arg);
-}
+    type = calloc_type();
+    type->type = tt;
+    if (tt == T_POINTER || tt == T_ARRAY) {
+        type->next = va_arg(args, const struct typetree *);
+        type->size = 8;
+        if (tt == T_ARRAY) {
+            type->size = size_of(type->next) * va_arg(args, int);
+        }
+    } else if (tt == T_UNSIGNED || tt == T_SIGNED) {
+        type->size = va_arg(args, int);
+        assert(
+            type->size == 8 || type->size == 4 ||
+            type->size == 2 || type->size == 1);
+    }
 
-struct typetree *type_init_unsigned(int width)
-{
-    struct typetree arg = { T_UNSIGNED };
-    arg.size = width;
-    assert(width == 1 || width == 2 || width == 4 || width == 8);
-
-    return alloctype(arg);
-}
-
-struct typetree *type_init_pointer(const struct typetree *to)
-{
-    struct typetree arg = { T_POINTER, 8 };
-    arg.next = to;
-
-    return alloctype(arg);
-}
-
-struct typetree *type_init_array(const struct typetree *child, int n)
-{
-    struct typetree arg = { T_ARRAY };
-    arg.size = n * child->size;
-    arg.next = child;
-
-    return alloctype(arg);
-}
-
-struct typetree *type_init_function(void)
-{
-    struct typetree arg = { T_FUNCTION };
-
-    return alloctype(arg);
-}
-
-struct typetree *type_init_object(void)
-{
-    struct typetree arg = { T_STRUCT };
-
-    return alloctype(arg);
-}
-
-struct typetree *type_init_void(void)
-{
-    struct typetree arg = { T_VOID };
-
-    return alloctype(arg);
+    va_end(args);
+    return type;
 }
 
 const struct typetree *unwrapped(const struct typetree *type)
@@ -291,7 +260,8 @@ struct typetree *type_tagged_copy(const struct typetree *type, const char *name)
     assert(!is_tagged(type));
     assert(is_struct_or_union(type));
 
-    tag = type_init_object();
+    tag = calloc_type();
+    tag->type = type->type;
     tag->tag_name = name;
     tag->next = type;
     return tag;
@@ -337,8 +307,10 @@ int type_equal(const struct typetree *a, const struct typetree *b)
 static const struct typetree *remove_qualifiers(const struct typetree *type)
 {
     if (type->qualifier) {
-        struct typetree *copy = alloctype(*type);
+        struct typetree *copy = calloc_type();
         assert(!nmembers(type));
+
+        *copy = *type;
         copy->qualifier = 0;
         type = copy;
     }

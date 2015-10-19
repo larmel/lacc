@@ -119,13 +119,25 @@ extern const struct typetree
 #define is_volatile(t) ((t)->qualifier & Q_VOLATILE)
 #define is_tagged(t) (is_struct_or_union(t) && (t)->next)
 
-struct typetree *type_init_integer(int size);
-struct typetree *type_init_unsigned(int size);
-struct typetree *type_init_pointer(const struct typetree *to);
-struct typetree *type_init_array(const struct typetree *of, int size);
-struct typetree *type_init_function(void);
-struct typetree *type_init_object(void);
-struct typetree *type_init_void(void);
+/* Allocate and initialize a new type. Take additional parameters for
+ * initializing integer, pointer and array types, otherwise all-zero (default)
+ * values.
+ *
+ *      type_init(T_SIGNED, [size])
+ *      type_init(T_POINTER, [next])
+ *      type_init(T_ARRAY, [next], [count])
+ */
+struct typetree *type_init(enum type tt, ...);
+
+/* Create a tag type pointing to the provided object. Input type must be of
+ * struct or union type.
+ *
+ * Usage of this is to avoid circular typetree graphs, and to let tagged types
+ * be cv-qualified without mutating the original definition.
+ */
+struct typetree *type_tagged_copy(
+    const struct typetree *type,
+    const char *name);
 
 int type_equal(const struct typetree *l, const struct typetree *r);
 
@@ -142,16 +154,6 @@ int size_of(const struct typetree *type);
 /* Alignment in bytes.
  */
 int type_alignment(const struct typetree *type);
-
-/* Create a tag type pointing to the provided object. Input type must be of
- * struct or union type.
- *
- * Usage of this is to avoid circular typetree graphs, and to let tagged types
- * be cv-qualified without mutating the original definition.
- */
-struct typetree *type_tagged_copy(
-    const struct typetree *type,
-    const char *name);
 
 /* Return tagged type if this is an indirection, ignoring cv-qualifiers. The tag
  * is immutable.

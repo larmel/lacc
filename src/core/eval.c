@@ -351,7 +351,7 @@ static struct var array_or_func_to_addr(struct block *block, struct var var)
     if (var.string && is_array(var.type)) {
         assert(var.kind == IMMEDIATE);
         var.string = strlabel(var.string);
-        var.type = type_init_pointer(var.type->next);
+        var.type = type_init(T_POINTER, var.type->next);
     }
 
     /* References to arrays decay into pointer to the first element. Change type
@@ -428,7 +428,7 @@ struct var eval_addr(struct block *block, struct var var)
         }
         assert(is_pointer(var.type) && var.string);
     case DIRECT:
-        var = evaluate(block, IR_ADDR, type_init_pointer(var.type), var);
+        var = evaluate(block, IR_ADDR, type_init(T_POINTER, var.type), var);
         break;
     case DEREF:
         assert(is_pointer(&var.symbol->type));
@@ -438,10 +438,10 @@ struct var eval_addr(struct block *block, struct var var)
              * arithmetic applied in addition. Cast to char pointer temporarily
              * to avoid trouble calling eval_expr. */
             tmp = eval_cast(block, tmp,
-                type_init_pointer(&basic_type__char));
+                type_init(T_POINTER, &basic_type__char));
             tmp = eval_expr(block, IR_OP_ADD, tmp, var_int(var.offset));
         }
-        tmp.type = type_init_pointer(var.type);
+        tmp.type = type_init(T_POINTER, var.type);
         var = tmp;
         break;
     }
@@ -460,7 +460,7 @@ struct var eval_deref(struct block *block, struct var var)
         /* Cast to char pointer temporarily to avoid pointer arithmetic calling
          * eval_expr. No actual evaluation is performed by this. */
         ptr = var_direct(var.symbol);
-        ptr = eval_cast(block, ptr, type_init_pointer(&basic_type__char));
+        ptr = eval_cast(block, ptr, type_init(T_POINTER, &basic_type__char));
         ptr = eval_expr(block, IR_OP_ADD, ptr, var_int(var.offset));
         ptr.type = &var.symbol->type;
 
