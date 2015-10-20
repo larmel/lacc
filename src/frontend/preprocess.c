@@ -1,6 +1,7 @@
 #include "core/error.h"
 #include "core/string.h"
 #include "input.h"
+#include "preprocess.h"
 #include "macro.h"
 
 #include <assert.h>
@@ -15,6 +16,30 @@ struct builder {
     struct token *elem;
     size_t length;
 };
+
+static struct token get_preprocessing_token(void)
+{
+    static char *line;
+
+    struct token r;
+    char *endptr;
+
+    if (!line && getprepline(&line) == -1) {
+        r = token_end;
+    } else {
+        r = tokenize(line, &endptr);
+        line = endptr;
+        if (r.token == END) {
+            /* Newlines are removed by getprepline, and never present in the
+             * input data. Instead intercept end of string, which represents
+             * end of line. */
+            line = NULL;
+            r = token_newline;
+        }
+    }
+
+    return r;
+}
 
 static void list_append(struct builder *list, struct token t)
 {
@@ -115,8 +140,6 @@ static void read_defined_operator(struct builder *list)
     }
 }
 
-static struct token end_token = {END, "$"};
-
 /* Read tokens until reaching newline or eof. If initial token is '#', stop on
  * newline. Otherwise make sure macro invocations spanning multiple lines are
  * joined, and replace 'defined' directives with constants.
@@ -157,7 +180,7 @@ static struct token *read_complete_line(struct token t)
         t = get_preprocessing_token();
     }
 
-    list_append(&line, end_token);
+    list_append(&line, token_end);
     return line.elem;
 }
 
@@ -785,13 +808,13 @@ struct token peekn(unsigned n)
     return lookahead[cursor + n - 1];
 }
 
-struct token consume(int expected)
+struct token consume(enum token_type type)
 {
     struct token t = next();
 
-    if (t.token != expected) {
-        if (isprint(expected)) {
-            error("Unexpected token '%s', expected '%c'.", t.strval, expected);
+    if (t.token != type) {
+        if (isprint(type)) {
+            error("Unexpected token '%s', expected '%c'.", t.strval, type);
         } else {
             error("Unexpected token '%s'.", t.strval);
         }

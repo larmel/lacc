@@ -4,7 +4,7 @@
 #endif
 #include "core/error.h"
 #include "core/string.h"
-#include "preprocess.h"
+#include "tokenize.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -243,9 +243,9 @@ static struct token operators[] = {
     { '#', "#" }
 };
 
-static struct token
-    end = { END, "$" },
-    newline = { NEWLINE, "\n" };
+struct token
+    token_end = { END, "$" },
+    token_newline = { NEWLINE, "\n" };
 
 struct token tokenize(char *in, char **endptr)
 {
@@ -256,7 +256,7 @@ struct token tokenize(char *in, char **endptr)
 
     if (*in == '\0') {
         *endptr = in;
-        return end;
+        return token_end;
     } else if (isspace(*in)) {
         res.token = SPACE;
         strtospace(in, endptr);
@@ -321,27 +321,4 @@ struct token tokenize(char *in, char **endptr)
         error("Invalid token '%c'.", *in);
     }
     exit(1);
-}
-
-struct token get_preprocessing_token(void)
-{
-    static char *line;
-
-    struct token r;
-    char *endptr;
-
-    if (!line && getprepline(&line) == -1) {
-        r = end;
-    } else {
-        r = tokenize(line, &endptr);
-        line = endptr;
-        if (r.token == END) {
-            /* Newlines are removed by getprepline, and never present in the
-             * input data. Instead intercept end of string, which represents
-             * end of line. */
-            line = NULL;
-            r = newline;
-        }
-    }
-    return r;
 }

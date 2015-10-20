@@ -1,7 +1,7 @@
 #ifndef MACRO_H
 #define MACRO_H
 
-#include "preprocess.h"
+#include "tokenize.h"
 
 #include <stdlib.h>
 

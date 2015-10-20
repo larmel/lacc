@@ -292,8 +292,6 @@ static struct token *expand_paste_operators(struct token *list)
     return list;
 }
 
-static struct token end_token = {END, "$"};
-
 static struct token *expand_macro(
     const struct macro *macro,
     struct token *args[])
@@ -301,7 +299,7 @@ static struct token *expand_macro(
     size_t i;
     struct token *res = calloc(1, sizeof(*res));
 
-    res[0] = end_token;
+    res[0] = token_end;
     push_expand_stack(macro);
     for (i = 0; i < macro->size; ++i) {
         int n = macro->replacement[i].param;
@@ -380,7 +378,7 @@ static struct token *read_arg(
         SKIP_WS(list);
     } while (nesting || (list->token != ',' && list->token != ')'));
 
-    arg[n] = end_token;
+    arg[n] = token_end;
     *endptr = list;
     return arg;
 }
@@ -433,7 +431,7 @@ struct token *expand(struct token *original)
 
     list = original;
     res = calloc(1, sizeof(*res));
-    res[0] = end_token;
+    res[0] = token_end;
     while (list->token != END) {
         const struct macro *def = definition(*list);
         struct token **args;
@@ -477,7 +475,7 @@ static struct replacement *parse(char *str, size_t *out_size)
     while (*str) {
         n++;
         repl = realloc(repl, sizeof(*repl) * n);
-        memset(repl + n - 1, 0x0, sizeof(*repl));
+        memset(repl + n - 1, 0, sizeof(*repl));
         if (*str == '@') {
             repl[n - 1].param = 1;
             str++;
