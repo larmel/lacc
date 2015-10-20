@@ -1,5 +1,5 @@
-#include "core/ir.h"
-#include "core/symbol.h"
+#include "../core/ir.h"
+#include "../core/symbol.h"
 
 #include <assert.h>
 #include <stdlib.h>

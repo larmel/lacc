@@ -3,7 +3,7 @@
 #include "type.h"
 #include "string.h"
 #include "symbol.h"
-#include "frontend/preprocess.h"
+#include "../frontend/preprocess.h"
 
 #include <stdio.h>
 #include <assert.h>

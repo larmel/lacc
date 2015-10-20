@@ -1,8 +1,8 @@
-#include "core/error.h"
-#include "core/string.h"
 #include "input.h"
-#include "preprocess.h"
 #include "macro.h"
+#include "preprocess.h"
+#include "../core/error.h"
+#include "../core/string.h"
 
 #include <assert.h>
 #include <ctype.h>

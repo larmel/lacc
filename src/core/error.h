@@ -1,7 +1,7 @@
 #ifndef ERROR_H
 #define ERROR_H
 
-#include "frontend/input.h"
+#include "../frontend/input.h"
 
 #include <stddef.h>
 

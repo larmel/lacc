@@ -2,9 +2,9 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 700 /* strndup, isblank */
 #endif
-#include "core/error.h"
-#include "core/string.h"
 #include "tokenize.h"
+#include "../core/error.h"
+#include "../core/string.h"
 
 #include <assert.h>
 #include <stdio.h>

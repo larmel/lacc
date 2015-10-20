@@ -1,7 +1,7 @@
 #ifndef ABI_H
 #define ABI_H
 
-#include "core/symbol.h"
+#include "../core/symbol.h"
 
 /* Registers in x86_64 assembly.
  */

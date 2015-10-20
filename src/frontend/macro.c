@@ -1,7 +1,7 @@
-#include "core/error.h"
-#include "core/string.h"
 #include "macro.h"
 #include "input.h"
+#include "../core/error.h"
+#include "../core/string.h"
 
 #include <assert.h>
 #include <string.h>
