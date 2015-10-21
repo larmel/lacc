@@ -1,8 +1,7 @@
 #include "error.h"
 #include "eval.h"
-#include "type.h"
+#include "parse.h"
 #include "string.h"
-#include "symbol.h"
 #include "../frontend/preprocess.h"
 
 #include <stdio.h>
@@ -48,27 +47,22 @@ struct namespace
     ns_tag = {"tags"}
     ;
 
-/* Current declaration, accessed for creating new blocks or adding init code
- * in head block.
- */
-struct decl *decl;
-
-struct decl *parse()
+int parse(void)
 {
-    decl = cfg_create();
-    decl->head = cfg_block_init(decl);
-    decl->body = cfg_block_init(decl);
+    if (peek().token == END)
+        return 0;
 
-    while (peek().token != '$') {
-        decl->fun = NULL;
-        declaration(decl->body);
-        if (decl->head->n || decl->fun) {
-            return decl;
+    cfg_init_current();
+
+    while (peek().token != END) {
+        current_cfg.fun = NULL;
+        declaration(current_cfg.body);
+        if (current_cfg.head->n || current_cfg.fun) {
+            return -1;
         }
     }
 
-    cfg_finalize(decl);
-    return NULL;
+    return 0;
 }
 
 /* C99: Define __func__ as static const char __func__[] = sym->name; */
@@ -81,7 +75,7 @@ static void define_builtin__func__(const char *name)
     assert(ns_ident.current_depth == 1);
 
     /* Initialize special case, setting char[] = char[]. */
-    eval_assign(decl->head, var_direct(sym), str);
+    eval_assign(current_cfg.head, var_direct(sym), str);
 }
 
 /* Cover both external declarations, functions, and local declarations (with
@@ -133,7 +127,7 @@ static struct block *declaration(struct block *parent)
         sym = sym_add(&ns_ident, name, type, symtype, linkage);
         if (ns_ident.current_depth) {
             assert(ns_ident.current_depth > 1);
-            cfg_register_local(decl, sym);
+            cfg_register_local(sym);
         }
 
         switch (peek().token) {
@@ -152,7 +146,7 @@ static struct block *declaration(struct block *parent)
             consume('=');
             sym->symtype = SYM_DEFINITION;
             if (!sym->depth || sym->n) {
-                decl->head = initializer(decl->head, var_direct(sym));
+                current_cfg.head = initializer(current_cfg.head, var_direct(sym));
             } else {
                 parent = initializer(parent, var_direct(sym));
             }
@@ -169,7 +163,7 @@ static struct block *declaration(struct block *parent)
                 exit(1);
             }
             sym->symtype = SYM_DEFINITION;
-            decl->fun = sym;
+            current_cfg.fun = sym;
 
             push_scope(&ns_ident);
             define_builtin__func__(sym->name);
@@ -182,7 +176,7 @@ static struct block *declaration(struct block *parent)
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
                 }
-                cfg_register_param(decl,
+                cfg_register_param(
                     sym_add(&ns_ident, name, type, symtype, linkage));
             }
             parent = block(parent);
@@ -972,8 +966,8 @@ static struct block *statement(struct block *parent)
         break;
     case IF: {
         struct block
-            *right = cfg_block_init(decl),
-            *next  = cfg_block_init(decl);
+            *right = cfg_block_init(),
+            *next  = cfg_block_init();
 
         consume(tok.token);
         consume('(');
@@ -999,7 +993,7 @@ static struct block *statement(struct block *parent)
         right->jump[0] = next;
 
         if (peek().token == ELSE) {
-            struct block *left = cfg_block_init(decl);
+            struct block *left = cfg_block_init();
             consume(ELSE);
 
             /* Again, order is important: Set left as new jump target for false
@@ -1016,9 +1010,9 @@ static struct block *statement(struct block *parent)
     case WHILE:
     case DO: {
         struct block
-            *top = cfg_block_init(decl),
-            *body = cfg_block_init(decl),
-            *next = cfg_block_init(decl);
+            *top = cfg_block_init(),
+            *body = cfg_block_init(),
+            *next = cfg_block_init();
         parent->jump[0] = top; /* Parent becomes unconditional jump. */
 
         set_break_target(next);
@@ -1068,10 +1062,10 @@ static struct block *statement(struct block *parent)
     }
     case FOR: {
         struct block
-            *top = cfg_block_init(decl),
-            *body = cfg_block_init(decl),
-            *increment = cfg_block_init(decl),
-            *next = cfg_block_init(decl);
+            *top = cfg_block_init(),
+            *body = cfg_block_init(),
+            *increment = cfg_block_init(),
+            *next = cfg_block_init();
 
         set_break_target(next);
         set_continue_target(increment);
@@ -1125,16 +1119,16 @@ static struct block *statement(struct block *parent)
         consume(';');
         /* Return orphan node, which is dead code unless there is a label and a
          * goto statement. */
-        parent = cfg_block_init(decl); 
+        parent = cfg_block_init(); 
         break;
     case RETURN:
         consume(RETURN);
-        if (!is_void(decl->fun->type.next)) {
+        if (!is_void(current_cfg.fun->type.next)) {
             parent = expression(parent);
-            parent->expr = eval_return(parent, decl->fun->type.next);
+            parent->expr = eval_return(parent, current_cfg.fun->type.next);
         }
         consume(';');
-        parent = cfg_block_init(decl); /* orphan */
+        parent = cfg_block_init(); /* orphan */
         break;
     case SWITCH: {
         int i;
@@ -1149,14 +1143,14 @@ static struct block *statement(struct block *parent)
         consume(')');
 
         /* Breaking out of switch reaches next block. */
-        next = cfg_block_init(decl);
+        next = cfg_block_init();
         set_break_target(next);
 
         /* Push new switch context. */
         old_switch_ctx = switch_ctx;
         switch_ctx = calloc(1, sizeof(*switch_ctx));
 
-        body = cfg_block_init(decl);
+        body = cfg_block_init();
         last = statement(body);
         last->jump[0] = next;
 
@@ -1170,7 +1164,7 @@ static struct block *statement(struct block *parent)
                 struct block *label = switch_ctx->case_label[i];
                 struct var value = switch_ctx->case_value[i];
 
-                cond = cfg_block_init(decl);
+                cond = cfg_block_init();
                 cond->expr = eval_expr(cond, IR_OP_EQ, value, parent->expr);
                 cond->jump[1] = label;
                 prev_cond->jump[0] = cond;
@@ -1191,7 +1185,7 @@ static struct block *statement(struct block *parent)
         if (!switch_ctx) {
             error("Stray 'case' label, must be inside a switch statement.");
         } else {
-            struct block *next = cfg_block_init(decl);
+            struct block *next = cfg_block_init();
             struct var expr = constant_expression();
             consume(':');
             add_switch_case(next, expr);
@@ -1208,7 +1202,7 @@ static struct block *statement(struct block *parent)
         } else if (switch_ctx->default_label) {
             error("Multiple 'default' labels inside the same switch.");
         } else {
-            struct block *next = cfg_block_init(decl);
+            struct block *next = cfg_block_init();
             parent->jump[0] = next;
             switch_ctx->default_label = next;
             next = statement(next);
@@ -1320,7 +1314,7 @@ static struct block *assignment_expression(struct block *block)
 
 static struct var constant_expression()
 {
-    struct block *head = cfg_block_init(decl),
+    struct block *head = cfg_block_init(),
             *tail;
 
     tail = conditional_expression(head);
@@ -1338,9 +1332,9 @@ static struct block *conditional_expression(struct block *block)
     if (peek().token == '?') {
         struct var condition = block->expr;
         struct block
-            *t = cfg_block_init(decl),
-            *f = cfg_block_init(decl),
-            *next = cfg_block_init(decl);
+            *t = cfg_block_init(),
+            *f = cfg_block_init(),
+            *next = cfg_block_init();
 
         consume('?');
         block->jump[0] = f;
@@ -1368,7 +1362,7 @@ static struct block *logical_or_expression(struct block *block)
 
     block = logical_and_expression(block);
     if (peek().token == LOGICAL_OR) {
-        struct block *right = cfg_block_init(decl);
+        struct block *right = cfg_block_init();
         consume(LOGICAL_OR);
         block = eval_logical_or(block, right, logical_or_expression(right));
     }
@@ -1384,7 +1378,7 @@ static struct block *logical_and_expression(struct block *block)
 
     block = inclusive_or_expression(block);
     if (peek().token == LOGICAL_AND) {
-        struct block *right = cfg_block_init(decl);
+        struct block *right = cfg_block_init();
         consume(LOGICAL_AND);
         block = eval_logical_and(block, right, logical_and_expression(right));
     }
@@ -1644,7 +1638,7 @@ static struct block *unary_expression(struct block *block)
         break;
     case SIZEOF: {
         struct typetree *type;
-        struct block *head = cfg_block_init(decl), *tail;
+        struct block *head = cfg_block_init(), *tail;
         consume(SIZEOF);
         if (peek().token == '(') {
             switch (peekn(2).token) {
@@ -1828,10 +1822,10 @@ static struct block *parse__builtin_va_start(struct block *block)
     param = consume(IDENTIFIER);
     sym = sym_lookup(&ns_ident, param.strval);
 
-    is_invalid = !sym || sym->depth != 1 || !decl->fun;
-    is_invalid = is_invalid || !nmembers(&decl->fun->type);
+    is_invalid = !sym || sym->depth != 1 || !current_cfg.fun;
+    is_invalid = is_invalid || !nmembers(&current_cfg.fun->type);
     is_invalid = is_invalid || strcmp(
-            get_member(&decl->fun->type, nmembers(&decl->fun->type) - 1)->name,
+            get_member(&current_cfg.fun->type, nmembers(&current_cfg.fun->type) - 1)->name,
             param.strval);
     if (is_invalid) {
         error("Second parameter of va_start must be last function argument.");

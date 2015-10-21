@@ -207,40 +207,44 @@ static void foutputnode(FILE *stream, struct block *node)
     }
 }
 
+static void output_prefix(FILE *stream)
+{
+    fprintf(stream, "digraph {\n");
+    fprintf(stream,
+        "\tnode [fontname=\"Courier_New\",fontsize=10,"
+        "style=\"setlinewidth(0.1)\",shape=record];\n");
+    fprintf(stream,
+        "\tedge [fontname=\"Courier_New\",fontsize=10,"
+        "style=\"setlinewidth(0.1)\"];\n");
+}
+
+static void output_suffix(FILE *stream)
+{
+    fprintf(stream, "}\n");
+}
+
 /* Take a control flow graph (struct block structure) and output it in .dot 
  * format, which can then be rendered.
  */
-void fdotgen(FILE *stream, const struct decl *cfg)
+void fdotgen(FILE *stream)
 {
     int i;
 
-    for (i = 0; i < cfg->size; ++i) {
-        cfg->nodes[i]->color = WHITE;
+    for (i = 0; i < current_cfg.size; ++i) {
+        current_cfg.nodes[i]->color = WHITE;
     }
 
-    if (cfg->head->n && cfg->fun) {
-        struct decl copy = *cfg;
-        copy.fun = NULL;
-        fdotgen(stream, &copy);
-        copy.fun = cfg->fun;
-        copy.head->n = 0;
-        fdotgen(stream, &copy);
-    } else {
-        fprintf(stream, "digraph {\n");
-        fprintf(stream,
-            "\tnode [fontname=\"Courier_New\",fontsize=10,"
-            "style=\"setlinewidth(0.1)\",shape=record];\n");
-        fprintf(stream,
-            "\tedge [fontname=\"Courier_New\",fontsize=10,"
-            "style=\"setlinewidth(0.1)\"];\n");
-        if (cfg->head->n) {
-            foutputnode(stream, cfg->head);
-        } else {
-            assert(cfg->fun);
-            fprintf(stream, "\tlabel=\"%s\"\n", cfg->fun->name);
-            fprintf(stream, "\tlabelloc=\"t\"\n");
-            foutputnode(stream, cfg->body);
-        }
-        fprintf(stream, "}\n");
+    if (current_cfg.head->n) {
+        output_prefix(stream);
+        foutputnode(stream, current_cfg.head);
+        output_suffix(stream);
+    }
+
+    if (current_cfg.fun) {
+        output_prefix(stream);
+        fprintf(stream, "\tlabel=\"%s\"\n", current_cfg.fun->name);
+        fprintf(stream, "\tlabelloc=\"t\"\n");
+        foutputnode(stream, current_cfg.body);
+        output_suffix(stream);
     }
 }

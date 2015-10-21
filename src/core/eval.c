@@ -6,8 +6,6 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
-extern struct decl *decl;
-
 static int is_nullptr(struct var val)
 {
     return 
@@ -660,9 +658,9 @@ static struct block *eval_logical_expression(
     struct block *right)
 {
     struct block
-        *t = cfg_block_init(decl),
-        *f = cfg_block_init(decl),
-        *r = cfg_block_init(decl);
+        *t = cfg_block_init(),
+        *f = cfg_block_init(),
+        *r = cfg_block_init();
 
     /* Result is integer type, assigned in true and false branches to numeric
      * constant 1 or 0. */

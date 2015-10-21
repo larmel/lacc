@@ -2,9 +2,8 @@
 #  define _XOPEN_SOURCE 500 /* getopt */
 #endif
 #include "core/error.h"
-#include "core/ir.h"
+#include "core/parse.h"
 #include "core/string.h"
-#include "core/symbol.h"
 #include "frontend/input.h"
 #include "frontend/preprocess.h"
 
@@ -20,9 +19,8 @@ void help(const char *prog)
         prog);
 }
 
-extern struct decl *parse();
-extern void fdotgen(FILE *, const struct decl *);
-extern void assemble(FILE *, const struct decl *);
+extern void fdotgen(FILE *);
+extern void assemble(FILE *);
 
 int main(int argc, char* argv[])
 {
@@ -81,24 +79,17 @@ int main(int argc, char* argv[])
         push_scope(&ns_tag);
         register_builtin_types(&ns_ident);
 
-        while (1) {
-            struct decl *fun = parse();
-            if (errors || !fun) {
-                if (errors) {
-                    error("Aborting because of previous %s.",
-                        (errors > 1) ? "errors" : "error");
-                }
-                break;
-            }
-            if (fun) {
-                if (output_mode == OUT_ASSEMBLY) {
-                    assemble(output, fun);
-                } else {
-                    assert(output_mode == OUT_DOT);
-                    fdotgen(output, fun);
-                }
-                cfg_finalize(fun);
-            }
+        while (parse() && !errors) {
+            if (output_mode == OUT_ASSEMBLY)
+                assemble(output);
+            else
+                fdotgen(output);
+        }
+
+        if (errors) {
+            error("Aborting because of previous %s.",
+                (errors > 1) ? "errors" : "error");
+            exit(1);
         }
 
         if (output_mode == OUT_ASSEMBLY) {

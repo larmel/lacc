@@ -347,12 +347,12 @@ static void call(
 
 /* Assign storage to local variables.
  */
-static int assign_locals_storage(const struct decl *fun, int offset)
+static int assign_locals_storage(int offset)
 {
     int i;
 
-    for (i = 0; i < fun->locals.length; ++i) {
-        struct symbol *sym = fun->locals.symbol[i];
+    for (i = 0; i < current_cfg.locals.length; ++i) {
+        struct symbol *sym = current_cfg.locals.symbol[i];
         assert(!sym->stack_offset);
 
         if (sym->linkage == LINK_NONE) {
@@ -374,7 +374,7 @@ static int reg_save_area_offset;
 /* Load parameters into call frame on entering a function. Return parameter
  * class of return value.
  */
-static enum param_class *enter(FILE *s, const struct decl *func)
+static enum param_class *enter(FILE *s)
 {
     int i,
         next_integer_reg = 0,
@@ -386,7 +386,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
         *ret;
 
     /* Get classification of function arguments and return value. */
-    params = classify_signature(&func->fun->type, &ret);
+    params = classify_signature(&current_cfg.fun->type, &ret);
 
     /* Address of return value is passed as first integer argument. If return
      * value is MEMORY, store the address at stack offset -8. */
@@ -401,13 +401,13 @@ static enum param_class *enter(FILE *s, const struct decl *func)
      * SSE registers, for a total of 176 bytes. We want to keep the register
      * save area fixed regardless of parameter class of return value, so skip
      * the first 8 bytes used for return value address. */
-    if (is_vararg(&func->fun->type)) {
+    if (is_vararg(&current_cfg.fun->type)) {
         stack_offset = -176 - 8;
     }
 
     /* Assign storage to parameters. */
-    for (i = 0; i < func->params.length; ++i) {
-        struct symbol *sym = func->params.symbol[i];
+    for (i = 0; i < current_cfg.params.length; ++i) {
+        struct symbol *sym = current_cfg.params.symbol[i];
 
         assert(!sym->stack_offset);
         assert(sym->linkage == LINK_NONE);
@@ -425,7 +425,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
     }
 
     /* Assign storage to locals. */
-    stack_offset = assign_locals_storage(func, stack_offset);
+    stack_offset = assign_locals_storage(stack_offset);
     if (stack_offset < 0) {
         fprintf(s, "\tsubq\t$%d, %%rsp\n", -stack_offset);
     }
@@ -438,7 +438,7 @@ static enum param_class *enter(FILE *s, const struct decl *func)
     /* Store all potential parameters to register save area. This includes
      * parameters that are known to be passed as registers, that will anyway be
      * stored to another stack location. Maybe potential for optimization. */
-    if (is_vararg(&func->fun->type)) {
+    if (is_vararg(&current_cfg.fun->type)) {
         extern const char *mklabel(void);
         const char *label = mklabel();
 
@@ -461,18 +461,18 @@ static enum param_class *enter(FILE *s, const struct decl *func)
     }
 
     /* Move arguments from register to stack. */
-    for (i = 0; i < func->params.length; ++i) {
+    for (i = 0; i < current_cfg.params.length; ++i) {
         enum param_class *eightbyte = params[i];
 
         /* Here it is ok to not separate between object and other types. Data in
          * registers can always be treated as integer type. */
         if (*eightbyte != PC_MEMORY) {
-            int n = N_EIGHTBYTES(get_member(&func->fun->type, i)->type),
-                size = size_of(get_member(&func->fun->type, i)->type),
+            int n = N_EIGHTBYTES(get_member(&current_cfg.fun->type, i)->type),
+                size = size_of(get_member(&current_cfg.fun->type, i)->type),
                 j;
             struct var ref = { NULL, NULL, DIRECT };
 
-            ref.symbol = func->params.symbol[i];
+            ref.symbol = current_cfg.params.symbol[i];
             for (j = 0; j < n; ++j) {
                 int width = (size < 8) ? size : 8;
                 ref.type = BASIC_TYPE_UNSIGNED(width);
@@ -486,13 +486,13 @@ static enum param_class *enter(FILE *s, const struct decl *func)
 
     /* After loading parameters we know how many registers have been used for
      * fixed parameters. Update offsets to be used in va_start. */
-    if (is_vararg(&func->fun->type)) {
+    if (is_vararg(&current_cfg.fun->type)) {
         gp_offset = 8 * next_integer_reg;
         fp_offset = 0;
         overflow_arg_area_offset = mem_offset;
     }
 
-    for (i = 0; i < func->params.length; ++i)
+    for (i = 0; i < current_cfg.params.length; ++i)
         free(params[i]);
     free(params);
 
@@ -1073,15 +1073,15 @@ static void asm_immediate(FILE *stream, struct var target, struct var val)
     }
 }
 
-static void assemble_data(FILE *stream, struct block *head)
+static void assemble_data(FILE *stream)
 {
-    int i;
-    int initialized = 0;
+    int i,
+        initialized = 0;
     const struct symbol *symbol = NULL;
 
     fprintf(stream, "\t.data\n");
-    for (i = 0; i < head->n; ++i) {
-        struct op *op = head->code + i;
+    for (i = 0; i < current_cfg.head->n; ++i) {
+        struct op *op = current_cfg.head->code + i;
         symbol = op->a.symbol;
 
         assert(op->type == IR_ASSIGN);
@@ -1111,47 +1111,47 @@ static void assemble_data(FILE *stream, struct block *head)
     }
 }
 
-static void asm_function(FILE *stream, const struct decl *decl)
+static void asm_function(FILE *stream)
 {
     int i;
     enum param_class *res;
 
     /* Reset coloring before traversal. */
-    for (i = 0; i < decl->size; ++i) {
-        decl->nodes[i]->color = WHITE;
+    for (i = 0; i < current_cfg.size; ++i) {
+        current_cfg.nodes[i]->color = WHITE;
     }
 
     fprintf(stream, "\t.text\n");
-    if (decl->fun->linkage == LINK_EXTERN) {
-        fprintf(stream, "\t.globl\t%s\n", sym_name(decl->fun));
+    if (current_cfg.fun->linkage == LINK_EXTERN) {
+        fprintf(stream, "\t.globl\t%s\n", sym_name(current_cfg.fun));
     }
 
-    fprintf(stream, "\t.type\t%s, @function\n", sym_name(decl->fun));
-    fprintf(stream, "%s:\n", sym_name(decl->fun));
+    fprintf(stream, "\t.type\t%s, @function\n", sym_name(current_cfg.fun));
+    fprintf(stream, "%s:\n", sym_name(current_cfg.fun));
     fprintf(stream, "\tpushq\t%%rbp\n");
     fprintf(stream, "\tmovq\t%%rsp, %%rbp\n");
 
     /* Make sure parameters and local variables are placed on stack. Keep
      * parameter class of return value for later assembling return. */
-    res = enter(stream, decl);
+    res = enter(stream);
 
     /* Recursively assemble body. */
-    asm_block(stream, decl->body, res);
+    asm_block(stream, current_cfg.body, res);
 
     /* This is required to see function names with valgrind. */
     fprintf(stream, "\t.size\t%s, .-%s\n",
-        sym_name(decl->fun), sym_name(decl->fun));
+        sym_name(current_cfg.fun), sym_name(current_cfg.fun));
 
     free(res);
 }
 
-void assemble(FILE *stream, const struct decl *decl)
+void assemble(FILE *stream)
 {
-    if (decl->head->n) {
-        assemble_data(stream, decl->head);
+    if (current_cfg.head->n) {
+        assemble_data(stream);
     }
-    if (decl->fun) {
-        assert(is_function(&decl->fun->type));
-        asm_function(stream, decl);
+    if (current_cfg.fun) {
+        assert(is_function(&current_cfg.fun->type));
+        asm_function(stream);
     }
 }

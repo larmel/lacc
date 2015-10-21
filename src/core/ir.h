@@ -110,7 +110,7 @@ enum optype
 
 #define IS_COMPARISON(t) ((t) == IR_OP_EQ || (t) == IR_OP_GE || (t) == IR_OP_GT)
 
-/* CFG block.
+/* Basic block in control flow graph.
  */
 struct block
 {
@@ -181,15 +181,18 @@ struct decl
     size_t capacity;
 };
 
-/* Initialize a new control flow graph structure.
+/* Current declaration, accessed for creating new blocks or adding init code
+ * in head block.
  */
-struct decl *cfg_create(void);
+extern struct decl current_cfg;
 
-/* Initialize a CFG block with a unique jump label, and associate it with the
- * provided decl object. Blocks and functions have the same lifecycle, and 
- * should only be freed by calling cfg_finalize.
+/* Initialize a new control flow graph structure, updating current_cfg.
  */
-struct block *cfg_block_init(struct decl *);
+void cfg_init_current(void);
+
+/* Initialize a CFG block with a unique jump label. Borrows memory.
+ */
+struct block *cfg_block_init(void);
 
 /* Add a 3-address code operation to the block. Code is kept in a separate list
  * for each block.
@@ -198,15 +201,10 @@ void cfg_ir_append(struct block *, struct op);
 
 /* Add local variable to symbol list, required for assembly.
  */
-void cfg_register_local(struct decl *decl, struct symbol *symbol);
+void cfg_register_local(struct symbol *symbol);
 
 /* Add function parameter to symbol list, required for assembly.
  */
-void cfg_register_param(struct decl *decl, struct symbol *symbol);
-
-/* Release all resources related to the control flow graph. Calls free on all
- * blocks and their labels, and finally the struct decl object itself.
- */
-void cfg_finalize(struct decl *);
+void cfg_register_param(struct symbol *symbol);
 
 #endif
