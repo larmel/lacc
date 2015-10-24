@@ -8,7 +8,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-unsigned errors;
+unsigned errors = 0;
+int verbose_level = 0;
 
 #define PRINT_BUF_SIZE 2048
 
@@ -85,9 +86,7 @@ static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
 
 void verbose(const char *format, ...)
 {
-    extern int VERBOSE;
-
-    if (VERBOSE) {
+    if (verbose_level) {
         va_list args;
         va_start(args, format);
         vfprintf_cc(stdout, format, args);

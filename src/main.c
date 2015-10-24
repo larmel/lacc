@@ -12,8 +12,6 @@
 #include <stdio.h>
 #include <unistd.h>
 
-int VERBOSE = 0;
-
 void help(const char *prog)
 {
     fprintf(stderr, "Usage: %s [-S] [-E] [-v] [-I <path>] [-o <file>] <file>\n",
@@ -47,7 +45,7 @@ int main(int argc, char* argv[])
             output = fopen(optarg, "w");
             break;
         case 'v':
-            VERBOSE = 1;
+            verbose_level += 1;
             break;
         case 'I':
             add_include_search_path(optarg);
@@ -98,7 +96,7 @@ int main(int argc, char* argv[])
             output_strings(output);
         }
 
-        if (VERBOSE) {
+        if (verbose_level) {
             output_symbols(stdout, &ns_ident);
             output_symbols(stdout, &ns_tag);
         }

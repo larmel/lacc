@@ -293,7 +293,6 @@ static int getcleanline(char **lineptr, size_t *n, struct source *fn)
 
 int getprepline(char **buffer)
 {
-    extern int VERBOSE;
     int read,
         processed;
 
@@ -322,10 +321,7 @@ int getprepline(char **buffer)
     *buffer = input_line;
     current_file = src_stack[src_count - 1];
 
-    if (VERBOSE) {
-        printf("(%s, %d): `%s`\n",
-            current_file.path, current_file.line, input_line);
-    }
+    verbose("(%s, %d): `%s`", current_file.path, current_file.line, input_line);
 
     return processed;
 }

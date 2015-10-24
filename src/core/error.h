@@ -6,8 +6,9 @@
 #include <stddef.h>
 
 extern unsigned errors;
+extern int verbose_level;
 
-/* Diagnostics info, written to stdout. No-op if -v is not specified.
+/* Diagnostics info, written to stdout. No-op if verbose_level is zero.
  */
 void verbose(const char *, ...);
 

@@ -684,7 +684,6 @@ static void cleanup(void)
  */
 static void add(struct token t)
 {
-    extern int VERBOSE;
     size_t i = length;
     int added = 0;
 
@@ -707,9 +706,7 @@ static void add(struct token t)
         lookahead[length - 1] = t;
     }
 
-    if (VERBOSE) {
-        printf("   token( %s )\n", t.strval);
-    }
+    verbose("   token( %s )", t.strval);
 }
 
 static void rewind_lookahead_buffer(void)
