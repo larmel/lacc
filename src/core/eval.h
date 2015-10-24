@@ -52,6 +52,21 @@ void param(struct block *, struct var);
  */
 struct var eval_return(struct block *block, const struct typetree *type);
 
+/* Evaluate left->expr || right->expr, where right_top is a pointer to the top
+ * of the block chain ending up with right. Returns the next block of execution.
+ */
+struct block *eval_logical_or(
+    struct block *left,
+    struct block *right_top,
+    struct block *right);
+
+/* Evaluate left->expr && right->expr.
+ */
+struct block *eval_logical_and(
+    struct block *left,
+    struct block *right_top,
+    struct block *right);
+
 /* Evaluate va_start builtin function.
  */
 struct var eval__builtin_va_start(struct block *block, struct var arg);

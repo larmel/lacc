@@ -1356,14 +1356,12 @@ static struct block *conditional_expression(struct block *block)
 
 static struct block *logical_or_expression(struct block *block)
 {
-    extern struct block *
-        eval_logical_or(
-            struct block *left, struct block *right_top, struct block *right);
+    struct block *right;
 
     block = logical_and_expression(block);
     if (peek().token == LOGICAL_OR) {
-        struct block *right = cfg_block_init();
         consume(LOGICAL_OR);
+        right = cfg_block_init();
         block = eval_logical_or(block, right, logical_or_expression(right));
     }
 
@@ -1372,14 +1370,12 @@ static struct block *logical_or_expression(struct block *block)
 
 static struct block *logical_and_expression(struct block *block)
 {
-    extern struct block *
-        eval_logical_and(
-            struct block *left, struct block *right_top, struct block *right);
+    struct block *right;
 
     block = inclusive_or_expression(block);
     if (peek().token == LOGICAL_AND) {
-        struct block *right = cfg_block_init();
         consume(LOGICAL_AND);
+        right = cfg_block_init();
         block = eval_logical_and(block, right, logical_and_expression(right));
     }
 
