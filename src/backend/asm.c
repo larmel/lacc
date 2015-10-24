@@ -3,7 +3,7 @@
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
 #include "abi.h"
-#include "../core/ir.h"
+#include "../core/cfg.h"
 #include "../core/type.h"
 #include "../core/string.h"
 #include "../core/symbol.h"

@@ -1,7 +1,7 @@
 #ifndef EVAL_H
 #define EVAL_H
 
-#include "ir.h"
+#include "cfg.h"
 
 /* Evaluate a = b <op> c, or unary expression a = <op> b
  *

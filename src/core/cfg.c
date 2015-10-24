@@ -2,7 +2,7 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
-#include "ir.h"
+#include "cfg.h"
 #include "error.h"
 
 #include <assert.h>
@@ -13,7 +13,7 @@
 /* This is the global handle for the current function (or declaration list)
  * being translated. It is cleared every time cfg_create is called.
  */
-struct decl current_cfg = {0};
+struct cfg current_cfg = {0};
 
 static void cleanup(void)
 {

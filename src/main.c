@@ -4,6 +4,7 @@
 #include "core/error.h"
 #include "core/parse.h"
 #include "core/string.h"
+#include "core/symbol.h"
 #include "frontend/input.h"
 #include "frontend/preprocess.h"
 

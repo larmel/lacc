@@ -1,4 +1,4 @@
-#include "../core/ir.h"
+#include "../core/cfg.h"
 #include "../core/symbol.h"
 
 #include <assert.h>
