@@ -1,5 +1,5 @@
 #include "abi.h"
-#include "../core/error.h"
+#include "../core/cli.h"
 
 #include <assert.h>
 #include <string.h>

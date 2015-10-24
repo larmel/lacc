@@ -3,7 +3,7 @@
 #  define _XOPEN_SOURCE 700 /* strndup, isblank */
 #endif
 #include "tokenize.h"
-#include "../core/error.h"
+#include "../core/cli.h"
 #include "../core/string.h"
 
 #include <assert.h>

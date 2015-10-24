@@ -4,10 +4,10 @@
 #endif
 #include "abi.h"
 #include "../core/cfg.h"
+#include "../core/cli.h"
 #include "../core/type.h"
 #include "../core/string.h"
 #include "../core/symbol.h"
-#include "../core/error.h"
 
 #include <assert.h>
 #include <stdio.h>

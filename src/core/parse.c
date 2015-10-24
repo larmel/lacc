@@ -1,4 +1,4 @@
-#include "error.h"
+#include "cli.h"
 #include "eval.h"
 #include "parse.h"
 #include "string.h"

@@ -1,7 +1,7 @@
 #ifndef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* getopt */
 #endif
-#include "core/error.h"
+#include "core/cli.h"
 #include "core/parse.h"
 #include "core/string.h"
 #include "core/symbol.h"

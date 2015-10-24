@@ -17,9 +17,9 @@ BOOTSTRAP_SOURCES := \
 	src/backend/abi.c \
 	src/backend/asm.c \
 	src/backend/dot.c \
-	src/core/error.c \
-	src/core/eval.c \
 	src/core/cfg.c \
+	src/core/cli.c \
+	src/core/eval.c \
 	src/core/parse.c \
 	src/core/string.c \
 	src/core/symtab.c \

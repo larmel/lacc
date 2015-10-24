@@ -3,7 +3,6 @@
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
 #include "cfg.h"
-#include "error.h"
 
 #include <assert.h>
 #include <stdlib.h>

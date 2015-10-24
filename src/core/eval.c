@@ -1,5 +1,5 @@
+#include "cli.h"
 #include "eval.h"
-#include "error.h"
 #include "string.h"
 
 #include <assert.h>

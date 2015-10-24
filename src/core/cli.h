@@ -1,5 +1,5 @@
-#ifndef ERROR_H
-#define ERROR_H
+#ifndef CLI_H
+#define CLI_H
 
 #include "../frontend/input.h"
 

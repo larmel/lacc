@@ -1,6 +1,6 @@
 #include "macro.h"
 #include "input.h"
-#include "../core/error.h"
+#include "../core/cli.h"
 #include "../core/string.h"
 
 #include <assert.h>

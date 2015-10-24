@@ -2,7 +2,7 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
-#include "error.h"
+#include "cli.h"
 #include "type.h"
 
 #include <stdio.h>
