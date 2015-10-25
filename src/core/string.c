@@ -9,126 +9,183 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* List of all dynamically allocated strings produced.
- */
-static size_t count;
-static struct string {
+#define HASH_TABLE_LENGTH 1024
+
+struct string
+{
     size_t length;
-    char *label;
     char *string;
-} *strings;
+    char *label;
+
+    struct hash {
+        unsigned long val;
+        struct string *next;
+    } hash;
+};
+
+static struct string
+    str_hash_tab[HASH_TABLE_LENGTH];
+
+static void hash_node_cleanup(struct string *ref)
+{
+    if (ref->hash.next)
+        hash_node_cleanup(ref->hash.next);
+
+    if (ref->label)
+        free(ref->label);
+    free(ref->string);
+    free(ref);
+}
 
 static void cleanup(void)
 {
-    size_t i;
-    for (i = 0; i < count; ++i) {
-        if (strings[i].label)
-            free(strings[i].label);
-        free(strings[i].string);
+    int i;
+    struct string *ref;
+
+    for (i = 0; i < HASH_TABLE_LENGTH; ++i) {
+        ref = &str_hash_tab[i];
+        if (ref->hash.next)
+            hash_node_cleanup(ref->hash.next);
+        if (ref->label)
+            free(ref->label);
+        if (ref->string)
+            free(ref->string);
     }
-    if (count)
-        free(strings);
-    count = 0;
-    strings = NULL;
 }
 
-static char *create_label(void)
+/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
+ */
+static unsigned long djb2_hash(const char *str, const char *endptr)
 {
-    static unsigned int n;
+    unsigned long hash = 5381;
+    int c;
 
-    /* Integer (32 bit) can be at most 10 digits. Leave 3 for constant prefix,
-     * and one for trailing null byte. */
-    char *name = calloc(14, sizeof(*name));
-    snprintf(name, 14, ".LC%d", n++);
-    return name;
+    while (str < endptr) {
+        c = *str++;
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+
+    return hash;
 }
 
-static struct string *get_or_add(const char *s, size_t n)
+static struct string *hash_insert(const char *str, size_t len)
 {
-    size_t i;
-    static size_t capacity;
+    static int reg_cleanup;
+    struct string *ref;
+    unsigned long
+        hash = djb2_hash(str, str + len),
+        pos = hash % HASH_TABLE_LENGTH;
 
-    for (i = 0; i < count; ++i)
-        if (strings[i].length == n && !strncmp(strings[i].string, s, n))
-            return &strings[i];
-
-    /* There are going to be some strings in this program; register exit handler
-     * to free memory in the end. */
-    if (!count)
+    if (!reg_cleanup) {
         atexit(cleanup);
-
-    if (count == capacity) {
-        capacity += 16;
-        strings = realloc(strings, sizeof(*strings) * capacity);
+        reg_cleanup = 1;
     }
 
-    strings[count].length = n;
-    strings[count].string = strndup(s, n);
-    strings[count].label = NULL;
-    return &strings[count++];
+    ref = &str_hash_tab[pos];
+    if (!ref->string) {
+        ref->length = len;
+        ref->string = strndup(str, len);
+        ref->hash.val = hash;
+        return ref;
+    }
+
+    while ((ref->hash.val != hash || strncmp(ref->string, str, len)) &&
+            ref->hash.next)
+        ref = ref->hash.next;
+
+    if (ref->hash.val == hash && !strncmp(ref->string, str, len)) {
+        return ref;
+    }
+
+    assert(!ref->hash.next);
+    ref->hash.next = calloc(1, sizeof(*ref));
+    ref = ref->hash.next;
+
+    ref->length = len;
+    ref->string = strndup(str, len);
+    ref->hash.val = hash;
+    return ref;
 }
 
 const char *str_register(const char *s)
 {
-    struct string *str = get_or_add(s, strlen(s));
+    struct string *str = hash_insert(s, strlen(s));
     return str->string;
 }
 
 const char *str_register_n(const char *s, size_t n)
 {
-    struct string *str = get_or_add(s, n);
+    struct string *str = hash_insert(s, n);
     return str->string;
 }
 
 const char *strlabel(const char *s)
 {
-    struct string *str = get_or_add(s, strlen(s));
-    if (!str->label)
-        str->label = create_label();
+    struct string *ref;
 
-    return str->label;
-}
+    ref = hash_insert(s, strlen(s));
+    if (!ref->label) {
+        static int n;
 
-static void unescape(FILE *stream, int c)
-{
-    if (isprint(c) && c != '"' && c != '\\') {
-        putc(c, stream);
-        return;
+        /* Integer (32 bit) can be at most 10 digits. Leave 3 for constant
+         * prefix, and one for trailing null byte. */
+        ref->label = calloc(14, sizeof(*ref->label));
+        snprintf(ref->label, 14, ".LC%d", n++);
     }
 
-    switch (c) {
-    case '\b': fprintf(stream, "\\b"); break;
-    case '\t': fprintf(stream, "\\t"); break;
-    case '\n': fprintf(stream, "\\n"); break;
-    case '\f': fprintf(stream, "\\f"); break;
-    case '\r': fprintf(stream, "\\r"); break;
-    case '\\': fprintf(stream, "\\\\"); break;
-    case '"': fprintf(stream, "\\\""); break;
-    default:
-        fprintf(stream, "\\0%02o", c);
-        break;
-    }
+    return ref->label;
 }
 
 void output_string(FILE *stream, const char *str)
 {
     char c;
+
     while ((c = *str++) != '\0') {
-        unescape(stream, c);
+        if (isprint(c) && c != '"' && c != '\\') {
+            putc(c, stream);
+            continue;
+        }
+
+        switch (c) {
+        case '\b': fprintf(stream, "\\b");  break;
+        case '\t': fprintf(stream, "\\t");  break;
+        case '\n': fprintf(stream, "\\n");  break;
+        case '\f': fprintf(stream, "\\f");  break;
+        case '\r': fprintf(stream, "\\r");  break;
+        case '\\': fprintf(stream, "\\\\"); break;
+        case '"':  fprintf(stream, "\\\""); break;
+        default:
+            fprintf(stream, "\\0%02o", c);
+            break;
+        }
     }
 }
 
 void output_strings(FILE *stream)
 {
-    size_t i;
-    if (count)
-        fprintf(stream, "\t.section .rodata\n");
-    for (i = 0; i < count; ++i) {
-        if (!strings[i].label)
+    struct string *ref;
+    int section_output = 0,
+        i;
+
+    for (i = 0; i < HASH_TABLE_LENGTH; ++i) {
+        ref = &str_hash_tab[i];
+        if (!ref->string)
             continue;
-        fprintf(stream, "%s:\n", strings[i].label);
-        fprintf(stream, "\t.string \"");
-        output_string(stream, strings[i].string);
-        fprintf(stream, "\"\n");
+
+        while (ref) {
+            if (ref->label) {
+                if (!section_output) {
+                    fprintf(stream, "\t.section .rodata\n");
+                    section_output = 1;
+                }
+
+                fprintf(stream, "%s:\n", ref->label);
+                fprintf(stream, "\t.string \"");
+                output_string(stream, ref->string);
+                fprintf(stream, "\"\n");
+            }
+
+            ref = ref->hash.next;
+        }
     }
 }
