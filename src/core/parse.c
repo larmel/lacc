@@ -1007,54 +1007,65 @@ static struct block *statement(struct block *parent)
         parent = next;
         break;
     }
-    case WHILE:
     case DO: {
         struct block
             *top = cfg_block_init(),
+            *body,
+            *cond = cfg_block_init(),
+            *tail,
+            *next = cfg_block_init();
+
+        set_break_target(next);
+        set_continue_target(cond);
+        parent->jump[0] = top;
+
+        consume(DO);
+        body = statement(top);
+        body->jump[0] = cond;
+        consume(WHILE);
+        consume('(');
+        tail = expression(cond);
+        consume(')');
+        if (is_immediate_true(tail->expr)) {
+            tail->jump[0] = top;
+        } else if (is_immediate_false(tail->expr)) {
+            tail->jump[0] = next;
+        } else {
+            tail->jump[0] = next;
+            tail->jump[1] = top;
+        }
+
+        restore_break_target();
+        restore_continue_target();
+        parent = next;
+        break;
+    }
+    case WHILE: {
+        struct block
+            *top = cfg_block_init(),
+            *cond,
             *body = cfg_block_init(),
             *next = cfg_block_init();
-        parent->jump[0] = top; /* Parent becomes unconditional jump. */
 
         set_break_target(next);
         set_continue_target(top);
-        consume(tok.token);
-        if (tok.token == WHILE) {
-            struct block *cond;
+        parent->jump[0] = top;
 
-            consume('(');
-            cond = expression(top);
-            consume(')');
-            if (is_immediate_true(cond->expr)) {
-                cond->jump[0] = body;
-            } else if (is_immediate_false(cond->expr)) {
-                cond->jump[0] = next;
-            } else {
-                cond->jump[0] = next;
-                cond->jump[1] = body;
-            }
-
-            /* Generate statement, and get tail end of body to loop back. */
-            body = statement(body);
-            body->jump[0] = top;
-        } else if (tok.token == DO) {
-
-            /* Generate statement, and get tail end of body */
-            body = statement(top);
-            consume(WHILE);
-            consume('(');
-
-            /* Tail becomes branch. (nb: wrong if tail is return?!) */
-            body = expression(body);
-            if (is_immediate_true(body->expr)) {
-                body->jump[0] = top;
-            } else if (is_immediate_false(body->expr)) {
-                body->jump[0] = next;
-            } else {
-                body->jump[0] = next;
-                body->jump[1] = top;
-            }
-            consume(')');
+        consume(WHILE);
+        consume('(');
+        cond = expression(top);
+        consume(')');
+        if (is_immediate_true(cond->expr)) {
+            cond->jump[0] = body;
+        } else if (is_immediate_false(cond->expr)) {
+            cond->jump[0] = next;
+        } else {
+            cond->jump[0] = next;
+            cond->jump[1] = body;
         }
+
+        body = statement(body);
+        body->jump[0] = top;
         restore_break_target();
         restore_continue_target();
         parent = next;
