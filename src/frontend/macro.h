@@ -5,7 +5,8 @@
 
 #include <stdlib.h>
 
-struct macro {
+struct macro
+{
     struct token name;
     enum { OBJECT_LIKE, FUNCTION_LIKE } type;
 
@@ -17,6 +18,11 @@ struct macro {
         struct token token;
         int param;
     } *replacement;
+
+    struct {
+    	unsigned long val;
+    	struct macro *next;
+    } hash;
 };
 
 /* Stringify a list of tokens, returning a newtoken of type STRING.

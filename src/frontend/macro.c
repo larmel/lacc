@@ -7,26 +7,15 @@
 #include <string.h>
 #include <ctype.h>
 
-static struct macro *definitions;
-static size_t n_defs;
+#define HASH_TABLE_LENGTH 256
 
-static void cleanup(void)
-{
-    int i;
-    if (!n_defs) return;
-
-    for (i = 0; i < n_defs; ++i) {
-        free(definitions[i].replacement);
-    }
-
-    free(definitions);
-    definitions = NULL;
-    n_defs = 0;
-}
+static struct macro
+    macro_hash_table[HASH_TABLE_LENGTH];
 
 static int macrocmp(const struct macro *a, const struct macro *b)
 {
     int i;
+
     if (strcmp(a->name.strval, b->name.strval) ||
         a->type != b->type ||
         a->params != b->params)
@@ -47,20 +36,109 @@ static int macrocmp(const struct macro *a, const struct macro *b)
             return 1;
         }
     }
+
     return 0;
+}
+
+/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
+ */
+static unsigned long djb2_hash(const char *str)
+{
+    unsigned long hash = 5381;
+    int c;
+
+    while ((c = *str++)) {
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+
+    return hash;
+}
+
+static void hash_node_free(struct macro *ref)
+{
+    assert(ref);
+    if (ref->replacement)
+        free(ref->replacement);
+    free(ref);
+}
+
+static void hash_chain_cleanup(struct macro *ref)
+{
+    if (ref->hash.next)
+        hash_chain_cleanup(ref->hash.next);
+    hash_node_free(ref);
+}
+
+static void cleanup(void)
+{
+    int i;
+    struct macro *ref;
+
+    for (i = 0; i < HASH_TABLE_LENGTH; ++i) {
+        ref = &macro_hash_table[i];
+        if (ref->hash.next)
+            hash_chain_cleanup(ref->hash.next);
+        if (ref->replacement)
+            free(ref->replacement);
+    }
+}
+
+const struct macro *definition(struct token name)
+{
+    struct macro *ref;
+    unsigned long hash, pos;
+
+    if (name.token != IDENTIFIER)
+        return NULL;
+
+    hash = djb2_hash(name.strval);
+    pos = hash % HASH_TABLE_LENGTH;
+    ref = &macro_hash_table[pos];
+    if (!ref->name.strval) {
+        return NULL;
+    }
+
+    while ((ref->hash.val != hash || strcmp(ref->name.strval, name.strval)) &&
+            ref->hash.next)
+        ref = ref->hash.next;
+
+    if (ref->hash.val == hash && !strcmp(ref->name.strval, name.strval)) {
+        if (!strcmp(ref->name.strval, "__LINE__")) {
+            ref->replacement[0].token.intval = current_file.line;
+        }
+        return ref;
+    }
+
+    return NULL;
 }
 
 void define(struct macro macro)
 {
     static int clean_on_exit;
-    int i;
 
-    for (i = 0; i < n_defs; ++i)
-        if (!strcmp(definitions[i].name.strval, macro.name.strval))
-            break;
+    struct macro *ref;
+    unsigned long
+        hash = djb2_hash(macro.name.strval),
+        pos = hash % HASH_TABLE_LENGTH;
 
-    if (i < n_defs) {
-        if (macrocmp(&definitions[i], &macro)) {
+    if (!clean_on_exit) {
+        atexit(cleanup);
+        clean_on_exit = 1;
+    }
+
+    ref = &macro_hash_table[pos];
+    if (!ref->name.strval) {
+        *ref = macro;
+        ref->hash.val = hash;
+        return;
+    }
+
+    while ((ref->hash.val != hash
+            || strcmp(ref->name.strval, macro.name.strval)) && ref->hash.next)
+        ref = ref->hash.next;
+
+    if (ref->hash.val == hash && !strcmp(ref->name.strval, macro.name.strval)) {
+        if (macrocmp(ref, &macro)) {
             error("Redefinition of macro '%s' with different substitution.",
                 macro.name.strval);
             exit(1);
@@ -70,54 +148,60 @@ void define(struct macro macro)
         if (macro.size) {
             free(macro.replacement);
         }
-    } else {
-        if (!clean_on_exit) {
-            clean_on_exit = 1;
-            atexit(cleanup);
-        }
-
-        n_defs++;
-        definitions = realloc(definitions, sizeof(*definitions) * n_defs);
-        definitions[n_defs - 1] = macro;
+        return;
     }
+
+    assert(!ref->hash.next);
+    ref->hash.next = calloc(1, sizeof(*ref));
+    ref = ref->hash.next;
+    *ref = macro;
+    ref->hash.val = hash;
 }
 
 void undef(struct token name)
 {
-    int i;
-    assert(name.strval);
-    for (i = 0; i < n_defs; ++i)
-        if (!strcmp(definitions[i].name.strval, name.strval))
-            break;
+    struct macro *ref, *prev;
+    unsigned long hash, pos;
 
-    if (i < n_defs) {
-        n_defs--;
-        assert(n_defs - i >= 0);
-        if (definitions[i].size) {
-            free(definitions[i].replacement);
-        }
-        memmove(&definitions[i], &definitions[i + 1],
-            (n_defs - i) * sizeof(*definitions));
+    if (name.token != IDENTIFIER)
+        return;
+
+    hash = djb2_hash(name.strval);
+    pos = hash % HASH_TABLE_LENGTH;
+    ref = &macro_hash_table[pos];
+    prev = ref;
+    if (!ref->name.strval) {
+        return;
     }
-}
 
-const struct macro *definition(struct token name)
-{
-    int i;
-    assert(name.strval);
-    if (name.token == IDENTIFIER) {
-        for (i = 0; i < n_defs; ++i)
-            if (!strcmp(definitions[i].name.strval, name.strval))
-                break;
-
-        if (i < n_defs) {
-            if (!strcmp(definitions[i].name.strval, "__LINE__")) {
-                definitions[i].replacement[0].token.intval = current_file.line;
-            }
-            return &definitions[i];
+    /* Special case if matched on static memory. */
+    if (ref->hash.val == hash && !strcmp(ref->name.strval, name.strval)) {
+        prev = ref->hash.next;
+        if (prev) {
+            *ref = *prev;
+            hash_node_free(prev);
+        } else {
+            if (ref->replacement)
+                free(ref->replacement);
+            memset(ref, 0, sizeof(*ref));
         }
+        return;
     }
-    return NULL;
+
+    /* Get pointer to match, and predecessor. */
+    while ((ref->hash.val != hash || strcmp(ref->name.strval, name.strval))
+            && ref->hash.next)
+    {
+        prev = ref;
+        ref = ref->hash.next;
+    }
+
+    /* Remove node in middle of list. */
+    if (ref->hash.val == hash && !strcmp(ref->name.strval, name.strval)) {
+        assert(ref != prev);
+        prev->hash.next = ref->hash.next;
+        hash_node_free(ref);
+    }
 }
 
 /* Keep track of which macros have been expanded, avoiding recursion by looking
