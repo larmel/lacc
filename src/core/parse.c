@@ -19,8 +19,6 @@ static struct block *initializer(struct block *block, struct var target);
 static struct block *block(struct block *);
 static struct block *statement(struct block *);
 
-static void zero_initialize(struct block *block, struct var target);
-
 static struct block *expression(struct block *);
 static struct block *assignment_expression(struct block *);
 static struct block *conditional_expression(struct block *);
@@ -39,7 +37,7 @@ static struct block *postfix_expression(struct block *block);
 static struct block *unary_expression(struct block *block);
 static struct block *primary_expression(struct block *block);
 
-static struct var constant_expression();
+static struct var constant_expression(void);
 
 struct namespace
     ns_ident = {"identifiers"},
@@ -191,120 +189,6 @@ static struct block *declaration(struct block *parent)
     }
 }
 
-/* Parse and emit initializer code for target variable in statements such as
- * int b[] = {0, 1, 2, 3}. Generate a series of assignment operations on
- * references to target variable.
- */
-static struct block *initializer(struct block *block, struct var target)
-{
-    assert(target.kind == DIRECT);
-
-    /* Do not care about cv-qualifiers here. */
-    target.type = unwrapped(target.type);
-
-    if (peek().token == '{') {
-        int i = 0,
-            base = target.offset; /* Initially filled offset. */
-        const struct typetree *type = target.type;
-
-        assert(!is_tagged(type));
-
-        consume('{');
-        target.lvalue = 1;
-        switch (type->type) {
-        case T_UNION:
-            /* C89 states that only the first element of a union can be
-             * initialized. Zero the whole thing first if there is padding. */
-            if (size_of(get_member(type, 0)->type) < type->size) {
-                if (type->size % 8) {
-                    target.type =
-                        type_init(T_ARRAY, &basic_type__char, type->size);
-                } else {
-                    target.type =
-                        type_init(T_ARRAY, &basic_type__long, type->size / 8);
-                }
-                zero_initialize(block, target);
-            }
-            target.type = get_member(type, 0)->type;
-            block = initializer(block, target);
-            if (peek().token != '}') {
-                error("Excess elements in union initializer.");
-                exit(1);
-            }
-            break;
-        case T_STRUCT:
-            for (; i < nmembers(type); ++i) {
-                target.type = get_member(type, i)->type;
-                target.offset = base + get_member(type, i)->offset;
-                block = initializer(block, target);
-                if (peek().token == ',') {
-                    consume(',');
-                } else break;
-                if (peek().token == '}') {
-                    break;
-                }
-            }
-            while (++i < nmembers(type)) {
-                target.type = get_member(type, i)->type;
-                target.offset = base + get_member(type, i)->offset;
-                zero_initialize(block, target);
-            }
-            break;
-        case T_ARRAY:
-            target.type = type->next;
-            for (; !type->size || i < type->size / size_of(type->next); ++i) {
-                target.offset = base + i * size_of(type->next);
-                block = initializer(block, target);
-                if (peek().token == ',') {
-                    consume(',');
-                } else break;
-                if (peek().token == '}') {
-                    break;
-                }
-            }
-            if (!type->size) {
-                assert(!target.symbol->type.size);
-                assert(is_array(&target.symbol->type));
-
-                /* Incomplete array type can only be in the root level of target
-                 * type tree, overwrite type directly in symbol. */
-                ((struct symbol *) target.symbol)->type.size =
-                    (i + 1) * size_of(type->next);
-            } else {
-                while (++i < type->size / size_of(type->next)) {
-                    target.offset = base + i * size_of(type->next);
-                    zero_initialize(block, target);
-                }
-            }
-            break;
-        default:
-            error("Block initializer only apply to aggregate or union type.");
-            exit(1);
-        }
-        target.lvalue = 0;
-        consume('}');
-    } else {
-        block = assignment_expression(block);
-        if (!target.symbol->depth && block->expr.kind != IMMEDIATE) {
-            error("Initializer must be computable at load time.");
-            exit(1);
-        }
-        if (target.kind == DIRECT && !target.type->size) {
-            assert(!target.offset);
-            assert(block->expr.kind == IMMEDIATE);
-            assert(is_array(block->expr.type) && block->expr.string);
-
-            /* Complete type based on string literal. */
-            ((struct symbol *) target.symbol)->type.size =
-                block->expr.type->size;
-            target.type = block->expr.type;
-        }
-        eval_assign(block, target, block->expr);
-    }
-
-    return block;
-}
-
 /* Set var = 0, using simple assignment on members for composite types. This
  * rule does not consume any input, but generates a series of assignments on the
  * given variable. Point is to be able to zero initialize using normal simple
@@ -351,6 +235,123 @@ static void zero_initialize(struct block *block, struct var target)
         error("Invalid type to zero-initialize, was '%t'.", target.type);
         exit(1);
     }
+}
+
+static struct block *object_initializer(struct block *block, struct var target)
+{
+    int i,
+        filled = target.offset;
+    const struct typetree *type = target.type;
+
+    assert(!is_tagged(type));
+
+    consume('{');
+    target.lvalue = 1;
+    switch (type->type) {
+    case T_UNION:
+        /* C89 states that only the first element of a union can be
+         * initialized. Zero the whole thing first if there is padding. */
+        if (size_of(get_member(type, 0)->type) < type->size) {
+            target.type =
+                (type->size % 8) ?
+                    type_init(T_ARRAY, &basic_type__char, type->size) :
+                    type_init(T_ARRAY, &basic_type__long, type->size / 8);
+            zero_initialize(block, target);
+        }
+        target.type = get_member(type, 0)->type;
+        block = initializer(block, target);
+        if (peek().token != '}') {
+            error("Excess elements in union initializer.");
+            exit(1);
+        }
+        break;
+    case T_STRUCT:
+        for (i = 0; i < nmembers(type); ++i) {
+            target.type = get_member(type, i)->type;
+            target.offset = filled + get_member(type, i)->offset;
+            block = initializer(block, target);
+            if (peek().token == ',') {
+                consume(',');
+            } else break;
+            if (peek().token == '}') {
+                break;
+            }
+        }
+        while (++i < nmembers(type)) {
+            target.type = get_member(type, i)->type;
+            target.offset = filled + get_member(type, i)->offset;
+            zero_initialize(block, target);
+        }
+        break;
+    case T_ARRAY:
+        target.type = type->next;
+        for (i = 0; !type->size || i < type->size / size_of(type->next); ++i) {
+            target.offset = filled + i * size_of(type->next);
+            block = initializer(block, target);
+            if (peek().token == ',') {
+                consume(',');
+            } else break;
+            if (peek().token == '}') {
+                break;
+            }
+        }
+        if (!type->size) {
+            assert(!target.symbol->type.size);
+            assert(is_array(&target.symbol->type));
+
+            /* Incomplete array type can only be in the root level of target
+             * type tree, overwrite type directly in symbol. */
+            ((struct symbol *) target.symbol)->type.size =
+                (i + 1) * size_of(type->next);
+        } else {
+            while (++i < type->size / size_of(type->next)) {
+                target.offset = filled + i * size_of(type->next);
+                zero_initialize(block, target);
+            }
+        }
+        break;
+    default:
+        error("Block initializer only apply to aggregate or union type.");
+        exit(1);
+    }
+
+    consume('}');
+    return block;
+}
+
+/* Parse and emit initializer code for target variable in statements such as
+ * int b[] = {0, 1, 2, 3}. Generate a series of assignment operations on
+ * references to target variable.
+ */
+static struct block *initializer(struct block *block, struct var target)
+{
+    assert(target.kind == DIRECT);
+
+    /* Do not care about cv-qualifiers here. */
+    target.type = unwrapped(target.type);
+
+    if (peek().token == '{') {
+        block = object_initializer(block, target);
+    } else {
+        block = assignment_expression(block);
+        if (!target.symbol->depth && block->expr.kind != IMMEDIATE) {
+            error("Initializer must be computable at load time.");
+            exit(1);
+        }
+        if (target.kind == DIRECT && !target.type->size) {
+            assert(!target.offset);
+            assert(block->expr.kind == IMMEDIATE);
+            assert(is_array(block->expr.type) && block->expr.string);
+
+            /* Complete type based on string literal. */
+            ((struct symbol *) target.symbol)->type.size =
+                block->expr.type->size;
+            target.type = block->expr.type;
+        }
+        eval_assign(block, target, block->expr);
+    }
+
+    return block;
 }
 
 /* Parse declaration list for struct or union members.
@@ -731,8 +732,7 @@ static struct typetree *pointer(const struct typetree *base)
  * Only the first dimension s0 can be unspecified, yielding an incomplete type.
  * Incomplete types are represented by having size of zero.
  */
-static struct typetree *
-direct_declarator_array(struct typetree *base)
+static struct typetree *direct_declarator_array(struct typetree *base)
 {
     if (peek().token == '[') {
         long length = 0;
@@ -768,8 +768,9 @@ direct_declarator_array(struct typetree *base)
  * The type returned from declarator has to be either array, function or
  * pointer, thus only need to check for type->next to find inner tail.
  */
-static struct typetree *
-direct_declarator(struct typetree *base, const char **symbol)
+static struct typetree *direct_declarator(
+    struct typetree *base,
+    const char **symbol)
 {
     struct typetree *type = base;
     struct typetree *head, *tail = NULL;
@@ -865,8 +866,7 @@ static struct typetree *parameter_list(const struct typetree *base)
 /* Treat statements and declarations equally, allowing declarations in between
  * statements as in modern C. Called compound-statement in K&R.
  */
-static struct block *
-block(struct block *parent)
+static struct block *block(struct block *parent)
 {
     consume('{');
     push_scope(&ns_ident);
@@ -880,8 +880,40 @@ block(struct block *parent)
     return parent;
 }
 
-static struct switch_context
+static int is_immediate_true(struct var e)
 {
+    return e.kind == IMMEDIATE && is_integer(e.type) && e.imm.i;
+}
+
+static int is_immediate_false(struct var e)
+{
+    return e.kind == IMMEDIATE && is_integer(e.type) && !e.imm.i;
+}
+
+/* Store reference to top of loop, for resolving break and continue. Use call
+ * stack to keep track of depth, backtracking to the old value.
+ */
+static struct block
+    *break_target,
+    *continue_target;
+
+#define set_break_target(old, brk) \
+    old = break_target; \
+    break_target = brk;
+
+#define set_continue_target(old, cont) \
+    old = continue_target; \
+    continue_target = cont;
+
+#define restore_break_target(old) \
+    break_target = old;
+
+#define restore_continue_target(old) \
+    continue_target = old;
+
+/* Keep track of nested switch statements and their case labels.
+ */
+static struct switch_context {
     struct block *default_label;
     struct block **case_label;
     struct var *case_value;
@@ -904,7 +936,7 @@ static void add_switch_case(struct block *label, struct var value)
 
 static void free_switch_context(struct switch_context *ctx)
 {
-    assert( ctx );
+    assert(ctx);
     if (ctx->n) {
         free(ctx->case_label);
         free(ctx->case_value);
@@ -912,50 +944,230 @@ static void free_switch_context(struct switch_context *ctx)
     free(ctx);
 }
 
-/* Create or expand a block of code. Consecutive statements without branches are
- * stored as a single block, passed as parent. Statements with branches generate
- * new blocks. Returns the current block of execution after the statement is
- * done. For ex: after an if statement, the empty fallback is returned. Caller
- * must keep handles to roots, only the tail is returned. */
-static struct block *statement(struct block *parent)
+static struct block *if_statement(struct block *parent)
 {
-    struct token tok;
+    struct block
+        *right = cfg_block_init(),
+        *next  = cfg_block_init();
 
-    /* Store reference to top of loop, for resolving break and continue. Use
-     * call stack to keep track of depth, backtracking to the old value. */
-    static struct block
-        *break_target,
-        *continue_target;
+    consume(IF);
+    consume('(');
+
+    /* Node becomes a branch, store the expression as condition variable
+     * and append code to compute the value. parent->expr holds the
+     * result automatically. */
+    parent = expression(parent);
+    consume(')');
+    if (is_immediate_true(parent->expr)) {
+        parent->jump[0] = right;
+    } else if (is_immediate_false(parent->expr)) {
+        parent->jump[0] = next;
+    } else {
+        parent->jump[0] = next;
+        parent->jump[1] = right;
+    }
+
+    /* The order is important here: Send right as head in new statement
+     * graph, and store the resulting tail as new right, hooking it up to
+     * the fallback of the if statement. */
+    right = statement(right);
+    right->jump[0] = next;
+    if (peek().token == ELSE) {
+        struct block *left = cfg_block_init();
+        consume(ELSE);
+
+        /* Again, order is important: Set left as new jump target for false
+         * if branch, then invoke statement to get the (potentially
+         * different) tail. */
+        parent->jump[0] = left;
+        left = statement(left);
+        left->jump[0] = next;
+    }
+
+    return next;
+}
+
+static struct block *do_statement(struct block *parent)
+{
+    struct block
+        *top = cfg_block_init(),
+        *body,
+        *cond = cfg_block_init(),
+        *tail,
+        *next = cfg_block_init();
 
     struct block
         *old_break_target,
         *old_continue_target;
 
-    /* Keep references to old switch context, pushing a new context on each
-     * switch statement. */
+    set_break_target(old_break_target, next);
+    set_continue_target(old_continue_target, cond);
+    parent->jump[0] = top;
+
+    consume(DO);
+    body = statement(top);
+    body->jump[0] = cond;
+    consume(WHILE);
+    consume('(');
+    tail = expression(cond);
+    consume(')');
+    if (is_immediate_true(tail->expr)) {
+        tail->jump[0] = top;
+    } else if (is_immediate_false(tail->expr)) {
+        tail->jump[0] = next;
+    } else {
+        tail->jump[0] = next;
+        tail->jump[1] = top;
+    }
+
+    restore_break_target(old_break_target);
+    restore_continue_target(old_continue_target);
+    return next;
+}
+
+static struct block *while_statement(struct block *parent)
+{
+    struct block
+        *top = cfg_block_init(),
+        *cond,
+        *body = cfg_block_init(),
+        *next = cfg_block_init();
+
+    struct block
+        *old_break_target,
+        *old_continue_target;
+
+    set_break_target(old_break_target, next);
+    set_continue_target(old_continue_target, top);
+    parent->jump[0] = top;
+
+    consume(WHILE);
+    consume('(');
+    cond = expression(top);
+    consume(')');
+    if (is_immediate_true(cond->expr)) {
+        cond->jump[0] = body;
+    } else if (is_immediate_false(cond->expr)) {
+        cond->jump[0] = next;
+    } else {
+        cond->jump[0] = next;
+        cond->jump[1] = body;
+    }
+
+    body = statement(body);
+    body->jump[0] = top;
+
+    restore_break_target(old_break_target);
+    restore_continue_target(old_continue_target);
+    return next;
+}
+
+static struct block *for_statement(struct block *parent)
+{
+    struct block
+        *top = cfg_block_init(),
+        *body = cfg_block_init(),
+        *increment = cfg_block_init(),
+        *next = cfg_block_init();
+
+    struct block
+        *old_break_target,
+        *old_continue_target;
+
+    set_break_target(old_break_target, next);
+    set_continue_target(old_continue_target, increment);
+
+    consume(FOR);
+    consume('(');
+    if (peek().token != ';') {
+        parent = expression(parent);
+    }
+
+    consume(';');
+    if (peek().token != ';') {
+        parent->jump[0] = top;
+        top = expression(top);
+        if (is_immediate_true(top->expr)) {
+            top->jump[0] = body;
+        } else if (is_immediate_false(top->expr)) {
+            top->jump[0] = next;
+        } else {
+            top->jump[0] = next;
+            top->jump[1] = body;
+        }
+        top = (struct block *) parent->jump[0];
+    } else {
+        /* Infinite loop */
+        parent->jump[0] = body;
+        top = body;
+    }
+
+    consume(';');
+    if (peek().token != ')') {
+        expression(increment)->jump[0] = top;
+    }
+
+    consume(')');
+    body = statement(body);
+    body->jump[0] = increment;
+
+    restore_break_target(old_break_target);
+    restore_continue_target(old_continue_target);
+    return next;
+}
+
+static struct block *switch_statement(struct block *parent)
+{
+    struct block
+        *body = cfg_block_init(),
+        *last,
+        *next = cfg_block_init();
+
     struct switch_context *old_switch_ctx;
+    struct block *old_break_target;
 
-    #define is_immediate_true(e) \
-        (e).kind == IMMEDIATE && \
-        is_integer((e).type) && (e).imm.i
+    set_break_target(old_break_target, next);
+    old_switch_ctx = switch_ctx;
+    switch_ctx = calloc(1, sizeof(*switch_ctx));
 
-    #define is_immediate_false(e) \
-        (e).kind == IMMEDIATE && \
-        is_integer((e).type) && !(e).imm.i
+    consume(SWITCH);
+    consume('(');
+    parent = expression(parent);
+    consume(')');
+    last = statement(body);
+    last->jump[0] = next;
 
-    #define set_break_target(brk) \
-        old_break_target = break_target; \
-        break_target = (brk); \
+    if (!switch_ctx->n && !switch_ctx->default_label) {
+        parent->jump[0] = next;
+    } else {
+        int i;
+        struct block *cond = parent;
 
-    #define set_continue_target(cont) \
-        old_continue_target = continue_target; \
-        continue_target = (cont);
+        for (i = 0; i < switch_ctx->n; ++i) {
+            struct block *prev_cond = cond;
+            struct block *label = switch_ctx->case_label[i];
+            struct var value = switch_ctx->case_value[i];
 
-    #define restore_break_target() \
-        break_target = old_break_target;
+            cond = cfg_block_init();
+            cond->expr = eval_expr(cond, IR_OP_EQ, value, parent->expr);
+            cond->jump[1] = label;
+            prev_cond->jump[0] = cond;
+        }
 
-    #define restore_continue_target() \
-        continue_target = old_continue_target;
+        cond->jump[0] = (switch_ctx->default_label) ?
+            switch_ctx->default_label : next;
+    }
+
+    free_switch_context(switch_ctx);
+    restore_break_target(old_break_target);
+    switch_ctx = old_switch_ctx;
+    return next;
+}
+
+static struct block *statement(struct block *parent)
+{
+    const struct symbol *sym;
+    struct token tok;
 
     switch ((tok = peek()).token) {
     case ';':
@@ -964,158 +1176,18 @@ static struct block *statement(struct block *parent)
     case '{':
         parent = block(parent);
         break;
-    case IF: {
-        struct block
-            *right = cfg_block_init(),
-            *next  = cfg_block_init();
-
-        consume(tok.token);
-        consume('(');
-
-        /* Node becomes a branch, store the expression as condition variable
-         * and append code to compute the value. parent->expr holds the
-         * result automatically. */
-        parent = expression(parent);
-        consume(')');
-        if (is_immediate_true(parent->expr)) {
-            parent->jump[0] = right;
-        } else if (is_immediate_false(parent->expr)) {
-            parent->jump[0] = next;
-        } else {
-            parent->jump[0] = next;
-            parent->jump[1] = right;
-        }
-
-        /* The order is important here: Send right as head in new statement
-         * graph, and store the resulting tail as new right, hooking it up to
-         * the fallback of the if statement. */
-        right = statement(right);
-        right->jump[0] = next;
-
-        if (peek().token == ELSE) {
-            struct block *left = cfg_block_init();
-            consume(ELSE);
-
-            /* Again, order is important: Set left as new jump target for false
-             * if branch, then invoke statement to get the (potentially
-             * different) tail. */
-            parent->jump[0] = left;
-            left = statement(left);
-
-            left->jump[0] = next;
-        }
-        parent = next;
+    case IF:
+        parent = if_statement(parent);
         break;
-    }
-    case DO: {
-        struct block
-            *top = cfg_block_init(),
-            *body,
-            *cond = cfg_block_init(),
-            *tail,
-            *next = cfg_block_init();
-
-        set_break_target(next);
-        set_continue_target(cond);
-        parent->jump[0] = top;
-
-        consume(DO);
-        body = statement(top);
-        body->jump[0] = cond;
-        consume(WHILE);
-        consume('(');
-        tail = expression(cond);
-        consume(')');
-        if (is_immediate_true(tail->expr)) {
-            tail->jump[0] = top;
-        } else if (is_immediate_false(tail->expr)) {
-            tail->jump[0] = next;
-        } else {
-            tail->jump[0] = next;
-            tail->jump[1] = top;
-        }
-
-        restore_break_target();
-        restore_continue_target();
-        parent = next;
+    case DO:
+        parent = do_statement(parent);
         break;
-    }
-    case WHILE: {
-        struct block
-            *top = cfg_block_init(),
-            *cond,
-            *body = cfg_block_init(),
-            *next = cfg_block_init();
-
-        set_break_target(next);
-        set_continue_target(top);
-        parent->jump[0] = top;
-
-        consume(WHILE);
-        consume('(');
-        cond = expression(top);
-        consume(')');
-        if (is_immediate_true(cond->expr)) {
-            cond->jump[0] = body;
-        } else if (is_immediate_false(cond->expr)) {
-            cond->jump[0] = next;
-        } else {
-            cond->jump[0] = next;
-            cond->jump[1] = body;
-        }
-
-        body = statement(body);
-        body->jump[0] = top;
-        restore_break_target();
-        restore_continue_target();
-        parent = next;
+    case WHILE:
+        parent = while_statement(parent);
         break;
-    }
-    case FOR: {
-        struct block
-            *top = cfg_block_init(),
-            *body = cfg_block_init(),
-            *increment = cfg_block_init(),
-            *next = cfg_block_init();
-
-        set_break_target(next);
-        set_continue_target(increment);
-        consume(FOR);
-        consume('(');
-        if (peek().token != ';') {
-            parent = expression(parent);
-        }
-        consume(';');
-        if (peek().token != ';') {
-            parent->jump[0] = top;
-            top = expression(top);
-            if (is_immediate_true(top->expr)) {
-                top->jump[0] = body;
-            } else if (is_immediate_false(top->expr)) {
-                top->jump[0] = next;
-            } else {
-                top->jump[0] = next;
-                top->jump[1] = body;
-            }
-            top = (struct block *) parent->jump[0];
-        } else {
-            /* Infinite loop */
-            parent->jump[0] = body;
-            top = body;
-        }
-        consume(';');
-        if (peek().token != ')') {
-            expression(increment)->jump[0] = top;
-        }
-        consume(')');
-        body = statement(body);
-        body->jump[0] = increment;
-
-        restore_break_target();
-        restore_continue_target();
-        parent = next;
+    case FOR:
+        parent = for_statement(parent);
         break;
-    }
     case GOTO:
         consume(GOTO);
         consume(IDENTIFIER);
@@ -1124,9 +1196,9 @@ static struct block *statement(struct block *parent)
         break;
     case CONTINUE:
     case BREAK:
-        consume(tok.token);
-        parent->jump[0] = (tok.token == CONTINUE) ?
-            continue_target : break_target;
+        next();
+        parent->jump[0] =
+            (tok.token == CONTINUE) ? continue_target : break_target;
         consume(';');
         /* Return orphan node, which is dead code unless there is a label and a
          * goto statement. */
@@ -1141,56 +1213,9 @@ static struct block *statement(struct block *parent)
         consume(';');
         parent = cfg_block_init(); /* orphan */
         break;
-    case SWITCH: {
-        int i;
-        struct block
-            *body, /* First block of switch statement. */
-            *last, /* Last block of switch statement. */
-            *next;
-
-        consume(SWITCH);
-        consume('(');
-        parent = expression(parent);
-        consume(')');
-
-        /* Breaking out of switch reaches next block. */
-        next = cfg_block_init();
-        set_break_target(next);
-
-        /* Push new switch context. */
-        old_switch_ctx = switch_ctx;
-        switch_ctx = calloc(1, sizeof(*switch_ctx));
-
-        body = cfg_block_init();
-        last = statement(body);
-        last->jump[0] = next;
-
-        if (!switch_ctx->n && !switch_ctx->default_label) {
-            parent->jump[0] = next;
-        } else {
-            struct block *cond = parent;
-
-            for (i = 0; i < switch_ctx->n; ++i) {
-                struct block *prev_cond = cond;
-                struct block *label = switch_ctx->case_label[i];
-                struct var value = switch_ctx->case_value[i];
-
-                cond = cfg_block_init();
-                cond->expr = eval_expr(cond, IR_OP_EQ, value, parent->expr);
-                cond->jump[1] = label;
-                prev_cond->jump[0] = cond;
-            }
-
-            cond->jump[0] = (switch_ctx->default_label) ?
-                switch_ctx->default_label : next;
-        }
-
-        free_switch_context(switch_ctx);
-        restore_break_target();
-        switch_ctx = old_switch_ctx;
-        parent = next;
+    case SWITCH:
+        parent = switch_statement(parent);
         break;
-    }
     case CASE:
         consume(CASE);
         if (!switch_ctx) {
@@ -1220,18 +1245,14 @@ static struct block *statement(struct block *parent)
             parent = next;
         }
         break;
-    case IDENTIFIER: {
-        const struct symbol *def;
-        if (
-            (def = sym_lookup(&ns_ident, tok.strval)) &&
-            def->symtype == SYM_TYPEDEF
-        ) {
+    case IDENTIFIER:
+        sym = sym_lookup(&ns_ident, tok.strval);
+        if (sym && sym->symtype == SYM_TYPEDEF) {
             parent = declaration(parent);
             break;
         }
-        /* todo: handle label statement. */
-    }
-    case INTEGER_CONSTANT: /* todo: any constant value */
+        /* fallthrough */
+    case INTEGER_CONSTANT:
     case STRING:
     case '*':
     case '(':
@@ -1242,13 +1263,6 @@ static struct block *statement(struct block *parent)
         parent = declaration(parent);
         break;
     }
-
-    #undef is_immediate_true
-    #undef is_immediate_false
-    #undef set_break_target
-    #undef set_continue_target
-    #undef restore_break_target
-    #undef restore_continue_target
 
     return parent;
 }
@@ -1323,7 +1337,7 @@ static struct block *assignment_expression(struct block *block)
     return block;
 }
 
-static struct var constant_expression()
+static struct var constant_expression(void)
 {
     struct block *head = cfg_block_init(),
             *tail;
