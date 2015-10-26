@@ -78,13 +78,13 @@ extern struct namespace
     ns_label,   /* Labels. */
     ns_tag;     /* Tags. */
 
-void push_scope(struct namespace *);
-void pop_scope(struct namespace *);
+void push_scope(struct namespace *ns);
+void pop_scope(struct namespace *ns);
 
 /* Retrieve a symbol based on identifier name, or NULL of not registered or
  * visible from current scope.
  */
-struct symbol *sym_lookup(struct namespace *, const char *);
+struct symbol *sym_lookup(struct namespace *ns, const char *name);
 
 /* Add symbol to current scope, or resolve to or complete existing symbols when
  * they occur repeatedly.
@@ -99,18 +99,20 @@ struct symbol *sym_add(
 /* Create a symbol with the provided type and add it to current scope. Used to
  * hold temporary values in expression evaluation.
  */
-struct symbol *sym_temp(struct namespace *, const struct typetree *);
+struct symbol *sym_temp(struct namespace *ns, const struct typetree *type);
 
 /* Register compiler internal builtin symbols, that are assumed to exists by
  * standard library headers.
  */
-void register_builtin_types(struct namespace *);
+void register_builtin_types(struct namespace *ns);
 
 /* Output tentative definitions, symbols that have not been assigned a value in
  * this translation unit. Output as .comm directives in GNU assembly syntax.
  */
-void assemble_tentative_definitions(FILE *);
+void assemble_tentative_definitions(FILE *stream);
 
-void output_symbols(FILE *, struct namespace *);
+/* Verbose output all symbols from symbol table.
+ */
+void output_symbols(FILE *stream, struct namespace *ns);
 
 #endif
