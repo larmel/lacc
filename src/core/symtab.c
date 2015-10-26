@@ -10,80 +10,168 @@
 #include <stdlib.h>
 #include <string.h>
 
-void push_scope(struct namespace *ns) {
-    ns->current_depth++;
-    if (!ns->scope) {
-        ns->current_depth = 0;
-    }
+struct namespace
+    ns_ident = {"identifiers"},
+    ns_label = {"labels"},
+    ns_tag = {"tags"};
 
-    ns->scope =
-        realloc(ns->scope, sizeof(*ns->scope) * (ns->current_depth + 1));
-    memset(&ns->scope[ns->current_depth], 0x0, sizeof(struct scope));
+/* Initialize hash table with initial size heuristic based on scope depth.
+ * As a special case, depth 1 containing function arguments is assumed to
+ * contain fewer symbols.
+ */
+static size_t hash_cap[] = {256, 16, 128, 64, 32, 16};
+static size_t hash_cap_default = 8;
+
+void push_scope(struct namespace *ns)
+{
+    struct scope *scope;
+
+    ns->current_depth = (ns->scope) ? ns->current_depth + 1 : 0;
+    ns->scope = realloc(ns->scope, sizeof(*ns->scope)*(ns->current_depth + 1));
+
+    scope = &ns->scope[ns->current_depth];
+    scope->hash_length = hash_cap_default;
+    if (ns->current_depth < sizeof(hash_cap) / sizeof(hash_cap[0]))
+        scope->hash_length = hash_cap[ns->current_depth];
+
+    scope->hash_tab = calloc(scope->hash_length, sizeof(*scope->hash_tab));
 }
 
-void pop_scope(struct namespace *ns) {
-    if (ns->current_depth >= 0) {
-        if (ns->scope[ns->current_depth].idx) {
-            free(ns->scope[ns->current_depth].idx);    
-        }
-        memset(&ns->scope[ns->current_depth], 0x0, sizeof(struct scope));
-        ns->current_depth--;
-    }
+static void ref_list_free(struct sym_ref *ref)
+{
+    if (ref->next)
+        ref_list_free(ref->next);
+    free(ref);
+}
 
+void pop_scope(struct namespace *ns)
+{
+    size_t i;
+    struct scope *scope;
+
+    assert(ns->current_depth >= 0);
+    scope = &ns->scope[ns->current_depth];
+    for (i = 0; i < scope->hash_length; ++i)
+        if (scope->hash_tab[i].next)
+            ref_list_free(scope->hash_tab[i].next);
+
+    free(scope->hash_tab);
+    ns->current_depth--;
+
+    /* Popping last scope frees the whole symbol table. This only happens once,
+     * after reaching the end of the translation unit. */
     if (ns->current_depth == -1) {
-        int i;
-
-        if (ns->scope) {
-            free(ns->scope);
-            ns->scope = NULL;
-        }
+        free(ns->scope);
         if (ns->symbol) {
-            for (i = 0; i < ns->size; ++i) {
+            for (i = 0; i < ns->length; ++i)
                 free(ns->symbol[i]);
-            }
             free(ns->symbol);
-            ns->symbol = NULL;
-            ns->size = 0;
-            ns->cap = 0;
         }
     }
+}
+
+/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
+ */
+static unsigned long djb2_hash(const char *str)
+{
+    unsigned long hash = 5381;
+    int c;
+
+    while ((c = *str++)) {
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+
+    return hash;
 }
 
 /* Create and add symbol to symbol table, but not to any scope. Symbol address
  * needs to be stable, so they are stored as a realloc-safe list of pointers.
  */
-static int create_symbol(struct namespace *ns, struct symbol arg)
+static size_t create_symbol(struct namespace *ns, struct symbol arg)
 {
-    struct symbol *sym = calloc(1, sizeof(*sym));
+    struct symbol *sym;
 
     arg.depth = ns->current_depth;
-    if (ns->size == ns->cap) {
-        ns->cap += 64;
-        ns->symbol = realloc(ns->symbol, sizeof(*ns->symbol) * ns->cap);
+    if (ns->length == ns->capacity) {
+        ns->capacity = (ns->capacity) ? ns->capacity * 2 : 128;
+        ns->symbol = realloc(ns->symbol, sizeof(*ns->symbol) * ns->capacity);
     }
 
+    sym = calloc(1, sizeof(*sym));
     *sym = arg;
-    ns->symbol[ns->size] = sym;
-    return ns->size++;
+    ns->symbol[ns->length] = sym;
+
+    return ns->length++;
 }
 
-/* Add symbol to current scope, making it possible to look up. Name must be non-
- * NULL, i.e. immediate values do not belong to any scope.
+/* Add symbol to current scope hash table, making it possible to look up.
+ *
+ * Here we don't need to care about collisions; adding a symbol to scope will
+ * always create a new entry in the hash table.
  */
-static struct symbol *register_in_scope(struct namespace *ns, int i)
+static struct symbol *register_in_scope(struct namespace *ns, size_t index)
 {
     struct scope *scope;
+    struct symbol *sym;
+    struct sym_ref *ref;
+    size_t pos;
+    unsigned long hash;
 
-    assert(i < ns->size);
+    assert(index < ns->length);
+
     scope = &ns->scope[ns->current_depth];
-    if (scope->size == scope->cap) {
-        scope->cap += 16;
-        scope->idx = realloc(scope->idx, scope->cap * sizeof(int *));
-    }
-    scope->idx[scope->size] = i;
-    scope->size++;
+    sym = ns->symbol[index];
+    hash = djb2_hash(sym->name);
+    pos = hash % scope->hash_length;
+    ref = &scope->hash_tab[pos];
 
-    return ns->symbol[i];
+    /* If direct slot is not available, allocate a new sym_ref structure and
+     * hook it up last in the chain. */
+    if (ref->index) {
+        while (ref->next)
+            ref = ref->next;
+        ref->next = calloc(1, sizeof(*ref));
+        ref = ref->next;
+    }
+
+    assert(!ref->index);
+    assert(!ref->next);
+
+    ref->index = index + 1;
+    ref->hash = hash;
+    return sym;
+}
+
+struct symbol *sym_lookup(struct namespace *ns, const char *name)
+{
+    struct scope *scope;
+    struct symbol *sym;
+    struct sym_ref *ref;
+    size_t pos;
+    int depth;
+    unsigned long hash;
+
+    depth = ns->current_depth;
+    hash = djb2_hash(name);
+
+    do {
+        scope = &ns->scope[depth];
+        pos = hash % scope->hash_length;
+        ref = &scope->hash_tab[pos];
+
+        /* Move ref until both hash value and symbol name matches, or we reach
+         * end of list. */
+        while (ref && ref->index) {
+            if (ref->hash == hash) {
+                sym = ns->symbol[ref->index - 1];
+                if (!strcmp(name, sym->name))
+                    return sym;
+            }
+            ref = ref->next;
+        }
+    } while (depth--);
+
+    return NULL;
 }
 
 const char *sym_name(const struct symbol *sym)
@@ -145,20 +233,6 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
             sym->name, &sym->type, type);
         exit(1);
     }
-}
-
-struct symbol *sym_lookup(struct namespace *ns, const char *name)
-{
-    int i, d;
-    for (d = ns->current_depth; d >= 0; --d) {
-        for (i = 0; i < ns->scope[d].size; ++i) {
-            int idx = ns->scope[d].idx[i];
-            if (!strcmp(name, ns->symbol[idx]->name)) {
-                return ns->symbol[idx];
-            }
-        }
-    }
-    return NULL;
 }
 
 struct symbol *sym_add(
@@ -276,15 +350,17 @@ void register_builtin_types(struct namespace *ns)
 
 void assemble_tentative_definitions(FILE *stream)
 {
-    int i;
+    size_t i;
     struct symbol *sym;
 
-    for (i = 0; i < ns_ident.size; ++i) {
+    for (i = 0; i < ns_ident.length; ++i) {
         sym = ns_ident.symbol[i];
+
         if (sym->symtype == SYM_TENTATIVE && is_object(&sym->type)) {
             if (sym->linkage == LINK_INTERN) {
                 fprintf(stream, "\t.local %s\n", sym_name(sym));
             }
+
             fprintf(stream, "\t.comm %s,%d,%d\n",
                 sym_name(sym), size_of(&sym->type), type_alignment(&sym->type));
         }
@@ -293,20 +369,21 @@ void assemble_tentative_definitions(FILE *stream)
 
 void output_symbols(FILE *stream, struct namespace *ns)
 {
-    int i;
+    size_t i;
+    enum symtype st;
     char *tstr;
 
-    if (ns->size) {
+    if (ns->length)
         verbose("namespace %s:", ns->name);
-    }
-    for (i = 0; i < ns->size; ++i) {
-        enum symtype st = ns->symbol[i]->symtype;
 
+    for (i = 0; i < ns->length; ++i) {
+        st = ns->symbol[i]->symtype;
         fprintf(stream, "%*s", ns->symbol[i]->depth * 2, "");
         if (ns->symbol[i]->linkage != LINK_NONE) {
             fprintf(stream, "%s ",
                 (ns->symbol[i]->linkage == LINK_INTERN) ? "static" : "global");
         }
+
         fprintf(stream, "%s ",
             (st == SYM_TENTATIVE) ? "tentative" : 
             (st == SYM_DEFINITION) ? "definition" :
@@ -319,12 +396,12 @@ void output_symbols(FILE *stream, struct namespace *ns)
         free(tstr);
 
         fprintf(stream, ", size=%d", size_of(&ns->symbol[i]->type));
-        if (ns->symbol[i]->stack_offset) {
+        if (ns->symbol[i]->stack_offset)
             fprintf(stream, " (stack_offset: %d)", ns->symbol[i]->stack_offset);
-        }
-        if (ns->symbol[i]->symtype == SYM_ENUM_VALUE) {
+
+        if (ns->symbol[i]->symtype == SYM_ENUM_VALUE)
             fprintf(stream, ", value=%d", ns->symbol[i]->enum_value);
-        }
+
         fprintf(stream, "\n");
     }
 }

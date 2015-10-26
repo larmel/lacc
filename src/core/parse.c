@@ -39,12 +39,6 @@ static struct block *primary_expression(struct block *block);
 
 static struct var constant_expression(void);
 
-struct namespace
-    ns_ident = {"identifiers"},
-    ns_label = {"labels"},
-    ns_tag = {"tags"}
-    ;
-
 int parse(void)
 {
     if (peek().token == END)
