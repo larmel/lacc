@@ -592,7 +592,7 @@ struct var eval_cast(struct block *b, struct var v, const struct typetree *t)
     if (is_void(t)) {
         v = var_void();
     } else if (is_scalar(v.type) && is_scalar(t)) {
-        if (size_of(v.type) == size_of(t)) {
+        if (v.kind == IMMEDIATE || size_of(v.type) == size_of(t)) {
             v.type = t;
         } else {
             v = evaluate(b, IR_CAST, t, v);
