@@ -61,11 +61,11 @@ static struct token get_next(struct builder *list)
 /* Skip through whitespace and add token of expected type. Whitespace is also
  * added.
  */
-static struct token expect_next(struct builder *list, int type)
+static struct token expect_next(struct builder *list, enum token_type type)
 {
     struct token t = get_next(list);
     if (t.token != type) {
-        error("Expected token '%c', but got '%s'.", (char) type, t.strval);
+        error("Expected token '%s', but got '%s'.", reserved[type], t.strval);
         exit(1);
     }
     return t;
@@ -810,11 +810,13 @@ struct token consume(enum token_type type)
     struct token t = next();
 
     if (t.token != type) {
-        if (isprint(type)) {
-            error("Unexpected token '%s', expected '%c'.", t.strval, type);
-        } else {
-            error("Unexpected token '%s'.", t.strval);
-        }
+        if (reserved[type])
+            error("Unexpected token '%s', expected '%s'.", t.strval,
+                reserved[type]);
+        else
+            error("Unexpected token '%s', expected %s.", t.strval,
+                (type == IDENTIFIER) ? "identifier" :
+                (type == INTEGER_CONSTANT) ? "number" : "string");
         exit(1);
     }
 

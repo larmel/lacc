@@ -1,95 +1,120 @@
 #ifndef TOKENIZE_H
 #define TOKENIZE_H
 
-/* Simple numerical value to identify the type of token. Start on 256 to skip
- * the range of ASCII number, which are later explicitly assigned to single-
- * character tokens. This lets us refer to f.ex the PLUS token type as literal
- * '+', which makes the parser more elegant. A sentinel value '$' is used to
- * denote end of file.
+/* Map token type to corresponding numerical ascii value where possible,
+ * and fit the remaining tokens in between.
  */
-struct token {
-    enum token_type {
-        AUTO = 256, BREAK, CASE, CHAR,
-        CONST, CONTINUE, DEFAULT, DO,
-        DOUBLE, ELSE, ENUM, EXTERN,
-        FLOAT, FOR, GOTO, IF,
-        INT, LONG, REGISTER, RETURN,
-        SHORT, SIGNED, SIZEOF, STATIC,
-        STRUCT, SWITCH, TYPEDEF, UNION,
-        UNSIGNED, VOID, VOLATILE, WHILE,
+enum token_type
+{
+    END = 0,                /*  $ */
+    AUTO = END + 1,
+    BREAK,
+    CASE,
+    CHAR,
+    CONST,
+    CONTINUE,
+    DEFAULT,
+    DO,
+    DOUBLE,
+    NEWLINE = '\n',
+    ELSE = NEWLINE + 1,
+    ENUM,
+    EXTERN,
+    FLOAT,
+    FOR,
+    GOTO,
+    IF,
+    INT,
+    LONG,
+    REGISTER,
+    RETURN,
+    SHORT,
+    SIGNED,
+    SIZEOF,
+    STATIC,
+    STRUCT,
+    SWITCH,
+    TYPEDEF,
+    UNION,
+    UNSIGNED,
+    VOID,
+    SPACE = ' ',
+    NOT = '!',
+    VOLATILE = NOT + 1,
+    HASH = '#',
+    WHILE = HASH + 1,
+    MODULO = '%',
+    AND = '&',
 
-        INTEGER_CONSTANT,
-        IDENTIFIER,
-        STRING,
+    OPEN_PAREN = '(',
+    CLOSE_PAREN = ')',
+    STAR = '*',
+    PLUS = '+',
+    COMMA = ',',
+    MINUS = '-',
+    DOT = '.',
+    SLASH = '/',
 
-        DOTS, /* ... */
-        LOGICAL_OR, /* || */
-        LOGICAL_AND, /* && */
-        LEQ, /* <= */
-        GEQ, /* >= */
-        EQ, /* == */
-        NEQ, /* != */
-        ARROW, /* -> */
-        INCREMENT, /* ++ */
-        DECREMENT, /* -- */
-        LSHIFT, /* << */
-        RSHIFT, /* >> */
+    COLON = ':',
+    SEMICOLON = ';',
+    LT = '<',
+    ASSIGN = '=',
+    GT = '>',
+    QUESTION = '?',
+    DOTS = QUESTION + 1,    /* ... */
+    LOGICAL_OR,             /* || */
+    LOGICAL_AND,            /* && */
+    LEQ,                    /* <= */
+    GEQ,                    /* >= */
+    EQ,                     /* == */
+    NEQ,                    /* != */
+    ARROW,                  /* -> */
+    INCREMENT,              /* ++ */
+    DECREMENT,              /* -- */
+    LSHIFT,                 /* << */
+    RSHIFT,                 /* >> */
+    MUL_ASSIGN,             /* *= */
+    DIV_ASSIGN,             /* /= */
+    MOD_ASSIGN,             /* %= */
+    PLUS_ASSIGN,            /* += */
+    MINUS_ASSIGN,           /* -= */
+    LSHIFT_ASSIGN,          /* <<= */
+    RSHIFT_ASSIGN,          /* >>= */
+    AND_ASSIGN,             /* &= */
+    XOR_ASSIGN,             /* ^= */
+    OR_ASSIGN,              /* |= */
+    TOKEN_PASTE,            /* ## */
 
-        MUL_ASSIGN, /* *= */
-        DIV_ASSIGN, /* /= */
-        MOD_ASSIGN, /* %= */
-        PLUS_ASSIGN, /* += */
-        MINUS_ASSIGN, /* -= */
-        LSHIFT_ASSIGN, /* <<= */
-        RSHIFT_ASSIGN, /* >>= */
-        AND_ASSIGN, /* &= */
-        XOR_ASSIGN, /* ^= */
-        OR_ASSIGN, /* |= */
+    OPEN_BRACKET = '[',
+    CLOSE_BRACKET = ']',
+    XOR = '^',
+    OPEN_CURLY = '{',
+    OR = '|',
+    CLOSE_CURLY = '}',
+    NEG = '~',
 
-        TOKEN_PASTE, /* ## */
-        SPACE,
+    /* The remaining tokens do not correspond to any fixed string, and
+     * are placed at arbitrary locations. */
+    INTEGER_CONSTANT = 116,
+    IDENTIFIER,
+    STRING
+};
 
-        OR = '|',
-        AND = '&',
-        XOR = '^',
-        MODULO = '%',
-        LT = '<',
-        GT = '>',
-        OPEN_PAREN = '(',
-        CLOSE_PAREN = ')',
-        COLON = ':',
-        SEMICOLON = ';',
-        OPEN_CURLY = '{',
-        CLOSE_CURLY = '}',
-        OPEN_BRACKET = '[',
-        CLOSE_BRACKET = ']',
-        COMMA = ',',
-        DOT = '.',
-        ASSIGN = '=',
-        STAR = '*',
-        SLASH = '/',
-        PLUS = '+',
-        MINUS = '-',
-        NOT = '!',
-        QUESTION = '?',
-        NEG = '~',
-
-        HASH = '#',
-        NEWLINE = '\n',
-
-        END = '$'
-    } token;
-
-    /* Textual representation of the token as it appears in code. For tokens
-     * that are not keywords or operators, the buffer is dynamically allocated.
-     */
+/* Every token has a reference to its textual value. The integer value is
+ * kept for numeric constants.
+ */
+struct token
+{
+    enum token_type token;
     const char *strval;
-
-    /* Integer value for constants. */
     long intval;
 };
 
-/* Parse and return next preprocessing token from given line. Assumes comments
+/* Mapping to ASCII indexed token strings.
+ */
+extern const char *reserved[128];
+
+/* Parse and return next preprocessing token from given line. Assume comments
  * are removed and line continuations are applied. endptr is set to point to
  * one index past the last character producing the token.
  *
