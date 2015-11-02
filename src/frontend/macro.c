@@ -40,20 +40,6 @@ static int macrocmp(const struct macro *a, const struct macro *b)
     return 0;
 }
 
-/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
- */
-static unsigned long djb2_hash(const char *str)
-{
-    unsigned long hash = 5381;
-    int c;
-
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    }
-
-    return hash;
-}
-
 static void hash_node_free(struct macro *ref)
 {
     assert(ref);

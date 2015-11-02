@@ -3,6 +3,7 @@
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
 #include "cli.h"
+#include "string.h"
 #include "symbol.h"
 
 #include <assert.h>
@@ -68,20 +69,6 @@ void pop_scope(struct namespace *ns)
             free(ns->symbol);
         }
     }
-}
-
-/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
- */
-static unsigned long djb2_hash(const char *str)
-{
-    unsigned long hash = 5381;
-    int c;
-
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    }
-
-    return hash;
 }
 
 /* Create and add symbol to symbol table, but not to any scope. Symbol address

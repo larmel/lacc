@@ -53,27 +53,12 @@ static void cleanup(void)
     }
 }
 
-/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
- */
-static unsigned long djb2_hash(const char *str, const char *endptr)
-{
-    unsigned long hash = 5381;
-    int c;
-
-    while (str < endptr) {
-        c = *str++;
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    }
-
-    return hash;
-}
-
 static struct string *hash_insert(const char *str, size_t len)
 {
     static int reg_cleanup;
     struct string *ref;
     unsigned long
-        hash = djb2_hash(str, str + len),
+        hash = djb2_hash_p(str, str + len),
         pos = hash % HASH_TABLE_LENGTH;
 
     if (!reg_cleanup) {
@@ -105,6 +90,35 @@ static struct string *hash_insert(const char *str, size_t len)
     ref->string = strndup(str, len);
     ref->hash.val = hash;
     return ref;
+}
+
+/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
+ */
+unsigned long djb2_hash(const char *str)
+{
+    unsigned long hash = 5381;
+    int c;
+
+    while ((c = *str++)) {
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+
+    return hash;
+}
+
+/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
+ */
+unsigned long djb2_hash_p(const char *str, const char *endptr)
+{
+    unsigned long hash = 5381;
+    int c;
+
+    while (str < endptr) {
+        c = *str++;
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+
+    return hash;
 }
 
 const char *str_register(const char *s)

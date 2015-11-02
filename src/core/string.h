@@ -3,6 +3,11 @@
 
 #include <stdio.h>
 
+/* Compute hash of string.
+ */
+unsigned long djb2_hash(const char *str);
+unsigned long djb2_hash_p(const char *str, const char *endptr);
+
 /* Register a string and store it internally, allocating a new copy if needed.
  */
 const char *str_register(const char *s);
