@@ -1,0 +1,357 @@
+#if _XOPEN_SOURCE < 500
+#  undef _XOPEN_SOURCE
+#  define _XOPEN_SOURCE 500 /* snprintf */
+#endif
+#include "abi.h"
+#include "assemble.h"
+
+#include <assert.h>
+#include <ctype.h>
+#include <stdarg.h>
+
+#define SUFFIX(w) ((w) == 1 ? 'b' : (w) == 2 ? 'w' : (w) == 4 ? 'l' : 'q')
+
+#define I0(instr)           out("\t%s\n", instr)
+#define I1(instr, op)       out("\t%s\t%s\n", instr, op)
+#define I2(instr, a, b)     out("\t%s\t%s, %s\n", instr, a, b)
+#define S1(instr, w, op)    out("\t%s%c\t%s\n", instr, SUFFIX(w), op)
+#define S2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
+
+#define MAX_OPERAND_TEXT_LENGTH 256
+
+/* Clients must set this field first.
+ */
+FILE *asm_output = NULL;
+
+static const struct symbol *current_symbol;
+
+static const char *reg_name[] = {
+    "%al",   "%ax",   "%eax",  "%rax",
+    "%bl",   "%bx",   "%ebx",  "%rbx",
+    "%cl",   "%cx",   "%ecx",  "%rcx",
+    "%dl",   "%dx",   "%edx",  "%rdx",
+    "%bpl",  "%bp",   "%ebp",  "%rbp",
+    "%spl",  "%sp",   "%esp",  "%rsp",
+    "%sil",  "%si",   "%esi",  "%rsi",
+    "%dil",  "%di",   "%edi",  "%rdi",
+    "%r8b",  "%r8w",  "%r8d",  "%r8",
+    "%r9b",  "%r9w",  "%r9d",  "%r9",
+    "%r10b", "%r10w", "%r10d", "%r10",
+    "%r11b", "%r11w", "%r11d", "%r11",
+    "%r12b", "%r12w", "%r12d", "%r12",
+    "%r13b", "%r13w", "%r13d", "%r13",
+    "%r14b", "%r14w", "%r14d", "%r14",
+    "%r15b", "%r15w", "%r15d", "%r15",
+    "%ip",   "%ipw",  "%eip",  "%rip"
+};
+
+static const char *xmm_name[] = {
+    "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7",
+    "%xmm8", "%xmm9", "%xmm10", "%xmm11", "%xmm12", "%xmm13", "%xmm14", "%xmm15"
+};
+
+static void out(const char *s, ...)
+{
+    va_list args;
+
+    va_start(args, s);
+    vfprintf(asm_output, s, args);
+    va_end(args);
+}
+
+static const char *mnemonic(struct registr reg)
+{
+    int i, j;
+
+    if (reg.r < XMM0) {
+        i = 4 * ((int) reg.r - 1);
+        j = reg.w - 1;
+
+        if (j == 3) j = 2;
+        if (j == 7) j = 3;
+
+        return reg_name[i + j];
+    } else {
+        i = (int) reg.r - XMM0;
+        assert(reg.w == 16);
+        assert(i >= 0 && i < 16);
+        return xmm_name[i];
+    }
+}
+
+static const char *address(struct address addr)
+{
+    static char buf[MAX_OPERAND_TEXT_LENGTH];
+
+    struct registr reg = {0, 8};
+    int w = 0,
+        s = sizeof(buf);
+
+    if (addr.sym) {
+        if (addr.disp != 0) {
+            w += snprintf(buf + w, s - w, "%s%s%d",
+                sym_name(addr.sym),
+                (addr.disp > 0) ? "+" : "",
+                addr.disp);
+        } else {
+            w += snprintf(buf + w, s - w, "%s", sym_name(addr.sym));
+        }
+    } else if (addr.disp != 0) {
+        w += snprintf(buf + w, s - w, "%d", addr.disp);
+    }
+
+    reg.r = addr.base;
+    w += snprintf(buf + w, s - w, "(%s", mnemonic(reg));
+    if (addr.offset) {
+        reg.r = addr.offset;
+        w += snprintf(buf + w, s - w, ",%s,%d", mnemonic(reg), addr.mult);
+    }
+    w += snprintf(buf + w, s - w, ")");
+
+    return buf;
+}
+
+static const char *immediate(struct immediate imm, int *size)
+{
+    static char buf[MAX_OPERAND_TEXT_LENGTH];
+
+    int w = 0,
+        s = sizeof(buf);
+
+    *size = 8;
+    switch (imm.type) {
+    case IMM_BYTE:
+        *size = 1;
+        w += snprintf(buf + w, s - w, "$%d", imm.d.byte);
+        break;
+    case IMM_WORD:
+        *size = 2;
+        w += snprintf(buf + w, s - w, "$%d", imm.d.word);
+        break;
+    case IMM_DWORD:
+        *size = 4;
+        w += snprintf(buf + w, s - w, "$%d", imm.d.dword);
+        break;
+    case IMM_QUAD:
+        w += snprintf(buf + w, s - w, "$%ld", imm.d.quad);
+        break;
+    case IMM_STR:
+        if (imm.d.string.offset != 0)
+            w += snprintf(buf + w, s - w, "$%s%s%d",
+                imm.d.string.str,
+                (imm.d.string.offset > 0) ? "+" : "",
+                imm.d.string.offset);
+        else
+            w += snprintf(buf + w, s - w, "$%s", imm.d.string.str);
+        break;
+    case IMM_LABEL:
+        /* This only works for call and label, not for mov or other instructions
+         * which requires dollar prefix. */
+        w += snprintf(buf + w, s - w, "%s", imm.d.label);
+        break;
+    case IMM_STRV:
+        assert(0);
+        break;
+    }
+
+    return buf;
+}
+
+static void output_escaped_string(const char *str)
+{
+    char c;
+
+    while ((c = *str++) != '\0') {
+        if (isprint(c) && c != '"' && c != '\\') {
+            putc(c, asm_output);
+            continue;
+        }
+
+        switch (c) {
+        case '\b': fprintf(asm_output, "\\b");  break;
+        case '\t': fprintf(asm_output, "\\t");  break;
+        case '\n': fprintf(asm_output, "\\n");  break;
+        case '\f': fprintf(asm_output, "\\f");  break;
+        case '\r': fprintf(asm_output, "\\r");  break;
+        case '\\': fprintf(asm_output, "\\\\"); break;
+        case '"':  fprintf(asm_output, "\\\""); break;
+        default:
+            fprintf(asm_output, "\\0%02o", c);
+            break;
+        }
+    }
+}
+
+int asm_enter_context(const struct symbol *symbol)
+{
+    assert(!current_symbol);
+
+    current_symbol = symbol;
+    if (is_function(&symbol->type)) {
+        I0(".text");
+        if (symbol->linkage == LINK_EXTERN)
+            I1(".globl", symbol->name);
+        I2(".type", symbol->name, "@function");
+        out("%s:\n", symbol->name);
+    } else {
+        I0(".data");
+        if (symbol->linkage == LINK_EXTERN)
+            I1(".globl", symbol->name);
+        out("\t.align\t%d\n", sym_alignment(symbol));
+        out("%s:\n", sym_name(symbol));
+    }
+
+    return 0;
+}
+
+int asm_text(struct instruction instr)
+{
+    int ws = 0,
+        wd = 0;
+    const char
+        *source = NULL,
+        *destin = NULL;
+
+    switch (instr.optype) {
+    case OPT_REG:
+    case OPT_REG_REG:
+    case OPT_REG_MEM:
+        ws = instr.source.reg.w;
+        source = mnemonic(instr.source.reg);
+        break;
+    case OPT_IMM:
+    case OPT_IMM_REG:
+    case OPT_IMM_MEM:
+        source = immediate(instr.source.imm, &ws);
+        break;
+    case OPT_MEM:
+    case OPT_MEM_REG:
+        ws = instr.source.mem.w;
+        source = address(instr.source.mem.addr);
+        break;
+    default:
+        break;
+    }
+
+    switch (instr.optype) {
+    case OPT_REG_REG:
+    case OPT_MEM_REG:
+    case OPT_IMM_REG:
+        wd = instr.dest.reg.w;
+        destin = mnemonic(instr.dest.reg);
+        break;
+    case OPT_REG_MEM:
+    case OPT_IMM_MEM:
+        wd = instr.dest.mem.w;
+        destin = address(instr.dest.mem.addr);
+        break;
+    default:
+        break;
+    }
+
+    switch (instr.opcode) {
+    case INSTR_ADD:      S2("add", wd, source, destin); break;
+    case INSTR_SUB:      S2("sub", wd, source, destin); break;
+    case INSTR_NOT:      S1("not", ws, source); break;
+    case INSTR_MUL:      S1("mul", ws, source); break;
+    case INSTR_DIV:      S1("div", ws, source); break;
+    case INSTR_XOR:      S2("xor", wd, source, destin); break;
+    case INSTR_AND:      S2("and", wd, source, destin); break;
+    case INSTR_OR:       S2("or", wd, source, destin); break;
+    case INSTR_SHL:      S2("shl", wd, source, destin); break;
+    case INSTR_SAL:      S2("sal", wd, source, destin); break;
+    case INSTR_SHR:      S2("shr", wd, source, destin); break;
+    case INSTR_SAR:      S2("sar", wd, source, destin); break;
+    case INSTR_MOV:      S2("mov", wd, source, destin); break;
+    case INSTR_MOVZX:
+        assert(ws == 1 || ws == 2);
+        assert(ws < wd);
+        S2((ws == 1) ? "movzb" : "movzw", wd, source, destin);
+        break;
+    case INSTR_MOVSX:
+        assert(ws == 1 || ws == 2 || ws == 4);
+        assert(ws < wd);
+        S2((ws == 1) ? "movsb" : (ws == 2) ? "movsw" : "movsl",
+            wd, source, destin);
+        break;
+    case INSTR_MOVAPS:
+        I2("movaps", source, destin);
+        break;
+    case INSTR_SETZ:     I1("setz", source); break;
+    case INSTR_SETA:     I1("seta", source); break;
+    case INSTR_SETG:     I1("setg", source); break;
+    case INSTR_SETAE:    I1("setae", source); break;
+    case INSTR_SETGE:    I1("setge", source); break;
+    case INSTR_TEST:     S2("test", wd, source, destin); break;
+    case INSTR_CMP:      S2("cmp", wd, source, destin); break;
+    case INSTR_LEA:      S2("lea", wd, source, destin); break;
+    case INSTR_PUSH:     S1("push", ws, source); break;
+    case INSTR_JMP:      I1("jmp", source); break;
+    case INSTR_JA:       I1("ja", source); break;
+    case INSTR_JG:       I1("jg", source); break;
+    case INSTR_JE:       I1("je", source); break;
+    case INSTR_JZ:       I1("jz", source); break;
+    case INSTR_JAE:      I1("jae", source); break;
+    case INSTR_JGE:      I1("jge", source); break;
+    case INSTR_CALL:
+        if (instr.optype == OPT_REG)
+            out("\tcall\t*%s\n", source);
+        else
+            I1("call", source);
+        break;
+    case INSTR_LEAVE:    I0("leave"); break;
+    case INSTR_RET:      I0("ret"); break;
+    case INSTR_REP_MOVS: I0("rep movsq"); break;
+    case INSTR_LABEL:
+        out("%s:\n", source);
+        break;
+    }
+
+    return 0;
+}
+
+int asm_data(struct immediate data)
+{
+    switch (data.type) {
+    case IMM_BYTE:
+        out("\t.byte\t%d\n", data.d.byte);
+        break;
+    case IMM_WORD:
+        out("\t.short\t%d\n", data.d.word);
+        break;
+    case IMM_DWORD:
+        out("\t.int\t%d\n", data.d.dword);
+        break;
+    case IMM_QUAD:
+        out("\t.quad\t%ld\n", data.d.quad);
+        break;
+    case IMM_STR:
+        if (data.d.string.offset) {
+            out("\t.quad\t%s%c%d\n", data.d.string.str,
+                data.d.string.offset < 0 ? '-' : '+',
+                data.d.string.offset);
+        } else
+            out("\t.quad\t%s\n", data.d.string.str);
+        break;
+    case IMM_STRV:
+        out("\t.string\t\"");
+        output_escaped_string(data.d.string.str);
+        out("\"\n");
+        break;
+    case IMM_LABEL:
+        assert(0);
+        break;
+    }
+    return 0;
+}
+
+int asm_exit_context(void)
+{
+    assert(current_symbol);
+
+    if (is_function(&current_symbol->type))
+        out("\t.size\t%s, .-%s\n", current_symbol->name, current_symbol->name);
+
+    current_symbol = NULL;
+    return 0;
+}

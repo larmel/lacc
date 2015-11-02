@@ -169,7 +169,7 @@ struct cfg
     /* Store all symbols associated with a function declaration. Need non-const
      * references, as backend will use this to assign stack offset of existing
      * symbols. */
-    struct {
+    struct symbol_list {
         struct symbol **symbol;
         size_t length;
         size_t capacity;

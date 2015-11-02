@@ -1,6 +1,7 @@
 #ifndef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* getopt */
 #endif
+#include "backend/compile.h"
 #include "core/cli.h"
 #include "core/parse.h"
 #include "core/string.h"
@@ -19,7 +20,6 @@ void help(const char *prog)
 }
 
 extern void fdotgen(FILE *);
-extern void assemble(FILE *);
 
 int main(int argc, char* argv[])
 {
@@ -77,10 +77,11 @@ int main(int argc, char* argv[])
         push_scope(&ns_ident);
         push_scope(&ns_tag);
         register_builtin_types(&ns_ident);
+        set_compile_target(output, TARGET_x86_64_ASM);
 
         while (parse() && !errors) {
             if (output_mode == OUT_ASSEMBLY)
-                assemble(output);
+                compile(&current_cfg);
             else
                 fdotgen(output);
         }

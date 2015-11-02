@@ -1,28 +1,8 @@
 #ifndef ABI_H
 #define ABI_H
 
-#include "../core/symbol.h"
-
-/* Registers in x86_64 assembly.
- */
-enum reg {
-    AX = 0,
-    BX,
-    CX,
-    DX,
-    BP,
-    SP,
-    SI,
-    DI,
-    R8,
-    R9,
-    R10,
-    R11,
-    R12,
-    R13,
-    R14,
-    R15
-};
+#include "instructions.h"
+#include "../../core/symbol.h"
 
 /* Registers used for passing INTEGER parameters.
  */
@@ -38,7 +18,8 @@ enum reg ret_int_reg[2];
 
 /* Parameter class of an 8-byte slice of an object.
  */
-enum param_class {
+enum param_class
+{
     PC_NO_CLASS = 0,
     PC_INTEGER,
     PC_SSE,

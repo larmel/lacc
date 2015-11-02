@@ -14,8 +14,9 @@ OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(SOURCES))
 
 # Bootstrap build subset of files
 BOOTSTRAP_SOURCES := \
-	src/backend/abi.c \
-	src/backend/asm.c \
+	src/backend/x86_64/abi.c \
+	src/backend/x86_64/assemble.c \
+	src/backend/compile.c \
 	src/backend/dot.c \
 	src/core/cfg.c \
 	src/core/cli.c \
