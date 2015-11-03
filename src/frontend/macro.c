@@ -7,7 +7,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#define HASH_TABLE_LENGTH 256
+#define HASH_TABLE_LENGTH 1024
 
 static struct macro
     macro_hash_table[HASH_TABLE_LENGTH];
@@ -160,16 +160,15 @@ void undef(struct token name)
         return;
     }
 
-    /* Special case if matched on static memory. */
+    /* Special case if found in static buffer. */
     if (ref->hash.val == hash && !strcmp(ref->name.strval, name.strval)) {
         prev = ref->hash.next;
+        if (ref->replacement)
+            free(ref->replacement);
+        memset(ref, 0, sizeof(*ref));
         if (prev) {
             *ref = *prev;
-            hash_node_free(prev);
-        } else {
-            if (ref->replacement)
-                free(ref->replacement);
-            memset(ref, 0, sizeof(*ref));
+            free(prev);
         }
         return;
     }
