@@ -604,6 +604,11 @@ void register_builtin_definitions(void)
     macro.replacement = parse("1", &macro.size);
     define(macro);
 
+    /* For some reason this is not properly handled by macros in musl. */
+    macro.name.strval = "__inline";
+    macro.replacement = parse(" ", &macro.size);
+    define(macro);
+
     macro.name.strval = "__FILE__";
     macro.replacement = calloc(1, sizeof(*macro.replacement));
     macro.replacement[0].token.token = STRING;
