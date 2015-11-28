@@ -82,3 +82,4 @@ test-selfhost: $(BIN)/selfhost
 
 clean:
 	rm -rf $(BIN)
+	rm -f test/*.out test/*.txt test/*.s
