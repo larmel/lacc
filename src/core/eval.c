@@ -558,12 +558,22 @@ struct var eval_call(struct block *block, struct var var)
 {
     struct op op;
     struct var res;
+    const struct typetree *type = var.type;
 
-    assert(is_function(var.type));
-    if (is_void(var.type->next)) {
+    /* In principle, the type of the expression being called should always be
+     * pointer to function. Accept call also to direct reference of function
+     * type, to avoid a lot of explicit address evaluations. This special case
+     * must be handled in backend. */
+    if (!is_function(var.type)) {
+        assert(is_pointer(var.type) && is_function(var.type->next));
+        type = var.type->next;
+    } else
+        assert(is_function(var.type));
+
+    if (is_void(type->next)) {
         res = var_void();
     } else {
-        res = create_var(var.type->next);
+        res = create_var(type->next);
     }
 
     op.type = IR_CALL;

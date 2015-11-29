@@ -201,6 +201,7 @@ static struct block *postfix_expression(struct block *block)
 
     while (1) {
         const struct member *field;
+        const struct typetree *type;
         struct var expr, copy, *arg;
         struct token tok;
         int i, j;
@@ -218,40 +219,41 @@ static struct block *postfix_expression(struct block *block)
             } while (peek().token == '[');
             break;
         case '(':
-            /* Evaluation function call. */
-            if (!is_function(root.type)) {
-                error("Calling non-function symbol.");
+            type = root.type;
+            if (is_pointer(root.type) && is_function(root.type->next))
+                type = type_deref(root.type);
+            else if (!is_function(root.type)) {
+                error("Expression must have type pointer to function, was %t.",
+                    root.type);
                 exit(1);
             }
             consume('(');
-            arg = calloc(nmembers(root.type), sizeof(struct var));
-            for (i = 0; i < nmembers(root.type); ++i) {
+            arg = calloc(nmembers(type), sizeof(*arg));
+            for (i = 0; i < nmembers(type); ++i) {
                 if (peek().token == ')') {
-                    error("Too few arguments to %s, expected %d but got %d.",
-                        root.symbol->name, nmembers(root.type), i);
+                    error("Too few arguments, expected %d but got %d.",
+                        nmembers(type), i);
                     exit(1);
                 }
                 block = assignment_expression(block);
                 arg[i] = block->expr;
                 /* todo: type check here. */
-                if (i < nmembers(root.type) - 1) {
+                if (i < nmembers(type) - 1) {
                     consume(',');
                 }
             }
-            while (is_vararg(root.type) && peek().token != ')') {
+            while (is_vararg(type) && peek().token != ')') {
                 consume(',');
-                arg = realloc(arg, (i + 1) * sizeof(struct var));
+                arg = realloc(arg, (i + 1) * sizeof(*arg));
                 block = assignment_expression(block);
                 arg[i] = block->expr;
                 i++;
             }
             consume(')');
-
-            for (j = 0; j < i; ++j) {
+            for (j = 0; j < i; ++j)
                 param(block, arg[j]);
-            }
-            root = eval_call(block, root);
             free(arg);
+            root = eval_call(block, root);
             break;
         case '.':
             consume('.');

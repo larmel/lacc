@@ -236,7 +236,9 @@ static void call(
     enum param_class *resc;
     enum param_class **argc;
 
-    const struct typetree **arg_types;
+    const struct typetree
+        **arg_types,
+        *type;
 
     /* Classify function arguments and return value. */
     arg_types = calloc(n, sizeof(*arg_types));
@@ -244,7 +246,12 @@ static void call(
         arg_types[i] = args[i].type;
     }
 
-    argc = classify_call(arg_types, func.type->next, n, &resc);
+    /* Handle both function call by direct reference and pointer. The former is
+     * a special case. */
+    type = is_pointer(func.type) ? func.type->next : func.type;
+    assert(is_function(type));
+
+    argc = classify_call(arg_types, type->next, n, &resc);
     free(arg_types);
 
     /* Pass arguments on stack from right to left. Do this before populating
@@ -298,16 +305,22 @@ static void call(
 
     /* For variable argument lists, %al contains the number of vector registers
      * used. */
-    if (is_vararg(func.type)) {
+    if (is_vararg(type)) {
         fprintf(s, "\tmovl\t$0, %%eax\n");
     }
 
-    if (func.kind == DIRECT) {
-        fprintf(s, "\tcall\t%s\n", func.symbol->name);
-    } else {
-        assert(func.kind == DEREF);
-        load_address(s, func, R11);
+    if (is_pointer(func.type)) {
+        load(s, func, R11);
         fprintf(s, "\tcall\t*%%%s\n", REG(R11, 8));
+    } else {
+        assert(is_function(func.type));
+        if (func.kind == DIRECT) {
+            fprintf(s, "\tcall\t%s\n", func.symbol->name);
+        } else {
+            assert(func.kind == DEREF);
+            load_address(s, func, R11);
+            fprintf(s, "\tcall\t*%%%s\n", REG(R11, 8));
+        }
     }
 
     if (mem_used) {
