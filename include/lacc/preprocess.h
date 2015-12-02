@@ -5,10 +5,6 @@
 
 #include <stdio.h>
 
-/* Define standard macros.
- */
-void register_builtin_definitions(void);
-
 /* Peek lookahead of 1.
  */
 struct token peek(void);
