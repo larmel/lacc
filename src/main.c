@@ -3,9 +3,9 @@
 #endif
 #include "backend/compile.h"
 #include "parser/parse.h"
+#include "parser/symtab.h"
 #include <lacc/cli.h>
 #include <lacc/string.h>
-#include <lacc/symbol.h>
 #include <lacc/input.h>
 #include <lacc/preprocess.h>
 

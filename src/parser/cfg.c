@@ -2,6 +2,7 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
+#include "symtab.h"
 #include <lacc/cfg.h>
 
 #include <assert.h>
