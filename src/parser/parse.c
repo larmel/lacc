@@ -1,8 +1,8 @@
-#include "cli.h"
 #include "eval.h"
 #include "parse.h"
-#include "string.h"
-#include "../preprocessor/preprocess.h"
+#include <lacc/preprocess.h>
+#include <lacc/cli.h>
+#include <lacc/string.h>
 
 #include <stdio.h>
 #include <assert.h>

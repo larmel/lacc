@@ -3,8 +3,8 @@
 #include "x86_64/assemble.h"
 #include "x86_64/instructions.h"
 #include "compile.h"
-#include "../parser/cli.h"
-#include "../parser/string.h"
+#include <lacc/cli.h>
+#include <lacc/string.h>
 
 #include <assert.h>
 #include <stdarg.h>

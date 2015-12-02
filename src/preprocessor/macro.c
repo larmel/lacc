@@ -1,7 +1,7 @@
 #include "macro.h"
-#include "input.h"
-#include "../parser/cli.h"
-#include "../parser/string.h"
+#include <lacc/input.h>
+#include <lacc/cli.h>
+#include <lacc/string.h>
 
 #include <assert.h>
 #include <string.h>

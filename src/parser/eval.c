@@ -1,6 +1,6 @@
-#include "cli.h"
 #include "eval.h"
-#include "string.h"
+#include <lacc/cli.h>
+#include <lacc/string.h>
 
 #include <assert.h>
 #include <stdarg.h>

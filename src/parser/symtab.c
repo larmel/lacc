@@ -2,9 +2,9 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
-#include "cli.h"
-#include "string.h"
-#include "symbol.h"
+#include <lacc/cli.h>
+#include <lacc/string.h>
+#include <lacc/symbol.h>
 
 #include <assert.h>
 #include <stdio.h>

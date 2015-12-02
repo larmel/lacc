@@ -2,7 +2,7 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
-#include "type.h"
+#include <lacc/type.h>
 
 #include <assert.h>
 #include <stdarg.h>

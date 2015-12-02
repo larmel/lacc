@@ -3,7 +3,7 @@
 #  define _XOPEN_SOURCE 700 /* strndup, snprintf */
 #endif
 #include "eval.h"
-#include "string.h"
+#include <lacc/string.h>
 
 #include <assert.h>
 #include <ctype.h>

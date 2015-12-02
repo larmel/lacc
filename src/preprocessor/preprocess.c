@@ -1,8 +1,8 @@
-#include "input.h"
 #include "macro.h"
-#include "preprocess.h"
-#include "../parser/cli.h"
-#include "../parser/string.h"
+#include <lacc/input.h>
+#include <lacc/preprocess.h>
+#include <lacc/cli.h>
+#include <lacc/string.h>
 
 #include <assert.h>
 #include <ctype.h>

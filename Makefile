@@ -5,8 +5,8 @@ TESTS := $(wildcard test/*.c)
 
 LD := cc
 CC := cc
-CCFLAGS := -Wall -pedantic -std=c89 -g
-LACCFLAGS := -I /usr/include/x86_64-linux-musl/
+CCFLAGS := -Wall -pedantic -std=c89 -g -I include/
+LACCFLAGS := -I /usr/include/x86_64-linux-musl/ -I include/
 
 # Normal build with gcc
 SOURCES := $(foreach sdir,$(SRC_DIRS),$(wildcard $(sdir)/*.c))

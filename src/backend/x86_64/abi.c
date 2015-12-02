@@ -1,5 +1,5 @@
 #include "abi.h"
-#include "../../parser/cli.h"
+#include <lacc/cli.h>
 
 #include <assert.h>
 #include <string.h>

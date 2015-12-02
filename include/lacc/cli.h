@@ -1,7 +1,7 @@
 #ifndef CLI_H
 #define CLI_H
 
-#include "../preprocessor/input.h"
+#include "input.h"
 
 #include <stddef.h>
 

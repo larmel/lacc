@@ -1,6 +1,4 @@
 #include "dot.h"
-#include "../../parser/cfg.h"
-#include "../../parser/symbol.h"
 
 #include <assert.h>
 #include <stdlib.h>
