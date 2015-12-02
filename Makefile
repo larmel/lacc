@@ -19,7 +19,6 @@ BOOTSTRAP_SOURCES := \
 	src/backend/x86_64/assemble.c \
 	src/backend/compile.c \
 	src/parser/cfg.c \
-	src/parser/cli.c \
 	src/parser/eval.c \
 	src/parser/parse.c \
 	src/parser/string.c \
@@ -29,6 +28,7 @@ BOOTSTRAP_SOURCES := \
 	src/preprocessor/macro.c \
 	src/preprocessor/preprocess.c \
 	src/preprocessor/tokenize.c \
+	src/cli.c \
 	src/main.c
 BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))
 REMAINING_SOURCES := $(filter-out $(BOOTSTRAP_SOURCES), $(SOURCES))
