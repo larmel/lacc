@@ -13,20 +13,23 @@
 #include <stdio.h>
 #include <unistd.h>
 
+static char *input;
+static FILE *output;
+
 static void help(const char *prog)
 {
     fprintf(stderr, "Usage: %s [-S] [-E] [-v] [-I <path>] [-o <file>] <file>\n",
         prog);
 }
 
-int main(int argc, char* argv[])
+static enum compile_target parse_args(int argc, char *argv[])
 {
-    enum compile_target target = TARGET_IR_DOT;
-    char *input = NULL;
-    FILE *output = stdout;
+    enum compile_target target;
     int c;
 
-    /* Handle command line parameters. */
+    target = TARGET_IR_DOT;
+    output = stdout;
+
     while ((c = getopt(argc, argv, "SEo:vI:")) != -1) {
         switch (c) {
         case 'S':
@@ -46,16 +49,23 @@ int main(int argc, char* argv[])
             break;
         default:
             help(argv[0]);
-            return 1;
+            exit(1);
         }
     }
 
-    if (optind == argc - 1) {
+    if (optind == argc - 1)
         input = argv[optind];
-    } else if (optind < argc - 1) {
+    else if (optind < argc - 1) {
         help(argv[0]);
-        return 1;
+        exit(1);
     }
+
+    return target;
+}
+
+int main(int argc, char *argv[])
+{
+    enum compile_target target = parse_args(argc, argv);
 
     /* Add default search paths last, with lowest priority. These are searched
      * after anything specified with -I. */
