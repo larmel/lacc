@@ -1235,7 +1235,7 @@ void set_compile_target(FILE *stream, enum compile_target target)
         exit_context = asm_exit_context;
         break;
     case TARGET_x86_64_ELF:
-        internal_error("%s.", "Compile target not yet implement");
+        error("Compile target not yet implement");
         exit(1);
     }
 }

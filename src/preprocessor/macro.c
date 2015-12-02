@@ -1,5 +1,5 @@
+#include "input.h"
 #include "macro.h"
-#include <lacc/input.h>
 #include <lacc/cli.h>
 #include <lacc/string.h>
 

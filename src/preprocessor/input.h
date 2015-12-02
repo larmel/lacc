@@ -4,8 +4,7 @@
 #include <stdio.h>
 #include <stddef.h>
 
-struct source
-{
+struct source {
     FILE *file;
 
     /* Full path, or relative to invocation directory. */

@@ -63,7 +63,7 @@ static void flatten(enum param_class *l, const struct typetree *t, int offset)
         }
         break;
     case T_ARRAY:
-        internal_error("%s", "Not yet support for array parameters.");
+        error("%s", "Not yet support for array parameters.");
         exit(1);
     default:
         assert(0);

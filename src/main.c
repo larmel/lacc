@@ -4,10 +4,10 @@
 #include "backend/compile.h"
 #include "parser/parse.h"
 #include "parser/symtab.h"
+#include "preprocessor/input.h"
 #include "preprocessor/macro.h"
 #include <lacc/cli.h>
 #include <lacc/string.h>
-#include <lacc/input.h>
 #include <lacc/preprocess.h>
 
 #include <assert.h>

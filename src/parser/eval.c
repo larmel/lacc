@@ -399,7 +399,7 @@ struct var eval_expr(struct block *block, enum optype op, ...)
     case IR_OP_SHL: l = eval_shiftl(block, l, r);   break;
     case IR_OP_SHR: l = eval_shiftr(block, l, r);   break;
     default:
-        internal_error("%s", "Invalid opcode.");
+        assert(0);
         break;
     }
 

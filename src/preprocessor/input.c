@@ -2,8 +2,8 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 700 /* strndup */
 #endif
+#include "input.h"
 #include <lacc/cli.h>
-#include <lacc/input.h>
 #include <lacc/string.h>
 
 #include <assert.h>
