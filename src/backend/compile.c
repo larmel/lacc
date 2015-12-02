@@ -1,3 +1,4 @@
+#include "graphviz/dot.h"
 #include "x86_64/abi.h"
 #include "x86_64/assemble.h"
 #include "x86_64/instructions.h"
@@ -11,6 +12,9 @@
 /* Hack to get unique jump labels.
  */
 extern const char *mklabel(void);
+
+static enum compile_target compile_target;
+static FILE *output_stream;
 
 static int (*enter_context)(const struct symbol *);
 static int (*emit_instruction)(struct instruction);
@@ -1217,13 +1221,20 @@ static void compile_function(struct cfg *cfg)
 
 void set_compile_target(FILE *stream, enum compile_target target)
 {
-    if (target == TARGET_x86_64_ASM) {
+    compile_target = target;
+    output_stream = stream;
+    switch (target) {
+    case TARGET_NONE:
+    case TARGET_IR_DOT:
+        break;
+    case TARGET_x86_64_ASM:
         asm_output = stream;
         enter_context = asm_enter_context;
         emit_instruction = asm_text;
         emit_data = asm_data;
         exit_context = asm_exit_context;
-    } else {
+        break;
+    case TARGET_x86_64_ELF:
         internal_error("%s.", "Compile target not yet implement");
         exit(1);
     }
@@ -1233,16 +1244,25 @@ int compile_cfg(struct cfg *cfg)
 {
     int i;
 
-    compile_data(cfg->head);
-    compile_data(cfg->rodata);
-    if (cfg->fun) {
-        assert(is_function(&cfg->fun->type));
+    /* Reset coloring before traversal. */
+    for (i = 0; i < cfg->size; ++i)
+        cfg->nodes[i]->color = WHITE;
 
-        /* Reset coloring before traversal. */
-        for (i = 0; i < cfg->size; ++i)
-            cfg->nodes[i]->color = WHITE;
+    switch (compile_target) {
+    case TARGET_IR_DOT:
+        fdotgen(output_stream, cfg);
+    case TARGET_NONE:
+        break;
+    case TARGET_x86_64_ASM:
+    case TARGET_x86_64_ELF:
+        compile_data(cfg->head);
+        compile_data(cfg->rodata);
+        if (cfg->fun) {
+            assert(is_function(&cfg->fun->type));
 
-        compile_function(cfg);
+            compile_function(cfg);
+        }
+        break;
     }
 
     return 0;
@@ -1252,9 +1272,15 @@ int compile_symbols(struct symbol_list list)
 {
     int i;
 
-    for (i = 0; i < list.length; ++i) {
-        asm_enter_context(list.symbol[i]);
-        asm_exit_context();
+    switch (compile_target) {
+    case TARGET_x86_64_ASM:
+    case TARGET_x86_64_ELF:
+        for (i = 0; i < list.length; ++i) {
+            asm_enter_context(list.symbol[i]);
+            asm_exit_context();
+        }
+    default:
+        break;
     }
 
     free(list.symbol);

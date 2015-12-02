@@ -1,5 +1,6 @@
-#include "../core/cfg.h"
-#include "../core/symbol.h"
+#include "dot.h"
+#include "../../core/cfg.h"
+#include "../../core/symbol.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -226,25 +227,19 @@ static void output_suffix(FILE *stream)
 /* Take a control flow graph (struct block structure) and output it in .dot 
  * format, which can then be rendered.
  */
-void fdotgen(FILE *stream)
+void fdotgen(FILE *stream, struct cfg *cfg)
 {
-    int i;
-
-    for (i = 0; i < current_cfg.size; ++i) {
-        current_cfg.nodes[i]->color = WHITE;
-    }
-
-    if (current_cfg.head->n) {
+    if (cfg->head->n) {
         output_prefix(stream);
-        foutputnode(stream, current_cfg.head);
+        foutputnode(stream, cfg->head);
         output_suffix(stream);
     }
 
-    if (current_cfg.fun) {
+    if (cfg->fun) {
         output_prefix(stream);
-        fprintf(stream, "\tlabel=\"%s\"\n", current_cfg.fun->name);
+        fprintf(stream, "\tlabel=\"%s\"\n", cfg->fun->name);
         fprintf(stream, "\tlabelloc=\"t\"\n");
-        foutputnode(stream, current_cfg.body);
+        foutputnode(stream, cfg->body);
         output_suffix(stream);
     }
 }

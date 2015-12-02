@@ -13,33 +13,27 @@
 #include <stdio.h>
 #include <unistd.h>
 
-void help(const char *prog)
+static void help(const char *prog)
 {
     fprintf(stderr, "Usage: %s [-S] [-E] [-v] [-I <path>] [-o <file>] <file>\n",
         prog);
 }
 
-extern void fdotgen(FILE *);
-
 int main(int argc, char* argv[])
 {
+    enum compile_target target = TARGET_IR_DOT;
     char *input = NULL;
     FILE *output = stdout;
     int c;
-    enum {
-        OUT_DOT,
-        OUT_ASSEMBLY,
-        OUT_PREPROCESSED
-    } output_mode = OUT_DOT;
 
     /* Handle command line parameters. */
     while ((c = getopt(argc, argv, "SEo:vI:")) != -1) {
         switch (c) {
         case 'S':
-            output_mode = OUT_ASSEMBLY;
+            target = TARGET_x86_64_ASM;
             break;
         case 'E':
-            output_mode = OUT_PREPROCESSED;
+            target = TARGET_NONE;
             break;
         case 'o':
             output = fopen(optarg, "w");
@@ -70,30 +64,24 @@ int main(int argc, char* argv[])
 
     init(input);
     register_builtin_definitions();
+    set_compile_target(output, target);
 
-    if (output_mode == OUT_PREPROCESSED) {
+    if (target == TARGET_NONE) {
         preprocess(output);
     } else {
         push_scope(&ns_ident);
         push_scope(&ns_tag);
         register_builtin_types(&ns_ident);
-        set_compile_target(output, TARGET_x86_64_ASM);
 
-        while (parse() && !errors) {
-            if (output_mode == OUT_ASSEMBLY)
-                compile_cfg(&current_cfg);
-            else
-                fdotgen(output);
-        }
+        while (parse() && !errors)
+            compile_cfg(&current_cfg);
 
-        if (errors) {
+        if (errors)
             error("Aborting because of previous %s.",
                 (errors > 1) ? "errors" : "error");
-            exit(1);
-        }
 
-        if (output_mode == OUT_ASSEMBLY)
-            compile_symbols(get_tentative_definitions(&ns_ident));
+        compile_symbols(
+            get_tentative_definitions(&ns_ident));
 
         if (verbose_level) {
             output_symbols(stdout, &ns_ident);
