@@ -2,7 +2,7 @@
 #include "eval.h"
 #include "parse.h"
 #include "string.h"
-#include "../frontend/preprocess.h"
+#include "../preprocessor/preprocess.h"
 
 #include <stdio.h>
 #include <assert.h>

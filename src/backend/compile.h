@@ -1,7 +1,7 @@
 #ifndef COMPILE_H
 #define COMPILE_H
 
-#include "../core/cfg.h"
+#include "../parser/cfg.h"
 
 #include <stdio.h>
 

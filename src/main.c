@@ -2,12 +2,12 @@
 #  define _XOPEN_SOURCE 500 /* getopt */
 #endif
 #include "backend/compile.h"
-#include "core/cli.h"
-#include "core/parse.h"
-#include "core/string.h"
-#include "core/symbol.h"
-#include "frontend/input.h"
-#include "frontend/preprocess.h"
+#include "parser/cli.h"
+#include "parser/parse.h"
+#include "parser/string.h"
+#include "parser/symbol.h"
+#include "preprocessor/input.h"
+#include "preprocessor/preprocess.h"
 
 #include <assert.h>
 #include <stdio.h>

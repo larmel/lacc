@@ -18,17 +18,17 @@ BOOTSTRAP_SOURCES := \
 	src/backend/x86_64/abi.c \
 	src/backend/x86_64/assemble.c \
 	src/backend/compile.c \
-	src/core/cfg.c \
-	src/core/cli.c \
-	src/core/eval.c \
-	src/core/parse.c \
-	src/core/string.c \
-	src/core/symtab.c \
-	src/core/type.c \
-	src/frontend/input.c \
-	src/frontend/macro.c \
-	src/frontend/preprocess.c \
-	src/frontend/tokenize.c \
+	src/parser/cfg.c \
+	src/parser/cli.c \
+	src/parser/eval.c \
+	src/parser/parse.c \
+	src/parser/string.c \
+	src/parser/symtab.c \
+	src/parser/type.c \
+	src/preprocessor/input.c \
+	src/preprocessor/macro.c \
+	src/preprocessor/preprocess.c \
+	src/preprocessor/tokenize.c \
 	src/main.c
 BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))
 REMAINING_SOURCES := $(filter-out $(BOOTSTRAP_SOURCES), $(SOURCES))

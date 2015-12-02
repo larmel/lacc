@@ -2,7 +2,7 @@
 #define ABI_H
 
 #include "instructions.h"
-#include "../../core/symbol.h"
+#include "../../parser/symbol.h"
 
 /* Registers used for passing INTEGER parameters.
  */

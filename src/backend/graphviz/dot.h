@@ -1,7 +1,7 @@
 #ifndef DOT_H
 #define DOT_H
 
-#include "../../core/cfg.h"
+#include "../../parser/cfg.h"
 
 #include <stdio.h>
 

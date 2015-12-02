@@ -1,8 +1,8 @@
 #include "input.h"
 #include "macro.h"
 #include "preprocess.h"
-#include "../core/cli.h"
-#include "../core/string.h"
+#include "../parser/cli.h"
+#include "../parser/string.h"
 
 #include <assert.h>
 #include <ctype.h>

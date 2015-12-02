@@ -1,7 +1,7 @@
 #ifndef CLI_H
 #define CLI_H
 
-#include "../frontend/input.h"
+#include "../preprocessor/input.h"
 
 #include <stddef.h>
 

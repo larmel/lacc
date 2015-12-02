@@ -1,7 +1,7 @@
 #ifndef INSTRUCTIONS_H
 #define INSTRUCTIONS_H
 
-#include "../../core/symbol.h"
+#include "../../parser/symbol.h"
 
 /* Start with %rax = 1 to make sure 0 is invalid.
  */
