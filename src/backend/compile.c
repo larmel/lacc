@@ -1234,6 +1234,7 @@ int compile_cfg(struct cfg *cfg)
     int i;
 
     compile_data(cfg->head);
+    compile_data(cfg->rodata);
     if (cfg->fun) {
         assert(is_function(&cfg->fun->type));
 

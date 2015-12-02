@@ -505,6 +505,12 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
                 var.type);
             exit(1);
         }
+
+        /* Force evaluation to make sure the string is assigned in IR. Make an
+         * exception for strings being assigned to __func__, as those will for
+         * sure not be missing. */
+        if (strcmp("__func__", target.symbol->name))
+            strlabel(var.string);
     }
     else if (
         /* The left operand has atomic, qualified, or unqualified arithmetic

@@ -50,6 +50,7 @@ void cfg_init_current(void)
 
     current_cfg.head = cfg_block_init();
     current_cfg.body = cfg_block_init();
+    current_cfg.rodata = cfg_block_init();
 }
 
 const char *mklabel(void)

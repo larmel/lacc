@@ -92,10 +92,8 @@ int main(int argc, char* argv[])
             exit(1);
         }
 
-        if (output_mode == OUT_ASSEMBLY) {
+        if (output_mode == OUT_ASSEMBLY)
             compile_symbols(get_tentative_definitions(&ns_ident));
-            output_strings(output);
-        }
 
         if (verbose_level) {
             output_symbols(stdout, &ns_ident);

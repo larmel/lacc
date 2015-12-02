@@ -169,8 +169,13 @@ const char *sym_name(const struct symbol *sym)
         return sym->name;
 
     if (sym->name[0] == '.') {
-        assert(sym->name[1] == 't');
-        snprintf(name, 127, "%s%d", sym->name, sym->n);
+        if (sym->name[1] == 't')
+            snprintf(name, 127, "%s%d", sym->name, sym->n);
+        else {
+            /* String constants. */
+            assert(sym->name[1] == 'L');
+            return sym->name;
+        }
     } else {
         snprintf(name, 127, "%s.%d", sym->name, sym->n);
     }

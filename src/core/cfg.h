@@ -163,6 +163,9 @@ struct cfg
      * CFG, respectively. */
     struct block *head, *body;
 
+    /* String assignments. */
+    struct block *rodata;
+
     /* Number of bytes to allocate to local variables on stack. */
     int locals_size;
 

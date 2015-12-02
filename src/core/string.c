@@ -2,6 +2,7 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 700 /* strndup, snprintf */
 #endif
+#include "eval.h"
 #include "string.h"
 
 #include <assert.h>
@@ -133,6 +134,17 @@ const char *str_register_n(const char *s, size_t n)
     return str->string;
 }
 
+static void assign_string(const char *name, const char *str)
+{
+    struct var target, value = var_string(str);
+    struct symbol *sym =
+        sym_add(&ns_ident, name, value.type, SYM_DEFINITION, LINK_INTERN);
+
+    target = var_direct(sym);
+    target.lvalue = 1;
+    eval_assign(current_cfg.rodata, target, value);
+}
+
 const char *strlabel(const char *s)
 {
     struct string *ref;
@@ -145,61 +157,9 @@ const char *strlabel(const char *s)
          * prefix, and one for trailing null byte. */
         ref->label = calloc(14, sizeof(*ref->label));
         snprintf(ref->label, 14, ".LC%d", n++);
+
+        assign_string(ref->label, s);
     }
 
     return ref->label;
-}
-
-void output_string(FILE *stream, const char *str)
-{
-    char c;
-
-    while ((c = *str++) != '\0') {
-        if (isprint(c) && c != '"' && c != '\\') {
-            putc(c, stream);
-            continue;
-        }
-
-        switch (c) {
-        case '\b': fprintf(stream, "\\b");  break;
-        case '\t': fprintf(stream, "\\t");  break;
-        case '\n': fprintf(stream, "\\n");  break;
-        case '\f': fprintf(stream, "\\f");  break;
-        case '\r': fprintf(stream, "\\r");  break;
-        case '\\': fprintf(stream, "\\\\"); break;
-        case '"':  fprintf(stream, "\\\""); break;
-        default:
-            fprintf(stream, "\\0%02o", c);
-            break;
-        }
-    }
-}
-
-void output_strings(FILE *stream)
-{
-    struct string *ref;
-    int section_output = 0,
-        i;
-
-    for (i = 0; i < HASH_TABLE_LENGTH; ++i) {
-        ref = &str_hash_tab[i];
-        if (!ref->string)
-            continue;
-
-        while (ref) {
-            if (ref->label) {
-                if (!section_output) {
-                    fprintf(stream, "\t.section .rodata\n");
-                    section_output = 1;
-                }
-
-                fprintf(stream, "%s:\n", ref->label);
-                fprintf(stream, "\t.string \"");
-                output_string(stream, ref->string);
-                fprintf(stream, "\"\n");
-            }
-
-            ref = ref->hash.next;
-        }
-    }
 }
