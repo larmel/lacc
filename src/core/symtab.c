@@ -335,23 +335,24 @@ void register_builtin_types(struct namespace *ns)
     sym_add(ns, "__builtin_va_arg", none, SYM_DECLARATION, LINK_NONE);
 }
 
-void assemble_tentative_definitions(FILE *stream)
+struct symbol_list get_tentative_definitions(const struct namespace *ns)
 {
-    size_t i;
+    struct symbol_list list = {0};
     struct symbol *sym;
+    int i;
 
-    for (i = 0; i < ns_ident.length; ++i) {
-        sym = ns_ident.symbol[i];
-
-        if (sym->symtype == SYM_TENTATIVE && is_object(&sym->type)) {
-            if (sym->linkage == LINK_INTERN) {
-                fprintf(stream, "\t.local %s\n", sym_name(sym));
-            }
-
-            fprintf(stream, "\t.comm %s,%d,%d\n",
-                sym_name(sym), size_of(&sym->type), type_alignment(&sym->type));
+    for (i = 0; i < ns->length; ++i) {
+        sym = ns->symbol[i];
+        if (sym->symtype == SYM_TENTATIVE) {
+            list.length += 1;
+            list.symbol =
+                realloc(list.symbol, list.length * sizeof(*list.symbol));
+            list.symbol[list.length - 1] = sym;
         }
     }
+
+    list.capacity = list.length;
+    return list;
 }
 
 void output_symbols(FILE *stream, struct namespace *ns)

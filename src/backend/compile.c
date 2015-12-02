@@ -1229,7 +1229,7 @@ void set_compile_target(FILE *stream, enum compile_target target)
     }
 }
 
-int compile(struct cfg *cfg)
+int compile_cfg(struct cfg *cfg)
 {
     int i;
 
@@ -1244,5 +1244,18 @@ int compile(struct cfg *cfg)
         compile_function(cfg);
     }
 
+    return 0;
+}
+
+int compile_symbols(struct symbol_list list)
+{
+    int i;
+
+    for (i = 0; i < list.length; ++i) {
+        asm_enter_context(list.symbol[i]);
+        asm_exit_context();
+    }
+
+    free(list.symbol);
     return 0;
 }

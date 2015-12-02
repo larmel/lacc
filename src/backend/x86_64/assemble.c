@@ -182,23 +182,33 @@ static void output_escaped_string(const char *str)
     }
 }
 
-int asm_enter_context(const struct symbol *symbol)
+int asm_enter_context(const struct symbol *sym)
 {
     assert(!current_symbol);
 
-    current_symbol = symbol;
-    if (is_function(&symbol->type)) {
+    current_symbol = sym;
+    if (sym->symtype == SYM_TENTATIVE) {
+        if (is_object(&sym->type)) {
+            if (sym->linkage == LINK_INTERN)
+                out("\t.local %s\n", sym_name(sym));
+            out("\t.comm %s,%d,%d\n",
+                sym_name(sym), size_of(&sym->type), type_alignment(&sym->type));
+        } else {
+            /* Tentative function, nothing to output. */
+            assert(is_function(&sym->type));
+        }
+    } else if (is_function(&sym->type)) {
         I0(".text");
-        if (symbol->linkage == LINK_EXTERN)
-            I1(".globl", symbol->name);
-        I2(".type", symbol->name, "@function");
-        out("%s:\n", symbol->name);
+        if (sym->linkage == LINK_EXTERN)
+            I1(".globl", sym->name);
+        I2(".type", sym->name, "@function");
+        out("%s:\n", sym->name);
     } else {
         I0(".data");
-        if (symbol->linkage == LINK_EXTERN)
-            I1(".globl", symbol->name);
-        out("\t.align\t%d\n", sym_alignment(symbol));
-        out("%s:\n", sym_name(symbol));
+        if (sym->linkage == LINK_EXTERN)
+            I1(".globl", sym->name);
+        out("\t.align\t%d\n", sym_alignment(sym));
+        out("%s:\n", sym_name(sym));
     }
 
     return 0;
@@ -349,7 +359,8 @@ int asm_exit_context(void)
 {
     assert(current_symbol);
 
-    if (is_function(&current_symbol->type))
+    if (is_function(&current_symbol->type) &&
+        current_symbol->symtype != SYM_TENTATIVE)
         out("\t.size\t%s, .-%s\n", current_symbol->name, current_symbol->name);
 
     current_symbol = NULL;

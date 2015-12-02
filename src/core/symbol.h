@@ -55,6 +55,12 @@ const char *sym_name(const struct symbol *sym);
 
 struct scope;
 
+struct symbol_list {
+    struct symbol **symbol;
+    size_t length;
+    size_t capacity;
+};
+
 /* A namespace holds symbols and manage resolution in scopes as they are pushed
  * or popped.
  */
@@ -128,10 +134,10 @@ struct symbol *sym_temp(struct namespace *ns, const struct typetree *type);
  */
 void register_builtin_types(struct namespace *ns);
 
-/* Output tentative definitions, symbols that have not been assigned a value in
- * this translation unit. Output as .comm directives in GNU assembly syntax.
+/* Retrieve all tentative definitions from given scope. Caller takes ownership
+ * of memory allocated to hold the list.
  */
-void assemble_tentative_definitions(FILE *stream);
+struct symbol_list get_tentative_definitions(const struct namespace *ns);
 
 /* Verbose output all symbols from symbol table.
  */

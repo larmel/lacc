@@ -81,7 +81,7 @@ int main(int argc, char* argv[])
 
         while (parse() && !errors) {
             if (output_mode == OUT_ASSEMBLY)
-                compile(&current_cfg);
+                compile_cfg(&current_cfg);
             else
                 fdotgen(output);
         }
@@ -93,7 +93,7 @@ int main(int argc, char* argv[])
         }
 
         if (output_mode == OUT_ASSEMBLY) {
-            assemble_tentative_definitions(output);
+            compile_symbols(get_tentative_definitions(&ns_ident));
             output_strings(output);
         }
 
