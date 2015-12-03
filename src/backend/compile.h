@@ -1,7 +1,7 @@
 #ifndef COMPILE_H
 #define COMPILE_H
 
-#include <lacc/cfg.h>
+#include <lacc/ir.h>
 
 #include <stdio.h>
 

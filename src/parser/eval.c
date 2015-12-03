@@ -1,3 +1,4 @@
+#include "cfg.h"
 #include "eval.h"
 #include "type.h"
 #include <lacc/cli.h>

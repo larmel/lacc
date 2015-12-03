@@ -1,7 +1,7 @@
 #ifndef DOT_H
 #define DOT_H
 
-#include <lacc/cfg.h>
+#include <lacc/ir.h>
 
 #include <stdio.h>
 

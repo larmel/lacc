@@ -2,6 +2,7 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 700 /* strndup, snprintf */
 #endif
+#include "cfg.h"
 #include "eval.h"
 #include "symtab.h"
 #include <lacc/string.h>

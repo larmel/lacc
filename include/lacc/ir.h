@@ -1,74 +1,19 @@
-#ifndef CFG_H
-#define CFG_H
+#ifndef IR_H
+#define IR_H
 
 #include "symbol.h"
 
 #include <stddef.h>
 
-/* A reference to some storage location or direct value, used in intermediate
- * representation of expressions.
+/* Find the number of operands to a given operation type, using the fact that
+ * enumeration constants are sorted by operand count. 
  */
-struct var
-{
-    const struct typetree *type;
-    const struct symbol *symbol;
-
-    enum {
-        /* l-value or r-value reference to symbol, which must have some storage
-         * location. Offset evaluate to *(&symbol + offset). Offset in bytes,
-         * not pointer arithmetic. */
-        DIRECT,
-        /* l-value or r-value reference to *(symbol + offset). Symbol must have
-         * pointer type. Offset in bytes, not pointer arithmetic. */
-        DEREF,
-        /* r-value immediate, with the type specified. Symbol is NULL. */
-        IMMEDIATE
-    } kind;
-
-    union value {
-        long i;
-        unsigned long u;
-    } imm;
-
-    /* Represent string constant value, or label, for IMMEDIATE values. If type
-     * is char [], this is the literal string constant. If type is char *, this
-     * is the label representing the string, as in '.LC1'. Pointers can have a
-     * constant offset, representing address constants such as .LC1+3. */
-    const char *string;
-
-    int offset;
-    int lvalue;
-};
-
-/* A direct reference to given symbol.
- */
-struct var var_direct(const struct symbol *sym);
-
-/* A string value of type [] char.
- */
-struct var var_string(const char *str);
-
-/* A constant value of integer type.
- */
-struct var var_int(int value);
-
-/* A zero constant value of integer type.
- */
-struct var var_zero(int size);
-
-/* A value with no type.
- */
-struct var var_void(void);
-
-/* Create a variable of the given type, returning a direct reference to a new
- * symbol.
- */
-struct var create_var(const struct typetree *type);
+#define NOPERANDS(t) ((t) > IR_CAST ? 2 : (t) > IR_PARAM)
+#define IS_COMPARISON(t) ((t) == IR_OP_EQ || (t) == IR_OP_GE || (t) == IR_OP_GT)
 
 /* Three address code operation types.
  */
-enum optype
-{
+enum optype {
     IR_PARAM,    /* param a    */
 
     IR_ASSIGN,   /* a = b      */
@@ -103,17 +48,43 @@ enum optype
     IR_VA_ARG
 };
 
-/* Find the number of operands to a given operation type, using the fact that
- * enumeration constants are sorted by operand count. 
+/* A reference to some storage location or direct value, used in intermediate
+ * representation of expressions.
  */
-#define NOPERANDS(t) ((t) > IR_CAST ? 2 : (t) > IR_PARAM)
+struct var {
+    const struct typetree *type;
+    const struct symbol *symbol;
 
-#define IS_COMPARISON(t) ((t) == IR_OP_EQ || (t) == IR_OP_GE || (t) == IR_OP_GT)
+    enum {
+        /* l-value or r-value reference to symbol, which must have some storage
+         * location. Offset evaluate to *(&symbol + offset). Offset in bytes,
+         * not pointer arithmetic. */
+        DIRECT,
+        /* l-value or r-value reference to *(symbol + offset). Symbol must have
+         * pointer type. Offset in bytes, not pointer arithmetic. */
+        DEREF,
+        /* r-value immediate, with the type specified. Symbol is NULL. */
+        IMMEDIATE
+    } kind;
+
+    union value {
+        long i;
+        unsigned long u;
+    } imm;
+
+    /* Represent string constant value, or label, for IMMEDIATE values. If type
+     * is char [], this is the literal string constant. If type is char *, this
+     * is the label representing the string, as in '.LC1'. Pointers can have a
+     * constant offset, representing address constants such as .LC1+3. */
+    const char *string;
+
+    int offset;
+    int lvalue;
+};
 
 /* Basic block in control flow graph.
  */
-struct block
-{
+struct block {
     /* A unique jump target label. */
     const char *label;
 
@@ -154,8 +125,7 @@ struct block
 
 /* Represents an external declaration list or a function definition.
  */
-struct cfg
-{
+struct cfg {
     /* Function symbol or NULL if list of declarations. */
     const struct symbol *fun;
 
@@ -182,30 +152,24 @@ struct cfg
     size_t capacity;
 };
 
-/* Current declaration, accessed for creating new blocks or adding init code
- * in head block.
+/* A direct reference to given symbol.
  */
-extern struct cfg current_cfg;
+struct var var_direct(const struct symbol *sym);
 
-/* Initialize a new control flow graph structure, updating current_cfg.
+/* A string value of type [] char.
  */
-void cfg_init_current(void);
+struct var var_string(const char *str);
 
-/* Initialize a CFG block with a unique jump label. Borrows memory.
+/* A constant value of integer type.
  */
-struct block *cfg_block_init(void);
+struct var var_int(int value);
 
-/* Add a 3-address code operation to the block. Code is kept in a separate list
- * for each block.
+/* A zero constant value of integer type.
  */
-void cfg_ir_append(struct block *block, struct op op);
+struct var var_zero(int size);
 
-/* Add local variable to symbol list, required for assembly.
+/* A value with no type.
  */
-void cfg_register_local(struct symbol *symbol);
-
-/* Add function parameter to symbol list, required for assembly.
- */
-void cfg_register_param(struct symbol *symbol);
+struct var var_void(void);
 
 #endif
