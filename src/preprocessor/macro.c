@@ -1,5 +1,6 @@
 #include "input.h"
 #include "macro.h"
+#include "tokenize.h"
 #include <lacc/cli.h>
 #include <lacc/string.h>
 

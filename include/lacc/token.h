@@ -1,11 +1,10 @@
-#ifndef TOKENIZE_H
-#define TOKENIZE_H
+#ifndef TOKEN_H
+#define TOKEN_H
 
 /* Map token type to corresponding numerical ascii value where possible,
  * and fit the remaining tokens in between.
  */
-enum token_type
-{
+enum token_type {
     END = 0,                /*  $ */
     AUTO = END + 1,
     BREAK,
@@ -103,30 +102,26 @@ enum token_type
 /* Every token has a reference to its textual value. The integer value is
  * kept for numeric constants.
  */
-struct token
-{
+struct token {
     enum token_type token;
     const char *strval;
     long intval;
 };
 
-/* Mapping to ASCII indexed token strings.
+/* Peek lookahead of 1.
  */
-extern const char *reserved[128];
+struct token peek(void);
 
-/* Parse and return next preprocessing token from given line. Assume comments
- * are removed and line continuations are applied. endptr is set to point to
- * one index past the last character producing the token.
- *
- * Destructively overwrites input buffer for string constants.
+/* Peek lookahead of n.
  */
-struct token tokenize(char *in, char **endptr);
+struct token peekn(unsigned n);
 
-/* Global instances of tokens representing end of input, and end of line,
- * respectively.
+/* Consume and return next token.
  */
-extern struct token
-    token_end,
-    token_newline;
+struct token next(void);
+
+/* Consume and return next token, or fail of not of expected type.
+ */
+struct token consume(enum token_type type);
 
 #endif

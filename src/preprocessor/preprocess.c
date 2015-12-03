@@ -1,6 +1,7 @@
 #include "input.h"
 #include "macro.h"
-#include <lacc/preprocess.h>
+#include "preprocess.h"
+#include "tokenize.h"
 #include <lacc/cli.h>
 #include <lacc/string.h>
 
