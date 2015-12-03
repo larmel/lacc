@@ -2,9 +2,9 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
+#include "parser/type.h"
 #include "preprocessor/input.h"
 #include <lacc/cli.h>
-#include <lacc/type.h>
 
 #include <stdio.h>
 #include <stdarg.h>

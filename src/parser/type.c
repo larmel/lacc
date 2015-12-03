@@ -2,7 +2,7 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
-#include <lacc/type.h>
+#include "type.h"
 
 #include <assert.h>
 #include <stdarg.h>
@@ -485,7 +485,6 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
     return w;
 }
 
-/* For debug printing and error reporting types. Caller should free memory. */
 char *typetostr(const struct typetree *type)
 {
     char *text = malloc(2048 * sizeof(char));

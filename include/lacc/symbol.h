@@ -1,7 +1,7 @@
 #ifndef SYMBOL_H
 #define SYMBOL_H
 
-#include "type.h"
+#include "typetree.h"
 
 #include <stdio.h>
 

@@ -1,6 +1,7 @@
 #include "eval.h"
 #include "parse.h"
 #include "symtab.h"
+#include "type.h"
 #include <lacc/token.h>
 #include <lacc/cli.h>
 #include <lacc/string.h>

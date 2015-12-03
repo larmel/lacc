@@ -3,6 +3,7 @@
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
 #include "symtab.h"
+#include "type.h"
 #include <lacc/cli.h>
 #include <lacc/string.h>
 
