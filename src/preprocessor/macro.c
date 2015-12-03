@@ -2,6 +2,7 @@
 #include "macro.h"
 #include "tokenize.h"
 #include <lacc/cli.h>
+#include <lacc/hash.h>
 #include <lacc/string.h>
 
 #include <assert.h>

@@ -5,6 +5,7 @@
 #include "cfg.h"
 #include "eval.h"
 #include "symtab.h"
+#include <lacc/hash.h>
 #include <lacc/string.h>
 
 #include <assert.h>
@@ -93,35 +94,6 @@ static struct string *hash_insert(const char *str, size_t len)
     ref->string = strndup(str, len);
     ref->hash.val = hash;
     return ref;
-}
-
-/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
- */
-unsigned long djb2_hash(const char *str)
-{
-    unsigned long hash = 5381;
-    int c;
-
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    }
-
-    return hash;
-}
-
-/* Adapted from http://www.cse.yorku.ca/~oz/hash.html.
- */
-unsigned long djb2_hash_p(const char *str, const char *endptr)
-{
-    unsigned long hash = 5381;
-    int c;
-
-    while (str < endptr) {
-        c = *str++;
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    }
-
-    return hash;
 }
 
 const char *str_register(const char *s)

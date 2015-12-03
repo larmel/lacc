@@ -28,6 +28,7 @@ BOOTSTRAP_SOURCES := \
 	src/preprocessor/macro.c \
 	src/preprocessor/preprocess.c \
 	src/preprocessor/tokenize.c \
+	src/util/hash.c \
 	src/cli.c \
 	src/main.c
 BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))

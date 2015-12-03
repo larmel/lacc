@@ -9,7 +9,6 @@
 #include "preprocessor/input.h"
 #include "preprocessor/macro.h"
 #include <lacc/cli.h>
-#include <lacc/string.h>
 
 #include <assert.h>
 #include <stdio.h>
