@@ -182,8 +182,9 @@ static void output_escaped_string(const char *str)
     }
 }
 
-int asm_enter_context(const struct symbol *sym)
+int asm_symbol(const struct symbol *sym)
 {
+    asm_flush();
     assert(!current_symbol);
 
     current_symbol = sym;
@@ -355,14 +356,14 @@ int asm_data(struct immediate data)
     return 0;
 }
 
-int asm_exit_context(void)
+int asm_flush(void)
 {
-    assert(current_symbol);
-
-    if (is_function(&current_symbol->type) &&
-        current_symbol->symtype != SYM_TENTATIVE)
-        out("\t.size\t%s, .-%s\n", current_symbol->name, current_symbol->name);
-
-    current_symbol = NULL;
+    if (current_symbol) {
+        if (is_function(&current_symbol->type) &&
+                current_symbol->symtype != SYM_TENTATIVE)
+            out("\t.size\t%s, .-%s\n",
+                current_symbol->name, current_symbol->name);
+        current_symbol = NULL;
+    }
     return 0;
 }

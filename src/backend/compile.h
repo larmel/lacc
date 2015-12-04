@@ -26,4 +26,8 @@ int compile_cfg(struct cfg *cfg);
  */
 int compile_symbols(struct symbol_list list);
 
+/* Flush any buffered output, no more input will follow.
+ */
+void flush(void);
+
 #endif

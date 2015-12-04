@@ -19,7 +19,7 @@ static FILE *output_stream;
 static int (*enter_context)(const struct symbol *);
 static int (*emit_instruction)(struct instruction);
 static int (*emit_data)(struct immediate);
-static int (*exit_context)(void);
+static int (*flush_backend)(void);
 
 /* Values from va_list initialization.
  */
@@ -1177,7 +1177,6 @@ static void compile_data(const struct block *head)
             if (type) {
                 assert(size_of(type) >= initialized);
                 zero_fill_data(size_of(type) - initialized);
-                exit_context();
             }
             type = &op->a.symbol->type;
             enter_context(op->a.symbol);
@@ -1196,7 +1195,6 @@ static void compile_data(const struct block *head)
     if (type) {
         assert(size_of(type) >= initialized);
         zero_fill_data(size_of(type) - initialized);
-        exit_context();
     }
 }
 
@@ -1204,6 +1202,7 @@ static void compile_function(struct cfg *cfg)
 {
     enum param_class *result_class;
 
+    assert(is_function(&cfg->fun->type));
     enter_context(cfg->fun);
     emit(INSTR_PUSH, OPT_REG, reg(BP, 8));
     emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(BP, 8));
@@ -1216,7 +1215,6 @@ static void compile_function(struct cfg *cfg)
     compile_block(cfg->body, result_class);
 
     free(result_class);
-    exit_context();
 }
 
 void set_compile_target(FILE *stream, enum compile_target target)
@@ -1229,10 +1227,10 @@ void set_compile_target(FILE *stream, enum compile_target target)
         break;
     case TARGET_x86_64_ASM:
         asm_output = stream;
-        enter_context = asm_enter_context;
+        enter_context = asm_symbol;
         emit_instruction = asm_text;
         emit_data = asm_data;
-        exit_context = asm_exit_context;
+        flush_backend = asm_flush;
         break;
     case TARGET_x86_64_ELF:
         error("Compile target not yet implement");
@@ -1257,11 +1255,8 @@ int compile_cfg(struct cfg *cfg)
     case TARGET_x86_64_ELF:
         compile_data(cfg->head);
         compile_data(cfg->rodata);
-        if (cfg->fun) {
-            assert(is_function(&cfg->fun->type));
-
+        if (cfg->fun)
             compile_function(cfg);
-        }
         break;
     }
 
@@ -1275,14 +1270,18 @@ int compile_symbols(struct symbol_list list)
     switch (compile_target) {
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
-        for (i = 0; i < list.length; ++i) {
-            asm_enter_context(list.symbol[i]);
-            asm_exit_context();
-        }
+        for (i = 0; i < list.length; ++i)
+            enter_context(list.symbol[i]);
     default:
         break;
     }
 
     free(list.symbol);
     return 0;
+}
+
+void flush(void)
+{
+    if (flush_backend)
+        flush_backend();
 }

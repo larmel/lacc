@@ -99,6 +99,7 @@ int main(int argc, char *argv[])
             output_symbols(stdout, &ns_tag);
         }
 
+        flush();
         pop_scope(&ns_tag);
         pop_scope(&ns_ident);
     }
