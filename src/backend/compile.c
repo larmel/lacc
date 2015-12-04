@@ -1,6 +1,7 @@
 #include "graphviz/dot.h"
 #include "x86_64/abi.h"
 #include "x86_64/assemble.h"
+#include "x86_64/elf.h"
 #include "x86_64/instructions.h"
 #include "compile.h"
 #include <lacc/cli.h>
@@ -1233,8 +1234,12 @@ void set_compile_target(FILE *stream, enum compile_target target)
         flush_backend = asm_flush;
         break;
     case TARGET_x86_64_ELF:
-        error("Compile target not yet implement");
-        exit(1);
+        object_file_output = stream;
+        enter_context = elf_symbol;
+        emit_instruction = elf_text;
+        emit_data = elf_data;
+        flush_backend = elf_flush;
+        break;
     }
 }
 

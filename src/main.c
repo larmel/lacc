@@ -19,7 +19,9 @@ static FILE *output;
 
 static void help(const char *prog)
 {
-    fprintf(stderr, "Usage: %s [-S] [-E] [-v] [-I <path>] [-o <file>] <file>\n",
+    fprintf(
+        stderr,
+        "Usage: %s [-(S|E|c)] [-v] [-I <path>] [-o <file>] <file>\n",
         prog);
 }
 
@@ -31,8 +33,11 @@ static enum compile_target parse_args(int argc, char *argv[])
     target = TARGET_IR_DOT;
     output = stdout;
 
-    while ((c = getopt(argc, argv, "SEo:vI:")) != -1) {
+    while ((c = getopt(argc, argv, "SEco:vI:")) != -1) {
         switch (c) {
+        case 'c':
+            target = TARGET_x86_64_ELF;
+            break;
         case 'S':
             target = TARGET_x86_64_ASM;
             break;

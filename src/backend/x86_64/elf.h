@@ -1,0 +1,85 @@
+#ifndef ELF_H
+#define ELF_H
+
+#include "instructions.h"
+#include <lacc/symbol.h>
+
+#include <stdio.h>
+
+typedef unsigned long Elf64_Addr, Elf64_Off, Elf64_Xword;
+typedef unsigned int Elf64_Word;
+typedef unsigned short Elf64_Half;
+typedef long Elf64_Sxword;
+typedef int Elf64_Sword;
+
+typedef struct {
+    unsigned char   e_ident[16];    /* ELF identification */
+    Elf64_Half      e_type;         /* Object file type */
+    Elf64_Half      e_machine;      /* Machine type */
+    Elf64_Word      e_version;      /* Object file version */
+    Elf64_Addr      e_entry;        /* Entry point address */
+    Elf64_Off       e_phoff;        /* Program header offset */
+    Elf64_Off       e_shoff;        /* Section header offset */
+    Elf64_Word      e_flags;        /* Processor-specific flags */
+    Elf64_Half      e_ehsize;       /* ELF header size */
+    Elf64_Half      e_phentsize;    /* Size of program header entry */
+    Elf64_Half      e_phnum;        /* Number of program header entries */
+    Elf64_Half      e_shentsize;    /* Size of section header entry */
+    Elf64_Half      e_shnum;        /* Number of section header entries */
+    Elf64_Half      e_shstrndx;     /* Section name string table index */
+} Elf64_Ehdr;
+
+/* Constants used in e_ident part of header. Only including values relevant
+ * for target platform; 64 bit Linux System V.
+ */
+#define ELFCLASS64 2
+#define ELFDATA2LSB 1               /* Little-endian data structures */
+#define EV_CURRENT 1                /* Current ELF version */
+#define ELFOSABI_SYSV 0             /* System V ABI */
+#define ET_REL 1                    /* Relocatable file */
+
+typedef struct {
+    Elf64_Word      sh_name;        /* Section name */
+    Elf64_Word      sh_type;        /* Section type */
+    Elf64_Xword     sh_flags;       /* Section attributes */
+    Elf64_Addr      sh_addr;        /* Virtual address in memory */
+    Elf64_Off       sh_offset;      /* Offset in file */
+    Elf64_Xword     sh_size;        /* Size of section */
+    Elf64_Word      sh_link;        /* Link to other section */
+    Elf64_Word      sh_info;        /* Miscellaneous information */
+    Elf64_Xword     sh_addralign;   /* Address alignment boundary */
+    Elf64_Xword     sh_entsize;     /* Size of entries, if section has table */
+} Elf64_Shdr;
+
+#define SHN_UNDEF 0
+
+/* Section types, sh_type.
+ */
+#define SHT_NULL 0
+#define SHT_PROGBITS 1
+#define SHT_SYMTAB 2
+#define SHT_STRTAB 3
+#define SHT_RELA 4
+#define SHT_HASH 5
+#define SHT_DYNAMIC 6
+#define SHT_NOTE 7
+#define SHT_REL 9
+#define SHT_DYNSYM 11
+
+/* Section attributes, sh_flags.
+ */
+#define SHF_WRITE 0x1
+#define SHF_ALLOC 0x2
+#define SHF_EXECINSTR 0x4
+
+extern FILE *object_file_output;
+
+int elf_symbol(const struct symbol *sym);
+
+int elf_text(struct instruction instr);
+
+int elf_data(struct immediate data);
+
+int elf_flush(void);
+
+#endif
