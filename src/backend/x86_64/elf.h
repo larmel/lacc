@@ -72,6 +72,24 @@ typedef struct {
 #define SHF_ALLOC 0x2
 #define SHF_EXECINSTR 0x4
 
+typedef struct {
+    Elf64_Word      st_name;        /* Symbol name */
+    unsigned char   st_info;        /* Type and Binding attributes */
+    unsigned char   st_other;       /* Reserved */
+    Elf64_Half      st_shndx;       /* Section table index */
+    Elf64_Addr      st_value;       /* Symbol value */
+    Elf64_Xword     st_size;        /* Size of object */
+} Elf64_Sym;
+
+#define STB_LOCAL 0
+#define STB_GLOBAL 1
+
+#define STT_NOTYPE 0
+#define STT_OBJECT 1
+#define STT_FUNC 2
+#define STT_SECTION 3
+#define STT_FILE 4
+
 extern FILE *object_file_output;
 
 int elf_symbol(const struct symbol *sym);
