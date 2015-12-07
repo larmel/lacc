@@ -221,6 +221,10 @@ static struct var eval_eq(struct block *block, struct var l, struct var r)
         exit(1);
     }
 
+    if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
+        return var_int(l.imm.i == r.imm.i);
+    }
+
     return evaluate(block, IR_OP_EQ, &basic_type__int, l, r);
 }
 
@@ -317,7 +321,10 @@ static struct var eval_shiftl(struct block *block, struct var l, struct var r)
         exit(1);
     }
 
-    return evaluate(block, IR_OP_SHL, promote_integer(l.type), l, r);
+    return
+        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+            ? var_int(l.imm.i << r.imm.i)
+            : evaluate(block, IR_OP_SHL, promote_integer(l.type), l, r);
 }
 
 static struct var eval_shiftr(struct block *block, struct var l, struct var r)
@@ -327,7 +334,10 @@ static struct var eval_shiftr(struct block *block, struct var l, struct var r)
         exit(1);
     }
 
-    return evaluate(block, IR_OP_SHR, promote_integer(l.type), l, r);
+    return
+        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+            ? var_int(l.imm.i >> r.imm.i)
+            : evaluate(block, IR_OP_SHR, promote_integer(l.type), l, r);
 }
 
 static struct var eval_not(struct block *block, struct var var)
@@ -337,7 +347,10 @@ static struct var eval_not(struct block *block, struct var var)
         exit(1);
     }
 
-    return evaluate(block, IR_NOT, promote_integer(var.type), var);
+    return
+        (var.kind == IMMEDIATE)
+            ? var_int(~var.imm.i)
+            : evaluate(block, IR_NOT, promote_integer(var.type), var);
 }
 
 /* Convert variables of type ARRAY or FUNCTION to addresses when used in
