@@ -40,18 +40,15 @@ static enum param_class combine(enum param_class a, enum param_class b)
  */
 static void flatten(enum param_class *l, const struct typetree *t, int offset)
 {
+    int i;
     const struct member *member;
-    int i = offset / 8;
 
     switch (t->type) {
     case T_REAL:
     case T_UNSIGNED:
     case T_SIGNED:
     case T_POINTER:
-        /* All fields should be aligned, i.e. a type cannot span multiple eight
-         * byte boundaries. */
-        assert(size_of(t) <= 8 /*&& (offset + t->size) / 8 == idx*/);
-
+        i = offset / 8;
         l[i] = combine(l[i], t->type == T_REAL ? PC_SSE : PC_INTEGER);
         break;
     case T_STRUCT:
@@ -63,8 +60,9 @@ static void flatten(enum param_class *l, const struct typetree *t, int offset)
         }
         break;
     case T_ARRAY:
-        error("%s", "Not yet support for array parameters.");
-        exit(1);
+        for (i = 0; i < t->size / size_of(t->next); ++i)
+            flatten(l, t->next, i * size_of(t->next) + offset);
+        break;
     default:
         assert(0);
     }
