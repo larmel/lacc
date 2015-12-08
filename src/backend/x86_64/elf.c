@@ -137,6 +137,7 @@ static Elf64_Sym *symtab;
 static int symtab_len;
 
 static unsigned char *data;
+static unsigned char *text;
 
 /* Add string to .strtab, returning its offset into the section for use in
  * references.
@@ -244,6 +245,16 @@ int elf_symbol(const struct symbol *sym)
 
 int elf_text(struct instruction instr)
 {
+    struct code c = encode(instr);
+
+    if (c.val[0] == 0x90)
+        return 0;
+
+    text = realloc(text, shdr[SHDR_TEXT].sh_size + c.len);
+    memcpy(text + shdr[SHDR_TEXT].sh_size, &c.val, c.len);
+
+    shdr[SHDR_TEXT].sh_size += c.len;
+
     return 0;
 }
 
@@ -303,6 +314,8 @@ int elf_flush(void)
     shdr[SHDR_SYMTAB].sh_size = symtab_size();
     shdr[SHDR_DATA].sh_offset =
         shdr[SHDR_SYMTAB].sh_offset + shdr[SHDR_SYMTAB].sh_size;
+    shdr[SHDR_TEXT].sh_offset =
+        shdr[SHDR_DATA].sh_offset + shdr[SHDR_DATA].sh_size;
 
     /* Section headers */
     fwrite(&shdr, sizeof(shdr), 1, object_file_output);
@@ -312,6 +325,7 @@ int elf_flush(void)
     fwrite_strtab(strtab, strtab_len, object_file_output);
     fwrite_symtab(object_file_output);
     fwrite(data, shdr[SHDR_DATA].sh_size, 1, object_file_output);
+    fwrite(text, shdr[SHDR_TEXT].sh_size, 1, object_file_output);
 
     return 0;
 }

@@ -140,11 +140,27 @@ struct instruction {
         OPT_IMM_REG,
         OPT_IMM_MEM
     } optype;
-    union {
+    union operand {
         struct registr reg;
         struct memory mem;
         struct immediate imm;
     } source, dest;
 };
+
+/* According to Intel reference manual, instructions can contain the following
+ * fields, for a combined maximum length of 18 bytes:
+ *
+ *  [Legacy Prefixes] [REX] [Opcode] [ModR/M] [SIB] [Displacement] [Immediate]
+ *   (up to 4 bytes)   (1)    (3)      (1)     (1)       (4)           (4)
+ *
+ */
+struct code {
+    unsigned char val[18];
+    int len;
+};
+
+/* Convert instruction to binary format.
+ */
+struct code encode(struct instruction instr);
 
 #endif
