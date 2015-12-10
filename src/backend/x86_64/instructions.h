@@ -3,17 +3,19 @@
 
 #include <lacc/symbol.h>
 
-/* Start with %rax = 1 to make sure 0 is invalid.
+/* Start with %rax = 1 to make sure 0 is invalid. This is used in address
+ * representation, but unfortunately crashes with instruction encoding using
+ * 0b000 for AX.
  */
 enum reg {
-    AX = 1,
-    BX,
-    CX,
-    DX,
-    BP,
-    SP,
-    SI,
-    DI,
+    AX = 1, /* 0b000 */
+    CX = 2, /* 0b001 */
+    DX = 3, /* 0b010 */
+    BX = 4, /* 0b011 */
+    SP = 5, /* 0b100 */
+    BP = 6, /* 0b101 */
+    SI = 7, /* 0b110 */
+    DI = 8, /* 0b111 */
     R8,
     R9,
     R10,

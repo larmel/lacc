@@ -27,11 +27,11 @@ static const struct symbol *current_symbol;
 
 static const char *reg_name[] = {
     "%al",   "%ax",   "%eax",  "%rax",
-    "%bl",   "%bx",   "%ebx",  "%rbx",
     "%cl",   "%cx",   "%ecx",  "%rcx",
     "%dl",   "%dx",   "%edx",  "%rdx",
-    "%bpl",  "%bp",   "%ebp",  "%rbp",
+    "%bl",   "%bx",   "%ebx",  "%rbx",
     "%spl",  "%sp",   "%esp",  "%rsp",
+    "%bpl",  "%bp",   "%ebp",  "%rbp",
     "%sil",  "%si",   "%esi",  "%rsi",
     "%dil",  "%di",   "%edi",  "%rdi",
     "%r8b",  "%r8w",  "%r8d",  "%r8",
