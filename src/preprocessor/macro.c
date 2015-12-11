@@ -405,7 +405,8 @@ static const struct token *skip_to(const struct token *list, int token)
 {
     while (list->token == SPACE) list++;
     if (list->token != token) {
-        error("Unexpected '%c', expected '%c'.", list->strval);
+        assert(reserved[token]);
+        error("Expected '%s', but got '%s'.", reserved[token], list->strval);
     }
     return list;
 }
