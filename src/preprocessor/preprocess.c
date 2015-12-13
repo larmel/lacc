@@ -80,11 +80,18 @@ static void read_macro_invocation(
     struct builder *list,
     const struct macro *macro)
 {
-    int nesting = 1;
-    struct token t = expect_next(list, '(');
+    int nesting;
+    struct token t;
     assert(macro->type == FUNCTION_LIKE);
 
+    t = get_next(list);
     list_append(list, t);
+    if (t.token != '(')
+        /* Only expand function-like macros if they appear as function
+         * invocations, beginning with an open paranthesis. */
+        return;
+
+    nesting = 1;
     while (nesting) {
         t = get_next(list);
         if (t.token == '(') {

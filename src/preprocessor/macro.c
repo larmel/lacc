@@ -418,6 +418,12 @@ static const struct token *skip_past(const struct token *list, int token)
     return list;
 }
 
+static enum token_type peek_next(const struct token *list)
+{
+    while (list->token == SPACE) list++;
+    return list->token;
+}
+
 /* Read argument in macro expansion, starting from one offset from the initial
  * open parenthesis. Stop readin when reaching a comma, and nesting depth is
  * zero. Track nesting depth to allow things like MAX( foo(a), b ).
@@ -508,7 +514,11 @@ struct token *expand(struct token *original)
         const struct macro *def = definition(*list);
         struct token **args;
 
-        if (def && !is_macro_expanded(def)) {
+        /* Only expand function-like macros if they appear as function
+         * invocations, beginning with an open paranthesis. */
+        if (def && !is_macro_expanded(def) &&
+            (def->type != FUNCTION_LIKE || peek_next(list + 1) == '('))
+        {
             args = read_args(list + 1, &list, def);
             res = concat(res, expand_macro(def, args));
         } else {
