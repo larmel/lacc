@@ -6,6 +6,7 @@
  * enumeration values.
  */
 #define reg(arg) ((arg).r - 1)
+#define is_64_bit(arg) ((arg).w >> 3)
 #define is_64_bit_reg(arg) ((arg).r > DI)
 
 /* REX prefix contains bits [0, 1, 0, 0, W, R, X, B]
@@ -15,13 +16,59 @@
  * B: Extension of ModRM r/m field, SIB base field, or Opcode reg field
  */
 #define REX 0x40
-#define R(arg) (is_64_bit_reg(arg) << 3)
+#define W(arg) (is_64_bit(arg) << 3)
+#define R(arg) (is_64_bit_reg(arg) << 2)
+#define X(arg) 0
 #define B(arg) is_64_bit_reg(arg)
 
-/* w is a bit used to separate between 8 bit and 16/32 bit in the opcode, set
- * value to 1 iff width is 1 byte.
+/* Operand size bit, 0 for 8 bit operand and 1 for 32 bit operand, when default
+ * is 32 bit. [Table B-6]
  */
-#define w(arg) ((arg).w & 1)
+#define w(arg) (~(arg).w & 1)
+
+/* ModR/M    [   mod,    reg,     r/m    ]
+ *              2 bit   3 bit    3 bit
+ *
+ * mod: combines with the r/m field to form 32 possible values: eight
+ *      registers and 24 addressing modes.
+ * reg: specifies either a register number or three more bits of opcode
+ *      information.
+ * r/m: specify a register as an operand or it can be combined with the mod
+ *      field to encode an addressing mode.
+ */
+
+/* SIB       [   scale,   index,   base   ]
+ *                2bit     3bit    3bit
+ *
+ * scale: specifies the scale factor.
+ * index: specifies the register number of the index register.
+ * base: specifies the register number of the base register.
+ */
+
+/* Encode address using ModR/M, SIB and Displacement bytes. Based on Table 2.2
+ * and Table 2.3 in reference manual.
+ *
+ * Only using ModR/M for now.
+ */
+static int encode_address(unsigned char *code, enum reg r, struct address addr)
+{
+    /* Discard most significant bit, which is encoded in REX prefix. */
+    code[0]  = ((r - 1) & 0x7) << 3;
+    code[0] |= (addr.base - 1) & 0x7;
+
+    if (addr.disp) {
+        if (addr.disp >= -8 && addr.disp <= 7) {
+            code[0] |= 0x40;
+            code[1] = addr.disp;
+            return 2;
+        }
+        code[0] |= 0x80;
+        memcpy(&code[1], &addr.disp, 4);
+        return 5;
+    }
+
+    return 1;
+}
 
 static struct code nop(void)
 {
@@ -47,13 +94,27 @@ static struct code mov(
     case OPT_REG_REG:
         assert(a.reg.w == b.reg.w);
         c.len = 3;
-        c.val[0] = REX | R(a.reg) | B(b.reg);
+        c.val[0] = REX | W(a.reg) | R(a.reg) | B(b.reg);
+        c.val[1] = 0x88 + is_64_bit(a.reg);
         c.val[2] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
-        if (a.reg.w == 8) {
-            c.val[0] |= (1 << 3);
-            c.val[1] = 0x89;
-        } else
-            c.val[1] = 0x88 | w(a.reg);
+        break;
+    case OPT_REG_MEM:
+        if (is_64_bit(a.reg)) {
+            /*c.val[0] = REX | W(a.reg) | R(a.reg);*/
+            /* todo */
+        } else {
+            c.val[0] = 0x88 + w(a.reg);
+            c.len = 1 + encode_address(&c.val[1], a.reg.r, b.mem.addr);
+        }
+        break;
+    case OPT_MEM_REG:
+        if (is_64_bit(a.reg)) {
+            /*c.val[0] = REX | W(a.reg) | R(a.reg);*/
+            /* todo */
+        } else {
+            c.val[0] = 0x8A + w(b.reg);
+            c.len = 1 + encode_address(&c.val[1], b.reg.r, a.mem.addr);
+        }
         break;
     default:
         break;
