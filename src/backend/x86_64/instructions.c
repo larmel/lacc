@@ -45,6 +45,11 @@
  * base: specifies the register number of the base register.
  */
 
+/* Determine if integer value can be encoded with certain width.
+ */
+#define in_byte_range(arg) ((arg) >= -128 && (arg) <= 127)
+#define in_32bit_range(arg) ((arg) >= -2147483648 && (arg) <= 2147483647)
+
 /* Encode address using ModR/M, SIB and Displacement bytes. Based on Table 2.2
  * and Table 2.3 in reference manual.
  *
@@ -57,7 +62,7 @@ static int encode_address(unsigned char *code, enum reg r, struct address addr)
     code[0] |= (addr.base - 1) & 0x7;
 
     if (addr.disp) {
-        if (addr.disp >= -8 && addr.disp <= 7) {
+        if (in_byte_range(addr.disp)) {
             code[0] |= 0x40;
             code[1] = addr.disp;
             return 2;
@@ -68,6 +73,22 @@ static int encode_address(unsigned char *code, enum reg r, struct address addr)
     }
 
     return 1;
+}
+
+static int is_byte_imm(struct immediate imm)
+{
+    return imm.type == IMM_BYTE ||
+        (imm.type == IMM_WORD && in_byte_range(imm.d.word)) ||
+        (imm.type == IMM_DWORD && in_byte_range(imm.d.dword)) ||
+        (imm.type == IMM_QUAD && in_byte_range(imm.d.quad));
+}
+
+static int is_32bit_imm(struct immediate imm)
+{
+    return imm.type == IMM_BYTE ||
+        imm.type == IMM_WORD ||
+        imm.type == IMM_DWORD ||
+        (imm.type == IMM_QUAD && in_32bit_range(imm.d.quad));
 }
 
 static struct code nop(void)
@@ -130,6 +151,45 @@ static struct code push(enum instr_optype optype, union operand op)
     return c;
 }
 
+static struct code sub(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = nop();
+
+    switch (optype) {
+    case OPT_IMM_REG:
+        assert(is_64_bit(b.reg));
+        c.val[0] = REX | W(b.reg) | B(b.reg);
+        c.val[1] = 0x81 | is_byte_imm(a.imm) << 1;
+        c.val[2] = 0xE8 | reg(b.reg);
+        if (is_byte_imm(a.imm)) {
+            c.val[3] = a.imm.d.byte;
+            c.len = 4;
+        } else if (is_32bit_imm(a.imm)) {
+            assert(a.imm.type == IMM_DWORD || a.imm.type == IMM_QUAD);
+            memcpy(&c.val[3], &a.imm.d.dword, 4);
+            c.len = 7;
+        }
+        break;
+    case OPT_REG_REG:
+        c.len = 0;
+        if (is_64_bit(a.reg)) {
+            c.val[0] = REX | W(a.reg) | R(a.reg) | B(b.reg);
+            c.len = 1;
+        }
+        c.val[c.len++] = 0x28 | w(a.reg);
+        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        break;
+    default:
+        assert(0);
+        break;
+    }
+
+    return c;
+}
+
 static struct code leave(void)
 {
     struct code c = {{0xC9}, 1};
@@ -151,6 +211,8 @@ struct code encode(struct instruction instr)
         return mov(instr.optype, instr.source, instr.dest);
     case INSTR_PUSH:
         return push(instr.optype, instr.source);
+    case INSTR_SUB:
+        return sub(instr.optype, instr.source, instr.dest);
     case INSTR_LEAVE:
         return leave();
     case INSTR_RET:
