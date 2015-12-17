@@ -190,6 +190,34 @@ static struct code sub(
     return c;
 }
 
+static struct code add(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = nop();
+
+    switch (optype) {
+    case OPT_REG_REG:
+        c.len = 0;
+        if (is_64_bit(a.reg)) {
+            c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
+        }
+        c.val[c.len++] = 0x00 | w(a.reg);
+        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        break;
+    case OPT_IMM_REG:
+        break;
+    case OPT_IMM_MEM:
+        break;
+    default:
+        assert(0);
+        break;
+    }
+
+    return c;
+}
+
 static struct code leave(void)
 {
     struct code c = {{0xC9}, 1};
@@ -207,6 +235,8 @@ static struct code ret(void)
 struct code encode(struct instruction instr)
 {
     switch (instr.opcode) {
+    case INSTR_ADD:
+        return add(instr.optype, instr.source, instr.dest);
     case INSTR_MOV:
         return mov(instr.optype, instr.source, instr.dest);
     case INSTR_PUSH:
