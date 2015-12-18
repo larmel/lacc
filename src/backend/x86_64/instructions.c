@@ -165,6 +165,49 @@ static struct code mov(
     return c;
 }
 
+static struct code movsx(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = nop();
+    assert(optype == OPT_MEM_REG);
+
+    c.len = 0;
+    if (is_64_bit(b.reg))
+        c.val[c.len++] = REX | W(b.reg) | R(b.reg);
+    if (is_32_bit(a.mem) && is_64_bit(b.reg)) {
+        c.val[c.len++] = 0x63;
+    } else {
+        c.val[c.len++] = 0x0F;
+        c.val[c.len++] = 0xBE | w(a.mem);
+    }
+    c.len += encode_address(&c.val[c.len], b.reg.r, a.mem.addr);
+    return c;
+}
+
+static struct code movzx(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{0}};
+
+    if (is_64_bit(b.reg))
+        c.val[c.len++] = REX | W(b.reg) | R(b.reg);
+    c.val[c.len++] = 0x0F;
+    if (optype == OPT_REG_REG) {
+        c.val[c.len++] = 0xB6 | w(a.reg);
+        c.val[c.len++] = 0xC0 | reg(b.reg) << 3 | reg(a.reg);
+    } else {
+        assert(optype == OPT_MEM_REG);
+        c.val[c.len++] = 0xB6 | w(a.mem);
+        c.len += encode_address(&c.val[c.len], b.reg.r, a.mem.addr);
+    }
+
+    return c;
+}
+
 static struct code push(enum instr_optype optype, union operand op)
 {
     struct code c = nop();
@@ -261,6 +304,10 @@ struct code encode(struct instruction instr)
         return add(instr.optype, instr.source, instr.dest);
     case INSTR_MOV:
         return mov(instr.optype, instr.source, instr.dest);
+    case INSTR_MOVSX:
+        return movsx(instr.optype, instr.source, instr.dest);
+    case INSTR_MOVZX:
+        return movzx(instr.optype, instr.source, instr.dest);
     case INSTR_PUSH:
         return push(instr.optype, instr.source);
     case INSTR_SUB:
