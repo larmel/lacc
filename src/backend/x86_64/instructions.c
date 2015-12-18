@@ -7,7 +7,13 @@
  */
 #define reg(arg) ((arg).r - 1)
 #define is_64_bit(arg) ((arg).w >> 3)
+#define is_32_bit(arg) (((arg).w >> 2) & 1)
+#define is_16_bit(arg) (((arg).w >> 1) & 1)
 #define is_64_bit_reg(arg) ((arg).r > DI)
+
+/* Legacy Prefix
+ * Valid options are 0x66, 0x67, 0xF2 and 0xF3
+ */
 
 /* REX prefix contains bits [0, 1, 0, 0, W, R, X, B]
  * W: 1 if operands are 64 bit. 
@@ -105,11 +111,28 @@ static struct code mov(
     struct code c = nop();
     switch (optype) {
     case OPT_IMM_REG:
-        if (a.imm.type == IMM_DWORD) {
-            assert(b.reg.w == 4);
-            c.val[0] = 0xB8 + reg(b.reg);
-            memcpy(&c.val[1], &a.imm.d.dword, 4);
-            c.len = 5;
+        /* Alternative encoding (shorter). */
+        c.len = 0;
+        if (is_64_bit(b.reg))
+            c.val[c.len++] = REX | W(b.reg) | B(b.reg);
+        c.val[c.len++] = 0xB8 | w(b.reg) << 3 | reg(b.reg);
+        if (a.imm.type == IMM_BYTE) {
+            c.val[c.len++] = a.imm.d.byte;
+        } else if (a.imm.type == IMM_WORD) {
+            memcpy(&c.val[c.len], &a.imm.d.word, 2);
+            c.len += 2;
+        } else if (is_32bit_imm(a.imm)) {
+            if (is_64_bit(b.reg)) {
+                /* Special case, not using alternative encoding. */
+                c.val[1] = 0xC7;
+                c.val[2] = 0xC0 | reg(b.reg);
+                c.len = 3;
+            }
+            memcpy(&c.val[c.len], &a.imm.d.dword, 4);
+            c.len += 4;
+        } else if (a.imm.type == IMM_QUAD) {
+            memcpy(&c.val[c.len], &a.imm.d.quad, 8);
+            c.len += 8;
         }
         break;
     case OPT_REG_REG:
@@ -120,22 +143,21 @@ static struct code mov(
         c.val[2] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
         break;
     case OPT_REG_MEM:
-        if (is_64_bit(a.reg)) {
-            /*c.val[0] = REX | W(a.reg) | R(a.reg);*/
-            /* todo */
-        } else {
-            c.val[0] = 0x88 + w(a.reg);
-            c.len = 1 + encode_address(&c.val[1], a.reg.r, b.mem.addr);
-        }
+        c.len = 0;
+        if (is_16_bit(a.reg))
+            c.val[c.len++] = 0x66; /* Legacy prefix */
+        else if (is_64_bit(a.reg))
+            c.val[c.len++] = REX | W(a.reg) | R(a.reg);
+        c.val[c.len++] = 0x88 + w(a.reg);
+        c.len += encode_address(&c.val[c.len], a.reg.r, b.mem.addr);
         break;
     case OPT_MEM_REG:
+        c.len = 0;
         if (is_64_bit(a.reg)) {
-            /*c.val[0] = REX | W(a.reg) | R(a.reg);*/
-            /* todo */
-        } else {
-            c.val[0] = 0x8A + w(b.reg);
-            c.len = 1 + encode_address(&c.val[1], b.reg.r, a.mem.addr);
+            c.val[c.len++] = REX | W(a.reg) | R(a.reg);
         }
+        c.val[c.len++] = 0x8A + w(b.reg);
+        c.len += encode_address(&c.val[c.len], b.reg.r, a.mem.addr);
         break;
     default:
         break;
