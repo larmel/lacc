@@ -56,6 +56,16 @@
 #define in_byte_range(arg) ((arg) >= -128 && (arg) <= 127)
 #define in_32bit_range(arg) ((arg) >= -2147483648 && (arg) <= 2147483647)
 
+/* Conditional test field.
+ */
+enum tttn {
+    TEST_AE = 0x3,
+    TEST_Z = 0x4,
+    TEST_A = 0x7,
+    TEST_GE = 0xD,
+    TEST_G = 0xF
+};
+
 /* Encode address using ModR/M, SIB and Displacement bytes. Based on Table 2.2
  * and Table 2.3 in reference manual.
  *
@@ -297,6 +307,20 @@ static struct code ret(void)
     return c;
 }
 
+static struct code setcc(
+    enum instr_optype optype,
+    enum tttn cond,
+    union operand op)
+{
+    struct code c = {{0}};
+    assert(optype == OPT_REG && !is_64_bit(op.reg));
+
+    c.val[c.len++] = 0x0F;
+    c.val[c.len++] = 0x90 | cond;
+    c.val[c.len++] = 0xC0 | reg(op.reg);
+    return c;
+}
+
 struct code encode(struct instruction instr)
 {
     switch (instr.opcode) {
@@ -316,6 +340,16 @@ struct code encode(struct instruction instr)
         return leave();
     case INSTR_RET:
         return ret();
+    case INSTR_SETZ:
+        return setcc(instr.optype, TEST_Z, instr.source);
+    case INSTR_SETA:
+        return setcc(instr.optype, TEST_A, instr.source);
+    case INSTR_SETG:
+        return setcc(instr.optype, TEST_G, instr.source);
+    case INSTR_SETAE:
+        return setcc(instr.optype, TEST_AE, instr.source);
+    case INSTR_SETGE:
+        return setcc(instr.optype, TEST_GE, instr.source);
     default:
         return nop();
     }
