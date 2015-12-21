@@ -1,4 +1,5 @@
 #include "instructions.h"
+#include "elf.h"
 
 #include <assert.h>
 
@@ -9,7 +10,7 @@
 #define is_64_bit(arg) ((arg).w >> 3)
 #define is_32_bit(arg) (((arg).w >> 2) & 1)
 #define is_16_bit(arg) (((arg).w >> 1) & 1)
-#define is_64_bit_reg(arg) ((arg).r > DI)
+#define is_64_bit_reg(arg) ((arg) > DI)
 
 /* Legacy Prefix
  * Valid options are 0x66, 0x67, 0xF2 and 0xF3
@@ -23,9 +24,9 @@
  */
 #define REX 0x40
 #define W(arg) (is_64_bit(arg) << 3)
-#define R(arg) (is_64_bit_reg(arg) << 2)
+#define R(arg) (is_64_bit_reg((arg).r) << 2)
 #define X(arg) 0
-#define B(arg) is_64_bit_reg(arg)
+#define B(arg) is_64_bit_reg((arg).r)
 
 /* Operand size bit, 0 for 8 bit operand and 1 for 32 bit operand, when default
  * is 32 bit. [Table B-6]
@@ -71,24 +72,35 @@ enum tttn {
  *
  * Only using ModR/M for now.
  */
-static int encode_address(unsigned char *code, enum reg r, struct address addr)
+static void encode_address(struct code *c, enum reg r, struct address addr)
 {
-    /* Discard most significant bit, which is encoded in REX prefix. */
-    code[0]  = ((r - 1) & 0x7) << 3;
-    code[0] |= (addr.base - 1) & 0x7;
+    /* 2.2.1.6 RIP-relative addressing */
+    if (addr.sym) {
+        c->val[c->len]  = ((r - 1) & 0x7) << 3;
+        c->val[c->len] |= 0x5;
 
-    if (addr.disp) {
-        if (in_byte_range(addr.disp)) {
-            code[0] |= 0x40;
-            code[1] = addr.disp;
-            return 2;
+        elf_add_relocation(addr.sym, c->len + 1, addr.disp);
+        memset(&c->val[c->len + 1], 0, 4);
+        c->len += 5;
+    } else {
+        /* Discard most significant bit, which is encoded in REX prefix. */
+        c->val[c->len]  = ((r - 1) & 0x7) << 3;
+        c->val[c->len] |= (addr.base - 1) & 0x7;
+
+        if (addr.disp) {
+            if (in_byte_range(addr.disp)) {
+                c->val[c->len] |= 0x40;
+                c->val[c->len + 1] = addr.disp;
+                c->len += 1;
+            } else {
+                c->val[c->len] |= 0x80;
+                memcpy(&c->val[c->len + 1], &addr.disp, 4);
+                c->len += 4;
+            }
         }
-        code[0] |= 0x80;
-        memcpy(&code[1], &addr.disp, 4);
-        return 5;
-    }
 
-    return 1;
+        c->len++;
+    }
 }
 
 static int is_byte_imm(struct immediate imm)
@@ -131,18 +143,23 @@ static struct code mov(
         } else if (a.imm.type == IMM_WORD) {
             memcpy(&c.val[c.len], &a.imm.d.word, 2);
             c.len += 2;
-        } else if (is_32bit_imm(a.imm)) {
-            if (is_64_bit(b.reg)) {
-                /* Special case, not using alternative encoding. */
-                c.val[1] = 0xC7;
-                c.val[2] = 0xC0 | reg(b.reg);
-                c.len = 3;
+        } else if (a.imm.type == IMM_DWORD || a.imm.type == IMM_QUAD) {
+            if (is_32bit_imm(a.imm)) {
+                if (is_64_bit(b.reg)) {
+                    /* Special case, not using alternative encoding. */
+                    c.val[1] = 0xC7;
+                    c.val[2] = 0xC0 | reg(b.reg);
+                    c.len = 3;
+                }
+                memcpy(&c.val[c.len], &a.imm.d.dword, 4);
+                c.len += 4;
+            } else {
+                assert(a.imm.type == IMM_QUAD);
+                memcpy(&c.val[c.len], &a.imm.d.quad, 8);
+                c.len += 8;
             }
-            memcpy(&c.val[c.len], &a.imm.d.dword, 4);
-            c.len += 4;
-        } else if (a.imm.type == IMM_QUAD) {
-            memcpy(&c.val[c.len], &a.imm.d.quad, 8);
-            c.len += 8;
+        } else {
+            assert(0);
         }
         break;
     case OPT_REG_REG:
@@ -159,15 +176,14 @@ static struct code mov(
         else if (is_64_bit(a.reg))
             c.val[c.len++] = REX | W(a.reg) | R(a.reg);
         c.val[c.len++] = 0x88 + w(a.reg);
-        c.len += encode_address(&c.val[c.len], a.reg.r, b.mem.addr);
+        encode_address(&c, a.reg.r, b.mem.addr);
         break;
     case OPT_MEM_REG:
         c.len = 0;
-        if (is_64_bit(a.reg)) {
-            c.val[c.len++] = REX | W(a.reg) | R(a.reg);
-        }
+        if (is_64_bit(b.reg))
+            c.val[c.len++] = REX | W(b.reg) | R(b.reg);
         c.val[c.len++] = 0x8A + w(b.reg);
-        c.len += encode_address(&c.val[c.len], b.reg.r, a.mem.addr);
+        encode_address(&c, b.reg.r, a.mem.addr);
         break;
     default:
         break;
@@ -184,15 +200,16 @@ static struct code movsx(
     assert(optype == OPT_MEM_REG);
 
     c.len = 0;
-    if (is_64_bit(b.reg))
-        c.val[c.len++] = REX | W(b.reg) | R(b.reg);
+    if (is_64_bit(b.reg) || is_64_bit_reg(a.mem.addr.base))
+        c.val[c.len] = REX | W(b.reg) | R(b.reg);
+        c.val[c.len++] |= is_64_bit_reg(a.mem.addr.base); /* B(..) */
     if (is_32_bit(a.mem) && is_64_bit(b.reg)) {
         c.val[c.len++] = 0x63;
     } else {
         c.val[c.len++] = 0x0F;
         c.val[c.len++] = 0xBE | w(a.mem);
     }
-    c.len += encode_address(&c.val[c.len], b.reg.r, a.mem.addr);
+    encode_address(&c, b.reg.r, a.mem.addr);
     return c;
 }
 
@@ -212,7 +229,7 @@ static struct code movzx(
     } else {
         assert(optype == OPT_MEM_REG);
         c.val[c.len++] = 0xB6 | w(a.mem);
-        c.len += encode_address(&c.val[c.len], b.reg.r, a.mem.addr);
+        encode_address(&c, b.reg.r, a.mem.addr);
     }
 
     return c;

@@ -63,7 +63,6 @@ typedef struct {
 #define SHT_HASH 5
 #define SHT_DYNAMIC 6
 #define SHT_NOTE 7
-#define SHT_REL 9
 #define SHT_DYNSYM 11
 
 /* Section attributes, sh_flags.
@@ -90,6 +89,17 @@ typedef struct {
 #define STT_SECTION 3
 #define STT_FILE 4
 
+typedef struct {
+    Elf64_Addr      r_offset;       /* Address of reference */
+    Elf64_Xword     r_info;         /* Symbol index and type of relocation */
+    Elf64_Sxword    r_addend;       /* Constant part of expression */
+} Elf64_Rela;
+
+#define R_X86_64_NONE 0
+#define R_X86_64_PC32 2           /* word32   S + A - P */
+
+#define ELF64_R_INFO(s, t) (((s) << 32) + ((t) & 0xFFFFFFFFL))
+
 extern FILE *object_file_output;
 
 int elf_symbol(const struct symbol *sym);
@@ -99,5 +109,12 @@ int elf_text(struct instruction instr);
 int elf_data(struct immediate data);
 
 int elf_flush(void);
+
+/* Internal
+ */
+void elf_add_relocation(
+    const struct symbol *sym,
+    int section_offset,
+    int sym_offset);
 
 #endif

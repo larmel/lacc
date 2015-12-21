@@ -2,15 +2,16 @@
 
 #include <assert.h>
 
-#define NSHDR 7     /* Number of section headers */
+#define NSHDR 8     /* Number of section headers */
 
 #define SHDR_ZERO 0
 #define SHDR_SHSTRTAB 1
 #define SHDR_STRTAB 2
 #define SHDR_SYMTAB 3
-#define SHDR_DATA 4
-#define SHID_RODATA 5
-#define SHDR_TEXT 6
+#define SHID_RELA_TEXT 4
+#define SHDR_DATA 5
+#define SHID_RODATA 6
+#define SHDR_TEXT 7
 
 FILE *object_file_output;
 
@@ -82,6 +83,18 @@ static Elf64_Shdr shdr[] = {
         4,              /* sh_addralign */
         sizeof(Elf64_Sym)
     },
+    { /* .rela.text */
+        47,             /* sh_name, index into shstrtab */
+        SHT_RELA,       /* sh_type */
+        0x0,
+        0x0,            /* Virtual address */
+        0x0,            /* Offset in file (TODO!) */
+        0,              /* Size of section (TODO!) */
+        SHDR_SYMTAB,    /* sh_link, symbol table referenced by relocations */
+        SHDR_TEXT,      /* sh_info, section which relocations apply */
+        8,              /* sh_addralign */
+        sizeof(Elf64_Rela)
+    },
     { /* .data */
         1,              /* sh_name, index into shstrtab */
         SHT_PROGBITS,   /* Section type */
@@ -97,7 +110,7 @@ static Elf64_Shdr shdr[] = {
     { /* .rodata */
         39,             /* sh_name, index into shstrtab */
         SHT_PROGBITS,   /* sh_type */
-        SHF_EXECINSTR | SHF_ALLOC,
+        SHF_ALLOC,
         0x0,            /* Virtual address */
         0x0,            /* Offset in file (TODO!) */
         0,              /* Size of section (TODO!) */
@@ -209,9 +222,72 @@ static int fwrite_symtab(FILE *stream)
     return 1;
 }
 
+static Elf64_Rela *rela_text;
+static int rela_text_len;
+
+/* Pending relocations, waiting for sym->stack_offset to be resolved to index
+ * into .symtab once written to data section.
+ */
+static struct pending_relocation {
+    const struct symbol *sym;
+    int offset;                 /* offset into .text */
+    int addend;                 /* offset into symbol ? */
+} *prl;
+
+/* Add pending relocation to symbol on offset from current .text size. Offset
+ * is into instruction being assembled.
+ * The relocation entry cannot always be immediately constructed, as the symbol
+ * might not have been written to any section yet.
+ */
+void elf_add_relocation(
+    const struct symbol *sym,
+    int section_offset,
+    int sym_offset)
+{
+    struct pending_relocation *entry;
+
+    rela_text_len += 1;
+    prl = realloc(prl, rela_text_len * sizeof(*prl));
+    entry = &prl[rela_text_len - 1];
+
+    entry->sym = sym;
+    entry->offset = section_offset + shdr[SHDR_TEXT].sh_size;
+    entry->addend = sym_offset - size_of(&sym->type);
+}
+
+/* Construct relocation entries from pending relocations. Invoked with flush(),
+ * after all data and code is processed.
+ */
+static void flush_relocations(void)
+{
+    int i;
+    Elf64_Rela *entry;
+    assert(!rela_text);
+
+    rela_text = calloc(rela_text_len, sizeof(*rela_text));
+    for (i = 0; i < rela_text_len; ++i) {
+        entry = &rela_text[i];
+
+        /* Stack offset in this context is used for .symtab entry index. */
+        assert(prl[i].sym->stack_offset);
+
+        entry->r_offset = prl[i].offset;
+        entry->r_info =
+            ELF64_R_INFO((long) prl[i].sym->stack_offset, R_X86_64_PC32);
+        entry->r_addend = prl[i].addend;
+    }
+
+    shdr[SHID_RELA_TEXT].sh_size = rela_text_len * sizeof(Elf64_Rela);
+}
+
 int elf_symbol(const struct symbol *sym)
 {
     Elf64_Sym *entry;
+
+    /* Ignore these for now... */
+    if (sym->symtype == SYM_LABEL || sym->symtype == SYM_STRING_VALUE) {
+        return 0;
+    }
 
     symtab_len += 1;
     symtab = realloc(symtab, symtab_len * sizeof(*symtab));
@@ -233,11 +309,19 @@ int elf_symbol(const struct symbol *sym)
         }
     } else if (sym->symtype == SYM_DEFINITION) {
         entry->st_shndx = SHDR_DATA;
-        entry->st_info = (STB_LOCAL << 4) | STT_OBJECT;
+        /* Linker goes into shock if we mix up local/global... */
+        /*if (sym->linkage == LINK_EXTERN)*/
+            entry->st_info = (STB_GLOBAL << 4) | STT_OBJECT;
+        /*else
+            entry->st_info = (STB_LOCAL << 4) | STT_OBJECT;*/
         entry->st_size = size_of(&sym->type);
         entry->st_value = shdr[SHDR_DATA].sh_size;
-    } else {
-        assert(0);
+
+        /* (Mis-)use member for storing index into ELF symbol table. Stack
+         * offset is otherwise only used for local variables, which will not
+         * live in this symbol table. */
+        assert(!sym->stack_offset);
+        ((struct symbol *) sym)->stack_offset = symtab_len + 2;
     }
 
     return 0;
@@ -301,6 +385,7 @@ int elf_data(struct immediate imm)
 
 int elf_flush(void)
 {
+    flush_relocations();
     fwrite(&header, sizeof(header), 1, object_file_output);
 
     /* Fill in missing offset and size values */
@@ -308,8 +393,10 @@ int elf_flush(void)
     shdr[SHDR_SYMTAB].sh_offset =
         shdr[SHDR_STRTAB].sh_offset + shdr[SHDR_STRTAB].sh_size;
     shdr[SHDR_SYMTAB].sh_size = symtab_size();
-    shdr[SHDR_DATA].sh_offset =
+    shdr[SHID_RELA_TEXT].sh_offset =
         shdr[SHDR_SYMTAB].sh_offset + shdr[SHDR_SYMTAB].sh_size;
+    shdr[SHDR_DATA].sh_offset =
+        shdr[SHID_RELA_TEXT].sh_offset + shdr[SHID_RELA_TEXT].sh_size;
     shdr[SHDR_TEXT].sh_offset =
         shdr[SHDR_DATA].sh_offset + shdr[SHDR_DATA].sh_size;
 
@@ -320,6 +407,7 @@ int elf_flush(void)
     fwrite(shstrtab, shdr[SHDR_SHSTRTAB].sh_size, 1, object_file_output);
     fwrite_strtab(strtab, strtab_len, object_file_output);
     fwrite_symtab(object_file_output);
+    fwrite(rela_text, shdr[SHID_RELA_TEXT].sh_size, 1, object_file_output);
     fwrite(data, shdr[SHDR_DATA].sh_size, 1, object_file_output);
     fwrite(text, shdr[SHDR_TEXT].sh_size, 1, object_file_output);
 
