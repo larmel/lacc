@@ -1,9 +1,9 @@
 #include "input.h"
 #include "macro.h"
 #include "preprocess.h"
+#include "strtab.h"
 #include "tokenize.h"
 #include <lacc/cli.h>
-#include <lacc/string.h>
 
 #include <assert.h>
 #include <ctype.h>

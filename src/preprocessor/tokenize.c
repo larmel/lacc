@@ -2,9 +2,9 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 700 /* strndup, isblank */
 #endif
+#include "strtab.h"
 #include "tokenize.h"
 #include <lacc/cli.h>
-#include <lacc/string.h>
 
 #include <assert.h>
 #include <stdio.h>

@@ -2,9 +2,8 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 700 /* strndup */
 #endif
-#include "symtab.h"
+#include "strtab.h"
 #include <lacc/hash.h>
-#include <lacc/string.h>
 
 #include <assert.h>
 #include <ctype.h>

@@ -3,8 +3,8 @@
 #  define _XOPEN_SOURCE 700 /* strndup */
 #endif
 #include "input.h"
+#include "strtab.h"
 #include <lacc/cli.h>
-#include <lacc/string.h>
 
 #include <assert.h>
 #include <ctype.h>

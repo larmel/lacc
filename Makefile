@@ -23,12 +23,12 @@ BOOTSTRAP_SOURCES := \
 	src/parser/cfg.c \
 	src/parser/eval.c \
 	src/parser/parse.c \
-	src/parser/string.c \
 	src/parser/symtab.c \
 	src/parser/type.c \
 	src/preprocessor/input.c \
 	src/preprocessor/macro.c \
 	src/preprocessor/preprocess.c \
+	src/preprocessor/strtab.c \
 	src/preprocessor/tokenize.c \
 	src/util/hash.c \
 	src/cli.c \
