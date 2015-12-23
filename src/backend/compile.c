@@ -24,6 +24,17 @@ static int fp_offset;
 static int overflow_arg_area_offset;
 static int reg_save_area_offset;
 
+/* Dummy declaration of memcpy, which is used for copy operations of objects
+ * that do not fit in registers. The type does not matter, but it has to be
+ * a prototype declaration with external linkage.
+ */
+static const struct symbol decl_memcpy = {
+    "memcpy",
+    {T_VOID},
+    SYM_DECLARATION,
+    LINK_EXTERN
+};
+
 static void compile_block(struct block *block, const enum param_class *res);
 
 static void emit(enum opcode opcode, enum instr_optype optype, ...)
@@ -160,11 +171,11 @@ static struct address address(int disp, enum reg base, enum reg off, int mult)
     return addr;
 }
 
-static struct immediate label(const char *str)
+static struct immediate label(const struct symbol *sym)
 {
     struct immediate imm = {0};
     imm.type = IMM_LABEL;
-    imm.d.label = str;
+    imm.d.label = sym_name(sym);
     return imm;
 }
 
@@ -384,7 +395,7 @@ static void call(int n, const struct var *args, struct var res, struct var func)
         emit(INSTR_CALL, OPT_REG, reg(R11, 8));
     } else {
         if (func.kind == DIRECT)
-            emit(INSTR_CALL, OPT_IMM, label(func.symbol->name));
+            emit(INSTR_CALL, OPT_IMM, label(func.symbol));
         else {
             assert(func.kind == DEREF);
             load_address(func, R11);
@@ -524,7 +535,7 @@ static enum param_class *enter(
         /* It is desireable to skip touching floating point unit if possible,
          * %al holds the number of floating point registers passed. */
         emit(INSTR_TEST, OPT_REG_REG, reg(AX, 1), reg(AX, 1));
-        emit(INSTR_JZ, OPT_IMM, label(sym_name(lbl)));
+        emit(INSTR_JZ, OPT_IMM, label(lbl));
         reg_save_area_offset = -8; /* Skip address of return value. */
         for (i = 0; i < 8; ++i) {
             reg_save_area_offset -= 16;
@@ -533,7 +544,7 @@ static enum param_class *enter(
                 location(address(reg_save_area_offset, BP, 0, 0), 16));
         }
 
-        emit(INSTR_LABEL, OPT_IMM, label(sym_name(lbl)));
+        emit(INSTR_LABEL, OPT_IMM, label(lbl));
         for (i = 0; i < 6; ++i) {
             reg_save_area_offset -= 8;
             emit(INSTR_MOV, OPT_REG_MEM,
@@ -623,7 +634,7 @@ static void ret(struct var val, const enum param_class *pc)
         load_address(val, SI);
         emit(INSTR_MOV, OPT_IMM_REG,
             constant(size_of(val.type), 8), reg(DX, 4));
-        emit(INSTR_CALL, OPT_IMM, label("memcpy"));
+        emit(INSTR_CALL, OPT_IMM, label(&decl_memcpy));
 
         /* The ABI specifies that the address should be in %rax on return. */
         emit(INSTR_MOV, OPT_MEM_REG,
@@ -712,14 +723,14 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             load(var_gp_offset, CX);
             emit(INSTR_CMP, OPT_IMM_REG,
                 constant(6*8 - 8*num_gp, 4), reg(CX, 4));
-            emit(INSTR_JA, OPT_IMM, label(sym_name(memory)));
+            emit(INSTR_JA, OPT_IMM, label(memory));
         }
         if (num_fp) {
             assert(0); /* No actual float support yet. */
             load(var_fp_offset, DX);
             emit(INSTR_CMP, OPT_IMM_REG,
                 constant(6*8 - 8*num_fp, 4), reg(DX, 4));
-            emit(INSTR_JA, OPT_IMM, label(sym_name(memory)));
+            emit(INSTR_JA, OPT_IMM, label(memory));
         }
 
         /* Load argument, one eightbyte at a time. This code has a lot in common
@@ -756,8 +767,8 @@ static void compile__builtin_va_arg(struct var res, struct var args)
                 constant(16 * num_fp, 4), location_of(var_fp_offset, 4));
         }
 
-        emit(INSTR_JMP, OPT_IMM, label(sym_name(done)));
-        emit(INSTR_LABEL, OPT_IMM, label(sym_name(memory)));
+        emit(INSTR_JMP, OPT_IMM, label(done));
+        emit(INSTR_LABEL, OPT_IMM, label(memory));
     }
 
     /* Parameters that are passed on stack will be read from overflow_arg_area.
@@ -772,7 +783,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     } else {
         load_address(res, DI);
         emit(INSTR_MOV, OPT_IMM_REG, constant(w, 8), reg(DX, 8));
-        emit(INSTR_CALL, OPT_IMM, label("memcpy"));
+        emit(INSTR_CALL, OPT_IMM, label(&decl_memcpy));
     }
 
     /* Move overflow_arg_area pointer to position of next memory argument, 
@@ -782,7 +793,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         location_of(var_overflow_arg_area, 8));
 
     if (*pc != PC_MEMORY)
-        emit(INSTR_LABEL, OPT_IMM, label(sym_name(done)));
+        emit(INSTR_LABEL, OPT_IMM, label(done));
 }
 
 static void compile_op(const struct op *op)
@@ -810,7 +821,7 @@ static void compile_op(const struct op *op)
             load_address(op->a, DI);
             emit(INSTR_MOV, OPT_IMM_REG, string(str), reg(SI, 8));
             emit(INSTR_MOV, OPT_IMM_REG, constant(size, 8), reg(DX, 8));
-            emit(INSTR_CALL, OPT_IMM, label("memcpy"));
+            emit(INSTR_CALL, OPT_IMM, label(&decl_memcpy));
             break;
         }
         /* Struct or union assignment, values that cannot be loaded into a
@@ -823,7 +834,7 @@ static void compile_op(const struct op *op)
             load_address(op->b, SI);
 
             emit(INSTR_MOV, OPT_IMM_REG, constant(size, 8), reg(DX, 8));
-            emit(INSTR_CALL, OPT_IMM, label("memcpy"));
+            emit(INSTR_CALL, OPT_IMM, label(&decl_memcpy));
             break;
         }
         /* Fallthrough, assignment has implicit cast for convenience and to make
@@ -1018,11 +1029,11 @@ static void tail_cmp_jump(struct block *block, const enum param_class *res)
     }
 
     instr.optype = OPT_IMM;
-    instr.source.imm = label(sym_name(block->jump[1]->label));
+    instr.source.imm = label(block->jump[1]->label);
     emit_instruction(instr);
 
     if (block->jump[0]->color == BLACK)
-        emit(INSTR_JMP, OPT_IMM, label(sym_name(block->jump[0]->label)));
+        emit(INSTR_JMP, OPT_IMM, label(block->jump[0]->label));
     else
         compile_block(block->jump[0], res);
 
@@ -1041,15 +1052,15 @@ static void tail_generic(struct block *block, const enum param_class *res)
         emit(INSTR_RET, OPT_NONE);
     } else if (!block->jump[1]) {
         if (block->jump[0]->color == BLACK)
-            emit(INSTR_JMP, OPT_IMM, label(sym_name(block->jump[0]->label)));
+            emit(INSTR_JMP, OPT_IMM, label(block->jump[0]->label));
         else
             compile_block(block->jump[0], res);
     } else {
         load(block->expr, AX);
         emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
-        emit(INSTR_JE, OPT_IMM, label(sym_name(block->jump[0]->label)));
+        emit(INSTR_JE, OPT_IMM, label(block->jump[0]->label));
         if (block->jump[1]->color == BLACK)
-            emit(INSTR_JMP, OPT_IMM, label(sym_name(block->jump[1]->label)));
+            emit(INSTR_JMP, OPT_IMM, label(block->jump[1]->label));
         else
             compile_block(block->jump[1], res);
         compile_block(block->jump[0], res);
@@ -1064,7 +1075,7 @@ static void compile_block(struct block *block, const enum param_class *res)
         return;
 
     block->color = BLACK;
-    emit(INSTR_LABEL, OPT_IMM, label(sym_name(block->label)));
+    emit(INSTR_LABEL, OPT_IMM, label(block->label));
     for (i = 0; i < block->n - 1; ++i)
         compile_op(block->code + i);
 
