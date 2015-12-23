@@ -106,9 +106,9 @@ static struct immediate value_of(struct var var, int w)
 
     if (is_string(var)) {
         assert(is_pointer(var.type));
-        imm.type = IMM_STR;
-        imm.d.string.str = sym_name(var.symbol); /* Lifetime !? */
-        imm.d.string.offset = var.offset;
+        imm.type = IMM_ADDR;
+        imm.d.addr.sym = var.symbol;
+        imm.d.addr.disp = var.offset;
     } else {
         assert(!var.offset);
         assert(is_scalar(var.type));
@@ -171,25 +171,16 @@ static struct address address(int disp, enum reg base, enum reg off, int mult)
     return addr;
 }
 
-static struct immediate label(const struct symbol *sym)
+static struct immediate addr(const struct symbol *sym)
 {
-    struct immediate imm = {0};
-    imm.type = IMM_LABEL;
-    imm.d.label = sym_name(sym);
+    struct immediate imm = {IMM_ADDR};
+    imm.d.addr.sym = sym;
     return imm;
 }
 
 static struct immediate constant(int n, int w)
 {
     return value_of(var_int(n), w);
-}
-
-static struct immediate string(const char *str)
-{
-    struct immediate imm = {0};
-    imm.type = IMM_STR;
-    imm.d.string.str = str;
-    return imm;
 }
 
 /* Load variable v to register r, sign extended to fit register size. Width must
@@ -395,7 +386,7 @@ static void call(int n, const struct var *args, struct var res, struct var func)
         emit(INSTR_CALL, OPT_REG, reg(R11, 8));
     } else {
         if (func.kind == DIRECT)
-            emit(INSTR_CALL, OPT_IMM, label(func.symbol));
+            emit(INSTR_CALL, OPT_IMM, addr(func.symbol));
         else {
             assert(func.kind == DEREF);
             load_address(func, R11);
@@ -535,7 +526,7 @@ static enum param_class *enter(
         /* It is desireable to skip touching floating point unit if possible,
          * %al holds the number of floating point registers passed. */
         emit(INSTR_TEST, OPT_REG_REG, reg(AX, 1), reg(AX, 1));
-        emit(INSTR_JZ, OPT_IMM, label(lbl));
+        emit(INSTR_JZ, OPT_IMM, addr(lbl));
         reg_save_area_offset = -8; /* Skip address of return value. */
         for (i = 0; i < 8; ++i) {
             reg_save_area_offset -= 16;
@@ -544,7 +535,7 @@ static enum param_class *enter(
                 location(address(reg_save_area_offset, BP, 0, 0), 16));
         }
 
-        emit(INSTR_LABEL, OPT_IMM, label(lbl));
+        enter_context(lbl);
         for (i = 0; i < 6; ++i) {
             reg_save_area_offset -= 8;
             emit(INSTR_MOV, OPT_REG_MEM,
@@ -634,7 +625,7 @@ static void ret(struct var val, const enum param_class *pc)
         load_address(val, SI);
         emit(INSTR_MOV, OPT_IMM_REG,
             constant(size_of(val.type), 8), reg(DX, 4));
-        emit(INSTR_CALL, OPT_IMM, label(&decl_memcpy));
+        emit(INSTR_CALL, OPT_IMM, addr(&decl_memcpy));
 
         /* The ABI specifies that the address should be in %rax on return. */
         emit(INSTR_MOV, OPT_MEM_REG,
@@ -723,14 +714,14 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             load(var_gp_offset, CX);
             emit(INSTR_CMP, OPT_IMM_REG,
                 constant(6*8 - 8*num_gp, 4), reg(CX, 4));
-            emit(INSTR_JA, OPT_IMM, label(memory));
+            emit(INSTR_JA, OPT_IMM, addr(memory));
         }
         if (num_fp) {
             assert(0); /* No actual float support yet. */
             load(var_fp_offset, DX);
             emit(INSTR_CMP, OPT_IMM_REG,
                 constant(6*8 - 8*num_fp, 4), reg(DX, 4));
-            emit(INSTR_JA, OPT_IMM, label(memory));
+            emit(INSTR_JA, OPT_IMM, addr(memory));
         }
 
         /* Load argument, one eightbyte at a time. This code has a lot in common
@@ -767,8 +758,8 @@ static void compile__builtin_va_arg(struct var res, struct var args)
                 constant(16 * num_fp, 4), location_of(var_fp_offset, 4));
         }
 
-        emit(INSTR_JMP, OPT_IMM, label(done));
-        emit(INSTR_LABEL, OPT_IMM, label(memory));
+        emit(INSTR_JMP, OPT_IMM, addr(done));
+        enter_context(memory);
     }
 
     /* Parameters that are passed on stack will be read from overflow_arg_area.
@@ -783,7 +774,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     } else {
         load_address(res, DI);
         emit(INSTR_MOV, OPT_IMM_REG, constant(w, 8), reg(DX, 8));
-        emit(INSTR_CALL, OPT_IMM, label(&decl_memcpy));
+        emit(INSTR_CALL, OPT_IMM, addr(&decl_memcpy));
     }
 
     /* Move overflow_arg_area pointer to position of next memory argument, 
@@ -793,7 +784,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         location_of(var_overflow_arg_area, 8));
 
     if (*pc != PC_MEMORY)
-        emit(INSTR_LABEL, OPT_IMM, label(done));
+        enter_context(done);
 }
 
 static void compile_op(const struct op *op)
@@ -810,18 +801,15 @@ static void compile_op(const struct op *op)
          * compilers load the string into register as ascii numbers. */
         if (is_array(op->a.type) || is_array(op->b.type)) {
             int size = size_of(op->a.type);
-            const char *str;
 
             assert(op->a.kind == DIRECT);
             assert(is_string(op->b));
             assert(type_equal(op->a.type, op->b.type));
 
-            /* Lifetime ok? Assumes no buffering in emit... */
-            str = sym_name(op->b.symbol);
             load_address(op->a, DI);
-            emit(INSTR_MOV, OPT_IMM_REG, string(str), reg(SI, 8));
+            emit(INSTR_MOV, OPT_IMM_REG, addr(op->b.symbol), reg(SI, 8));
             emit(INSTR_MOV, OPT_IMM_REG, constant(size, 8), reg(DX, 8));
-            emit(INSTR_CALL, OPT_IMM, label(&decl_memcpy));
+            emit(INSTR_CALL, OPT_IMM, addr(&decl_memcpy));
             break;
         }
         /* Struct or union assignment, values that cannot be loaded into a
@@ -834,7 +822,7 @@ static void compile_op(const struct op *op)
             load_address(op->b, SI);
 
             emit(INSTR_MOV, OPT_IMM_REG, constant(size, 8), reg(DX, 8));
-            emit(INSTR_CALL, OPT_IMM, label(&decl_memcpy));
+            emit(INSTR_CALL, OPT_IMM, addr(&decl_memcpy));
             break;
         }
         /* Fallthrough, assignment has implicit cast for convenience and to make
@@ -1029,11 +1017,11 @@ static void tail_cmp_jump(struct block *block, const enum param_class *res)
     }
 
     instr.optype = OPT_IMM;
-    instr.source.imm = label(block->jump[1]->label);
+    instr.source.imm = addr(block->jump[1]->label);
     emit_instruction(instr);
 
     if (block->jump[0]->color == BLACK)
-        emit(INSTR_JMP, OPT_IMM, label(block->jump[0]->label));
+        emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
     else
         compile_block(block->jump[0], res);
 
@@ -1052,15 +1040,15 @@ static void tail_generic(struct block *block, const enum param_class *res)
         emit(INSTR_RET, OPT_NONE);
     } else if (!block->jump[1]) {
         if (block->jump[0]->color == BLACK)
-            emit(INSTR_JMP, OPT_IMM, label(block->jump[0]->label));
+            emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
         else
             compile_block(block->jump[0], res);
     } else {
         load(block->expr, AX);
         emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
-        emit(INSTR_JE, OPT_IMM, label(block->jump[0]->label));
+        emit(INSTR_JE, OPT_IMM, addr(block->jump[0]->label));
         if (block->jump[1]->color == BLACK)
-            emit(INSTR_JMP, OPT_IMM, label(block->jump[1]->label));
+            emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
         else
             compile_block(block->jump[1], res);
         compile_block(block->jump[0], res);
@@ -1075,7 +1063,7 @@ static void compile_block(struct block *block, const enum param_class *res)
         return;
 
     block->color = BLACK;
-    emit(INSTR_LABEL, OPT_IMM, label(block->label));
+    enter_context(block->label);
     for (i = 0; i < block->n - 1; ++i)
         compile_op(block->code + i);
 
@@ -1132,9 +1120,9 @@ static void compile_data_assign(struct var target, struct var val)
         break;
     case T_POINTER:
         if (is_string(val)) {
-            imm.type = IMM_STR;
-            imm.d.string.str = sym_name(val.symbol);
-            imm.d.string.offset = val.offset;
+            imm.type = IMM_ADDR;
+            imm.d.addr.sym = val.symbol;
+            imm.d.addr.disp = val.offset;
         } else {
             imm.type = IMM_QUAD;
             imm.d.quad = val.imm.u;
@@ -1142,8 +1130,8 @@ static void compile_data_assign(struct var target, struct var val)
         break;
     case T_ARRAY:
         if (is_string(val)) {
-            imm.type = IMM_STRV;
-            imm.d.string.str = val.symbol->string_value;
+            imm.type = IMM_STRING;
+            imm.d.string = val.symbol->string_value;
             break;
         }
     default:

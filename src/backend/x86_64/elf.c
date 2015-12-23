@@ -280,17 +280,13 @@ int elf_data(struct immediate imm)
         w = sizeof(imm.d.quad);
         ptr = &imm.d.quad;
         break;
-    case IMM_STR:
+    case IMM_ADDR:
         /* String label (todo, create relocation entry to this position) */
         assert(0);
         break;
-    case IMM_STRV:
-        assert(!imm.d.string.offset);
-        w = strlen(imm.d.string.str) + 1;
-        ptr = imm.d.string.str;
-        break;
-    case IMM_LABEL:
-        assert(0);
+    case IMM_STRING:
+        w = strlen(imm.d.string) + 1;
+        ptr = imm.d.string;
         break;
     }
 

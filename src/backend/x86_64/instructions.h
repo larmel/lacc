@@ -61,8 +61,6 @@ struct memory {
 /* Immediates can be numeric (fit in registers), or references to static string
  * values. Expressions like "hello" + 1 can result in for ex $.LC1+1 in gnu
  * assembly.
- *
- * Treat labels as a special type of immediate (for now).
  */
 struct immediate {
     enum {
@@ -70,20 +68,16 @@ struct immediate {
         IMM_WORD,
         IMM_DWORD,
         IMM_QUAD,
-        IMM_STR,    /* string address */
-        IMM_STRV,   /* string value */
-        IMM_LABEL
+        IMM_ADDR,   /* Symbol-relative address, label etc */
+        IMM_STRING  /* string value, only used for initialization */
     } type;
     union {
-        struct {
-            const char *str;
-            int offset;
-        } string;
-        const char *label;
         char byte;
         short word;
         int dword;
         long quad;
+        struct address addr;
+        const char *string;
     } d;
 };
 
@@ -123,8 +117,7 @@ enum opcode {
     INSTR_CALL,
     INSTR_LEAVE,
     INSTR_RET,
-    INSTR_REP_MOVS, /* Repeat move string to string */
-    INSTR_LABEL
+    INSTR_REP_MOVS  /* Repeat move string to string */
 };
 
 /* Instructions with register, memory or immediate operands.

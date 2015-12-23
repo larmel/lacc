@@ -135,21 +135,21 @@ static const char *immediate(struct immediate imm, int *size)
     case IMM_QUAD:
         w += snprintf(buf + w, s - w, "$%ld", imm.d.quad);
         break;
-    case IMM_STR:
-        if (imm.d.string.offset != 0)
-            w += snprintf(buf + w, s - w, "$%s%s%d",
-                imm.d.string.str,
-                (imm.d.string.offset > 0) ? "+" : "",
-                imm.d.string.offset);
-        else
-            w += snprintf(buf + w, s - w, "$%s", imm.d.string.str);
+    case IMM_ADDR:
+        assert(imm.d.addr.sym);
+        if (imm.d.addr.sym->symtype == SYM_STRING_VALUE) {
+            if (imm.d.addr.disp != 0)
+                w += snprintf(buf + w, s - w, "$%s%s%d",
+                    sym_name(imm.d.addr.sym),
+                    (imm.d.addr.disp > 0) ? "+" : "",
+                    imm.d.addr.disp);
+            else
+                w += snprintf(buf + w, s - w, "$%s", sym_name(imm.d.addr.sym));
+        } else {
+            w += snprintf(buf + w, s - w, "%s", sym_name(imm.d.addr.sym));
+        }
         break;
-    case IMM_LABEL:
-        /* This only works for call and label, not for mov or other instructions
-         * which requires dollar prefix. */
-        w += snprintf(buf + w, s - w, "%s", imm.d.label);
-        break;
-    case IMM_STRV:
+    case IMM_STRING:
         assert(0);
         break;
     }
@@ -184,10 +184,13 @@ static void output_escaped_string(const char *str)
 
 int asm_symbol(const struct symbol *sym)
 {
-    asm_flush();
-    assert(!current_symbol);
+    /* Labels stay in the same function context, otherwise flush to write any
+     * end of function metadata. */
+    if (sym->symtype != SYM_LABEL) {
+        asm_flush();
+        current_symbol = sym;
+    }
 
-    current_symbol = sym;
     if (sym->symtype == SYM_TENTATIVE) {
         if (is_object(&sym->type)) {
             if (sym->linkage == LINK_INTERN)
@@ -211,6 +214,8 @@ int asm_symbol(const struct symbol *sym)
         out("\t.string\t\"");
         output_escaped_string(sym->string_value);
         out("\"\n");
+    } else if (sym->symtype == SYM_LABEL) {
+        out("%s:\n", sym_name(sym));
     } else {
         I0(".data");
         if (sym->linkage == LINK_EXTERN)
@@ -320,9 +325,6 @@ int asm_text(struct instruction instr)
     case INSTR_LEAVE:    I0("leave"); break;
     case INSTR_RET:      I0("ret"); break;
     case INSTR_REP_MOVS: I0("rep movsq"); break;
-    case INSTR_LABEL:
-        out("%s:\n", source);
-        break;
     }
 
     return 0;
@@ -343,21 +345,19 @@ int asm_data(struct immediate data)
     case IMM_QUAD:
         out("\t.quad\t%ld\n", data.d.quad);
         break;
-    case IMM_STR:
-        if (data.d.string.offset) {
-            out("\t.quad\t%s%c%d\n", data.d.string.str,
-                data.d.string.offset < 0 ? '-' : '+',
-                data.d.string.offset);
+    case IMM_ADDR:
+        assert(data.d.addr.sym);
+        if (data.d.addr.disp) {
+            out("\t.quad\t%s%c%d\n", sym_name(data.d.addr.sym),
+                data.d.addr.disp < 0 ? '-' : '+',
+                data.d.addr.disp);
         } else
-            out("\t.quad\t%s\n", data.d.string.str);
+            out("\t.quad\t%s\n", sym_name(data.d.addr.sym));
         break;
-    case IMM_STRV:
+    case IMM_STRING:
         out("\t.string\t\"");
-        output_escaped_string(data.d.string.str);
+        output_escaped_string(data.d.string);
         out("\"\n");
-        break;
-    case IMM_LABEL:
-        assert(0);
         break;
     }
     return 0;
