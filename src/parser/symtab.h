@@ -66,10 +66,10 @@ struct symbol *sym_add(
     enum symtype symtype,
     enum linkage linkage);
 
-/* Create a symbol with the provided type and add it to current scope. Used to
- * hold temporary values in expression evaluation.
+/* Create a symbol with the provided type and add it to current scope in
+ * identifier namespace. Used to hold temporary values in expression evaluation.
  */
-struct symbol *sym_temp(struct namespace *ns, const struct typetree *type);
+struct symbol *sym_create_tmp(const struct typetree *type);
 
 /* Register compiler internal builtin symbols, that are assumed to exists by
  * standard library headers.

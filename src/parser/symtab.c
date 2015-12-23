@@ -307,12 +307,13 @@ struct symbol *sym_add(
     return sym;
 }
 
-struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
+struct symbol *sym_create_tmp(const struct typetree *type)
 {
     /* Count number of temporary variables, giving each new one a unique name
      * by setting the counter instead of creating a string. */
     static int n;
 
+    int i;
     struct symbol sym = {0};
 
     sym.symtype = SYM_DEFINITION;
@@ -320,7 +321,11 @@ struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
     sym.name = ".t";
     sym.n = ++n;
     sym.type = *type;
-    return register_in_scope(ns, create_symbol(ns, sym));
+
+    /* Add temporary to normal identifier namespace, but do not make it
+     * searchable through any scope. */
+    i = create_symbol(&ns_ident, sym);
+    return ns_ident.symbol[i];
 }
 
 struct symbol *sym_create_label(void)

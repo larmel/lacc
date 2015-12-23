@@ -157,7 +157,7 @@ struct var var_void(void)
 
 struct var create_var(const struct typetree *type)
 {
-    struct symbol *temp = sym_temp(&ns_ident, type);
+    struct symbol *temp = sym_create_tmp(type);
     struct var res = var_direct(temp);
 
     cfg_register_local(temp);
