@@ -87,6 +87,7 @@ int main(int argc, char *argv[])
     } else {
         push_scope(&ns_ident);
         push_scope(&ns_tag);
+        push_scope(&ns_label);
         register_builtin_types(&ns_ident);
 
         while (parse() && !errors)
@@ -102,9 +103,11 @@ int main(int argc, char *argv[])
         if (verbose_level) {
             output_symbols(stdout, &ns_ident);
             output_symbols(stdout, &ns_tag);
+            output_symbols(stdout, &ns_label);
         }
 
         flush();
+        pop_scope(&ns_label);
         pop_scope(&ns_tag);
         pop_scope(&ns_ident);
     }

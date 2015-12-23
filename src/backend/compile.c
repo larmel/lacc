@@ -9,10 +9,6 @@
 #include <assert.h>
 #include <stdarg.h>
 
-/* Hack to get unique jump labels.
- */
-extern const char *mklabel(void);
-
 static enum compile_target compile_target;
 static FILE *output_stream;
 
@@ -523,12 +519,12 @@ static enum param_class *enter(
      * parameters that are known to be passed as registers, that will anyway be
      * stored to another stack location. Maybe potential for optimization. */
     if (is_vararg(type)) {
-        const char *lbl = mklabel();
+        const struct symbol *lbl = sym_create_label();
 
         /* It is desireable to skip touching floating point unit if possible,
          * %al holds the number of floating point registers passed. */
         emit(INSTR_TEST, OPT_REG_REG, reg(AX, 1), reg(AX, 1));
-        emit(INSTR_JZ, OPT_IMM, label(lbl));
+        emit(INSTR_JZ, OPT_IMM, label(sym_name(lbl)));
         reg_save_area_offset = -8; /* Skip address of return value. */
         for (i = 0; i < 8; ++i) {
             reg_save_area_offset -= 16;
@@ -537,7 +533,7 @@ static enum param_class *enter(
                 location(address(reg_save_area_offset, BP, 0, 0), 16));
         }
 
-        emit(INSTR_LABEL, OPT_IMM, label(lbl));
+        emit(INSTR_LABEL, OPT_IMM, label(sym_name(lbl)));
         for (i = 0; i < 6; ++i) {
             reg_save_area_offset -= 8;
             emit(INSTR_MOV, OPT_REG_MEM,
@@ -670,10 +666,10 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         var_overflow_arg_area = args,
         var_reg_save_area = args;
 
-    /* Hack to get some unique jump labels. */
-    const char
-        *memory = mklabel(),
-        *done = mklabel();
+    /* Get some unique jump labels. */
+    const struct symbol
+        *memory = sym_create_label(),
+        *done = sym_create_label();
 
     /* Might be too restrictive for res, but simplifies some codegen. */
     assert(res.kind == DIRECT);
@@ -716,14 +712,14 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             load(var_gp_offset, CX);
             emit(INSTR_CMP, OPT_IMM_REG,
                 constant(6*8 - 8*num_gp, 4), reg(CX, 4));
-            emit(INSTR_JA, OPT_IMM, label(memory));
+            emit(INSTR_JA, OPT_IMM, label(sym_name(memory)));
         }
         if (num_fp) {
             assert(0); /* No actual float support yet. */
             load(var_fp_offset, DX);
             emit(INSTR_CMP, OPT_IMM_REG,
                 constant(6*8 - 8*num_fp, 4), reg(DX, 4));
-            emit(INSTR_JA, OPT_IMM, label(memory));
+            emit(INSTR_JA, OPT_IMM, label(sym_name(memory)));
         }
 
         /* Load argument, one eightbyte at a time. This code has a lot in common
@@ -760,8 +756,8 @@ static void compile__builtin_va_arg(struct var res, struct var args)
                 constant(16 * num_fp, 4), location_of(var_fp_offset, 4));
         }
 
-        emit(INSTR_JMP, OPT_IMM, label(done));
-        emit(INSTR_LABEL, OPT_IMM, label(memory));
+        emit(INSTR_JMP, OPT_IMM, label(sym_name(done)));
+        emit(INSTR_LABEL, OPT_IMM, label(sym_name(memory)));
     }
 
     /* Parameters that are passed on stack will be read from overflow_arg_area.
@@ -786,7 +782,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         location_of(var_overflow_arg_area, 8));
 
     if (*pc != PC_MEMORY)
-        emit(INSTR_LABEL, OPT_IMM, label(done));
+        emit(INSTR_LABEL, OPT_IMM, label(sym_name(done)));
 }
 
 static void compile_op(const struct op *op)
@@ -1022,11 +1018,11 @@ static void tail_cmp_jump(struct block *block, const enum param_class *res)
     }
 
     instr.optype = OPT_IMM;
-    instr.source.imm = label(block->jump[1]->label);
+    instr.source.imm = label(sym_name(block->jump[1]->label));
     emit_instruction(instr);
 
     if (block->jump[0]->color == BLACK)
-        emit(INSTR_JMP, OPT_IMM, label(block->jump[0]->label));
+        emit(INSTR_JMP, OPT_IMM, label(sym_name(block->jump[0]->label)));
     else
         compile_block(block->jump[0], res);
 
@@ -1045,15 +1041,15 @@ static void tail_generic(struct block *block, const enum param_class *res)
         emit(INSTR_RET, OPT_NONE);
     } else if (!block->jump[1]) {
         if (block->jump[0]->color == BLACK)
-            emit(INSTR_JMP, OPT_IMM, label(block->jump[0]->label));
+            emit(INSTR_JMP, OPT_IMM, label(sym_name(block->jump[0]->label)));
         else
             compile_block(block->jump[0], res);
     } else {
         load(block->expr, AX);
         emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
-        emit(INSTR_JE, OPT_IMM, label(block->jump[0]->label));
+        emit(INSTR_JE, OPT_IMM, label(sym_name(block->jump[0]->label)));
         if (block->jump[1]->color == BLACK)
-            emit(INSTR_JMP, OPT_IMM, label(block->jump[1]->label));
+            emit(INSTR_JMP, OPT_IMM, label(sym_name(block->jump[1]->label)));
         else
             compile_block(block->jump[1], res);
         compile_block(block->jump[0], res);
@@ -1068,7 +1064,7 @@ static void compile_block(struct block *block, const enum param_class *res)
         return;
 
     block->color = BLACK;
-    emit(INSTR_LABEL, OPT_IMM, label(block->label));
+    emit(INSTR_LABEL, OPT_IMM, label(sym_name(block->label)));
     for (i = 0; i < block->n - 1; ++i)
         compile_op(block->code + i);
 

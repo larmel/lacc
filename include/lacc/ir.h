@@ -82,8 +82,8 @@ struct var {
 /* Basic block in control flow graph.
  */
 struct block {
-    /* A unique jump target label. */
-    const char *label;
+    /* A unique jump target, symbol is of type SYM_LABEL. */
+    const struct symbol *label;
 
     /* Realloc-able list of 3-address code operations. */
     struct op {

@@ -1,7 +1,3 @@
-#if _XOPEN_SOURCE < 500
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 500 /* snprintf */
-#endif
 #include "cfg.h"
 #include "symtab.h"
 #include "type.h"
@@ -31,7 +27,6 @@ static void cleanup(void)
         for (i = 0; i < current_cfg.size; ++i) {
             block = current_cfg.nodes[i];
             if (block->n) free(block->code);
-            if (block->label) free((void *) block->label);
             free(block);
         }
         free(current_cfg.nodes);
@@ -54,20 +49,12 @@ void cfg_init_current(void)
     current_cfg.body = cfg_block_init();
 }
 
-const char *mklabel(void)
-{
-    static int n;
-    char *name = malloc(sizeof(char) * 16);
-    snprintf(name, 12, ".L%d", n++);
-    return name;
-}
-
 struct block *cfg_block_init(void)
 {
     struct block *block;
 
     block = calloc(1, sizeof(*block));
-    block->label = mklabel();
+    block->label = sym_create_label();
     if (current_cfg.size == current_cfg.capacity) {
         current_cfg.capacity += 16;
         current_cfg.nodes =
@@ -130,6 +117,7 @@ struct var var_direct(const struct symbol *sym)
         var.kind = IMMEDIATE;
         break;
     default:
+        assert(sym->symtype != SYM_LABEL);
         var.kind = DIRECT;
         var.lvalue = sym->name[0] != '.';
         break;

@@ -23,7 +23,8 @@ struct symbol {
         SYM_DECLARATION,
         SYM_TYPEDEF,
         SYM_ENUM_VALUE,
-        SYM_STRING_VALUE
+        SYM_STRING_VALUE,
+        SYM_LABEL
     } symtype;
 
     /* Visibility of external declarations, or LINK_NONE for other symbols. */
@@ -63,5 +64,9 @@ struct symbol_list {
 /* Get the full name, including numeric value to disambiguate.
  */
 const char *sym_name(const struct symbol *sym);
+
+/* Create a jump label symbol, of type void *.
+ */
+struct symbol *sym_create_label(void);
 
 #endif

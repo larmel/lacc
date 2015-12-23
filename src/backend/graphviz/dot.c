@@ -5,15 +5,22 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char *sanitize(const char *label)
+static const char *sanitize(const struct symbol *sym)
 {
+    const char *label;
+    assert(sym->symtype == SYM_LABEL);
+
+    label = sym_name(sym);
     return (label[0] == '.') ? &label[1] : label;
 }
 
-static const char *escape(const char *label)
+static const char *escape(const struct symbol *sym)
 {
     static char buffer[256];
+    const char *label;
+    assert(sym->symtype == SYM_LABEL);
 
+    label = sym_name(sym);
     if (label[0] == '.') {
         buffer[0] = '\\';
         strncpy(buffer + 1, label, 254);

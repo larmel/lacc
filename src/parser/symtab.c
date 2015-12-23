@@ -236,6 +236,8 @@ struct symbol *sym_add(
         *sym = NULL,
         arg = {0};
 
+    assert(symtype != SYM_LABEL);
+
     if (symtype != SYM_STRING_VALUE && (sym = sym_lookup(ns, name))) {
         if (linkage == LINK_EXTERN && symtype == SYM_DECLARATION
             && (sym->symtype == SYM_TENTATIVE
@@ -321,6 +323,23 @@ struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
     return register_in_scope(ns, create_symbol(ns, sym));
 }
 
+struct symbol *sym_create_label(void)
+{
+    int i;
+    struct symbol sym = {0};
+
+    sym.type = basic_type__void;
+    sym.symtype = SYM_LABEL;
+    sym.linkage = LINK_INTERN;
+    sym.name = ".L";
+    sym.n = ns_label.length + 1;
+
+    /* Construct symbol in label namespace, but do not add it to any scope.
+     * No need or use for searching in labels. */
+    i = create_symbol(&ns_label, sym);
+    return ns_label.symbol[i];
+}
+
 void register_builtin_types(struct namespace *ns)
 {
     struct typetree *type = type_init(T_STRUCT);
@@ -383,7 +402,8 @@ void output_symbols(FILE *stream, struct namespace *ns)
             (st == SYM_DEFINITION) ? "definition" :
             (st == SYM_DECLARATION) ? "declaration" :
             (st == SYM_TYPEDEF) ? "typedef" :
-            (st == SYM_ENUM_VALUE) ? "enum" : "string");
+            (st == SYM_ENUM_VALUE) ? "enum" :
+            (st == SYM_STRING_VALUE) ? "string" : "label");
 
         fprintf(stream, "%s :: ", sym_name(ns->symbol[i]));
         tstr = typetostr(&ns->symbol[i]->type);
