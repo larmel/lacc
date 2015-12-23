@@ -1,9 +1,7 @@
-#if _XOPEN_SOURCE < 500
+#if _XOPEN_SOURCE < 700
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 700 /* strndup, snprintf */
+#  define _XOPEN_SOURCE 700 /* strndup */
 #endif
-#include "cfg.h"
-#include "eval.h"
 #include "symtab.h"
 #include <lacc/hash.h>
 #include <lacc/string.h>
@@ -15,11 +13,9 @@
 
 #define HASH_TABLE_LENGTH 1024
 
-struct string
-{
+struct string {
     size_t length;
     char *string;
-    char *label;
 
     struct hash {
         unsigned long val;
@@ -35,8 +31,6 @@ static void hash_node_cleanup(struct string *ref)
     if (ref->hash.next)
         hash_node_cleanup(ref->hash.next);
 
-    if (ref->label)
-        free(ref->label);
     free(ref->string);
     free(ref);
 }
@@ -50,8 +44,6 @@ static void cleanup(void)
         ref = &str_hash_tab[i];
         if (ref->hash.next)
             hash_node_cleanup(ref->hash.next);
-        if (ref->label)
-            free(ref->label);
         if (ref->string)
             free(ref->string);
     }
@@ -106,34 +98,4 @@ const char *str_register_n(const char *s, size_t n)
 {
     struct string *str = hash_insert(s, n);
     return str->string;
-}
-
-static void assign_string(const char *name, const char *str)
-{
-    struct var target, value = var_string(str);
-    struct symbol *sym =
-        sym_add(&ns_ident, name, value.type, SYM_DEFINITION, LINK_INTERN);
-
-    target = var_direct(sym);
-    target.lvalue = 1;
-    eval_assign(current_cfg.rodata, target, value);
-}
-
-const char *strlabel(const char *s)
-{
-    struct string *ref;
-
-    ref = hash_insert(s, strlen(s));
-    if (!ref->label) {
-        static int n;
-
-        /* Integer (32 bit) can be at most 10 digits. Leave 3 for constant
-         * prefix, and one for trailing null byte. */
-        ref->label = calloc(14, sizeof(*ref->label));
-        snprintf(ref->label, 14, ".LC%d", n++);
-
-        assign_string(ref->label, s);
-    }
-
-    return ref->label;
 }

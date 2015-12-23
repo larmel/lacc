@@ -2,7 +2,6 @@
 #include "eval.h"
 #include "type.h"
 #include <lacc/cli.h>
-#include <lacc/string.h>
 
 #include <assert.h>
 #include <stdarg.h>
@@ -13,6 +12,13 @@ static int is_nullptr(struct var val)
     return 
         (is_integer(val.type) || is_pointer(val.type)) &&
         (val.kind == IMMEDIATE && !val.imm.u);
+}
+
+static int is_string(struct var val)
+{
+    return
+        val.kind == IMMEDIATE && val.symbol &&
+        val.symbol->symtype == SYM_STRING_VALUE;
 }
 
 static struct var evaluate(
@@ -104,14 +110,12 @@ static struct var eval_add(struct block *block, struct var l, struct var r)
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
-        /* Special case for string literal + constant. This is represented as an
-         * immediate with offset. */
-        if (l.kind == IMMEDIATE && l.string &&
-            r.kind == IMMEDIATE && is_integer(r.type))
-        {
+        /* Special case for string literal + constant. This is represented as
+         * an immediate with offset. */
+        if (is_string(l) && r.kind == IMMEDIATE && is_integer(r.type)) {
             l.offset += r.imm.i;
         }
-        /* No evaluation if r is zero. */
+        /* Evaluate unless r is immediate zero. */
         else if (r.kind != IMMEDIATE || r.imm.i) {
             r = eval_expr(block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
             l = evaluate(block, IR_OP_ADD, l.type, l, r);
@@ -144,12 +148,10 @@ static struct var eval_sub(struct block *block, struct var l, struct var r)
         }
         /* Special case for string literal - constant. This is represented as an
          * immediate with offset. */
-        if (l.kind == IMMEDIATE && l.string &&
-            r.kind == IMMEDIATE && is_integer(r.type))
-        {
+        if (is_string(l) && r.kind == IMMEDIATE && is_integer(r.type)) {
             l.offset -= r.imm.i;
         }
-        /* No evaluation if r is zero. */
+        /* Evaluate unless r is immediate zero. */
         else if (r.kind != IMMEDIATE || r.imm.i) {
             r = eval_expr(block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
             l = evaluate(block, IR_OP_SUB, l.type, l, r);
@@ -359,25 +361,24 @@ static struct var eval_not(struct block *block, struct var var)
  */
 static struct var array_or_func_to_addr(struct block *block, struct var var)
 {
-    /* Convert IMMEDIATE string values of type char [n] to char *, adding the
-     * string to strings table and generating a unique label. */
-    if (var.string && is_array(var.type)) {
-        assert(var.kind == IMMEDIATE);
-        var.string = strlabel(var.string);
-        var.type = type_init(T_POINTER, var.type->next);
-    }
+    if (is_array(var.type)) {
+        if (var.kind == IMMEDIATE) {
+            assert(var.symbol);
+            assert(var.symbol->symtype == SYM_STRING_VALUE);
 
-    /* References to arrays decay into pointer to the first element. Change type
-     * before doing regular address evaluation, this way backend does not need
-     * to handle address of array in any special way. The memory location
-     * represented by var can also be seen as the first element. */
-    else if (is_array(var.type)) {
-        var.type = var.type->next;
-        var = eval_addr(block, var);
-    }
-
-    /* References of function type decay into pointer to function. */
-    else if (is_function(var.type)) {
+            /* Immediate references to strings retain the same representation,
+             * only changing type from array to pointer. */
+            var.type = type_init(T_POINTER, var.type->next);
+        } else {
+            /* References to arrays decay into pointer to the first element.
+             * Change type before doing regular address evaluation, this way
+             * backend does not need to handle address of array in any special
+             * way. The memory location represented by var can also be seen as
+             * the first element. */
+            var.type = var.type->next;
+            var = eval_addr(block, var);
+        }
+    } else if (is_function(var.type)) {
         var = eval_addr(block, var);
     }
 
@@ -427,19 +428,16 @@ struct var eval_addr(struct block *block, struct var var)
 
     switch (var.kind) {
     case IMMEDIATE:
-        if (!var.string) {
-            error("Address of immediate other than string, was '%t'.",
-                var.type);
+        if (!var.symbol || var.symbol->symtype != SYM_STRING_VALUE) {
+            error("Cannot take address of immediate of type '%t'.", var.type);
             exit(1);
         }
         /* Address of string literal can be done without evaluation, just decay
          * the variable to pointer. */
-        if (is_array(var.type)) {
+        if (is_array(var.type))
             var = array_or_func_to_addr(block, var);
-            assert(var.kind == IMMEDIATE);
-            break;
-        }
-        assert(is_pointer(var.type) && var.string);
+        assert(is_pointer(var.type));
+        break;
     case DIRECT:
         var = evaluate(block, IR_ADDR, type_init(T_POINTER, var.type), var);
         break;
@@ -500,7 +498,7 @@ struct var eval_deref(struct block *block, struct var var)
 
 struct var eval_assign(struct block *block, struct var target, struct var var)
 {
-    struct op op;
+    struct op op = {0};
 
     if (!target.lvalue) {
         error("Target of assignment must be l-value.");
@@ -512,7 +510,8 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
     }
 
     if (is_array(target.type)) {
-        /* Special case char [] = string in initializers. */
+        /* Special case char [] = string in initializers. In this case we do
+         * nothing here, but handle it in backend. */
         if (!type_equal(target.type, var.type) || var.kind != IMMEDIATE) {
             error("Invalid initializer assignment, was %s :: %t = %t.",
                 target.symbol->name,
@@ -521,13 +520,9 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
             exit(1);
         }
 
-        /* Force evaluation to make sure the string is assigned in IR. Make an
-         * exception for strings being assigned to __func__, as those will for
-         * sure not be missing. */
-        if (strcmp("__func__", target.symbol->name))
-            strlabel(var.string);
-    }
-    else if (
+        assert(var.symbol);
+        assert(var.symbol->symtype == SYM_STRING_VALUE);
+    } else if (
         /* The left operand has atomic, qualified, or unqualified arithmetic
          * type, and the right has arithmetic type. */
         !(is_arithmetic(target.type) && is_arithmetic(var.type)) &&

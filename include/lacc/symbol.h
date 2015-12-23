@@ -22,7 +22,8 @@ struct symbol {
         SYM_TENTATIVE,
         SYM_DECLARATION,
         SYM_TYPEDEF,
-        SYM_ENUM_VALUE
+        SYM_ENUM_VALUE,
+        SYM_STRING_VALUE
     } symtype;
 
     /* Visibility of external declarations, or LINK_NONE for other symbols. */
@@ -39,6 +40,11 @@ struct symbol {
     /* Enumeration constants live in the normal symbol table, and always have
      * integer type. Denoted by symtype SYM_ENUM_VALUE. */
     int enum_value;
+
+    /* String literals are also handled as symbols, having type [] const char.
+     * Denoted by symtype SYM_STRING_VALUE. Free string constants are always
+     * named '.LC', disambiguated with n. */ 
+    const char *string_value;
 
     /* Parameter or local variable offset to base pointer. This is kept as 0
      * during parsing, but assigned when passed to back-end. */

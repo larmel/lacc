@@ -5,7 +5,6 @@
 #include "x86_64/instructions.h"
 #include "compile.h"
 #include <lacc/cli.h>
-#include <lacc/string.h>
 
 #include <assert.h>
 #include <stdarg.h>
@@ -85,16 +84,23 @@ static struct registr reg(enum reg r, int w)
     return v;
 }
 
+static int is_string(struct var val)
+{
+    return
+        val.kind == IMMEDIATE && val.symbol &&
+        val.symbol->symtype == SYM_STRING_VALUE;
+}
+
 static struct immediate value_of(struct var var, int w)
 {
     struct immediate imm = {0};
     assert(var.kind == IMMEDIATE);
     assert(!is_array(var.type));
 
-    if (is_pointer(var.type) && var.string) {
-        assert(w == 8);
+    if (is_string(var)) {
+        assert(is_pointer(var.type));
         imm.type = IMM_STR;
-        imm.d.string.str = var.string;
+        imm.d.string.str = sym_name(var.symbol); /* Lifetime !? */
         imm.d.string.offset = var.offset;
     } else {
         assert(!var.offset);
@@ -796,18 +802,17 @@ static void compile_op(const struct op *op)
          * assembly backend. We handle these assignments with memcpy, other
          * compilers load the string into register as ascii numbers. */
         if (is_array(op->a.type) || is_array(op->b.type)) {
-            struct var str = op->b;
             int size = size_of(op->a.type);
-            assert(type_equal(op->a.type, op->b.type));
+            const char *str;
+
             assert(op->a.kind == DIRECT);
-            assert(op->b.kind == IMMEDIATE && op->b.string);
+            assert(is_string(op->b));
+            assert(type_equal(op->a.type, op->b.type));
 
-            /* The string value is an immediate, that has not yet gotten a label
-             * that we can refer to. Add to string table, decay to address. */
-            str.string = strlabel(str.string);
-
+            /* Lifetime ok? Assumes no buffering in emit... */
+            str = sym_name(op->b.symbol);
             load_address(op->a, DI);
-            emit(INSTR_MOV, OPT_IMM_REG, string(str.string), reg(SI, 8));
+            emit(INSTR_MOV, OPT_IMM_REG, string(str), reg(SI, 8));
             emit(INSTR_MOV, OPT_IMM_REG, constant(size, 8), reg(DX, 8));
             emit(INSTR_CALL, OPT_IMM, label("memcpy"));
             break;
@@ -1119,9 +1124,9 @@ static void compile_data_assign(struct var target, struct var val)
         }
         break;
     case T_POINTER:
-        if (val.string) {
+        if (is_string(val)) {
             imm.type = IMM_STR;
-            imm.d.string.str = val.string;
+            imm.d.string.str = sym_name(val.symbol);
             imm.d.string.offset = val.offset;
         } else {
             imm.type = IMM_QUAD;
@@ -1129,9 +1134,9 @@ static void compile_data_assign(struct var target, struct var val)
         }
         break;
     case T_ARRAY:
-        if (val.string) {
+        if (is_string(val)) {
             imm.type = IMM_STRV;
-            imm.d.string.str = val.string;
+            imm.d.string.str = val.symbol->string_value;
             break;
         }
     default:
@@ -1259,7 +1264,6 @@ int compile_cfg(struct cfg *cfg)
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
         compile_data(cfg->head);
-        compile_data(cfg->rodata);
         if (cfg->fun)
             compile_function(cfg);
         break;

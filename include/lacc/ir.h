@@ -63,7 +63,10 @@ struct var {
         /* l-value or r-value reference to *(symbol + offset). Symbol must have
          * pointer type. Offset in bytes, not pointer arithmetic. */
         DEREF,
-        /* r-value immediate, with the type specified. Symbol is NULL. */
+        /* r-value immediate, with the type specified. Symbol is NULL, or be of
+         * type SYM_STRING_VALUE. String immediates can either have type array
+         * of char, or pointer to char. They can also have offsets, representing
+         * constants such as .LC1+3. */
         IMMEDIATE
     } kind;
 
@@ -71,12 +74,6 @@ struct var {
         long i;
         unsigned long u;
     } imm;
-
-    /* Represent string constant value, or label, for IMMEDIATE values. If type
-     * is char [], this is the literal string constant. If type is char *, this
-     * is the label representing the string, as in '.LC1'. Pointers can have a
-     * constant offset, representing address constants such as .LC1+3. */
-    const char *string;
 
     int offset;
     int lvalue;
@@ -133,9 +130,6 @@ struct cfg {
      * CFG, respectively. */
     struct block *head, *body;
 
-    /* String assignments. */
-    struct block *rodata;
-
     /* Number of bytes to allocate to local variables on stack. */
     int locals_size;
 
@@ -152,13 +146,10 @@ struct cfg {
     size_t capacity;
 };
 
-/* A direct reference to given symbol.
+/* A direct reference to given symbol, with two exceptions: SYM_ENUM_VALUE and
+ * SYM_STRING_VALUE reduce to IMMEDIATE values.
  */
 struct var var_direct(const struct symbol *sym);
-
-/* A string value of type [] char.
- */
-struct var var_string(const char *str);
 
 /* A constant value of integer type.
  */

@@ -52,7 +52,6 @@ void cfg_init_current(void)
 
     current_cfg.head = cfg_block_init();
     current_cfg.body = cfg_block_init();
-    current_cfg.rodata = cfg_block_init();
 }
 
 const char *mklabel(void)
@@ -120,25 +119,22 @@ struct var var_direct(const struct symbol *sym)
     struct var var = {0};
 
     var.type = &sym->type;
-    if (sym->symtype == SYM_ENUM_VALUE) {
+    var.symbol = sym;
+
+    switch (sym->symtype) {
+    case SYM_ENUM_VALUE:
         var.kind = IMMEDIATE;
         var.imm.i = sym->enum_value;
-    } else {
+        break;
+    case SYM_STRING_VALUE:
+        var.kind = IMMEDIATE;
+        break;
+    default:
         var.kind = DIRECT;
-        var.symbol = sym;
         var.lvalue = sym->name[0] != '.';
+        break;
     }
 
-    return var;
-}
-
-struct var var_string(const char *str)
-{
-    struct var var = {0};
-
-    var.kind = IMMEDIATE;
-    var.type = type_init(T_ARRAY, &basic_type__char, strlen(str) + 1);
-    var.string = str;
     return var;
 }
 

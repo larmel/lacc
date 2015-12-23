@@ -204,6 +204,13 @@ int asm_symbol(const struct symbol *sym)
             I1(".globl", sym->name);
         I2(".type", sym->name, "@function");
         out("%s:\n", sym->name);
+    } else if (sym->symtype == SYM_STRING_VALUE) {
+        I0(".data");
+        out("\t.align\t%d\n", sym_alignment(sym));
+        out("%s:\n", sym_name(sym));
+        out("\t.string\t\"");
+        output_escaped_string(sym->string_value);
+        out("\"\n");
     } else {
         I0(".data");
         if (sym->linkage == LINK_EXTERN)

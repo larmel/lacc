@@ -31,15 +31,14 @@ static char *vartostr(const struct var var)
     case IMMEDIATE:
         switch (var.type->type) {
         case T_POINTER:
-            if (var.string) {
-                if (var.offset) {
-                    sprintf(buffer, "$%s%s%d", var.string,
-                        (var.offset > 0) ? "+" : "", var.offset);
-                } else {
-                    sprintf(buffer, "$%s", var.string);
-                }
-                break;
+            assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
+            if (var.offset) {
+                sprintf(buffer, "$%s%s%d", sym_name(var.symbol),
+                    (var.offset > 0) ? "+" : "", var.offset);
+            } else {
+                sprintf(buffer, "$%s", sym_name(var.symbol));
             }
+            break;
         case T_UNSIGNED:
             sprintf(buffer, "%lu", var.imm.u);
             break;
@@ -47,7 +46,8 @@ static char *vartostr(const struct var var)
             sprintf(buffer, "%ld", var.imm.i);
             break;
         case T_ARRAY:
-            sprintf(buffer, "\\\"%s\\\"", var.string);
+            assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
+            sprintf(buffer, "\\\"%s\\\"", var.symbol->string_value);
             break;
         default:
             assert(0);

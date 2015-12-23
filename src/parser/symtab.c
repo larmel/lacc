@@ -169,17 +169,14 @@ const char *sym_name(const struct symbol *sym)
     if (!sym->n)
         return sym->name;
 
-    if (sym->name[0] == '.') {
-        if (sym->name[1] == 't')
-            snprintf(name, 127, "%s%d", sym->name, sym->n);
-        else {
-            /* String constants. */
-            assert(sym->name[1] == 'L');
-            return sym->name;
-        }
-    } else {
-        snprintf(name, 127, "%s.%d", sym->name, sym->n);
-    }
+    /* Temporary variables and string literals are named '.t' and '.LC',
+     * respectively. For those, append the numeral without anything in between.
+     * For other variables, which are disambiguated statics, insert a period
+     * between the name and the number. */
+    if (sym->name[0] == '.')
+        snprintf(name, sizeof(name), "%s%d", sym->name, sym->n);
+    else
+        snprintf(name, sizeof(name), "%s.%d", sym->name, sym->n);
 
     return name;
 }
@@ -239,7 +236,7 @@ struct symbol *sym_add(
         *sym = NULL,
         arg = {0};
 
-    if ((sym = sym_lookup(ns, name))) {
+    if (symtype != SYM_STRING_VALUE && (sym = sym_lookup(ns, name))) {
         if (linkage == LINK_EXTERN && symtype == SYM_DECLARATION
             && (sym->symtype == SYM_TENTATIVE
                 || sym->symtype == SYM_DEFINITION))
@@ -272,7 +269,7 @@ struct symbol *sym_add(
             }
             return sym;
         } else if (sym->depth == ns->current_depth && ns->current_depth) {
-            error("Duplicate definition of symbol '%s'", name);
+            error("Duplicate definition of symbol '%s'.", name);
             exit(1);
         }
     }
@@ -284,7 +281,9 @@ struct symbol *sym_add(
 
     /* Scoped static variable must get unique name in order to not collide with
      * other external declarations. */
-    if (linkage == LINK_INTERN && ns->current_depth) {
+    if (linkage == LINK_INTERN &&
+        (ns->current_depth || symtype == SYM_STRING_VALUE))
+    {
         static int counter;
         arg.n = ++counter;
     }
@@ -296,7 +295,8 @@ struct symbol *sym_add(
         (sym->symtype == SYM_DEFINITION ? "definition" :
             sym->symtype == SYM_TENTATIVE ? "tentative" :
             sym->symtype == SYM_DECLARATION ? "declaration" :
-            sym->symtype == SYM_TYPEDEF ? "typedef" : "enum"),
+            sym->symtype == SYM_TYPEDEF ? "typedef" :
+            sym->symtype == SYM_ENUM_VALUE ? "enum" : "string"),
         (sym->linkage == LINK_INTERN ? "intern" :
             sym->linkage == LINK_EXTERN ? "extern" : "none"),
         sym_name(sym),
@@ -316,7 +316,7 @@ struct symbol *sym_temp(struct namespace *ns, const struct typetree *type)
     sym.symtype = SYM_DEFINITION;
     sym.linkage = LINK_NONE;
     sym.name = ".t";
-    sym.n = n++;
+    sym.n = ++n;
     sym.type = *type;
     return register_in_scope(ns, create_symbol(ns, sym));
 }
@@ -349,7 +349,7 @@ struct symbol_list get_tentative_definitions(const struct namespace *ns)
 
     for (i = 0; i < ns->length; ++i) {
         sym = ns->symbol[i];
-        if (sym->symtype == SYM_TENTATIVE) {
+        if (sym->symtype == SYM_TENTATIVE || sym->symtype == SYM_STRING_VALUE) {
             list.length += 1;
             list.symbol =
                 realloc(list.symbol, list.length * sizeof(*list.symbol));
@@ -382,7 +382,8 @@ void output_symbols(FILE *stream, struct namespace *ns)
             (st == SYM_TENTATIVE) ? "tentative" : 
             (st == SYM_DEFINITION) ? "definition" :
             (st == SYM_DECLARATION) ? "declaration" :
-            (st == SYM_TYPEDEF) ? "typedef" : "enum");
+            (st == SYM_TYPEDEF) ? "typedef" :
+            (st == SYM_ENUM_VALUE) ? "enum" : "string");
 
         fprintf(stream, "%s :: ", sym_name(ns->symbol[i]));
         tstr = typetostr(&ns->symbol[i]->type);

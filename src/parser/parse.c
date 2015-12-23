@@ -5,7 +5,6 @@
 #include "type.h"
 #include <lacc/token.h>
 #include <lacc/cli.h>
-#include <lacc/string.h>
 
 #include <stdio.h>
 #include <assert.h>
@@ -87,6 +86,13 @@ static int is_immediate_true(struct var e)
 static int is_immediate_false(struct var e)
 {
     return e.kind == IMMEDIATE && is_integer(e.type) && !e.imm.i;
+}
+
+static int is_string(struct var val)
+{
+    return
+        val.kind == IMMEDIATE && val.symbol &&
+        val.symbol->symtype == SYM_STRING_VALUE;
 }
 
 static struct block *expression(struct block *block);
@@ -182,13 +188,26 @@ static struct block *primary_expression(struct block *block)
         consume(')');
         break;
     case STRING:
-        /* Immediate value of type char [n]. Will decay into char * immediate on
-         * evaluation, and be added to string table. */
-        block->expr = var_string(tok.strval);
+        sym =
+            sym_add(&ns_ident,
+                ".LC",
+                type_init(T_ARRAY, &basic_type__char, strlen(tok.strval) + 1),
+                SYM_STRING_VALUE,
+                LINK_INTERN);
+
+        /* Store string value directly on symbol, memory ownership is in string
+         * table from previously called str_register. The symbol now exists as
+         * if it was declared static char .LC[] = "...". */
+        ((struct symbol *) sym)->string_value = tok.strval;
+
+        /* Result is an IMMEDIATE of type [] char, with a reference to the new
+         * symbol containing the string literal. Will decay into char * on
+         * evaluation. */
+        block->expr = var_direct(sym);
+        assert(block->expr.kind == IMMEDIATE);
         break;
     default:
-        error("Unexpected token '%s', not a valid primary expression.",
-            tok.strval);
+        error("Unexpected '%s', not a valid primary expression.", tok.strval);
         exit(1);
     }
 
@@ -1570,14 +1589,15 @@ static struct typetree *declaration_specifiers(int *stc)
  */
 static void define_builtin__func__(const char *name)
 {
-    struct var str = var_string(name);
-    struct symbol *sym =
-        sym_add(&ns_ident, "__func__", str.type, SYM_DEFINITION, LINK_INTERN);
-
+    struct typetree *type;
+    struct symbol *sym;
     assert(ns_ident.current_depth == 1);
 
-    /* Initialize special case, setting char[] = char[]. */
-    eval_assign(current_cfg.head, var_direct(sym), str);
+    /* Just add the symbol directly as a special string value. No explicit
+     * assignment reflected in the IR. */
+    type = type_init(T_ARRAY, &basic_type__char, strlen(name) + 1);
+    sym = sym_add(&ns_ident, "__func__", type, SYM_STRING_VALUE, LINK_INTERN);
+    sym->string_value = name;
 }
 
 /* Set var = 0, using simple assignment on members for composite types. This
@@ -1731,10 +1751,11 @@ static struct block *initializer(struct block *block, struct var target)
         }
         if (target.kind == DIRECT && !target.type->size) {
             assert(!target.offset);
-            assert(block->expr.kind == IMMEDIATE);
-            assert(is_array(block->expr.type) && block->expr.string);
+            assert(is_string(block->expr));
+            assert(is_array(block->expr.type));
 
-            /* Complete type based on string literal. */
+            /* Complete type based on string literal. Evaluation does not have
+             * the required context to do this logic. */
             ((struct symbol *) target.symbol)->type.size =
                 block->expr.type->size;
             target.type = block->expr.type;
