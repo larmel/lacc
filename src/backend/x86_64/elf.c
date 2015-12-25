@@ -133,93 +133,65 @@ static Elf64_Shdr shdr[] = {
     }
 };
 
-static Elf64_Sym syms[] = {
-    {0},
-    {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHDR_DATA, 0, 0},
-    {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHDR_TEXT, 0, 0}
-};
-
-static struct string {
-    const char *str;
-    int len;
-    int offset;
-} *strtab;
-static int strtab_len;
-
-static Elf64_Sym *symtab;
-static int symtab_len;
-
 static unsigned char *data;
 static unsigned char *text;
+
+static Elf64_Sym *symtab;
+
+/* Add entry to .symtab, returning index.
+ */
+static int elf_symtab_add(Elf64_Sym entry)
+{
+    static Elf64_Sym default_symbols[] = {
+        {0},
+        {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHDR_DATA, 0, 0},
+        {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHDR_TEXT, 0, 0}
+    };
+
+    int i;
+
+    if (!symtab) {
+        symtab = calloc(1, sizeof(default_symbols));
+        symtab = memcpy(symtab, default_symbols, sizeof(default_symbols));
+        shdr[SHDR_SYMTAB].sh_size = sizeof(default_symbols);
+    }
+
+    i = shdr[SHDR_SYMTAB].sh_size / sizeof(Elf64_Sym);
+    shdr[SHDR_SYMTAB].sh_size += sizeof(Elf64_Sym);
+    symtab = realloc(symtab, shdr[SHDR_SYMTAB].sh_size);
+    symtab[i] = entry;
+    return i;
+}
+
+static char *strtab;
 
 /* Add string to .strtab, returning its offset into the section for use in
  * references.
  */
-static int strtab_add(const char *str)
+static int elf_strtab_add(const char *str)
 {
-    struct string *entry;
-    strtab_len += 1;
-    strtab = realloc(strtab, strtab_len * sizeof(*strtab));
+    /* Current amount of padding in strtab, filled with zeroes. Section size is 
+     * padded to make it align to 0x10. Adding new strings first eat off any
+     * redundant padding. */
+    static size_t padding;
 
-    entry = &strtab[strtab_len - 1];
-    entry->str = str;
-    entry->len = strlen(str);
-    entry->offset = 1;
-    if (strtab_len > 1)
-        entry->offset = (entry - 1)->offset + (entry - 1)->len + 1;
+    size_t
+        len = strlen(str) + 1, /* including zero byte */
+        off = shdr[SHDR_STRTAB].sh_size - padding; /* pos of new string */
 
-    return entry->offset;
-}
+    /* First byte should be '\0' */
+    if (!off)
+        off = 1;
 
-static size_t strtab_size(void)
-{
-    size_t size = 1; /* null entry */
-    struct string *entry;
+    padding = 0x10 - ((off + len) % 0x10);
+    shdr[SHDR_STRTAB].sh_size = off + len + padding;
+    assert(shdr[SHDR_STRTAB].sh_size % 0x10 == 0);
 
-    if (strtab_len) {
-        entry = &strtab[strtab_len - 1];
-        size = entry->offset + entry->len + 1;
-    }
+    strtab = realloc(strtab, shdr[SHDR_STRTAB].sh_size);
+    strcpy(strtab + off, str);
+    memset(strtab + off + len, '\0', padding);
 
-    return size + (size % 16);
-}
-
-static int fwrite_strtab(const struct string *st, size_t n, FILE *stream)
-{
-    size_t i, w = 0;
-
-    if (n) {
-        fputc('\0', stream);
-        w += 1;
-        for (i = 0; i < n; ++i) {
-            fputs(st[i].str, stream);
-            fputc('\0', stream);
-            w += st[i].len + 1;
-        }
-
-        while (w < strtab_size()) {
-            fputc('\0', stream);
-            w += 1;
-        }
-    }
-
-    return w;
-}
-
-static size_t symtab_size(void)
-{
-    return (symtab_len + sizeof(syms) / sizeof(syms[0])) * sizeof(Elf64_Sym);
-}
-
-static int fwrite_symtab(FILE *stream)
-{
-    size_t i;
-
-    fwrite(syms, sizeof(Elf64_Sym), sizeof(syms) / sizeof(syms[0]), stream);
-    for (i = 0; i < symtab_len; ++i)
-        fwrite(symtab + i, sizeof(Elf64_Sym), 1, stream);
-
-    return 1;
+    return off;
 }
 
 static Elf64_Rela *rela_text;
@@ -282,46 +254,42 @@ static void flush_relocations(void)
 
 int elf_symbol(const struct symbol *sym)
 {
-    Elf64_Sym *entry;
+    Elf64_Sym entry = {0};
 
     /* Ignore these for now... */
     if (sym->symtype == SYM_LABEL || sym->symtype == SYM_STRING_VALUE) {
         return 0;
     }
 
-    symtab_len += 1;
-    symtab = realloc(symtab, symtab_len * sizeof(*symtab));
-
-    entry = &symtab[symtab_len - 1];
-    entry = memset(entry, 0, sizeof(Elf64_Sym));
-    entry->st_name = strtab_add(sym->name);
+    entry.st_name = elf_strtab_add(sym->name);
 
     if (is_function(&sym->type)) {
         switch (sym->symtype) {
         case SYM_DEFINITION:
-            entry->st_shndx = SHDR_TEXT;
+            entry.st_shndx = SHDR_TEXT;
         case SYM_DECLARATION:
         case SYM_TENTATIVE:
-            entry->st_info = (STB_GLOBAL << 4) | STT_FUNC;
+            entry.st_info = (STB_GLOBAL << 4) | STT_FUNC;
             break;
         default:
             break;
         }
+        elf_symtab_add(entry);
     } else if (sym->symtype == SYM_DEFINITION) {
-        entry->st_shndx = SHDR_DATA;
+        entry.st_shndx = SHDR_DATA;
         /* Linker goes into shock if we mix up local/global... */
         /*if (sym->linkage == LINK_EXTERN)*/
-            entry->st_info = (STB_GLOBAL << 4) | STT_OBJECT;
+            entry.st_info = (STB_GLOBAL << 4) | STT_OBJECT;
         /*else
-            entry->st_info = (STB_LOCAL << 4) | STT_OBJECT;*/
-        entry->st_size = size_of(&sym->type);
-        entry->st_value = shdr[SHDR_DATA].sh_size;
+            entry.st_info = (STB_LOCAL << 4) | STT_OBJECT;*/
+        entry.st_size = size_of(&sym->type);
+        entry.st_value = shdr[SHDR_DATA].sh_size;
 
         /* (Mis-)use member for storing index into ELF symbol table. Stack
          * offset is otherwise only used for local variables, which will not
          * live in this symbol table. */
         assert(!sym->stack_offset);
-        ((struct symbol *) sym)->stack_offset = symtab_len + 2;
+        ((struct symbol *) sym)->stack_offset = elf_symtab_add(entry);
     }
 
     return 0;
@@ -389,10 +357,8 @@ int elf_flush(void)
     fwrite(&header, sizeof(header), 1, object_file_output);
 
     /* Fill in missing offset and size values */
-    shdr[SHDR_STRTAB].sh_size = strtab_size();
     shdr[SHDR_SYMTAB].sh_offset =
         shdr[SHDR_STRTAB].sh_offset + shdr[SHDR_STRTAB].sh_size;
-    shdr[SHDR_SYMTAB].sh_size = symtab_size();
     shdr[SHID_RELA_TEXT].sh_offset =
         shdr[SHDR_SYMTAB].sh_offset + shdr[SHDR_SYMTAB].sh_size;
     shdr[SHDR_DATA].sh_offset =
@@ -405,8 +371,8 @@ int elf_flush(void)
 
     /* Section data */
     fwrite(shstrtab, shdr[SHDR_SHSTRTAB].sh_size, 1, object_file_output);
-    fwrite_strtab(strtab, strtab_len, object_file_output);
-    fwrite_symtab(object_file_output);
+    fwrite(strtab, shdr[SHDR_STRTAB].sh_size, 1, object_file_output);
+    fwrite(symtab, shdr[SHDR_SYMTAB].sh_size, 1, object_file_output);
     fwrite(rela_text, shdr[SHID_RELA_TEXT].sh_size, 1, object_file_output);
     fwrite(data, shdr[SHDR_DATA].sh_size, 1, object_file_output);
     fwrite(text, shdr[SHDR_TEXT].sh_size, 1, object_file_output);
