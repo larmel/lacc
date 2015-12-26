@@ -1,3 +1,4 @@
+#include "abi.h"
 #include "elf.h"
 
 #include <assert.h>
@@ -137,6 +138,34 @@ static Elf64_Shdr shdr[] = {
 };
 
 static unsigned char *data;
+
+/* Write bytes to .data section. If ptr is NULL, fill with zeros.
+ */
+static int elf_data_add(const char *ptr, size_t n)
+{
+    size_t offset = shdr[SHID_DATA].sh_size;
+
+    data = realloc(data, offset + n);
+    if (ptr)
+        memcpy(data + offset, ptr, n);
+    else
+        memset(data + offset, '\0', n);
+    shdr[SHID_DATA].sh_size += n;
+    return offset;
+}
+
+/* Align data section to specified number of bytes. Following calls to
+ * elf_data_add start at this alignment. Padding is filled with zero.
+ */
+static int elf_data_align(int align)
+{
+    size_t offset = shdr[SHID_DATA].sh_size;
+
+    if (offset % align != 0)
+        elf_data_add(NULL, align - (offset % align));
+    return offset;
+}
+
 static unsigned char *text;
 
 static Elf64_Sym *symtab;
@@ -193,6 +222,7 @@ static int elf_strtab_add(const char *str)
     strtab = realloc(strtab, shdr[SHID_STRTAB].sh_size);
     strcpy(strtab + off, str);
     memset(strtab + off + len, '\0', padding);
+    strtab[off - 1] = '\0';
 
     return off;
 }
@@ -279,6 +309,7 @@ int elf_symbol(const struct symbol *sym)
         }
         elf_symtab_add(entry);
     } else if (sym->symtype == SYM_DEFINITION) {
+        elf_data_align(sym_alignment(sym));
         entry.st_shndx = SHID_DATA;
         /* Linker goes into shock if we mix up local/global... */
         /*if (sym->linkage == LINK_EXTERN)*/
@@ -333,16 +364,13 @@ int elf_data(struct immediate imm)
         ptr = imm.d.string;
     }
 
-    data = realloc(data, shdr[SHID_DATA].sh_size + w);
-    memcpy(data + shdr[SHID_DATA].sh_size, ptr, w);
-    shdr[SHID_DATA].sh_size += w;
-
-    return 0;
+    return elf_data_add(ptr, w);
 }
 
 int elf_flush(void)
 {
     flush_relocations();
+    elf_data_align(0x10);
     fwrite(&header, sizeof(header), 1, object_file_output);
 
     /* Fill in missing offset and size values */
