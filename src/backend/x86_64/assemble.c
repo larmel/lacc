@@ -120,20 +120,14 @@ static const char *immediate(struct immediate imm, int *size)
 
     *size = 8;
     switch (imm.type) {
-    case IMM_BYTE:
-        *size = 1;
-        w += snprintf(buf + w, s - w, "$%d", imm.d.byte);
-        break;
-    case IMM_WORD:
-        *size = 2;
-        w += snprintf(buf + w, s - w, "$%d", imm.d.word);
-        break;
-    case IMM_DWORD:
-        *size = 4;
-        w += snprintf(buf + w, s - w, "$%d", imm.d.dword);
-        break;
-    case IMM_QUAD:
-        w += snprintf(buf + w, s - w, "$%ld", imm.d.quad);
+    case IMM_INT:
+        *size = imm.w;
+        if (imm.w < 8)
+            w += snprintf(buf + w, s - w, "$%d",
+                (imm.w == 1) ? imm.d.byte :
+                (imm.w == 2) ? imm.d.word : imm.d.dword);
+        else
+            w += snprintf(buf + w, s - w, "$%ld", imm.d.qword);
         break;
     case IMM_ADDR:
         assert(imm.d.addr.sym);
@@ -333,17 +327,15 @@ int asm_text(struct instruction instr)
 int asm_data(struct immediate data)
 {
     switch (data.type) {
-    case IMM_BYTE:
-        out("\t.byte\t%d\n", data.d.byte);
-        break;
-    case IMM_WORD:
-        out("\t.short\t%d\n", data.d.word);
-        break;
-    case IMM_DWORD:
-        out("\t.int\t%d\n", data.d.dword);
-        break;
-    case IMM_QUAD:
-        out("\t.quad\t%ld\n", data.d.quad);
+    case IMM_INT:
+        if (data.w == 1)
+            out("\t.byte\t%d\n", data.d.byte);
+        else if (data.w == 2)
+            out("\t.short\t%d\n", data.d.word);
+        else if (data.w == 4)
+            out("\t.int\t%d\n", data.d.dword);
+        else
+            out("\t.quad\t%ld\n", data.d.qword);
         break;
     case IMM_ADDR:
         assert(data.d.addr.sym);

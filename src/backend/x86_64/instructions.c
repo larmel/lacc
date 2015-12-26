@@ -105,18 +105,15 @@ static void encode_address(struct code *c, enum reg r, struct address addr)
 
 static int is_byte_imm(struct immediate imm)
 {
-    return imm.type == IMM_BYTE ||
-        (imm.type == IMM_WORD && in_byte_range(imm.d.word)) ||
-        (imm.type == IMM_DWORD && in_byte_range(imm.d.dword)) ||
-        (imm.type == IMM_QUAD && in_byte_range(imm.d.quad));
+    return imm.type == IMM_INT && (imm.w == 1 || 
+        (imm.w == 2 && in_byte_range(imm.d.word)) ||
+        (imm.w == 4 && in_byte_range(imm.d.dword)) ||
+        (in_byte_range(imm.d.qword)));
 }
 
 static int is_32bit_imm(struct immediate imm)
 {
-    return imm.type == IMM_BYTE ||
-        imm.type == IMM_WORD ||
-        imm.type == IMM_DWORD ||
-        (imm.type == IMM_QUAD && in_32bit_range(imm.d.quad));
+    return imm.type == IMM_INT && (imm.w < 8 || in_32bit_range(imm.d.qword));
 }
 
 static struct code nop(void)
@@ -138,13 +135,13 @@ static struct code mov(
         if (is_64_bit(b.reg))
             c.val[c.len++] = REX | W(b.reg) | B(b.reg);
         c.val[c.len++] = 0xB8 | w(b.reg) << 3 | reg(b.reg);
-        if (a.imm.type == IMM_BYTE) {
-            c.val[c.len++] = a.imm.d.byte;
-        } else if (a.imm.type == IMM_WORD) {
-            memcpy(&c.val[c.len], &a.imm.d.word, 2);
-            c.len += 2;
-        } else if (a.imm.type == IMM_DWORD || a.imm.type == IMM_QUAD) {
-            if (is_32bit_imm(a.imm)) {
+        if (a.imm.type == IMM_INT) {
+            if (a.imm.w == 1) {
+                c.val[c.len++] = a.imm.d.byte;
+            } else if (a.imm.w == 2) {
+                memcpy(&c.val[c.len], &a.imm.d.word, 2);
+                c.len += 2;
+            } else if (is_32bit_imm(a.imm)) {
                 if (is_64_bit(b.reg)) {
                     /* Special case, not using alternative encoding. */
                     c.val[1] = 0xC7;
@@ -154,13 +151,12 @@ static struct code mov(
                 memcpy(&c.val[c.len], &a.imm.d.dword, 4);
                 c.len += 4;
             } else {
-                assert(a.imm.type == IMM_QUAD);
-                memcpy(&c.val[c.len], &a.imm.d.quad, 8);
+                assert(a.imm.w == 8);
+                memcpy(&c.val[c.len], &a.imm.d.qword, 8);
                 c.len += 8;
             }
-        } else {
+        } else
             assert(0);
-        }
         break;
     case OPT_REG_REG:
         assert(a.reg.w == b.reg.w);
@@ -260,7 +256,6 @@ static struct code sub(
             c.val[3] = a.imm.d.byte;
             c.len = 4;
         } else if (is_32bit_imm(a.imm)) {
-            assert(a.imm.type == IMM_DWORD || a.imm.type == IMM_QUAD);
             memcpy(&c.val[3], &a.imm.d.dword, 4);
             c.len = 7;
         }

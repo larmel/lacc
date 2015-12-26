@@ -64,18 +64,16 @@ struct memory {
  */
 struct immediate {
     enum {
-        IMM_BYTE,
-        IMM_WORD,
-        IMM_DWORD,
-        IMM_QUAD,
+        IMM_INT,    /* 1, 2, 4 or 8 byte signed number */
         IMM_ADDR,   /* Symbol-relative address, label etc */
         IMM_STRING  /* string value, only used for initialization */
     } type;
+    int w;
     union {
         char byte;
         short word;
         int dword;
-        long quad;
+        long qword;
         struct address addr;
         const char *string;
     } d;

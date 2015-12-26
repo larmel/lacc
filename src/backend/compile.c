@@ -104,6 +104,7 @@ static struct immediate value_of(struct var var, int w)
     assert(var.kind == IMMEDIATE);
     assert(!is_array(var.type));
 
+    imm.w = w;
     if (is_string(var)) {
         assert(is_pointer(var.type));
         imm.type = IMM_ADDR;
@@ -112,20 +113,8 @@ static struct immediate value_of(struct var var, int w)
     } else {
         assert(!var.offset);
         assert(is_scalar(var.type));
-        if (w == 1) {
-            imm.type = IMM_BYTE;
-            imm.d.byte = var.imm.i;
-        } else if (w == 2) {
-            imm.type = IMM_WORD;
-            imm.d.word = var.imm.i;
-        } else if (w == 4) {
-            imm.type = IMM_DWORD;
-            imm.d.dword = var.imm.i;
-        } else {
-            assert(w == 8);
-            imm.type = IMM_QUAD;
-            imm.d.quad = var.imm.i;
-        }
+        assert(w == 1 || w == 2 || w == 4 || w == 8);
+        imm.d.qword = var.imm.i;
     }
 
     return imm;
@@ -1087,46 +1076,19 @@ static void compile_data_assign(struct var target, struct var val)
     assert(target.kind == DIRECT);
     assert(val.kind == IMMEDIATE);
 
+    imm.w = size;
     switch (target.type->type) {
-    case T_SIGNED:
-        if (size == 1) {
-            imm.type = IMM_BYTE;
-            imm.d.byte = val.imm.i;
-        } else if (size == 2) {
-            imm.type = IMM_WORD;
-            imm.d.word = val.imm.i;
-        } else if (size == 4) {
-            imm.type = IMM_DWORD;
-            imm.d.dword = val.imm.i;
-        } else {
-            imm.type = IMM_QUAD;
-            imm.d.quad = val.imm.i;
-        }
-        break;
-    case T_UNSIGNED:
-        if (size == 1) {
-            imm.type = IMM_BYTE;
-            imm.d.byte = val.imm.u;
-        } else if (size == 2) {
-            imm.type = IMM_WORD;
-            imm.d.word = val.imm.u;
-        } else if (size == 4) {
-            imm.type = IMM_DWORD;
-            imm.d.dword = val.imm.u;
-        } else {
-            imm.type = IMM_QUAD;
-            imm.d.quad = val.imm.u;
-        }
-        break;
     case T_POINTER:
         if (is_string(val)) {
             imm.type = IMM_ADDR;
             imm.d.addr.sym = val.symbol;
             imm.d.addr.disp = val.offset;
-        } else {
-            imm.type = IMM_QUAD;
-            imm.d.quad = val.imm.u;
+            break;
         }
+    case T_SIGNED:
+    case T_UNSIGNED:
+        imm.type = IMM_INT;
+        imm.d.qword = val.imm.i;
         break;
     case T_ARRAY:
         if (is_string(val)) {
@@ -1145,8 +1107,8 @@ static void compile_data_assign(struct var target, struct var val)
 static void zero_fill_data(size_t bytes)
 {
     struct immediate
-        zero_byte = {IMM_BYTE},
-        zero_quad = {IMM_QUAD};
+        zero_byte = {IMM_INT, 1},
+        zero_quad = {IMM_INT, 8};
 
     while (bytes > size_of(&basic_type__long)) {
         emit_data(zero_quad);

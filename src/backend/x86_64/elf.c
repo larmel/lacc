@@ -316,40 +316,26 @@ int elf_text(struct instruction instr)
 int elf_data(struct immediate imm)
 {
     const void *ptr;
-    size_t w = 0;
+    size_t w = imm.w;
 
-    switch (imm.type) {
-    case IMM_BYTE:
-        w = sizeof(imm.d.byte);
-        ptr = &imm.d.byte;
-        break;
-    case IMM_WORD:
-        w = sizeof(imm.d.word);
-        ptr = &imm.d.word;
-        break;
-    case IMM_DWORD:
-        w = sizeof(imm.d.dword);
-        ptr = &imm.d.dword;
-        break;
-    case IMM_QUAD:
-        w = sizeof(imm.d.quad);
-        ptr = &imm.d.quad;
-        break;
-    case IMM_ADDR:
-        /* String label (todo, create relocation entry to this position) */
-        assert(0);
-        break;
-    case IMM_STRING:
-        w = strlen(imm.d.string) + 1;
+    if (imm.type == IMM_INT) {
+        if (imm.w == 1)
+            ptr = &imm.d.byte;
+        else if (imm.w == 2)
+            ptr = &imm.d.word;
+        else if (imm.w == 4)
+            ptr = &imm.d.dword;
+        else
+            ptr = &imm.d.qword;
+    } else {
+        assert(imm.type == IMM_STRING);
+        assert(w == strlen(imm.d.string) + 1);
         ptr = imm.d.string;
-        break;
     }
 
-    if (w) {
-        data = realloc(data, shdr[SHID_DATA].sh_size + w);
-        memcpy(data + shdr[SHID_DATA].sh_size, ptr, w);
-        shdr[SHID_DATA].sh_size += w;
-    }
+    data = realloc(data, shdr[SHID_DATA].sh_size + w);
+    memcpy(data + shdr[SHID_DATA].sh_size, ptr, w);
+    shdr[SHID_DATA].sh_size += w;
 
     return 0;
 }
