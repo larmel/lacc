@@ -342,8 +342,8 @@ int elf_symbol(const struct symbol *sym)
     assert(sym->linkage != LINK_NONE);
     assert(!sym->stack_offset);
 
-    /* Ignore for now... */
     if (sym->symtype == SYM_LABEL) {
+        ((struct symbol *) sym)->stack_offset = shdr[SHID_TEXT].sh_size;
         return 0;
     }
 
@@ -382,6 +382,55 @@ int elf_symbol(const struct symbol *sym)
 
     elf_symtab_assoc((struct symbol *) sym, entry);
     return 0;
+}
+
+/* Text section contains offsets to labels, also in text. Forward references
+ * cannot be resolved immediately, as translation is single pass. Store offsets
+ * into .text, paired with symbol (label) which offsets should be calculated.
+ */
+static struct pending_displacement {
+    const struct symbol *label;
+    int text_offset;
+} *toff;
+static int n_toff;
+
+int elf_text_displacement(const struct symbol *label, int instr_offset)
+{
+    assert(label->symtype == SYM_LABEL);
+
+    if (label->stack_offset) {
+        return label->stack_offset - shdr[SHID_TEXT].sh_size - instr_offset;
+    }
+
+    toff = realloc(toff, (n_toff + 1) * sizeof(*toff));
+    toff[n_toff].label = label;
+    toff[n_toff].text_offset = shdr[SHID_TEXT].sh_size + instr_offset;
+    n_toff += 1;
+    return 0;
+}
+
+/* Must be called before writing text segment. Overwrite locations with offsets
+ * now found in stack_offset member of label symbols.
+ */
+static void flush_text_displacements(void)
+{
+    int i, *ptr;
+    const struct pending_displacement *entry;
+
+    if (!toff)
+        return;
+
+    assert(n_toff);
+    for (i = 0; i < n_toff; ++i) {
+        entry = &toff[i];
+        assert(entry->label->stack_offset);
+
+        ptr = (int *) (text + entry->text_offset);
+        *ptr += entry->label->stack_offset - entry->text_offset;
+    }
+    free(toff);
+    toff = NULL;
+    n_toff = 0;
 }
 
 int elf_text(struct instruction instr)
@@ -426,6 +475,7 @@ int elf_flush(void)
 {
     flush_symtab_globals();
     flush_relocations();
+    flush_text_displacements();
     elf_data_align(SHID_DATA, 0x10);
     elf_data_align(SHID_RODATA, 0x10);
 

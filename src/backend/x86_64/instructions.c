@@ -305,6 +305,85 @@ static struct code add(
     return c;
 }
 
+static struct code cmp(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = nop();
+    c.len = 0;
+    switch (optype) {
+    case OPT_IMM_REG:
+        if (!is_64_bit(b.reg) && !is_64_bit_reg(b.reg.r)) {
+            c.val[c.len++] = 0x80 | w(b.reg);
+            c.val[c.len++] = 0xF8 | reg(b.reg);
+            if (is_byte_imm(a.imm)) {
+                c.val[0] |= 2; /* Sign extend byte to 32 bit */
+                c.val[c.len++] = a.imm.d.byte;
+            } else {
+                assert(a.imm.w == 4);
+                memcpy(&c.val[c.len], &a.imm.d.dword, 4);
+                c.len += 4;
+            }
+        } else {
+            assert(0);
+        }
+        break;
+    case OPT_REG_REG:
+        assert(a.reg.w == b.reg.w);
+        if (!is_64_bit(a.reg) && !is_64_bit_reg(a.reg.r)) {
+            c.val[c.len++] = 0x38 | w(a.reg);
+            c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        } else
+            assert(0);
+        break;
+    default:
+        assert(0);
+        break;
+    }
+
+    return c;
+}
+
+static struct code jcc(
+    enum instr_optype optype,
+    enum tttn cond,
+    union operand op)
+{
+    int disp, *ptr;
+    struct code c = {{0x0F, 0x80}, 2};
+    const struct address *addr = &op.imm.d.addr;
+
+    assert(optype == OPT_IMM);
+    assert(addr->sym);
+
+    c.val[1] |= cond;
+
+    /* Existing value will be added to offset. Subtract 4 to account for
+     * instruction length, offset is counted after the immediate. */
+    disp = elf_text_displacement(addr->sym, c.len) + addr->disp - 4;
+    ptr = (int *) (c.val + c.len);
+    *ptr = disp;
+    c.len += 4;
+    return c;
+}
+
+static struct code jmp(enum instr_optype optype, union operand op)
+{
+    int disp, *ptr;
+    struct code c = {{0xE9}, 1};
+    const struct address *addr = &op.imm.d.addr;
+
+    assert(optype == OPT_IMM);
+    assert(addr->sym);
+
+    disp = elf_text_displacement(addr->sym, c.len) + addr->disp - 4;
+    ptr = (int *) (c.val + c.len);
+    *ptr = disp;
+    c.len += 4;
+    return c;
+}
+
 static struct code leave(void)
 {
     struct code c = {{0xC9}, 1};
@@ -338,6 +417,8 @@ struct code encode(struct instruction instr)
     switch (instr.opcode) {
     case INSTR_ADD:
         return add(instr.optype, instr.source, instr.dest);
+    case INSTR_CMP:
+        return cmp(instr.optype, instr.source, instr.dest);
     case INSTR_MOV:
         return mov(instr.optype, instr.source, instr.dest);
     case INSTR_MOVSX:
@@ -352,6 +433,19 @@ struct code encode(struct instruction instr)
         return leave();
     case INSTR_RET:
         return ret();
+    case INSTR_JMP:
+        return jmp(instr.optype, instr.source);
+    case INSTR_JA:
+        return jcc(instr.optype, TEST_A, instr.source);
+    case INSTR_JG:
+        return jcc(instr.optype, TEST_G, instr.source);
+    case INSTR_JE:
+    case INSTR_JZ: /* Lol, this is the same as je.. -.- */
+        return jcc(instr.optype, TEST_Z, instr.source);
+    case INSTR_JAE:
+        return jcc(instr.optype, TEST_AE, instr.source);
+    case INSTR_JGE:
+        return jcc(instr.optype, TEST_GE, instr.source);
     case INSTR_SETZ:
         return setcc(instr.optype, TEST_Z, instr.source);
     case INSTR_SETA:

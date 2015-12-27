@@ -117,4 +117,10 @@ void elf_add_relocation(
     int section_offset,
     int sym_offset);
 
+/* Return offset between label and current position in text segment, if label
+ * has already been calculated. For forward references, return 0 and store this
+ * location as pending. All pending displacements are written on flush.
+ */
+int elf_text_displacement(const struct symbol *label, int instr_offset);
+
 #endif
