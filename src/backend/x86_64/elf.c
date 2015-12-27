@@ -83,7 +83,7 @@ static Elf64_Shdr shdr[] = {
         0,              /* sh_offset (TODO) */
         0,              /* sh_size (TODO) */
         SHID_STRTAB,    /* sh_link, section number of strtab */
-        1,              /* sh_info, index of first non-local symbol (TODO) */
+        0,              /* sh_info, index of first non-local symbol (x) */
         4,              /* sh_addralign */
         sizeof(Elf64_Sym)
     },
@@ -192,6 +192,14 @@ static int elf_symtab_add(Elf64_Sym entry)
     shdr[SHID_SYMTAB].sh_size += sizeof(Elf64_Sym);
     symtab = realloc(symtab, shdr[SHID_SYMTAB].sh_size);
     symtab[i] = entry;
+
+    /* All STB_LOCAL must come before STB_GLOBAL. Index of the first non-local
+     * symbol is stored in section header field. */
+    if (entry.st_info >> 4 == STB_GLOBAL && !shdr[SHID_SYMTAB].sh_info) {
+        shdr[SHID_SYMTAB].sh_info = i;
+    } else
+        assert((entry.st_info >> 4) == (symtab[i - 1].st_info >> 4));
+
     return i;
 }
 
@@ -228,7 +236,6 @@ static int elf_strtab_add(const char *str)
 }
 
 static Elf64_Rela *rela_text;
-static int rela_text_len;
 
 /* Pending relocations, waiting for sym->stack_offset to be resolved to index
  * into .symtab once written to data section.
@@ -238,6 +245,7 @@ static struct pending_relocation {
     int offset;                 /* offset into .text */
     int addend;                 /* offset into symbol ? */
 } *prl;
+static int n_relocs;
 
 /* Add pending relocation to symbol on offset from current .text size. Offset
  * is into instruction being assembled.
@@ -251,9 +259,9 @@ void elf_add_relocation(
 {
     struct pending_relocation *entry;
 
-    rela_text_len += 1;
-    prl = realloc(prl, rela_text_len * sizeof(*prl));
-    entry = &prl[rela_text_len - 1];
+    n_relocs += 1;
+    prl = realloc(prl, n_relocs * sizeof(*prl));
+    entry = &prl[n_relocs - 1];
 
     entry->sym = sym;
     entry->offset = section_offset + shdr[SHID_TEXT].sh_size;
@@ -261,7 +269,9 @@ void elf_add_relocation(
 }
 
 /* Construct relocation entries from pending relocations. Invoked with flush(),
- * after all data and code is processed.
+ * after all data and code is processed. It is important that this is called
+ * after all symbols have been written to symtab, as it relies on stack_offset
+ * pointing to symtab entry index.
  */
 static void flush_relocations(void)
 {
@@ -269,25 +279,61 @@ static void flush_relocations(void)
     Elf64_Rela *entry;
     assert(!rela_text);
 
-    rela_text = calloc(rela_text_len, sizeof(*rela_text));
-    for (i = 0; i < rela_text_len; ++i) {
+    rela_text = calloc(n_relocs, sizeof(*rela_text));
+    for (i = 0; i < n_relocs; ++i) {
         entry = &rela_text[i];
-
-        /* Stack offset in this context is used for .symtab entry index. */
         assert(prl[i].sym->stack_offset);
-
         entry->r_offset = prl[i].offset;
         entry->r_info =
             ELF64_R_INFO((long) prl[i].sym->stack_offset, R_X86_64_PC32);
         entry->r_addend = prl[i].addend;
     }
 
-    shdr[SHID_RELA_TEXT].sh_size = rela_text_len * sizeof(Elf64_Rela);
+    shdr[SHID_RELA_TEXT].sh_size = n_relocs * sizeof(Elf64_Rela);
+}
+
+/* List of pending global symbols, not yet added to .symtab. All globals have
+ * to come after LOCAL symbols, according to spec. Also, ld will segfault(!)
+ * otherwise.
+ */
+static struct {
+    struct symbol *sym;
+    Elf64_Sym entry;
+} *globals;
+static int n_globals;
+
+/* Associate symbol with symtab entry. Internal symbols are added to table right
+ * away, but global symbols have to be buffered and flushed at the end. (Mis-)
+ * use member for storing index into ELF symbol table. Stack offset is otherwise
+ * only used for local variables, which will not live in this symbol table.
+ */
+static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
+{
+    if (sym->linkage == LINK_INTERN) {
+        sym->stack_offset = elf_symtab_add(entry);
+    } else {
+        assert((entry.st_info >> 4) == STB_GLOBAL);
+        globals = realloc(globals, (n_globals + 1) * sizeof(*globals));
+        globals[n_globals].sym = sym;
+        globals[n_globals].entry = entry;
+        n_globals += 1;
+    }
+}
+
+/* Write global symtab entries to table.
+ */
+static void flush_symtab_globals(void)
+{
+    int i;
+    for (i = 0; i < n_globals; ++i)
+        globals[i].sym->stack_offset = elf_symtab_add(globals[i].entry);
 }
 
 int elf_symbol(const struct symbol *sym)
 {
     Elf64_Sym entry = {0};
+    assert(sym->linkage != LINK_NONE);
+    assert(!sym->stack_offset);
 
     /* Ignore these for now... */
     if (sym->symtype == SYM_LABEL || sym->symtype == SYM_STRING_VALUE) {
@@ -295,6 +341,8 @@ int elf_symbol(const struct symbol *sym)
     }
 
     entry.st_name = elf_strtab_add(sym->name);
+    entry.st_info = (sym->linkage == LINK_INTERN)
+        ? STB_LOCAL << 4 : STB_GLOBAL << 4;
 
     if (is_function(&sym->type)) {
         switch (sym->symtype) {
@@ -302,30 +350,20 @@ int elf_symbol(const struct symbol *sym)
             entry.st_shndx = SHID_TEXT;
         case SYM_DECLARATION:
         case SYM_TENTATIVE:
-            entry.st_info = (STB_GLOBAL << 4) | STT_FUNC;
+            entry.st_info |= STT_FUNC;
             break;
         default:
             break;
         }
-        elf_symtab_add(entry);
     } else if (sym->symtype == SYM_DEFINITION) {
         elf_data_align(sym_alignment(sym));
         entry.st_shndx = SHID_DATA;
-        /* Linker goes into shock if we mix up local/global... */
-        /*if (sym->linkage == LINK_EXTERN)*/
-            entry.st_info = (STB_GLOBAL << 4) | STT_OBJECT;
-        /*else
-            entry.st_info = (STB_LOCAL << 4) | STT_OBJECT;*/
         entry.st_size = size_of(&sym->type);
         entry.st_value = shdr[SHID_DATA].sh_size;
-
-        /* (Mis-)use member for storing index into ELF symbol table. Stack
-         * offset is otherwise only used for local variables, which will not
-         * live in this symbol table. */
-        assert(!sym->stack_offset);
-        ((struct symbol *) sym)->stack_offset = elf_symtab_add(entry);
+        entry.st_info |= STT_OBJECT;
     }
 
+    elf_symtab_assoc((struct symbol *) sym, entry);
     return 0;
 }
 
@@ -369,8 +407,10 @@ int elf_data(struct immediate imm)
 
 int elf_flush(void)
 {
+    flush_symtab_globals();
     flush_relocations();
     elf_data_align(0x10);
+
     fwrite(&header, sizeof(header), 1, object_file_output);
 
     /* Fill in missing offset and size values */
