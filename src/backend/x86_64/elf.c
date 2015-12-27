@@ -138,31 +138,38 @@ static Elf64_Shdr shdr[] = {
 };
 
 static unsigned char *data;
+static unsigned char *rodata;
 
-/* Write bytes to .data section. If ptr is NULL, fill with zeros.
+/* Write bytes to .data or .rodata section. If ptr is NULL, fill with zeros.
  */
-static int elf_data_add(const char *ptr, size_t n)
+static int elf_data_add(int shid, const char *ptr, size_t n)
 {
-    size_t offset = shdr[SHID_DATA].sh_size;
+    size_t offset;
+    unsigned char **buf;
+    assert(shid == SHID_DATA || shid == SHID_RODATA);
 
-    data = realloc(data, offset + n);
+    offset = shdr[shid].sh_size;
+    buf = (shid == SHID_DATA) ? &data : &rodata;
+    *buf = realloc(*buf, offset + n);
     if (ptr)
-        memcpy(data + offset, ptr, n);
+        memcpy(*buf + offset, ptr, n);
     else
-        memset(data + offset, '\0', n);
-    shdr[SHID_DATA].sh_size += n;
+        memset(*buf + offset, '\0', n);
+    shdr[shid].sh_size += n;
     return offset;
 }
 
-/* Align data section to specified number of bytes. Following calls to
- * elf_data_add start at this alignment. Padding is filled with zero.
+/* Align .data or .rodata section to specified number of bytes. Following calls
+ * to elf_data_add start at this alignment. Padding is filled with zero.
  */
-static int elf_data_align(int align)
+static int elf_data_align(int shid, int align)
 {
-    size_t offset = shdr[SHID_DATA].sh_size;
+    size_t offset;
+    assert(shid == SHID_DATA || shid == SHID_RODATA);
 
+    offset = shdr[shid].sh_size;
     if (offset % align != 0)
-        elf_data_add(NULL, align - (offset % align));
+        elf_data_add(shid, NULL, align - (offset % align));
     return offset;
 }
 
@@ -335,12 +342,12 @@ int elf_symbol(const struct symbol *sym)
     assert(sym->linkage != LINK_NONE);
     assert(!sym->stack_offset);
 
-    /* Ignore these for now... */
-    if (sym->symtype == SYM_LABEL || sym->symtype == SYM_STRING_VALUE) {
+    /* Ignore for now... */
+    if (sym->symtype == SYM_LABEL) {
         return 0;
     }
 
-    entry.st_name = elf_strtab_add(sym->name);
+    entry.st_name = elf_strtab_add(sym_name(sym));
     entry.st_info = (sym->linkage == LINK_INTERN)
         ? STB_LOCAL << 4 : STB_GLOBAL << 4;
 
@@ -356,11 +363,21 @@ int elf_symbol(const struct symbol *sym)
             break;
         }
     } else if (sym->symtype == SYM_DEFINITION) {
-        elf_data_align(sym_alignment(sym));
+        elf_data_align(SHID_DATA, sym_alignment(sym));
         entry.st_shndx = SHID_DATA;
         entry.st_size = size_of(&sym->type);
         entry.st_value = shdr[SHID_DATA].sh_size;
         entry.st_info |= STT_OBJECT;
+    } else if (sym->symtype == SYM_STRING_VALUE) {
+        elf_data_align(SHID_RODATA, sym_alignment(sym));
+        entry.st_shndx = SHID_RODATA;
+        entry.st_size = size_of(&sym->type);
+        entry.st_value = shdr[SHID_DATA].sh_size;
+        entry.st_info |= STT_OBJECT;
+
+        /* String value symbols contain the actual string value; write to
+         * .rodata immediately. */
+        elf_data_add(SHID_RODATA, sym->string_value, size_of(&sym->type));
     }
 
     elf_symtab_assoc((struct symbol *) sym, entry);
@@ -402,14 +419,15 @@ int elf_data(struct immediate imm)
         ptr = imm.d.string;
     }
 
-    return elf_data_add(ptr, w);
+    return elf_data_add(SHID_DATA, ptr, w);
 }
 
 int elf_flush(void)
 {
     flush_symtab_globals();
     flush_relocations();
-    elf_data_align(0x10);
+    elf_data_align(SHID_DATA, 0x10);
+    elf_data_align(SHID_RODATA, 0x10);
 
     fwrite(&header, sizeof(header), 1, object_file_output);
 
@@ -417,7 +435,8 @@ int elf_flush(void)
     SHDR_CHAIN_OFFSET(SHID_STRTAB, SHID_SYMTAB);
     SHDR_CHAIN_OFFSET(SHID_SYMTAB, SHID_RELA_TEXT);
     SHDR_CHAIN_OFFSET(SHID_RELA_TEXT, SHID_DATA);
-    SHDR_CHAIN_OFFSET(SHID_DATA, SHID_TEXT);
+    SHDR_CHAIN_OFFSET(SHID_DATA, SHID_RODATA);
+    SHDR_CHAIN_OFFSET(SHID_RODATA, SHID_TEXT);
 
     /* Section headers */
     fwrite(&shdr, sizeof(shdr), 1, object_file_output);
@@ -428,6 +447,7 @@ int elf_flush(void)
     fwrite(symtab, shdr[SHID_SYMTAB].sh_size, 1, object_file_output);
     fwrite(rela_text, shdr[SHID_RELA_TEXT].sh_size, 1, object_file_output);
     fwrite(data, shdr[SHID_DATA].sh_size, 1, object_file_output);
+    fwrite(rodata, shdr[SHID_RODATA].sh_size, 1, object_file_output);
     fwrite(text, shdr[SHID_TEXT].sh_size, 1, object_file_output);
 
     return 0;
