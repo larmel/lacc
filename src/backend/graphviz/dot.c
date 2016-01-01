@@ -38,14 +38,16 @@ static char *vartostr(const struct var var)
     case IMMEDIATE:
         switch (var.type->type) {
         case T_POINTER:
-            assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
-            if (var.offset) {
-                sprintf(buffer, "$%s%s%d", sym_name(var.symbol),
-                    (var.offset > 0) ? "+" : "", var.offset);
-            } else {
-                sprintf(buffer, "$%s", sym_name(var.symbol));
+            if (var.symbol) {
+                assert(var.symbol->symtype == SYM_STRING_VALUE);
+                if (var.offset) {
+                    sprintf(buffer, "$%s%s%d", sym_name(var.symbol),
+                        (var.offset > 0) ? "+" : "", var.offset);
+                } else {
+                    sprintf(buffer, "$%s", sym_name(var.symbol));
+                }
+                break;
             }
-            break;
         case T_UNSIGNED:
             sprintf(buffer, "%lu", var.imm.u);
             break;
@@ -213,38 +215,17 @@ static void foutputnode(FILE *stream, struct block *node)
     }
 }
 
-static void output_prefix(FILE *stream)
+void fdotgen(FILE *stream, struct definition def)
 {
     fprintf(stream, "digraph {\n");
-    fprintf(stream,
-        "\tnode [fontname=\"Courier_New\",fontsize=10,"
-        "style=\"setlinewidth(0.1)\",shape=record];\n");
-    fprintf(stream,
-        "\tedge [fontname=\"Courier_New\",fontsize=10,"
-        "style=\"setlinewidth(0.1)\"];\n");
-}
-
-static void output_suffix(FILE *stream)
-{
-    fprintf(stream, "}\n");
-}
-
-/* Take a control flow graph (struct block structure) and output it in .dot 
- * format, which can then be rendered.
- */
-void fdotgen(FILE *stream, struct cfg *cfg)
-{
-    if (cfg->head->n) {
-        output_prefix(stream);
-        foutputnode(stream, cfg->head);
-        output_suffix(stream);
-    }
-
-    if (cfg->fun) {
-        output_prefix(stream);
-        fprintf(stream, "\tlabel=\"%s\"\n", cfg->fun->name);
+    fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,"
+                    "style=\"setlinewidth(0.1)\",shape=record];\n");
+    fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,"
+                    "style=\"setlinewidth(0.1)\"];\n");
+    if (is_function(&def.symbol->type)) {
+        fprintf(stream, "\tlabel=\"%s\"\n", def.symbol->name);
         fprintf(stream, "\tlabelloc=\"t\"\n");
-        foutputnode(stream, cfg->body);
-        output_suffix(stream);
     }
+    foutputnode(stream, def.body);
+    fprintf(stream, "}\n");
 }

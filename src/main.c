@@ -1,8 +1,7 @@
-#ifndef _XOPEN_SOURCE
+#if _XOPEN_SOURCE < 500
 #  define _XOPEN_SOURCE 500 /* getopt */
 #endif
 #include "backend/compile.h"
-#include "parser/cfg.h"
 #include "parser/parse.h"
 #include "parser/symtab.h"
 #include "preprocessor/preprocess.h"
@@ -71,6 +70,7 @@ static enum compile_target parse_args(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+    struct definition def;
     enum compile_target target = parse_args(argc, argv);
 
     /* Add default search paths last, with lowest priority. These are searched
@@ -90,8 +90,12 @@ int main(int argc, char *argv[])
         push_scope(&ns_label);
         register_builtin_types(&ns_ident);
 
-        while (parse() && !errors)
-            compile_cfg(&current_cfg);
+        do {
+            def = parse();
+            if (def.symbol && !errors)
+                compile(def);
+            free_definition(def);
+        } while (def.symbol && !errors);
 
         if (errors)
             error("Aborting because of previous %s.",

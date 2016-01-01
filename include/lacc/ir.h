@@ -79,10 +79,11 @@ struct var {
     int lvalue;
 };
 
-/* Basic block in control flow graph.
+/* Basic block in function control flow graph, containing a symbolic address
+ * and a contiguous list of IR operations.
  */
 struct block {
-    /* A unique jump target, symbol is of type SYM_LABEL. */
+    /* Unique jump target address, symbol of type SYM_LABEL. */
     const struct symbol *label;
 
     /* Realloc-able list of 3-address code operations. */
@@ -120,30 +121,54 @@ struct block {
     } color;
 };
 
-/* Represents an external declaration list or a function definition.
+struct block_list {
+    struct block **block;
+    int length;
+    int capacity;
+};
+
+/* Represents a function or object definition. Parsing emits one definition at
+ * a time, which is passed on to backend. A simple definition can be a static
+ * or external symbol assigned to a value:
+ * 
+ *      int foo = 123, bar = 89;
+ *
+ * The whole statement is parsed in one go, but results yielded as two
+ * definitions; foo, bar.
+ *
+ * Function definitions include a collection of blocks to model control flow,
+ * and can include nested static definitions.
+ *
+ *      int baz(void) {
+ *          static int i = 0;
+ *          if (i) return 42;
+ *          else return i++;
+ *      }
+ *
+ * In the above example, baz and i are emitted as separate definitions from
+ * parser.
+ *
  */
-struct cfg {
-    /* Function symbol or NULL if list of declarations. */
-    const struct symbol *fun;
+struct definition {
+    /* Symbol definition, which is assigned some value. A definition only
+     * concerns a single symbol. */
+    const struct symbol *symbol;
 
-    /* References to blocks holding global declarations and head of function
-     * CFG, respectively. */
-    struct block *head, *body;
+    /* Function definitions are associated with a control flow graph, where
+     * this is the entry point. Static and extern definitions are represented
+     * as a series of assignment IR operations. */
+    struct block *body;
 
-    /* Number of bytes to allocate to local variables on stack. */
-    int locals_size;
-
-    /* Store all symbols associated with a function declaration. Need non-const
+    /* Store all symbols associated with a function definition. Need non-const
      * references, as backend will use this to assign stack offset of existing
      * symbols. */
     struct symbol_list
         params,
         locals;
 
-    /* Store all associated nodes in a list to simplify deallocation. */
-    struct block **nodes;
-    size_t size;
-    size_t capacity;
+    /* Store all associated nodes in a list to be able to free everything at
+     * the end. */
+    struct block_list nodes;
 };
 
 /* A direct reference to given symbol, with two exceptions: SYM_ENUM_VALUE and
@@ -154,13 +179,5 @@ struct var var_direct(const struct symbol *sym);
 /* A constant value of integer type.
  */
 struct var var_int(int value);
-
-/* A zero constant value of integer type.
- */
-struct var var_zero(int size);
-
-/* A value with no type.
- */
-struct var var_void(void);
 
 #endif

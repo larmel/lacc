@@ -1119,63 +1119,46 @@ static void zero_fill_data(size_t bytes)
         emit_data(zero_byte);
 }
 
-static void compile_data(const struct block *head)
+static void compile_data(struct definition def)
 {
-    const struct typetree *type;
-    int i, initialized;
     struct op *op;
+    int i,
+        total_size = size_of(&def.symbol->type),
+        initialized = 0;
 
-    /* Point to the current type being initialized. */
-    type = NULL;
-
-    for (i = 0; i < head->n; ++i) {
-        op = head->code + i;
+    enter_context(def.symbol);
+    for (i = 0; i < def.body->n; ++i) {
+        op = def.body->code + i;
 
         assert(op->type == IR_ASSIGN);
         assert(op->a.kind == DIRECT);
-
-        /* Require that assignments come in sequentially per symbol, and for
-         * each symbol sorted on increasing offsets. */
-        if (!op->a.offset) {
-            if (type) {
-                assert(size_of(type) >= initialized);
-                zero_fill_data(size_of(type) - initialized);
-            }
-            type = &op->a.symbol->type;
-            enter_context(op->a.symbol);
-            initialized = 0;
-        }
-
-        /* Insert necessary padding bytes before emitting initializer, which
-         * can contain sparse assignments. */
+        assert(op->a.symbol == def.symbol);
         assert(op->a.offset >= initialized);
-        zero_fill_data(op->a.offset - initialized);
 
+        zero_fill_data(op->a.offset - initialized);
         compile_data_assign(op->a, op->b);
         initialized = op->a.offset + size_of(op->a.type);
     }
 
-    if (type) {
-        assert(size_of(type) >= initialized);
-        zero_fill_data(size_of(type) - initialized);
-    }
+    assert(total_size >= initialized);
+    zero_fill_data(total_size - initialized);
 }
 
-static void compile_function(struct cfg *cfg)
+static void compile_function(struct definition def)
 {
     enum param_class *result_class;
 
-    assert(is_function(&cfg->fun->type));
-    enter_context(cfg->fun);
+    assert(is_function(&def.symbol->type));
+    enter_context(def.symbol);
     emit(INSTR_PUSH, OPT_REG, reg(BP, 8));
     emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(BP, 8));
 
     /* Make sure parameters and local variables are placed on stack. Keep
      * parameter class of return value for later assembling return. */
-    result_class = enter(&cfg->fun->type, cfg->params, cfg->locals);
+    result_class = enter(&def.symbol->type, def.params, def.locals);
 
     /* Recursively assemble body. */
-    compile_block(cfg->body, result_class);
+    compile_block(def.body, result_class);
 
     free(result_class);
 }
@@ -1205,24 +1188,19 @@ void set_compile_target(FILE *stream, enum compile_target target)
     }
 }
 
-int compile_cfg(struct cfg *cfg)
+int compile(struct definition def)
 {
-    int i;
-
-    /* Reset coloring before traversal. */
-    for (i = 0; i < cfg->size; ++i)
-        cfg->nodes[i]->color = WHITE;
-
     switch (compile_target) {
     case TARGET_IR_DOT:
-        fdotgen(output_stream, cfg);
+        fdotgen(output_stream, def);
     case TARGET_NONE:
         break;
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
-        compile_data(cfg->head);
-        if (cfg->fun)
-            compile_function(cfg);
+        if (is_function(&def.symbol->type))
+            compile_function(def);
+        else
+            compile_data(def);
         break;
     }
 

@@ -1,5 +1,5 @@
-#include "cfg.h"
 #include "eval.h"
+#include "parse.h"
 #include "type.h"
 #include <lacc/cli.h>
 
@@ -21,6 +21,61 @@ static int is_string(struct var val)
         val.symbol->symtype == SYM_STRING_VALUE;
 }
 
+static void ir_append(struct block *block, struct op op)
+{
+    /* Current block can be NULL when parsing an expression that should not be
+     * evaluated, for example argument to sizeof. */
+    if (block) {
+        block->n += 1;
+        block->code = realloc(block->code, sizeof(*block->code) * block->n);
+        block->code[block->n - 1] = op;
+    }
+}
+
+static struct var var_void(void)
+{
+    struct var var = {0};
+
+    var.kind = IMMEDIATE;
+    var.type = &basic_type__void;
+    return var;
+}
+
+struct var var_direct(const struct symbol *sym)
+{
+    struct var var = {0};
+
+    var.type = &sym->type;
+    var.symbol = sym;
+
+    switch (sym->symtype) {
+    case SYM_ENUM_VALUE:
+        var.kind = IMMEDIATE;
+        var.imm.i = sym->enum_value;
+        break;
+    case SYM_STRING_VALUE:
+        var.kind = IMMEDIATE;
+        break;
+    default:
+        assert(sym->symtype != SYM_LABEL);
+        var.kind = DIRECT;
+        var.lvalue = sym->name[0] != '.';
+        break;
+    }
+
+    return var;
+}
+
+struct var var_int(int value)
+{
+    struct var var = {0};
+
+    var.kind = IMMEDIATE;
+    var.type = &basic_type__int;
+    var.imm.i = value;
+    return var;
+}
+
 static struct var evaluate(
     struct block *block,
     enum optype op,
@@ -39,7 +94,7 @@ static struct var evaluate(
     }
 
     va_end(args);
-    cfg_ir_append(block, ir);
+    ir_append(block, ir);
 
     return ir.a;
 }
@@ -564,7 +619,7 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
     op.type = IR_ASSIGN;
     op.a = target;
     op.b = var;
-    cfg_ir_append(block, op);
+    ir_append(block, op);
     target.lvalue = 0;
 
     return target;
@@ -595,7 +650,7 @@ struct var eval_call(struct block *block, struct var var)
     op.type = IR_CALL;
     op.a = res;
     op.b = var;
-    cfg_ir_append(block, op);
+    ir_append(block, op);
 
     return res;
 }
@@ -751,7 +806,7 @@ void param(struct block *block, struct var p)
     struct op op = {IR_PARAM};
 
     op.a = array_or_func_to_addr(block, p);
-    cfg_ir_append(block, op);
+    ir_append(block, op);
 }
 
 struct var eval__builtin_va_start(struct block *block, struct var arg)
@@ -759,7 +814,7 @@ struct var eval__builtin_va_start(struct block *block, struct var arg)
     struct op op = {IR_VA_START};
 
     op.a = arg;
-    cfg_ir_append(block, op);
+    ir_append(block, op);
     return var_void();
 }
 

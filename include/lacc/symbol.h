@@ -57,15 +57,15 @@ struct symbol {
 
 struct symbol_list {
     struct symbol **symbol;
-    size_t length;
-    size_t capacity;
+    int length;
+    int capacity;
 };
 
 /* Get the full name, including numeric value to disambiguate.
  */
 const char *sym_name(const struct symbol *sym);
 
-/* Create a jump label symbol, of type void *.
+/* Create a jump label symbol, of type void.
  */
 struct symbol *sym_create_label(void);
 

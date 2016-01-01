@@ -13,13 +13,13 @@ enum compile_target {
 };
 
 /* Initialize compile target format and output stream. Must be called before
- * any compile_* function.
+ * any other compile function.
  */
 void set_compile_target(FILE *stream, enum compile_target target);
 
-/* Compile control flow graph.
+/* Compile symbol definition.
  */
-int compile_cfg(struct cfg *cfg);
+int compile(struct definition def);
 
 /* Compile tentative symbols, that have not been assigned a value in this
  * translation unit.

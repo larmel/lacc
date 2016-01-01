@@ -1,4 +1,3 @@
-#include "cfg.h"
 #include "eval.h"
 #include "parse.h"
 #include "symtab.h"
@@ -37,6 +36,42 @@
 
 #define restore_continue_target(old) \
     continue_target = old;
+
+/* Parser consumes whole declaration statements, which can include multiple
+ * definitions. For example 'int foo = 1, bar = 2;'. These are buffered and
+ * returned one by one on calls to parse().
+ */
+static struct definition_list {
+    struct definition *def;
+    int cur;                    /* Index of definition to return next */
+    int len;
+} defs;
+
+static struct definition *push_back_definition(const struct symbol *sym)
+{
+    struct definition *def;
+    assert(sym->symtype == SYM_DEFINITION);
+
+    defs.def = realloc(defs.def, (defs.len + 1) * sizeof(*defs.def));
+    def = &defs.def[defs.len++];
+
+    memset(def, 0, sizeof(*def));
+    def->symbol = sym;
+    def->body = cfg_block_init();
+    return def;
+}
+
+static struct definition *current_func(void)
+{
+    int i;
+    for (i = defs.len - 1; i >= defs.cur; --i) {
+        if (is_function(&defs.def[i].symbol->type)) {
+            return &defs.def[i];
+        }
+    }
+    error("Not in function context.");
+    exit(1);
+}
 
 /* Store reference to top of loop, for resolving break and continue. Use call
  * stack to keep track of depth, backtracking to the old value.
@@ -105,11 +140,61 @@ static struct block *declaration(struct block *parent);
 static struct typetree *declaration_specifiers(int *stc);
 static struct typetree *declarator(struct typetree *base, const char **symbol);
 
+static struct block_list block_list_add(
+    struct block_list list,
+    struct block *block)
+{
+    assert(block);
+    if (list.capacity <= list.length) {
+        list.capacity += 32;
+        list.block = realloc(list.block, list.capacity * sizeof(*block));
+    }
+
+    list.block[list.length++] = block;
+    return list;
+}
+
+static struct symbol_list sym_list_add(
+    struct symbol_list list,
+    struct symbol *sym)
+{
+    assert(sym);
+    if (list.capacity <= list.length) {
+        list.capacity += 32;
+        list.symbol = realloc(list.symbol, list.capacity * sizeof(*sym));
+    }
+
+    list.symbol[list.length++] = sym;
+    return list;
+}
+
+struct var create_var(const struct typetree *type)
+{
+    struct definition *def = current_func();
+    struct symbol *temp = sym_create_tmp(type);
+    struct var res = var_direct(temp);
+
+    def->locals = sym_list_add(def->locals, temp);
+    res.lvalue = 1;
+    return res;
+}
+
+static struct var var_zero(int size)
+{
+    struct var var = {0};
+
+    var.kind = IMMEDIATE;
+    var.type = BASIC_TYPE_SIGNED(size);
+    var.imm.i = 0;
+    return var;
+}
+
 /* Parse call to builtin symbol __builtin_va_start, which is the result of
  * calling va_start(arg, s). Return type depends on second input argument.
  */
 static struct block *parse__builtin_va_start(struct block *block)
 {
+    const struct typetree *type;
     struct symbol *sym;
     struct token param;
     int is_invalid;
@@ -120,12 +205,10 @@ static struct block *parse__builtin_va_start(struct block *block)
     param = consume(IDENTIFIER);
     sym = sym_lookup(&ns_ident, param.strval);
 
-    is_invalid = !sym || sym->depth != 1 || !current_cfg.fun;
-    is_invalid = is_invalid || !nmembers(&current_cfg.fun->type);
-    is_invalid = is_invalid || strcmp(
-        get_member(&current_cfg.fun->type,
-            nmembers(&current_cfg.fun->type) - 1)->name,
-        param.strval);
+    type = &current_func()->symbol->type;
+    is_invalid = !sym || sym->depth != 1 || !is_function(type);
+    is_invalid = is_invalid || !nmembers(type) || strcmp(
+        get_member(type, nmembers(type) - 1)->name, param.strval);
 
     if (is_invalid) {
         error("Second parameter of va_start must be last function argument.");
@@ -1015,9 +1098,10 @@ static struct block *statement(struct block *parent)
         break;
     case RETURN:
         consume(RETURN);
-        if (!is_void(current_cfg.fun->type.next)) {
+        sym = current_func()->symbol;
+        if (!is_void(sym->type.next)) {
             parent = expression(parent);
-            parent->expr = eval_return(parent, current_cfg.fun->type.next);
+            parent->expr = eval_return(parent, sym->type.next);
         }
         consume(';');
         parent = cfg_block_init(); /* orphan */
@@ -1802,6 +1886,7 @@ static struct block *declaration(struct block *parent)
     }
 
     while (1) {
+        struct definition *def;
         const char *name = NULL;
         const struct typetree *type;
         struct symbol *sym;
@@ -1815,7 +1900,8 @@ static struct block *declaration(struct block *parent)
         sym = sym_add(&ns_ident, name, type, symtype, linkage);
         if (ns_ident.current_depth) {
             assert(ns_ident.current_depth > 1);
-            cfg_register_local(sym);
+            def = current_func();
+            def->locals = sym_list_add(def->locals, sym);
         }
 
         switch (peek().token) {
@@ -1833,10 +1919,13 @@ static struct block *declaration(struct block *parent)
             }
             consume('=');
             sym->symtype = SYM_DEFINITION;
-            if (!sym->depth || sym->n) {
-                current_cfg.head = initializer(current_cfg.head, var_direct(sym));
-            } else {
+            if (sym->linkage == LINK_NONE) {
+                assert(parent);
                 parent = initializer(parent, var_direct(sym));
+            } else {
+                assert(sym->depth || !parent);
+                def = push_back_definition(sym);
+                initializer(def->body, var_direct(sym));
             }
             assert(size_of(&sym->type) > 0);
             if (peek().token != ',') {
@@ -1850,9 +1939,10 @@ static struct block *declaration(struct block *parent)
                 error("Invalid function definition.");
                 exit(1);
             }
+            assert(!parent);
+            assert(sym->linkage != LINK_NONE);
             sym->symtype = SYM_DEFINITION;
-            current_cfg.fun = sym;
-
+            def = push_back_definition(sym);
             push_scope(&ns_ident);
             define_builtin__func__(sym->name);
             for (i = 0; i < nmembers(&sym->type); ++i) {
@@ -1864,12 +1954,11 @@ static struct block *declaration(struct block *parent)
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
                 }
-                cfg_register_param(
+                def->params = sym_list_add(def->params,
                     sym_add(&ns_ident, name, type, symtype, linkage));
             }
-            parent = block(parent);
+            parent = block(def->body);
             pop_scope(&ns_ident);
-
             return parent;
         }
         default:
@@ -1879,20 +1968,67 @@ static struct block *declaration(struct block *parent)
     }
 }
 
-int parse(void)
+static struct definition fallback;
+
+struct block *cfg_block_init(void)
 {
-    if (peek().token == END)
-        return 0;
+    struct definition *def;
+    struct block *block;
 
-    cfg_init_current();
+    block = calloc(1, sizeof(*block));
+    block->label = sym_create_label();
 
-    while (peek().token != END) {
-        current_cfg.fun = NULL;
-        declaration(current_cfg.body);
-        if (current_cfg.head->n || current_cfg.fun) {
-            return 1;
+    /* Block is owned by last added definition, also non-functions. The fallback
+     * solution is to get some owner for expressiong like enum { A = 1 } foo;
+     * where the constant expression is evaluated by instantiating blocks. */
+    def = (defs.len) ? &defs.def[defs.len - 1] : &fallback;
+    def->nodes = block_list_add(def->nodes, block);
+
+    return block;
+}
+
+struct definition parse(void)
+{
+    struct definition def = {0};
+
+    while (!defs.len && peek().token != END) {
+        /* Parse a declaration, which can include definitions that will fill
+         * up the buffer. Tentative declarations will only affect the symbol
+         * table. */
+        declaration(NULL);
+        free_definition(fallback);
+        memset(&fallback, 0, sizeof(fallback));
+    }
+
+    if (defs.cur < defs.len) {
+        def = defs.def[defs.cur++];
+        if (defs.cur == defs.len) {
+            free(defs.def);
+            memset(&defs, 0, sizeof(defs));
         }
     }
 
-    return 0;
+    return def;
+}
+
+void free_definition(struct definition def)
+{
+    int i;
+    struct block *block;
+
+    if (def.params.capacity)
+        free(def.params.symbol);
+
+    if (def.locals.capacity)
+        free(def.locals.symbol);
+
+    if (def.nodes.capacity) {
+        for (i = 0; i < def.nodes.length; ++i) {
+            block = def.nodes.block[i];
+            if (block->n)
+                free(block->code);
+            free(block);
+        }
+        free(def.nodes.block);
+    }
 }

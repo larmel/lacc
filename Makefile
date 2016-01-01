@@ -20,7 +20,6 @@ BOOTSTRAP_SOURCES := \
 	src/backend/x86_64/elf.c \
 	src/backend/x86_64/instructions.c \
 	src/backend/compile.c \
-	src/parser/cfg.c \
 	src/parser/eval.c \
 	src/parser/parse.c \
 	src/parser/symtab.c \
