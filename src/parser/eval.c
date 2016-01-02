@@ -1,7 +1,8 @@
 #include "eval.h"
-#include "parse.h"
+#include "declaration.h"
 #include "type.h"
 #include <lacc/cli.h>
+#include <lacc/ir.h>
 
 #include <assert.h>
 #include <stdarg.h>

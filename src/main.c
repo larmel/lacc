@@ -2,12 +2,12 @@
 #  define _XOPEN_SOURCE 500 /* getopt */
 #endif
 #include "backend/compile.h"
-#include "parser/parse.h"
 #include "parser/symtab.h"
 #include "preprocessor/preprocess.h"
 #include "preprocessor/input.h"
 #include "preprocessor/macro.h"
 #include <lacc/cli.h>
+#include <lacc/ir.h>
 
 #include <assert.h>
 #include <stdio.h>
@@ -94,7 +94,6 @@ int main(int argc, char *argv[])
             def = parse();
             if (def.symbol && !errors)
                 compile(def);
-            free_definition(def);
         } while (def.symbol && !errors);
 
         if (errors)
