@@ -439,8 +439,7 @@ struct code encode(struct instruction instr)
         return jcc(instr.optype, TEST_A, instr.source);
     case INSTR_JG:
         return jcc(instr.optype, TEST_G, instr.source);
-    case INSTR_JE:
-    case INSTR_JZ: /* Lol, this is the same as je.. -.- */
+    case INSTR_JZ:
         return jcc(instr.optype, TEST_Z, instr.source);
     case INSTR_JAE:
         return jcc(instr.optype, TEST_AE, instr.source);

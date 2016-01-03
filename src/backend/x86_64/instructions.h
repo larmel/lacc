@@ -108,7 +108,6 @@ enum opcode {
     INSTR_JMP,
     INSTR_JA,
     INSTR_JG,
-    INSTR_JE,
     INSTR_JZ,
     INSTR_JAE,
     INSTR_JGE,

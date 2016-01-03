@@ -994,7 +994,7 @@ static void tail_cmp_jump(struct block *block, const enum param_class *res)
 
     switch (cmp->type) {
     case IR_OP_EQ:
-        instr.opcode = INSTR_JE;
+        instr.opcode = INSTR_JZ;
         break;
     case IR_OP_GE:
         instr.opcode = (is_unsigned(cmp->b.type)) ? INSTR_JAE : INSTR_JGE;
@@ -1035,7 +1035,7 @@ static void tail_generic(struct block *block, const enum param_class *res)
     } else {
         load(block->expr, AX);
         emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
-        emit(INSTR_JE, OPT_IMM, addr(block->jump[0]->label));
+        emit(INSTR_JZ, OPT_IMM, addr(block->jump[0]->label));
         if (block->jump[1]->color == BLACK)
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
         else
