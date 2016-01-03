@@ -412,6 +412,19 @@ static struct code setcc(
     return c;
 }
 
+static struct code test(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{0}};
+    assert(optype == OPT_REG_REG && !is_64_bit_reg(a.reg.r));
+
+    c.val[c.len++] = 0x84 | w(a.reg);
+    c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+    return c;
+}
+
 struct code encode(struct instruction instr)
 {
     switch (instr.opcode) {
@@ -455,6 +468,8 @@ struct code encode(struct instruction instr)
         return setcc(instr.optype, TEST_AE, instr.source);
     case INSTR_SETGE:
         return setcc(instr.optype, TEST_GE, instr.source);
+    case INSTR_TEST:
+        return test(instr.optype, instr.source, instr.dest);
     default:
         return nop();
     }
