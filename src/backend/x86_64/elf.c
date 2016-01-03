@@ -299,6 +299,11 @@ static void flush_relocations(void)
     shdr[SHID_RELA_TEXT].sh_size = n_relocs * sizeof(Elf64_Rela);
 }
 
+/* Keep track of function being assembled, updating st_size after each
+ * instruction.
+ */
+static Elf64_Sym *current_function_entry;
+
 /* List of pending global symbols, not yet added to .symtab. All globals have
  * to come after LOCAL symbols, according to spec. Also, ld will segfault(!)
  * otherwise.
@@ -318,11 +323,15 @@ static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
 {
     if (sym->linkage == LINK_INTERN) {
         sym->stack_offset = elf_symtab_add(entry);
+        if (is_function(&sym->type))
+            current_function_entry = &symtab[sym->stack_offset];
     } else {
         assert((entry.st_info >> 4) == STB_GLOBAL);
         globals = realloc(globals, (n_globals + 1) * sizeof(*globals));
         globals[n_globals].sym = sym;
         globals[n_globals].entry = entry;
+        if (is_function(&sym->type))
+            current_function_entry = &globals[n_globals].entry;
         n_globals += 1;
     }
 }
@@ -352,16 +361,12 @@ int elf_symbol(const struct symbol *sym)
         ? STB_LOCAL << 4 : STB_GLOBAL << 4;
 
     if (is_function(&sym->type)) {
-        switch (sym->symtype) {
-        case SYM_DEFINITION:
+        entry.st_info |= STT_FUNC;
+        if (sym->symtype == SYM_DEFINITION) {
             entry.st_shndx = SHID_TEXT;
-        case SYM_DECLARATION:
-        case SYM_TENTATIVE:
-            entry.st_info |= STT_FUNC;
-            break;
-        default:
-            break;
+            entry.st_value = shdr[SHID_TEXT].sh_size;
         }
+        /* st_size is updated while assembling instructions. */
     } else if (sym->symtype == SYM_DEFINITION) {
         elf_data_align(SHID_DATA, sym_alignment(sym));
         entry.st_shndx = SHID_DATA;
@@ -436,6 +441,7 @@ static void flush_text_displacements(void)
 int elf_text(struct instruction instr)
 {
     struct code c = encode(instr);
+    assert(current_function_entry);
 
     if (c.val[0] == 0x90)
         return 0;
@@ -444,6 +450,7 @@ int elf_text(struct instruction instr)
     memcpy(text + shdr[SHID_TEXT].sh_size, &c.val, c.len);
 
     shdr[SHID_TEXT].sh_size += c.len;
+    current_function_entry->st_size += c.len;
 
     return 0;
 }
