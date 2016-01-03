@@ -305,6 +305,28 @@ static struct code add(
     return c;
 }
 
+static struct code call(enum instr_optype optype, union operand op)
+{
+    struct code c = {{0}};
+
+    if (optype == OPT_IMM) {
+        assert(op.imm.type == IMM_ADDR);
+        assert(op.imm.d.addr.sym);
+
+        c.val[c.len++] = 0xE8;
+        elf_add_relocation(op.imm.d.addr.sym, c.len, op.imm.d.addr.disp);
+        c.len += 4;
+    } else {
+        assert(optype == OPT_REG);
+
+        c.val[c.len++] = REX | W(op.reg) | R(op.reg);
+        c.val[c.len++] = 0xFF;
+        c.val[c.len++] = 0xD0 | reg(op.reg);
+    }
+
+    return c;
+}
+
 static struct code cmp(
     enum instr_optype optype,
     union operand a,
@@ -430,6 +452,8 @@ struct code encode(struct instruction instr)
     switch (instr.opcode) {
     case INSTR_ADD:
         return add(instr.optype, instr.source, instr.dest);
+    case INSTR_CALL:
+        return call(instr.optype, instr.source);
     case INSTR_CMP:
         return cmp(instr.optype, instr.source, instr.dest);
     case INSTR_MOV:
