@@ -908,9 +908,10 @@ static void compile_op(const struct op *op)
         store(AX, op->a);
         break;
     case IR_OP_SHL:
-        /* Shift amount must for some reason be in CX register, and appear as
-         * %cl in instruction argument. Behavior is undefined if shift is
-         * greater than integer width, so don't care about overflow or sign. */
+        /* Shift instruction encoding is either by immediate, or implicit %cl
+         * register. Encode as if something other than %cl could be chosen.
+         * Behavior is undefined if shift is greater than integer width, so
+         * don't care about overflow or sign. */
         load(op->b, AX);
         load(op->c, CX);
         emit((is_unsigned(op->a.type)) ? INSTR_SHL : INSTR_SAL, OPT_REG_REG,
