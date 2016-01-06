@@ -914,8 +914,7 @@ static void compile_op(const struct op *op)
          * don't care about overflow or sign. */
         load(op->b, AX);
         load(op->c, CX);
-        emit((is_unsigned(op->a.type)) ? INSTR_SHL : INSTR_SAL, OPT_REG_REG,
-            reg(CX, 1), reg(AX, size_of(op->a.type)));
+        emit(INSTR_SHL, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(op->a.type)));
         store(AX, op->a);
         break;
     case IR_OP_SHR:

@@ -89,7 +89,6 @@ enum opcode {
     INSTR_AND,
     INSTR_OR,
     INSTR_SHL,
-    INSTR_SAL,
     INSTR_SHR,
     INSTR_SAR,
     INSTR_TEST,

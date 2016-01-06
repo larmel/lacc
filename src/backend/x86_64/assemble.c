@@ -276,7 +276,6 @@ int asm_text(struct instruction instr)
     case INSTR_AND:      S2("and", wd, source, destin); break;
     case INSTR_OR:       S2("or", wd, source, destin); break;
     case INSTR_SHL:      S2("shl", wd, source, destin); break;
-    case INSTR_SAL:      S2("sal", wd, source, destin); break;
     case INSTR_SHR:      S2("shr", wd, source, destin); break;
     case INSTR_SAR:      S2("sar", wd, source, destin); break;
     case INSTR_MOV:      S2("mov", wd, source, destin); break;

@@ -605,7 +605,6 @@ struct code encode(struct instruction instr)
     case INSTR_OR:
         return or(instr.optype, instr.source, instr.dest);
     case INSTR_SHL:
-    case INSTR_SAL: /* redundant */
         return shl(instr.optype, instr.source, instr.dest);
     case INSTR_SHR:
         return shr(instr.optype, instr.source, instr.dest);
