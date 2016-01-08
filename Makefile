@@ -77,13 +77,13 @@ $(BIN)/selfhost: $(SELFHOST_OBJECTS)
 	$(LD) $^ -o $@
 
 test: $(BIN)/lacc
-	@$(foreach file,$(TESTS),./check.sh $< $(file);)
+	@$(foreach file,$(TESTS),./check.sh "$< -I/usr/include/x86_64-linux-musl/" $(file);)
 
 test-bootstrap: $(BIN)/bootstrap
-	@$(foreach file,$(TESTS),./check.sh $< $(file);)
+	@$(foreach file,$(TESTS),./check.sh "$< -I/usr/include/x86_64-linux-musl/" $(file);)
 
 test-selfhost: $(BIN)/selfhost
-	@$(foreach file,$(TESTS),./check.sh $< $(file);)
+	@$(foreach file,$(TESTS),./check.sh "$< -I/usr/include/x86_64-linux-musl/" $(file);)
 
 clean:
 	rm -rf $(BIN)
