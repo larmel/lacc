@@ -95,8 +95,17 @@ typedef struct {
     Elf64_Sxword    r_addend;       /* Constant part of expression */
 } Elf64_Rela;
 
-#define R_X86_64_NONE 0
-#define R_X86_64_PC32 2           /* word32   S + A - P */
+/* A: Represents the addend used to compute the value of the relocatable field.
+ * P: Represents the place (section offset or address) of the storage unit being
+ *    relocated (computed using r_offset).
+ * S: Represents the value of the symbol whose index resides in the relocation
+ *    entry.
+ */
+enum rel_type {
+    R_X86_64_NONE = 0,
+    R_X86_64_PC32 = 2,              /* word32   S + A - P */
+    R_X86_64_32S = 11               /* word32   S + A */
+};
 
 #define ELF64_R_INFO(s, t) (((s) << 32) + ((t) & 0xFFFFFFFFL))
 
@@ -114,6 +123,7 @@ int elf_flush(void);
  */
 void elf_add_relocation(
     const struct symbol *sym,
+    enum rel_type type,
     int section_offset,
     int sym_offset);
 

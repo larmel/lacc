@@ -80,7 +80,7 @@ static void encode_sib_addr(
     if (addr.sym) {
         /* 2.2.1.6 RIP-relative addressing */
         c->val[c->len++] = ((reg & 0x7) << 3) | 0x5;
-        elf_add_relocation(addr.sym, c->len, addr.disp);
+        elf_add_relocation(addr.sym, R_X86_64_PC32, c->len, addr.disp);
         memset(&c->val[c->len], 0, 4);
         c->len += 4;
     } else {
@@ -130,28 +130,36 @@ static struct code mov(
         if (is_64_bit(b.reg))
             c.val[c.len++] = REX | W(b.reg) | B(b.reg);
         c.val[c.len++] = 0xB8 | w(b.reg) << 3 | reg(b.reg);
-        if (a.imm.type == IMM_INT) {
-            if (a.imm.w == 1) {
-                c.val[c.len++] = a.imm.d.byte;
-            } else if (a.imm.w == 2) {
-                memcpy(&c.val[c.len], &a.imm.d.word, 2);
-                c.len += 2;
-            } else if (is_32bit_imm(a.imm)) {
-                if (is_64_bit(b.reg)) {
-                    /* Special case, not using alternative encoding. */
-                    c.val[1] = 0xC7;
-                    c.val[2] = 0xC0 | reg(b.reg);
-                    c.len = 3;
-                }
+        if (a.imm.w == 1) {
+            assert(a.imm.type == IMM_INT);
+            c.val[c.len++] = a.imm.d.byte;
+        } else if (a.imm.w == 2) {
+            assert(a.imm.type == IMM_INT);
+            memcpy(&c.val[c.len], &a.imm.d.word, 2);
+            c.len += 2;
+        } else if (is_32bit_imm(a.imm) || a.imm.type == IMM_ADDR) {
+            if (is_64_bit(b.reg)) {
+                /* Special case, not using alternative encoding. */
+                c.val[1] = 0xC7;
+                c.val[2] = 0xC0 | reg(b.reg);
+                c.len = 3;
+            }
+            if (a.imm.type == IMM_INT) {
                 memcpy(&c.val[c.len], &a.imm.d.dword, 4);
                 c.len += 4;
             } else {
-                assert(a.imm.w == 8);
-                memcpy(&c.val[c.len], &a.imm.d.qword, 8);
-                c.len += 8;
+                assert(a.imm.type == IMM_ADDR);
+                elf_add_relocation(
+                    a.imm.d.addr.sym, R_X86_64_32S, c.len, a.imm.d.addr.disp);
+                memset(&c.val[c.len], 0, 4);
+                c.len += 4;
             }
-        } else
-            assert(0);
+        } else {
+            assert(a.imm.w == 8);
+            assert(a.imm.type == IMM_INT);
+            memcpy(&c.val[c.len], &a.imm.d.qword, 8);
+            c.len += 8;
+        }
         break;
     case OPT_REG_REG:
         assert(a.reg.w == b.reg.w);
@@ -309,7 +317,8 @@ static struct code call(enum instr_optype optype, union operand op)
         assert(op.imm.d.addr.sym);
 
         c.val[c.len++] = 0xE8;
-        elf_add_relocation(op.imm.d.addr.sym, c.len, op.imm.d.addr.disp);
+        elf_add_relocation(
+            op.imm.d.addr.sym, R_X86_64_PC32, c.len, op.imm.d.addr.disp);
         c.len += 4;
     } else {
         assert(optype == OPT_REG);

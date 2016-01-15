@@ -204,6 +204,8 @@ int asm_symbol(const struct symbol *sym)
     } else if (sym->symtype == SYM_STRING_VALUE) {
         I0(".data");
         out("\t.align\t%d\n", sym_alignment(sym));
+        out("\t.type\t%s, @object\n", sym_name(sym));
+        out("\t.size\t%s, %d\n", sym_name(sym), size_of(&sym->type));
         out("%s:\n", sym_name(sym));
         out("\t.string\t\"");
         output_escaped_string(sym->string_value);
@@ -215,6 +217,8 @@ int asm_symbol(const struct symbol *sym)
         if (sym->linkage == LINK_EXTERN)
             I1(".globl", sym->name);
         out("\t.align\t%d\n", sym_alignment(sym));
+        out("\t.type\t%s, @object\n", sym_name(sym));
+        out("\t.size\t%s, %d\n", sym_name(sym), size_of(&sym->type));
         out("%s:\n", sym_name(sym));
     }
 

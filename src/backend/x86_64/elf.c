@@ -249,6 +249,7 @@ static Elf64_Rela *rela_text;
  */
 static struct pending_relocation {
     const struct symbol *sym;
+    enum rel_type type;
     int offset;                 /* offset into .text */
     int addend;                 /* offset into symbol ? */
 } *prl;
@@ -261,6 +262,7 @@ static int n_relocs;
  */
 void elf_add_relocation(
     const struct symbol *sym,
+    enum rel_type type,
     int section_offset,
     int sym_offset)
 {
@@ -271,9 +273,13 @@ void elf_add_relocation(
     entry = &prl[n_relocs - 1];
 
     entry->sym = sym;
+    entry->type = type;
     entry->offset = section_offset + shdr[SHID_TEXT].sh_size;
-    entry->addend = sym_offset - size_of(&sym->type);
+    entry->addend = sym_offset; /* - size_of(&sym->type);*/
 }
+
+#define symtab_index_of(s) ((s)->stack_offset)
+#define symtab_lookup(s) (&symtab[(s)->stack_offset])
 
 /* Construct relocation entries from pending relocations. Invoked with flush(),
  * after all data and code is processed. It is important that this is called
@@ -284,19 +290,28 @@ static void flush_relocations(void)
 {
     int i;
     Elf64_Rela *entry;
+    const struct symbol *sym;
+    enum rel_type type;
     assert(!rela_text);
 
     rela_text = calloc(n_relocs, sizeof(*rela_text));
+    shdr[SHID_RELA_TEXT].sh_size = n_relocs * sizeof(Elf64_Rela);
+
     for (i = 0; i < n_relocs; ++i) {
         entry = &rela_text[i];
-        assert(prl[i].sym->stack_offset);
-        entry->r_offset = prl[i].offset;
-        entry->r_info =
-            ELF64_R_INFO((long) prl[i].sym->stack_offset, R_X86_64_PC32);
-        entry->r_addend = prl[i].addend;
-    }
+        sym = prl[i].sym;
+        type = prl[i].type;
+        assert(type == R_X86_64_PC32 || type == R_X86_64_32S);
 
-    shdr[SHID_RELA_TEXT].sh_size = n_relocs * sizeof(Elf64_Rela);
+        entry->r_offset = prl[i].offset;
+        entry->r_addend = prl[i].addend;
+        entry->r_info = ELF64_R_INFO((long) symtab_index_of(sym), (long) type);
+
+        /* Subtract 4 to account for the size occupied by the relocation
+         * slot itself, it takes up 4 bytes in the instruction. */
+        if (type == R_X86_64_PC32)
+            entry->r_addend -= 4;
+    }
 }
 
 /* Keep track of function being assembled, updating st_size after each
@@ -377,7 +392,7 @@ int elf_symbol(const struct symbol *sym)
         elf_data_align(SHID_RODATA, sym_alignment(sym));
         entry.st_shndx = SHID_RODATA;
         entry.st_size = size_of(&sym->type);
-        entry.st_value = shdr[SHID_DATA].sh_size;
+        entry.st_value = shdr[SHID_RODATA].sh_size;
         entry.st_info |= STT_OBJECT;
 
         /* String value symbols contain the actual string value; write to
