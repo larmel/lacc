@@ -6,7 +6,7 @@
 /* Map register enum values to register encoding. Depends on register
  * enumeration values.
  */
-#define reg(arg) ((arg).r - 1)
+#define reg(arg) (((arg).r - 1) % 8)
 #define is_64_bit(arg) ((arg).w >> 3)
 #define is_32_bit(arg) (((arg).w >> 2) & 1)
 #define is_16_bit(arg) (((arg).w >> 1) & 1)
@@ -322,8 +322,9 @@ static struct code call(enum instr_optype optype, union operand op)
         c.len += 4;
     } else {
         assert(optype == OPT_REG);
+        assert(is_64_bit_reg(op.reg.r));
 
-        c.val[c.len++] = REX | W(op.reg) | R(op.reg);
+        c.val[c.len++] = REX | w(op.reg);
         c.val[c.len++] = 0xFF;
         c.val[c.len++] = 0xD0 | reg(op.reg);
     }
