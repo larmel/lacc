@@ -282,7 +282,7 @@ static void push(struct var v)
         emit(INSTR_MOV, OPT_IMM_REG, constant(slices, 4), reg(CX, 4));
         emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(DI, 8));
         load_address(v, SI);
-        emit(INSTR_REP_MOVS, OPT_NONE);
+        emit(INSTR_REP_MOVSQ, OPT_NONE);
     }
 }
 

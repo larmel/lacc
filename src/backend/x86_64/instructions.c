@@ -57,6 +57,8 @@
 #define in_byte_range(arg) ((arg) >= -128 && (arg) <= 127)
 #define in_32bit_range(arg) ((arg) >= -2147483648 && (arg) <= 2147483647)
 
+#define PREFIX_SSE 0x0F
+
 /* Conditional test field.
  */
 enum tttn {
@@ -230,6 +232,20 @@ static struct code movzx(
         c.val[c.len++] = 0xB6 | w(a.mem);
         encode_sib_addr(&c, (b.reg.r - 1), a.mem.addr);
     }
+
+    return c;
+}
+
+static struct code movaps(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{PREFIX_SSE, 0x29}, 2};
+    assert(optype == OPT_REG_MEM);
+
+    /* Subtract 2 to align %xmm0 to 0. */
+    encode_sib_addr(&c, (a.reg.r - 2), b.mem.addr);
 
     return c;
 }
@@ -414,6 +430,28 @@ static struct code jmp(enum instr_optype optype, union operand op)
 static struct code leave(void)
 {
     struct code c = {{0xC9}, 1};
+    return c;
+}
+
+static struct code lea(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{0}};
+    assert(optype == OPT_MEM_REG);
+    assert(is_64_bit(b.reg));
+
+    c.val[c.len++] = REX | W(b.reg) | R(b.reg);
+    c.val[c.len++] = 0x8D;
+    encode_sib_addr(&c, (b.reg.r - 1), a.mem.addr);
+
+    return c;
+}
+
+static struct code rep_movsq(void)
+{
+    struct code c = {{0xF3, REX + 8, 0xA5}, 3};
     return c;
 }
 
@@ -630,12 +668,19 @@ struct code encode(struct instruction instr)
         return movsx(instr.optype, instr.source, instr.dest);
     case INSTR_MOVZX:
         return movzx(instr.optype, instr.source, instr.dest);
+    case INSTR_MOVAPS:
+        return movaps(instr.optype, instr.source, instr.dest);
     case INSTR_PUSH:
         return push(instr.optype, instr.source);
     case INSTR_SUB:
         return sub(instr.optype, instr.source, instr.dest);
+    case INSTR_LEA:
+        return lea(instr.optype, instr.source, instr.dest);
     case INSTR_LEAVE:
         return leave();
+    case INSTR_REP_MOVSQ:
+        assert(instr.optype == OPT_NONE);
+        return rep_movsq();
     case INSTR_RET:
         return ret();
     case INSTR_JMP:

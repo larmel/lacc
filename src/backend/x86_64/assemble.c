@@ -320,7 +320,7 @@ int asm_text(struct instruction instr)
         break;
     case INSTR_LEAVE:    I0("leave"); break;
     case INSTR_RET:      I0("ret"); break;
-    case INSTR_REP_MOVS: I0("rep movsq"); break;
+    case INSTR_REP_MOVSQ:I0("rep movsq"); break;
     }
 
     return 0;

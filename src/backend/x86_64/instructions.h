@@ -113,7 +113,7 @@ enum opcode {
     INSTR_CALL,
     INSTR_LEAVE,
     INSTR_RET,
-    INSTR_REP_MOVS  /* Repeat move string to string */
+    INSTR_REP_MOVSQ /* Repeat move string to string (qword) */
 };
 
 /* Instructions with register, memory or immediate operands.
