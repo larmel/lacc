@@ -107,7 +107,7 @@ enum rel_type {
     R_X86_64_32S = 11               /* word32   S + A */
 };
 
-#define ELF64_R_INFO(s, t) (((s) << 32) + ((t) & 0xFFFFFFFFL))
+#define ELF64_R_INFO(s, t) ((((long) s) << 32) + (((long) t) & 0xFFFFFFFFL))
 
 extern FILE *object_file_output;
 
@@ -119,13 +119,13 @@ int elf_data(struct immediate data);
 
 int elf_flush(void);
 
-/* Internal
+/* Insert relocation entry to symbol at the current position of .text.
  */
-void elf_add_relocation(
-    const struct symbol *sym,
+void elf_add_reloc_text(
+    const struct symbol *symbol,
     enum rel_type type,
-    int section_offset,
-    int sym_offset);
+    int offset,
+    int addend);
 
 /* Return offset between label and current position in text segment, if label
  * has already been calculated. For forward references, return 0 and store this

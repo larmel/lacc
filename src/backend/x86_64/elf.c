@@ -3,16 +3,17 @@
 
 #include <assert.h>
 
-#define SHNUM 8     /* Number of section headers */
+#define SHNUM 9     /* Number of section headers */
 
 #define SHID_ZERO 0
 #define SHID_SHSTRTAB 1
 #define SHID_STRTAB 2
 #define SHID_SYMTAB 3
 #define SHID_RELA_TEXT 4
-#define SHID_DATA 5
-#define SHID_RODATA 6
-#define SHID_TEXT 7
+#define SHID_RELA_DATA 5
+#define SHID_DATA 6
+#define SHID_RODATA 7
+#define SHID_TEXT 8
 
 #define SHDR_CHAIN_OFFSET(a, b) \
     shdr[b].sh_offset = shdr[a].sh_offset + shdr[a].sh_size
@@ -46,8 +47,8 @@ static Elf64_Ehdr header = {
 };
 
 static char shstrtab[] =
-    "\0.data\0.text\0.shstrtab\0.symtab\0.strtab\0.rodata\0.rela.text\0"
-    "\0\0\0\0\0"; /* Make size % 16 = 0 */
+    "\0.data\0.text\0.shstrtab\0.symtab\0.strtab\0.rodata"
+    "\0.rela.text\0.rela.data\0\0\0\0\0\0\0\0\0\0\0"; /* Make size % 16 = 0 */
 
 static Elf64_Shdr shdr[] = {
     {0},                /* First section header must contain all-zeroes */
@@ -96,6 +97,18 @@ static Elf64_Shdr shdr[] = {
         0,              /* Size of section (TODO!) */
         SHID_SYMTAB,    /* sh_link, symbol table referenced by relocations */
         SHID_TEXT,      /* sh_info, section which relocations apply */
+        8,              /* sh_addralign */
+        sizeof(Elf64_Rela)
+    },
+    { /* .rela.data */
+        58,             /* sh_name, index into shstrtab */
+        SHT_RELA,       /* sh_type */
+        0x0,
+        0x0,            /* Virtual address */
+        0x0,            /* Offset in file (TODO!) */
+        0,              /* Size of section (TODO!) */
+        SHID_SYMTAB,    /* sh_link, symbol table referenced by relocations */
+        SHID_DATA,      /* sh_info, section which relocations apply */
         8,              /* sh_addralign */
         sizeof(Elf64_Rela)
     },
@@ -242,40 +255,64 @@ static int elf_strtab_add(const char *str)
     return off;
 }
 
-static Elf64_Rela *rela_text;
+static Elf64_Rela
+    *rela_text,
+    *rela_data;
 
 /* Pending relocations, waiting for sym->stack_offset to be resolved to index
- * into .symtab once written to data section.
+ * into .symtab.
  */
 static struct pending_relocation {
-    const struct symbol *sym;
+    const struct symbol *symbol;
     enum rel_type type;
+    int section;                /* section id of .rela.X */
     int offset;                 /* offset into .text */
     int addend;                 /* offset into symbol ? */
 } *prl;
-static int n_relocs;
 
-/* Add pending relocation to symbol on offset from current .text size. Offset
- * is into instruction being assembled.
- * The relocation entry cannot always be immediately constructed, as the symbol
- * might not have been written to any section yet.
- */
-void elf_add_relocation(
-    const struct symbol *sym,
-    enum rel_type type,
-    int section_offset,
-    int sym_offset)
+static int
+    n_rela_data,
+    n_rela_text;
+
+static void add_reloc(struct pending_relocation entry)
 {
-    struct pending_relocation *entry;
+    if (entry.section == SHID_RELA_TEXT)
+        n_rela_text++;
+    else {
+        assert(entry.section == SHID_RELA_DATA);
+        n_rela_data++;
+    }
+    prl = realloc(prl, (n_rela_text + n_rela_data) * sizeof(*prl));
+    prl[n_rela_text + n_rela_data - 1] = entry;
+}
 
-    n_relocs += 1;
-    prl = realloc(prl, n_relocs * sizeof(*prl));
-    entry = &prl[n_relocs - 1];
+void elf_add_reloc_text(
+    const struct symbol *symbol,
+    enum rel_type type,
+    int offset,
+    int addend)
+{
+    struct pending_relocation r = {0};
+    r.symbol = symbol;
+    r.type = type;
+    r.section = SHID_RELA_TEXT;
+    r.offset = shdr[SHID_TEXT].sh_size + offset;
+    r.addend = addend;
+    add_reloc(r);
+}
 
-    entry->sym = sym;
-    entry->type = type;
-    entry->offset = section_offset + shdr[SHID_TEXT].sh_size;
-    entry->addend = sym_offset; /* - size_of(&sym->type);*/
+static void elf_add_reloc_data(
+    const struct symbol *symbol,
+    enum rel_type type,
+    int addend)
+{
+    struct pending_relocation r = {0};
+    r.symbol = symbol;
+    r.type = type;
+    r.section = SHID_RELA_DATA;
+    r.offset = shdr[SHID_DATA].sh_size;
+    r.addend = addend;
+    add_reloc(r);
 }
 
 #define symtab_index_of(s) ((s)->stack_offset)
@@ -289,27 +326,34 @@ void elf_add_relocation(
 static void flush_relocations(void)
 {
     int i;
-    Elf64_Rela *entry;
-    const struct symbol *sym;
-    enum rel_type type;
-    assert(!rela_text);
+    Elf64_Rela *entry, *data_entry, *text_entry;
+    assert(!rela_text && !rela_data);
 
-    rela_text = calloc(n_relocs, sizeof(*rela_text));
-    shdr[SHID_RELA_TEXT].sh_size = n_relocs * sizeof(Elf64_Rela);
+    rela_text = calloc(n_rela_text, sizeof(*rela_text));
+    text_entry = rela_text;
+    shdr[SHID_RELA_TEXT].sh_size = n_rela_text * sizeof(Elf64_Rela);
 
-    for (i = 0; i < n_relocs; ++i) {
-        entry = &rela_text[i];
-        sym = prl[i].sym;
-        type = prl[i].type;
-        assert(type == R_X86_64_PC32 || type == R_X86_64_32S);
+    rela_data = calloc(n_rela_data, sizeof(*rela_data));
+    data_entry = rela_data;
+    shdr[SHID_RELA_DATA].sh_size = n_rela_data * sizeof(Elf64_Rela);
+
+    for (i = 0; i < n_rela_text + n_rela_data; ++i) {
+        assert(prl[i].type == R_X86_64_PC32 || prl[i].type == R_X86_64_32S);
+        if (prl[i].section == SHID_RELA_DATA)
+            entry = data_entry++;
+        else {
+            assert(prl[i].section == SHID_RELA_TEXT);
+            entry = text_entry++;
+        }
 
         entry->r_offset = prl[i].offset;
         entry->r_addend = prl[i].addend;
-        entry->r_info = ELF64_R_INFO((long) symtab_index_of(sym), (long) type);
+        entry->r_info =
+            ELF64_R_INFO(symtab_index_of(prl[i].symbol), prl[i].type);
 
         /* Subtract 4 to account for the size occupied by the relocation
          * slot itself, it takes up 4 bytes in the instruction. */
-        if (type == R_X86_64_PC32)
+        if (prl[i].type == R_X86_64_PC32)
             entry->r_addend -= 4;
     }
 }
@@ -472,10 +516,11 @@ int elf_text(struct instruction instr)
 
 int elf_data(struct immediate imm)
 {
-    const void *ptr;
+    const void *ptr = NULL;
     size_t w = imm.w;
 
-    if (imm.type == IMM_INT) {
+    switch (imm.type) {
+    case IMM_INT:
         if (imm.w == 1)
             ptr = &imm.d.byte;
         else if (imm.w == 2)
@@ -484,10 +529,16 @@ int elf_data(struct immediate imm)
             ptr = &imm.d.dword;
         else
             ptr = &imm.d.qword;
-    } else {
-        assert(imm.type == IMM_STRING);
+        break;
+    case IMM_ADDR:
+        assert(imm.d.addr.sym);
+        elf_add_reloc_data(imm.d.addr.sym, R_X86_64_32S, imm.d.addr.disp);
+        w = 4;
+        break;
+    case IMM_STRING:
         assert(w == strlen(imm.d.string) + 1);
         ptr = imm.d.string;
+        break;
     }
 
     return elf_data_add(SHID_DATA, ptr, w);
@@ -495,6 +546,7 @@ int elf_data(struct immediate imm)
 
 int elf_flush(void)
 {
+    assert(shdr[SHID_SHSTRTAB].sh_size % 16 == 0);
     flush_symtab_globals();
     flush_relocations();
     flush_text_displacements();
@@ -506,7 +558,8 @@ int elf_flush(void)
     /* Fill in missing offset and size values */
     SHDR_CHAIN_OFFSET(SHID_STRTAB, SHID_SYMTAB);
     SHDR_CHAIN_OFFSET(SHID_SYMTAB, SHID_RELA_TEXT);
-    SHDR_CHAIN_OFFSET(SHID_RELA_TEXT, SHID_DATA);
+    SHDR_CHAIN_OFFSET(SHID_RELA_TEXT, SHID_RELA_DATA);
+    SHDR_CHAIN_OFFSET(SHID_RELA_DATA, SHID_DATA);
     SHDR_CHAIN_OFFSET(SHID_DATA, SHID_RODATA);
     SHDR_CHAIN_OFFSET(SHID_RODATA, SHID_TEXT);
 
@@ -518,6 +571,7 @@ int elf_flush(void)
     fwrite(strtab, shdr[SHID_STRTAB].sh_size, 1, object_file_output);
     fwrite(symtab, shdr[SHID_SYMTAB].sh_size, 1, object_file_output);
     fwrite(rela_text, shdr[SHID_RELA_TEXT].sh_size, 1, object_file_output);
+    fwrite(rela_data, shdr[SHID_RELA_DATA].sh_size, 1, object_file_output);
     fwrite(data, shdr[SHID_DATA].sh_size, 1, object_file_output);
     fwrite(rodata, shdr[SHID_RODATA].sh_size, 1, object_file_output);
     fwrite(text, shdr[SHID_TEXT].sh_size, 1, object_file_output);
