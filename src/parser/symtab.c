@@ -17,6 +17,9 @@ struct namespace
     ns_label = {"labels"},
     ns_tag = {"tags"};
 
+const struct symbol
+    *decl_memcpy = NULL;
+
 /* Initialize hash table with initial size heuristic based on scope depth.
  * As a special case, depth 1 containing function arguments is assumed to
  * contain fewer symbols.
@@ -347,13 +350,17 @@ struct symbol *sym_create_label(void)
 
 void register_builtin_types(struct namespace *ns)
 {
-    struct typetree *type = type_init(T_STRUCT);
-    const struct typetree *none = &basic_type__void;
+    struct typetree *type;
+    const struct typetree
+        *none = &basic_type__void,
+        *voidptr = type_init(T_POINTER, &basic_type__void),
+        *constvoidptr = type_init(T_POINTER, &basic_type__const_void);
 
+    type = type_init(T_STRUCT);
     type_add_member(type, "gp_offset", &basic_type__unsigned_int);
     type_add_member(type, "fp_offset", &basic_type__unsigned_int);
-    type_add_member(type, "overflow_arg_area", type_init(T_POINTER, none));
-    type_add_member(type, "reg_save_area", type_init(T_POINTER, none));
+    type_add_member(type, "overflow_arg_area", voidptr);
+    type_add_member(type, "reg_save_area", voidptr);
     type = type_init(T_ARRAY, type, 1);
 
     /* Define va_list as described in System V ABI. */
@@ -363,6 +370,13 @@ void register_builtin_types(struct namespace *ns)
      * during parsing. These are implemented as compiler intrinsics. */
     sym_add(ns, "__builtin_va_start", none, SYM_DECLARATION, LINK_NONE);
     sym_add(ns, "__builtin_va_arg", none, SYM_DECLARATION, LINK_NONE);
+
+    type = type_init(T_FUNCTION);
+    type->next = voidptr;
+    type_add_member(type, "dest", voidptr);
+    type_add_member(type, "src", constvoidptr);
+    type_add_member(type, "n", &basic_type__unsigned_long);
+    decl_memcpy = sym_add(ns, "memcpy", type, SYM_TENTATIVE, LINK_EXTERN);
 }
 
 struct symbol_list get_tentative_definitions(const struct namespace *ns)

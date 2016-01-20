@@ -91,6 +91,7 @@ const struct member *get_member(const struct typetree *type, int n);
  */
 extern const struct typetree
     basic_type__void,
+    basic_type__const_void,
     basic_type__char,
     basic_type__short,
     basic_type__int,

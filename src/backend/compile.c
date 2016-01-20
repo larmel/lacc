@@ -24,17 +24,6 @@ static int fp_offset;
 static int overflow_arg_area_offset;
 static int reg_save_area_offset;
 
-/* Dummy declaration of memcpy, which is used for copy operations of objects
- * that do not fit in registers. The type does not matter, but it has to be
- * a prototype declaration with external linkage.
- */
-static const struct symbol decl_memcpy = {
-    "memcpy",
-    {T_VOID},
-    SYM_DECLARATION,
-    LINK_EXTERN
-};
-
 static void compile_block(struct block *block, const enum param_class *res);
 
 static void emit(enum opcode opcode, enum instr_optype optype, ...)
@@ -614,7 +603,7 @@ static void ret(struct var val, const enum param_class *pc)
         load_address(val, SI);
         emit(INSTR_MOV, OPT_IMM_REG,
             constant(size_of(val.type), 8), reg(DX, 4));
-        emit(INSTR_CALL, OPT_IMM, addr(&decl_memcpy));
+        emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
 
         /* The ABI specifies that the address should be in %rax on return. */
         emit(INSTR_MOV, OPT_MEM_REG,
@@ -763,7 +752,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     } else {
         load_address(res, DI);
         emit(INSTR_MOV, OPT_IMM_REG, constant(w, 8), reg(DX, 8));
-        emit(INSTR_CALL, OPT_IMM, addr(&decl_memcpy));
+        emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
     }
 
     /* Move overflow_arg_area pointer to position of next memory argument, 
@@ -798,7 +787,7 @@ static void compile_op(const struct op *op)
             load_address(op->a, DI);
             emit(INSTR_MOV, OPT_IMM_REG, addr(op->b.symbol), reg(SI, 8));
             emit(INSTR_MOV, OPT_IMM_REG, constant(size, 8), reg(DX, 8));
-            emit(INSTR_CALL, OPT_IMM, addr(&decl_memcpy));
+            emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
             break;
         }
         /* Struct or union assignment, values that cannot be loaded into a
@@ -811,7 +800,7 @@ static void compile_op(const struct op *op)
             load_address(op->b, SI);
 
             emit(INSTR_MOV, OPT_IMM_REG, constant(size, 8), reg(DX, 8));
-            emit(INSTR_CALL, OPT_IMM, addr(&decl_memcpy));
+            emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
             break;
         }
         /* Fallthrough, assignment has implicit cast for convenience and to make
@@ -1190,6 +1179,7 @@ void set_compile_target(FILE *stream, enum compile_target target)
 
 int compile(struct definition def)
 {
+    assert(decl_memcpy != NULL);
     switch (compile_target) {
     case TARGET_IR_DOT:
         fdotgen(output_stream, def);

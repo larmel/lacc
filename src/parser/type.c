@@ -12,6 +12,7 @@
 
 const struct typetree
     basic_type__void = { T_VOID },
+    basic_type__const_void = { T_VOID, 0, Q_CONST },
     basic_type__char = { T_SIGNED, 1 },
     basic_type__short = { T_SIGNED, 2 },
     basic_type__int = { T_SIGNED, 4 },
