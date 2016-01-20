@@ -29,7 +29,6 @@ function check {
 	cc ${file}.o -o ${file}.out
 	if [ "$?" -ne "0" ]; then
 		echo "$(tput setaf 1)Linking failed!$(tput sgr 0)"; return
-		exit
 	fi
 
 	./${file}.out > ${file}.txt
@@ -42,11 +41,11 @@ function check {
 	else
 		echo "$(tput setaf 1)Wrong result!$(tput sgr 0)"
 		if [ "$result" -ne "$answer" ]; then
-			echo "Result differ: was ${result}, expected ${answer}."
+			echo "Result differ: was ${result}, expected ${answer}." >&2
 		fi
 		if [ "$diffres" -ne "0" ]; then
-			echo "Output differ:"
-			echo "$difference"
+			echo "Output differ:"  >&2
+			echo "$difference"  >&2
 		fi
 	fi
 }
