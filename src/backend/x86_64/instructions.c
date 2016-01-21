@@ -621,7 +621,7 @@ static struct code shr(
     if (rrex(b.reg))
         c.val[c.len++] = REX | W(b.reg) | B(b.reg);
     c.val[c.len++] = 0xD2 | w(b.reg);
-    c.val[c.len++] = 0xF8 | reg(b.reg);
+    c.val[c.len++] = 0xE8 | reg(b.reg);
 
     return c;
 }
