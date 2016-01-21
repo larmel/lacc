@@ -12,6 +12,12 @@
 #define is_16_bit(arg) (((arg).w >> 1) & 1)
 #define is_64_bit_reg(arg) ((arg) > DI)
 
+/* Determine if register or memory argument requires REX prefix.
+ */
+#define rrex(arg) (is_64_bit(arg) || is_64_bit_reg(arg.r))
+#define mrex(arg) \
+    (!arg.sym && ((is_64_bit_reg(arg.base) || is_64_bit_reg(arg.offset))))
+
 /* Legacy Prefix
  * Valid options are 0x66, 0x67, 0xF2 and 0xF3
  */
@@ -69,15 +75,6 @@ enum tttn {
     TEST_G = 0xF
 };
 
-/* Determine if address operand requires REX prefix to encode.
- */
-static int requires_prefix(struct address addr)
-{
-    if (addr.sym)
-        return 0;
-    return is_64_bit_reg(addr.base) || is_64_bit_reg(addr.offset);
-}
-
 /* Encode address using ModR/M, SIB and Displacement bytes. Based on Table 2.2
  * and Table 2.3 in reference manual.
  *
@@ -134,12 +131,11 @@ static struct code mov(
     union operand a,
     union operand b)
 {
-    struct code c = nop();
+    struct code c = {{0}};
     switch (optype) {
     case OPT_IMM_REG:
         /* Alternative encoding (shorter). */
-        c.len = 0;
-        if (is_64_bit(b.reg) || is_64_bit_reg(b.reg.r))
+        if (rrex(b.reg))
             c.val[c.len++] = REX | W(b.reg) | B(b.reg);
         c.val[c.len++] = 0xB8 | w(b.reg) << 3 | reg(b.reg);
         if (a.imm.w == 1) {
@@ -174,31 +170,31 @@ static struct code mov(
         }
         break;
     case OPT_REG_REG:
-        assert(a.reg.w == b.reg.w);
+        assert(a.reg.w == b.reg.w && a.reg.w == 8);
         c.len = 3;
         c.val[0] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         c.val[1] = 0x88 + is_64_bit(a.reg);
         c.val[2] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
         break;
     case OPT_REG_MEM:
-        c.len = 0;
         if (is_16_bit(a.reg))
             c.val[c.len++] = 0x66; /* Legacy prefix */
-        else if (is_64_bit(a.reg) ||
-            is_64_bit_reg(a.reg.r) || requires_prefix(b.mem.addr)) {
-            c.val[c.len++] = REX | W(a.reg) | is_64_bit_reg(b.mem.addr.base);
+        else if (rrex(a.reg) || mrex(b.mem.addr)) {
+            c.val[c.len++] = REX | W(a.reg) | mrex(b.mem.addr);
         }
         c.val[c.len++] = 0x88 + w(a.reg);
         encode_sib_addr(&c, reg(a.reg), b.mem.addr);
         break;
     case OPT_MEM_REG:
-        c.len = 0;
-        if (is_64_bit(b.reg) || is_64_bit_reg(b.reg.r))
-            c.val[c.len++] = REX | W(b.reg) | R(b.reg);
+        if (rrex(b.reg) || mrex(a.mem.addr)) {
+            c.val[c.len++] =
+                REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
+        }
         c.val[c.len++] = 0x8A + w(b.reg);
         encode_sib_addr(&c, reg(b.reg), a.mem.addr);
         break;
     default:
+        assert(0);
         break;
     }
     return c;
@@ -212,8 +208,7 @@ static struct code movsx(
     struct code c = {{0}};
     assert(optype == OPT_MEM_REG);
 
-    if (is_64_bit(b.reg) || is_64_bit_reg(b.reg.r) ||
-        is_64_bit_reg(a.mem.addr.base)) {
+    if (rrex(b.reg) || mrex(a.mem.addr)) {
         c.val[c.len] = REX | W(b.reg) | R(b.reg);
         c.val[c.len++] |= is_64_bit_reg(a.mem.addr.base); /* B(..) */
     }
@@ -294,7 +289,7 @@ static struct code sub(
         break;
     case OPT_REG_REG:
         c.len = 0;
-        if (is_64_bit(a.reg)) {
+        if (rrex(a.reg)) {
             c.val[0] = REX | W(a.reg) | R(a.reg) | B(b.reg);
             c.len = 1;
         }
@@ -319,7 +314,7 @@ static struct code add(
     switch (optype) {
     case OPT_REG_REG:
         c.len = 0;
-        if (is_64_bit(a.reg)) {
+        if (rrex(a.reg)) {
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
         c.val[c.len++] = 0x00 | w(a.reg);
@@ -563,7 +558,7 @@ static struct code basic_register_only_encode(
     struct registr b)
 {
     struct code c = {{0}};
-    if (is_64_bit_reg(a.r) || a.w > 4)
+    if (rrex(a))
         c.val[c.len++] = REX | W(a) | R(a) | B(b);
     c.val[c.len++] = opcode | w(a);
     c.val[c.len++] = 0xC0 | reg(a) << 3 | reg(b);
@@ -606,7 +601,7 @@ static struct code shl(
     assert(optype == OPT_REG_REG);
     assert(a.reg.r == CX && a.reg.w == 1);
 
-    if (is_64_bit_reg(b.reg.r) || b.reg.w > 4)
+    if (rrex(b.reg))
         c.val[c.len++] = REX | W(b.reg) | B(b.reg);
     c.val[c.len++] = 0xD2 | w(b.reg);
     c.val[c.len++] = 0xE0 | reg(b.reg);
@@ -623,7 +618,7 @@ static struct code shr(
     assert(optype == OPT_REG_REG);
     assert(a.reg.r == CX && a.reg.w == 1);
 
-    if (is_64_bit_reg(b.reg.r) || b.reg.w > 4)
+    if (rrex(b.reg))
         c.val[c.len++] = REX | W(b.reg) | B(b.reg);
     c.val[c.len++] = 0xD2 | w(b.reg);
     c.val[c.len++] = 0xF8 | reg(b.reg);
@@ -640,7 +635,7 @@ static struct code sar(
     assert(optype == OPT_REG_REG);
     assert(a.reg.r == CX && a.reg.w == 1);
 
-    if (is_64_bit_reg(b.reg.r) || b.reg.w > 4)
+    if (rrex(b.reg))
         c.val[c.len++] = REX | W(b.reg) | B(b.reg);
     c.val[c.len++] = 0xD2 | w(b.reg);
     c.val[c.len++] = 0xF8 | reg(b.reg);
