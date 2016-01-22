@@ -14,7 +14,9 @@
 
 /* Determine if register or memory argument requires REX prefix.
  */
-#define rrex(arg) (is_64_bit(arg) || is_64_bit_reg(arg.r))
+#define rrex(arg) \
+    (is_64_bit(arg) || is_64_bit_reg(arg.r) || \
+        (arg.w == 1 && (arg.r == DI || arg.r == SI)))
 #define mrex(arg) \
     (!arg.sym && ((is_64_bit_reg(arg.base) || is_64_bit_reg(arg.offset))))
 
@@ -179,10 +181,10 @@ static struct code mov(
     case OPT_REG_MEM:
         if (is_16_bit(a.reg))
             c.val[c.len++] = 0x66; /* Legacy prefix */
-        else if (rrex(a.reg) || mrex(b.mem.addr)) {
+        if (rrex(a.reg) || mrex(b.mem.addr)) {
             c.val[c.len++] = REX | W(a.reg) | mrex(b.mem.addr);
         }
-        c.val[c.len++] = 0x88 + w(a.reg);
+        c.val[c.len++] = 0x88 | w(a.reg);
         encode_sib_addr(&c, reg(a.reg), b.mem.addr);
         break;
     case OPT_MEM_REG:
