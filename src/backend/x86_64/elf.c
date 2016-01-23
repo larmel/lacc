@@ -3,7 +3,7 @@
 
 #include <assert.h>
 
-#define SHNUM 9     /* Number of section headers */
+#define SHNUM 10        /* Number of section headers */
 
 #define SHID_ZERO 0
 #define SHID_SHSTRTAB 1
@@ -11,9 +11,10 @@
 #define SHID_SYMTAB 3
 #define SHID_RELA_TEXT 4
 #define SHID_RELA_DATA 5
-#define SHID_DATA 6
-#define SHID_RODATA 7
-#define SHID_TEXT 8
+#define SHID_BSS 6
+#define SHID_DATA 7
+#define SHID_RODATA 8
+#define SHID_TEXT 9
 
 #define SHDR_CHAIN_OFFSET(a, b) \
     shdr[b].sh_offset = shdr[a].sh_offset + shdr[a].sh_size
@@ -48,7 +49,7 @@ static Elf64_Ehdr header = {
 
 static char shstrtab[] =
     "\0.data\0.text\0.shstrtab\0.symtab\0.strtab\0.rodata"
-    "\0.rela.text\0.rela.data\0\0\0\0\0\0\0\0\0\0\0"; /* Make size % 16 = 0 */
+    "\0.rela.text\0.rela.data\0.bss\0\0\0\0\0\0"; /* Make size % 16 = 0 */
 
 static Elf64_Shdr shdr[] = {
     {0},                /* First section header must contain all-zeroes */
@@ -112,6 +113,18 @@ static Elf64_Shdr shdr[] = {
         8,              /* sh_addralign */
         sizeof(Elf64_Rela)
     },
+    { /* .bss */
+        69,             /* sh_name, index into shstrtab */
+        SHT_NOBITS,     /* Section type */
+        SHF_WRITE | SHF_ALLOC,
+        0x0,            /* Virtual address */
+        0x0,            /* Offset in file (TODO!) */
+        0,              /* Size of section (TODO!) */
+        SHN_UNDEF,      /* sh_link */
+        0,              /* sh_info */
+        4,              /* sh_addralign */
+        0               /* sh_entsize */
+    },
     { /* .data */
         1,              /* sh_name, index into shstrtab */
         SHT_PROGBITS,   /* Section type */
@@ -159,26 +172,34 @@ static int elf_data_add(int shid, const char *ptr, size_t n)
 {
     size_t offset;
     unsigned char **buf;
-    assert(shid == SHID_DATA || shid == SHID_RODATA);
+    assert(
+        shdr[shid].sh_type == SHT_PROGBITS ||
+        shdr[shid].sh_type == SHT_NOBITS);
 
     offset = shdr[shid].sh_size;
-    buf = (shid == SHID_DATA) ? &data : &rodata;
-    *buf = realloc(*buf, offset + n);
-    if (ptr)
-        memcpy(*buf + offset, ptr, n);
-    else
-        memset(*buf + offset, '\0', n);
+    if (shdr[shid].sh_type == SHT_PROGBITS) {
+        assert(shid == SHID_DATA || shid == SHID_RODATA);
+        buf = (shid == SHID_DATA) ? &data : &rodata;
+        *buf = realloc(*buf, offset + n);
+        if (ptr)
+            memcpy(*buf + offset, ptr, n);
+        else
+            memset(*buf + offset, 0, n);
+    } else
+        assert(shdr[shid].sh_type == SHT_NOBITS);
     shdr[shid].sh_size += n;
     return offset;
 }
 
-/* Align .data or .rodata section to specified number of bytes. Following calls
- * to elf_data_add start at this alignment. Padding is filled with zero.
+/* Align data section to specified number of bytes. Following calls to
+ * elf_data_add start at this alignment. Padding is filled with zero.
  */
 static int elf_data_align(int shid, int align)
 {
     size_t offset;
-    assert(shid == SHID_DATA || shid == SHID_RODATA);
+    assert(
+        shdr[shid].sh_type == SHT_PROGBITS ||
+        shdr[shid].sh_type == SHT_NOBITS);
 
     offset = shdr[shid].sh_size;
     if (offset % align != 0)
@@ -441,7 +462,14 @@ int elf_symbol(const struct symbol *sym)
 
         /* String value symbols contain the actual string value; write to
          * .rodata immediately. */
-        elf_data_add(SHID_RODATA, sym->string_value, size_of(&sym->type));
+        elf_data_add(SHID_RODATA, sym->string_value, entry.st_size);
+    } else if (sym->linkage == LINK_INTERN) {
+        elf_data_align(SHID_BSS, sym_alignment(sym));
+        entry.st_shndx = SHID_BSS;
+        entry.st_size = size_of(&sym->type);
+        entry.st_value = shdr[SHID_BSS].sh_size;
+        entry.st_info |= STT_OBJECT;
+        shdr[SHID_BSS].sh_size += entry.st_size;
     }
 
     elf_symtab_assoc((struct symbol *) sym, entry);
@@ -559,6 +587,7 @@ int elf_flush(void)
     SHDR_CHAIN_OFFSET(SHID_STRTAB, SHID_SYMTAB);
     SHDR_CHAIN_OFFSET(SHID_SYMTAB, SHID_RELA_TEXT);
     SHDR_CHAIN_OFFSET(SHID_RELA_TEXT, SHID_RELA_DATA);
+    SHDR_CHAIN_OFFSET(SHID_RELA_DATA, SHID_BSS);
     SHDR_CHAIN_OFFSET(SHID_RELA_DATA, SHID_DATA);
     SHDR_CHAIN_OFFSET(SHID_DATA, SHID_RODATA);
     SHDR_CHAIN_OFFSET(SHID_RODATA, SHID_TEXT);

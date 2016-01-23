@@ -63,6 +63,7 @@ typedef struct {
 #define SHT_HASH 5
 #define SHT_DYNAMIC 6
 #define SHT_NOTE 7
+#define SHT_NOBITS 8                /* Uninitialized space */
 #define SHT_DYNSYM 11
 
 /* Section attributes, sh_flags.
