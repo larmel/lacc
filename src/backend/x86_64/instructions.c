@@ -325,11 +325,10 @@ static struct code add(
     union operand a,
     union operand b)
 {
-    struct code c = nop();
+    struct code c = {{0}};
 
     switch (optype) {
     case OPT_REG_REG:
-        c.len = 0;
         if (rrex(a.reg)) {
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
@@ -337,8 +336,30 @@ static struct code add(
         c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
         break;
     case OPT_IMM_REG:
+        assert(a.imm.type == IMM_INT);
+        if (rrex(b.reg))
+            c.val[c.len++] = REX | W(b.reg) | B(b.reg);
+        c.val[c.len++] = 0x80 | is_byte_imm(a.imm) << 1 | w(b.reg);
+        c.val[c.len++] = 0xC0 | reg(b.reg);
+        if (is_byte_imm(a.imm)) {
+            c.val[c.len++] = a.imm.d.byte;
+        } else {
+            assert(is_32bit_imm(a.imm));
+            memcpy(&c.val[c.len], &a.imm.d.dword, 4);
+            c.len += 4;
+        }
         break;
     case OPT_IMM_MEM:
+        assert(a.imm.type == IMM_INT && a.imm.w == 4 && !mrex(b.mem.addr));
+        c.val[c.len++] = 0x80 | is_byte_imm(a.imm) << 1 | w(b.mem);
+        encode_sib_addr(&c, 0, b.mem.addr);
+        if (is_byte_imm(a.imm)) {
+            c.val[c.len++] = a.imm.d.byte;
+        } else {
+            assert(is_32bit_imm(a.imm));
+            memcpy(&c.val[c.len], &a.imm.d.dword, 4);
+            c.len += 4;
+        }
         break;
     default:
         assert(0);

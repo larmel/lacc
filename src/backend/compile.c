@@ -758,8 +758,8 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     /* Move overflow_arg_area pointer to position of next memory argument, 
      * aligning to 8 byte. */
     emit(INSTR_ADD, OPT_IMM_MEM,
-        constant(N_EIGHTBYTES(res.type) * 8, 8),
-        location_of(var_overflow_arg_area, 8));
+        constant(N_EIGHTBYTES(res.type) * 8, 4),
+        location_of(var_overflow_arg_area, 4));
 
     if (*pc != PC_MEMORY)
         enter_context(done);
