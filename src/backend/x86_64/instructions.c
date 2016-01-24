@@ -195,6 +195,13 @@ static struct code mov(
         c.val[c.len++] = 0x8A + w(b.reg);
         encode_sib_addr(&c, reg(b.reg), a.mem.addr);
         break;
+    case OPT_IMM_MEM:
+        assert(a.imm.type == IMM_INT && a.imm.w == 4);
+        c.val[c.len++] = 0xC6 | w(b.mem);
+        encode_sib_addr(&c, 0, b.mem.addr);
+        memcpy(&c.val[c.len], &a.imm.d.dword, 4);
+        c.len += 4;
+        break;
     default:
         assert(0);
         break;
