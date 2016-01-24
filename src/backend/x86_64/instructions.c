@@ -246,17 +246,22 @@ static struct code movzx(
 {
     struct code c = {{0}};
 
-    if (is_64_bit(b.reg))
-        c.val[c.len++] = REX | W(b.reg) | R(b.reg);
-    c.val[c.len++] = 0x0F;
     if (optype == OPT_REG_REG) {
+        if (rrex(a.reg) || rrex(b.reg))
+            c.val[c.len++] = REX | W(b.reg) | R(b.reg);
+        c.val[c.len++] = 0x0F;
         c.val[c.len++] = 0xB6 | w(a.reg);
         c.val[c.len++] = 0xC0 | reg(b.reg) << 3 | reg(a.reg);
-    } else {
-        assert(optype == OPT_MEM_REG);
+    } else if (optype == OPT_MEM_REG) {
+        if (mrex(a.mem.addr) || rrex(b.reg)) {
+            c.val[c.len] = REX | W(b.reg) | R(b.reg);
+            c.val[c.len++] |= is_64_bit_reg(a.mem.addr.base);
+        }
+        c.val[c.len++] = 0x0F;
         c.val[c.len++] = 0xB6 | w(a.mem);
         encode_addr(&c, reg(b.reg), a.mem.addr);
-    }
+    } else
+        assert(0);
 
     return c;
 }
