@@ -212,7 +212,7 @@ int asm_symbol(const struct symbol *sym)
         out("\"\n");
     } else if (sym->symtype == SYM_LABEL) {
         out("%s:\n", sym_name(sym));
-    } else {
+    } else if (sym->symtype == SYM_DEFINITION) {
         I0(".data");
         if (sym->linkage == LINK_EXTERN)
             I1(".globl", sym->name);
