@@ -79,33 +79,40 @@ enum tttn {
 
 /* Encode address using ModR/M, SIB and Displacement bytes. Based on Table 2.2
  * and Table 2.3 in reference manual.
- *
- * Only using ModR/M for now.
  */
 static void encode_sib_addr(
     struct code *c,
     unsigned char reg,
     struct address addr)
 {
+    assert(addr.mult == 1 || !addr.mult);
+
     if (addr.sym) {
-        /* 2.2.1.6 RIP-relative addressing */
+        /* 2.2.1.6 RIP-relative addressing. */
         c->val[c->len++] = ((reg & 0x7) << 3) | 0x5;
         elf_add_reloc_text(addr.sym, R_X86_64_PC32, c->len, addr.disp);
         memset(&c->val[c->len], 0, 4);
         c->len += 4;
     } else {
-        c->val[c->len] = ((reg & 0x7) << 3) | ((addr.base - 1) % 8);
-        if (addr.disp) {
-            if (in_byte_range(addr.disp)) {
-                c->val[c->len++] |= 0x40;
-                c->val[c->len++] = addr.disp;
-            } else {
-                c->val[c->len++] |= 0x80;
-                memcpy(&c->val[c->len], &addr.disp, 4);
-                c->len += 4;
-            }
-        } else
-            c->len++;
+        /* ModR/M */
+        c->val[c->len++] =
+            ((reg & 0x7) << 3) | ((!addr.offset) ? ((addr.base - 1) % 8) : 4);
+        if (addr.disp && in_byte_range(addr.disp))
+            c->val[c->len - 1] |= 0x40;
+        else if (addr.disp)
+            c->val[c->len - 1] |= 0x80;
+
+        /* SIB */
+        if (addr.offset)
+            c->val[c->len++] = (addr.offset - 1) << 3 | (addr.base - 1);
+
+        /* Displacement */
+        if (addr.disp && in_byte_range(addr.disp))
+            c->val[c->len++] = addr.disp;
+        else if (addr.disp) {
+            memcpy(&c->val[c->len], &addr.disp, 4);
+            c->len += 4;
+        }
     }
 }
 
@@ -182,7 +189,7 @@ static struct code mov(
         if (is_16_bit(a.reg))
             c.val[c.len++] = 0x66; /* Legacy prefix */
         if (rrex(a.reg) || mrex(b.mem.addr)) {
-            c.val[c.len++] = REX | W(a.reg) | mrex(b.mem.addr);
+            c.val[c.len++] = REX | W(a.reg) | R(a.reg) | mrex(b.mem.addr);
         }
         c.val[c.len++] = 0x88 | w(a.reg);
         encode_sib_addr(&c, reg(a.reg), b.mem.addr);
