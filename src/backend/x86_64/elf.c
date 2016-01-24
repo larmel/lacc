@@ -517,6 +517,9 @@ int elf_symbol(const struct symbol *sym)
         entry.st_value = shdr[SHID_BSS].sh_size;
         entry.st_info |= STT_OBJECT;
         shdr[SHID_BSS].sh_size += entry.st_size;
+    } else if (sym->linkage == LINK_EXTERN) {
+        assert(sym->symtype == SYM_TENTATIVE);
+        entry.st_shndx = SHN_COMMON;
     }
 
     elf_symtab_assoc((struct symbol *) sym, entry);

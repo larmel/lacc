@@ -52,6 +52,7 @@ typedef struct {
 } Elf64_Shdr;
 
 #define SHN_UNDEF 0
+#define SHN_COMMON 0xFFF2           /* Tentative definitions */
 
 /* Section types, sh_type.
  */
