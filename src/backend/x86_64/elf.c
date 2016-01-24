@@ -413,7 +413,7 @@ static void flush_relocations(void)
     data_entry = sbuf[SHID_RELA_DATA].rela;
 
     for (i = 0; i < n_rela_text + n_rela_data; ++i) {
-        assert(prl[i].type == R_X86_64_PC32 || prl[i].type == R_X86_64_32S);
+        assert(prl[i].type != R_X86_64_NONE);
         if (prl[i].section == SHID_RELA_DATA)
             entry = data_entry++;
         else {
@@ -557,8 +557,8 @@ int elf_data(struct immediate imm)
         break;
     case IMM_ADDR:
         assert(imm.d.addr.sym);
-        elf_add_reloc_data(imm.d.addr.sym, R_X86_64_32S, imm.d.addr.disp);
-        w = 4;
+        assert(imm.w == 8);
+        elf_add_reloc_data(imm.d.addr.sym, R_X86_64_64, imm.d.addr.disp);
         break;
     case IMM_STRING:
         assert(w == strlen(imm.d.string) + 1);

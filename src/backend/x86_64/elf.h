@@ -105,6 +105,7 @@ typedef struct {
  */
 enum rel_type {
     R_X86_64_NONE = 0,
+    R_X86_64_64 = 1,                /* word64   S + A */
     R_X86_64_PC32 = 2,              /* word32   S + A - P */
     R_X86_64_32S = 11               /* word32   S + A */
 };
