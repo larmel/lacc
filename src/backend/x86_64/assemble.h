@@ -1,7 +1,7 @@
 #ifndef ASSEMBLE_H
 #define ASSEMBLE_H
 
-#include "instructions.h"
+#include "instr.h"
 
 #include <stdio.h>
 

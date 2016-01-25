@@ -2,7 +2,7 @@
 #include "x86_64/abi.h"
 #include "x86_64/assemble.h"
 #include "x86_64/elf.h"
-#include "x86_64/instructions.h"
+#include "x86_64/instr.h"
 #include "compile.h"
 #include <lacc/cli.h>
 
