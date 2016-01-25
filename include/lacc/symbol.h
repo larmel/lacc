@@ -53,6 +53,9 @@ struct symbol {
 
     /* Scope depth. */
     int depth;
+
+    /* Number of times symbol has been referenced in the program. */
+    int referenced;
 };
 
 struct symbol_list {

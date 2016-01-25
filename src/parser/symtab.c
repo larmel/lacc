@@ -155,8 +155,10 @@ struct symbol *sym_lookup(struct namespace *ns, const char *name)
         while (ref && ref->index) {
             if (ref->hash == hash) {
                 sym = ns->symbol[ref->index - 1];
-                if (!strcmp(name, sym->name))
+                if (!strcmp(name, sym->name)) {
+                    sym->referenced++;
                     return sym;
+                }
             }
             ref = ref->next;
         }
@@ -387,6 +389,10 @@ struct symbol_list get_tentative_definitions(const struct namespace *ns)
 
     for (i = 0; i < ns->length; ++i) {
         sym = ns->symbol[i];
+
+        if (is_function(&sym->type) && !sym->referenced && sym != decl_memcpy)
+            continue;
+
         if (sym->symtype == SYM_TENTATIVE ||
             sym->symtype == SYM_STRING_VALUE ||
             (sym->symtype == SYM_DECLARATION && sym->linkage == LINK_EXTERN)) {
