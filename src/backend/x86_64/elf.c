@@ -332,6 +332,7 @@ static void flush_symtab_globals(void)
     int i;
     for (i = 0; i < n_globals; ++i)
         globals[i].sym->stack_offset = elf_symtab_add(globals[i].entry);
+    free(globals);
 }
 
 /* Add string to strtab section, returning its offset into the section for use
@@ -404,13 +405,17 @@ static void flush_relocations(void)
     Elf64_Rela *entry, *data_entry, *text_entry;
     int i;
 
-    sbuf[SHID_RELA_TEXT].rela = calloc(n_rela_text, sizeof(Elf64_Rela));
-    shdr[SHID_RELA_TEXT].sh_size = n_rela_text * sizeof(Elf64_Rela);
-    text_entry = sbuf[SHID_RELA_TEXT].rela;
+    if (n_rela_text) {
+        sbuf[SHID_RELA_TEXT].rela = calloc(n_rela_text, sizeof(Elf64_Rela));
+        shdr[SHID_RELA_TEXT].sh_size = n_rela_text * sizeof(Elf64_Rela);
+        text_entry = sbuf[SHID_RELA_TEXT].rela;
+    }
 
-    sbuf[SHID_RELA_DATA].rela = calloc(n_rela_data, sizeof(Elf64_Rela));
-    shdr[SHID_RELA_DATA].sh_size = n_rela_data * sizeof(Elf64_Rela);
-    data_entry = sbuf[SHID_RELA_DATA].rela;
+    if (n_rela_data) {
+        sbuf[SHID_RELA_DATA].rela = calloc(n_rela_data, sizeof(Elf64_Rela));
+        shdr[SHID_RELA_DATA].sh_size = n_rela_data * sizeof(Elf64_Rela);
+        data_entry = sbuf[SHID_RELA_DATA].rela;
+    }
 
     for (i = 0; i < n_rela_text + n_rela_data; ++i) {
         assert(prl[i].type != R_X86_64_NONE);
@@ -431,6 +436,8 @@ static void flush_relocations(void)
         if (prl[i].type == R_X86_64_PC32)
             entry->r_addend -= 4;
     }
+
+    free(prl);
 }
 
 /* Must be called before writing text segment. Overwrite locations with offsets
@@ -452,6 +459,7 @@ static void flush_text_displacements(void)
         ptr = (int *) (sbuf[SHID_TEXT].data + entry->text_offset);
         *ptr += entry->label->stack_offset - entry->text_offset;
     }
+
     free(toff);
     toff = NULL;
     n_toff = 0;
@@ -610,12 +618,15 @@ int elf_flush(void)
         case SHT_PROGBITS:
         case SHT_STRTAB:
             fwrite(sbuf[i].data, shdr[i].sh_size, 1, object_file_output);
+            free(sbuf[i].data);
             break;
         case SHT_SYMTAB:
             fwrite(sbuf[i].sym, shdr[i].sh_size, 1, object_file_output);
+            free(sbuf[i].sym);
             break;
         case SHT_RELA:
             fwrite(sbuf[i].rela, shdr[i].sh_size, 1, object_file_output);
+            free(sbuf[i].rela);
             break;
         default:
             assert(shdr[i].sh_type == SHT_NOBITS);

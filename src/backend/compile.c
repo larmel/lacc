@@ -763,6 +763,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
 
     if (*pc != PC_MEMORY)
         enter_context(done);
+    free(pc);
 }
 
 static void compile_op(const struct op *op)
