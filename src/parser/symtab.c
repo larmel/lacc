@@ -378,24 +378,25 @@ void register_builtin_types(struct namespace *ns)
     type_add_member(type, "dest", voidptr);
     type_add_member(type, "src", constvoidptr);
     type_add_member(type, "n", &basic_type__unsigned_long);
-    decl_memcpy = sym_add(ns, "memcpy", type, SYM_TENTATIVE, LINK_EXTERN);
+    decl_memcpy = sym_add(ns, "memcpy", type, SYM_DECLARATION, LINK_EXTERN);
 }
 
 struct symbol_list get_tentative_definitions(const struct namespace *ns)
 {
     struct symbol_list list = {0};
     struct symbol *sym;
-    int i;
+    int i, include;
 
     for (i = 0; i < ns->length; ++i) {
         sym = ns->symbol[i];
-
-        if (is_function(&sym->type) && !sym->referenced && sym != decl_memcpy)
-            continue;
-
-        if (sym->symtype == SYM_TENTATIVE ||
+        include =
+            sym->symtype == SYM_TENTATIVE ||
             sym->symtype == SYM_STRING_VALUE ||
-            (sym->symtype == SYM_DECLARATION && sym->linkage == LINK_EXTERN)) {
+            (sym->symtype == SYM_DECLARATION &&
+                sym->linkage == LINK_EXTERN &&
+                (sym->referenced || sym == decl_memcpy));
+
+        if (include) {
             list.length += 1;
             list.symbol =
                 realloc(list.symbol, list.length * sizeof(*list.symbol));

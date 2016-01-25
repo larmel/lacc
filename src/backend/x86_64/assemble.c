@@ -185,23 +185,35 @@ int asm_symbol(const struct symbol *sym)
         current_symbol = sym;
     }
 
-    if (sym->symtype == SYM_TENTATIVE) {
-        if (is_object(&sym->type)) {
-            if (sym->linkage == LINK_INTERN)
-                out("\t.local %s\n", sym_name(sym));
-            out("\t.comm %s,%d,%d\n",
-                sym_name(sym), size_of(&sym->type), type_alignment(&sym->type));
-        } else {
-            /* Tentative function, nothing to output. */
-            assert(is_function(&sym->type));
+    switch (sym->symtype) {
+    case SYM_TENTATIVE:
+        if (is_function(&sym->type)) {
+            printf("Was tentative function!: %s\n", sym_name(sym));
         }
-    } else if (is_function(&sym->type)) {
-        I0(".text");
-        if (sym->linkage == LINK_EXTERN)
-            I1(".globl", sym->name);
-        I2(".type", sym->name, "@function");
-        out("%s:\n", sym->name);
-    } else if (sym->symtype == SYM_STRING_VALUE) {
+        assert(is_object(&sym->type));
+        if (sym->linkage == LINK_INTERN)
+            out("\t.local %s\n", sym_name(sym));
+        out("\t.comm %s,%d,%d\n",
+            sym_name(sym), size_of(&sym->type), type_alignment(&sym->type));
+        break;
+    case SYM_DEFINITION:
+        if (is_function(&sym->type)) {
+            I0(".text");
+            if (sym->linkage == LINK_EXTERN)
+                I1(".globl", sym->name);
+            I2(".type", sym->name, "@function");
+            out("%s:\n", sym->name);
+        } else {
+            I0(".data");
+            if (sym->linkage == LINK_EXTERN)
+                I1(".globl", sym->name);
+            out("\t.align\t%d\n", sym_alignment(sym));
+            out("\t.type\t%s, @object\n", sym_name(sym));
+            out("\t.size\t%s, %d\n", sym_name(sym), size_of(&sym->type));
+            out("%s:\n", sym_name(sym));
+        }
+        break;
+    case SYM_STRING_VALUE:
         I0(".data");
         out("\t.align\t%d\n", sym_alignment(sym));
         out("\t.type\t%s, @object\n", sym_name(sym));
@@ -210,16 +222,12 @@ int asm_symbol(const struct symbol *sym)
         out("\t.string\t\"");
         output_escaped_string(sym->string_value);
         out("\"\n");
-    } else if (sym->symtype == SYM_LABEL) {
+        break;
+    case SYM_LABEL:
         out("%s:\n", sym_name(sym));
-    } else if (sym->symtype == SYM_DEFINITION) {
-        I0(".data");
-        if (sym->linkage == LINK_EXTERN)
-            I1(".globl", sym->name);
-        out("\t.align\t%d\n", sym_alignment(sym));
-        out("\t.type\t%s, @object\n", sym_name(sym));
-        out("\t.size\t%s, %d\n", sym_name(sym), size_of(&sym->type));
-        out("%s:\n", sym_name(sym));
+        break;
+    default:
+        break;
     }
 
     return 0;
@@ -361,7 +369,7 @@ int asm_flush(void)
 {
     if (current_symbol) {
         if (is_function(&current_symbol->type) &&
-                current_symbol->symtype != SYM_TENTATIVE)
+                current_symbol->symtype == SYM_DEFINITION)
             out("\t.size\t%s, .-%s\n",
                 current_symbol->name, current_symbol->name);
         current_symbol = NULL;

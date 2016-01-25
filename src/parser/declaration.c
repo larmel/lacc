@@ -821,6 +821,8 @@ struct block *declaration(struct block *parent)
             return parent;
         }
 
+        if (is_function(type))
+            symtype = SYM_DECLARATION;
         sym = sym_add(&ns_ident, name, type, symtype, linkage);
         if (ns_ident.current_depth) {
             assert(ns_ident.current_depth > 1);
