@@ -51,21 +51,13 @@ $(BIN)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-$(BIN)/%-bootstrap.o: $(BIN)/%-bootstrap.s
+$(BIN)/%-bootstrap.o: src/%.c $(BIN)/lacc
 	@mkdir -p $(dir $@)
-	$(CC) -c $< -o $@
+	$(BIN)/lacc -c $(LACCFLAGS) $< -o $@
 
-$(BIN)/%-bootstrap.s: src/%.c $(BIN)/lacc
+$(BIN)/%-selfhost.o: src/%.c $(BIN)/bootstrap
 	@mkdir -p $(dir $@)
-	$(BIN)/lacc $(LACCFLAGS) -S $< -o $@
-
-$(BIN)/%-selfhost.o: $(BIN)/%-selfhost.s
-	@mkdir -p $(dir $@)
-	$(CC) -c $< -o $@
-
-$(BIN)/%-selfhost.s: src/%.c $(BIN)/bootstrap
-	@mkdir -p $(dir $@)
-	$(BIN)/bootstrap $(LACCFLAGS) -S $< -o $@
+	$(BIN)/bootstrap -c $(LACCFLAGS) $< -o $@
 
 $(BIN)/lacc: $(OBJECTS)
 	$(LD) $^ -o $@

@@ -520,6 +520,7 @@ int elf_symbol(const struct symbol *sym)
     } else if (sym->symtype == SYM_TENTATIVE) {
         assert(sym->linkage == LINK_EXTERN);
         entry.st_shndx = SHN_COMMON;
+        entry.st_size = size_of(&sym->type);
     }
 
     elf_symtab_assoc((struct symbol *) sym, entry);
