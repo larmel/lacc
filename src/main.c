@@ -75,6 +75,7 @@ int main(int argc, char *argv[])
 
     /* Add default search paths last, with lowest priority. These are searched
      * after anything specified with -I. */
+    add_include_search_path("/usr/include/x86_64-linux-musl");
     add_include_search_path("/usr/include");
     add_include_search_path("/usr/local/include");
 
