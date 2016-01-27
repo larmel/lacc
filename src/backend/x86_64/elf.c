@@ -402,7 +402,10 @@ static void elf_add_reloc_data(
  */
 static void flush_relocations(void)
 {
-    Elf64_Rela *entry, *data_entry, *text_entry;
+    Elf64_Rela
+        *entry,
+        *data_entry = NULL,
+        *text_entry = NULL;
     int i;
 
     if (n_rela_text) {

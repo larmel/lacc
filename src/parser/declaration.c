@@ -55,13 +55,6 @@ static void clear_definition(struct definition *def)
     memset(def, 0, sizeof(*def));
 }
 
-static int is_string(struct var val)
-{
-    return
-        val.kind == IMMEDIATE && val.symbol &&
-        val.symbol->symtype == SYM_STRING_VALUE;
-}
-
 static struct var var_zero(int size)
 {
     struct var var = {0};
@@ -744,7 +737,8 @@ static struct block *initializer(struct block *block, struct var target)
         }
         if (target.kind == DIRECT && !target.type->size) {
             assert(!target.offset);
-            assert(is_string(block->expr));
+            assert(block->expr.kind == IMMEDIATE && block->expr.symbol);
+            assert(block->expr.symbol->symtype == SYM_STRING_VALUE);
             assert(is_array(block->expr.type));
 
             /* Complete type based on string literal. Evaluation does not have
