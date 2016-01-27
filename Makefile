@@ -1,82 +1,36 @@
-BIN := bin
-SRC_ROOT := src
-SRC_DIRS := ${shell find ${SRC_ROOT} -type d -print}
-TESTS := $(wildcard test/*.c)
+DIRS := ${shell find src -type d -print}
+SOURCES := $(foreach sdir,$(DIRS),$(wildcard $(sdir)/*.c))
 
-LD := cc
-CC := cc
-CCFLAGS := -Wall -pedantic -std=c89 -g -I include/
-LACCFLAGS := -I /usr/include/x86_64-linux-musl/ -I include/
+CFLAGS := -Wall -pedantic -std=c89 -I include/
+LACCFLAGS := -I include/
 
-# Normal build with gcc
-SOURCES := $(foreach sdir,$(SRC_DIRS),$(wildcard $(sdir)/*.c))
-OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(SOURCES))
+all: bin/lacc
 
-# Bootstrap build subset of files
-BOOTSTRAP_SOURCES := \
-	src/backend/graphviz/dot.c \
-	src/backend/x86_64/abi.c \
-	src/backend/x86_64/assemble.c \
-	src/backend/x86_64/elf.c \
-	src/backend/x86_64/instr.c \
-	src/backend/compile.c \
-	src/parser/declaration.c \
-	src/parser/eval.c \
-	src/parser/expression.c \
-	src/parser/statement.c \
-	src/parser/symtab.c \
-	src/parser/type.c \
-	src/preprocessor/input.c \
-	src/preprocessor/macro.c \
-	src/preprocessor/preprocess.c \
-	src/preprocessor/strtab.c \
-	src/preprocessor/tokenize.c \
-	src/util/hash.c \
-	src/cli.c \
-	src/main.c
-BOOTSTRAP_OBJECTS := $(patsubst src/%.c,$(BIN)/%-bootstrap.o,$(BOOTSTRAP_SOURCES))
-REMAINING_SOURCES := $(filter-out $(BOOTSTRAP_SOURCES), $(SOURCES))
-REMAINING_OBJECTS := $(patsubst src/%.c,$(BIN)/%.o,$(REMAINING_SOURCES))
-
-# Selfhosted, compiler built with itself
-SELFHOST_OBJECTS := $(patsubst src/%.c,$(BIN)/%-selfhost.o,$(SOURCES))
-
-.PHONY: all bootstrap selfhost test test-bootstrap test-selfhost clean
-
-all: $(BIN)/lacc
-bootstrap: $(BIN)/bootstrap
-selfhost: $(BIN)/selfhost
-
-$(BIN)/%.o: src/%.c
+bin/lacc: $(SOURCES)
 	@mkdir -p $(dir $@)
-	$(CC) $(CCFLAGS) -c $< -o $@
+	cc $(CFLAGS) $^ -o $@
 
-$(BIN)/%-bootstrap.o: src/%.c $(BIN)/lacc
+bin/bootstrap: $(patsubst src/%.c,bin/%-bootstrap.o,$(SOURCES))
+	cc $^ -o $@
+
+bin/%-bootstrap.o: src/%.c bin/lacc
 	@mkdir -p $(dir $@)
-	$(BIN)/lacc -c $(LACCFLAGS) $< -o $@
+	bin/lacc $(LACCFLAGS) -c $< -o $@
 
-$(BIN)/%-selfhost.o: src/%.c $(BIN)/bootstrap
+bin/selfhost: $(patsubst src/%.c,bin/%-selfhost.o,$(SOURCES))
+	cc $^ -o $@
+
+bin/%-selfhost.o: src/%.c bin/bootstrap
 	@mkdir -p $(dir $@)
-	$(BIN)/bootstrap -c $(LACCFLAGS) $< -o $@
+	bin/bootstrap $(LACCFLAGS) -c $< -o $@
 
-$(BIN)/lacc: $(OBJECTS)
-	$(LD) $^ -o $@
+test-%: bin/%
+	@$(foreach file,$(wildcard test/*.c),./check.sh $< $(file);)
 
-$(BIN)/bootstrap: $(BOOTSTRAP_OBJECTS) $(REMAINING_OBJECTS)
-	$(LD) $^ -o $@
-
-$(BIN)/selfhost: $(SELFHOST_OBJECTS)
-	$(LD) $^ -o $@
-
-test: $(BIN)/lacc
-	@$(foreach file,$(TESTS),./check.sh "$< -I/usr/include/x86_64-linux-musl/" $(file);)
-
-test-bootstrap: $(BIN)/bootstrap
-	@$(foreach file,$(TESTS),./check.sh "$< -I/usr/include/x86_64-linux-musl/" $(file);)
-
-test-selfhost: $(BIN)/selfhost
-	@$(foreach file,$(TESTS),./check.sh "$< -I/usr/include/x86_64-linux-musl/" $(file);)
+test: test-lacc
 
 clean:
-	rm -rf $(BIN)
+	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s
+
+.PHONY: all test test-% clean
