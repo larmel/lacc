@@ -66,7 +66,8 @@ static struct token expect_next(struct builder *list, enum token_type type)
 {
     struct token t = get_next(list);
     if (t.token != type) {
-        error("Expected token '%s', but got '%s'.", reserved[type], t.strval);
+        error("Expected token '%s', but got '%s'.",
+            reserved[type].str, t.strval.str);
         exit(1);
     }
     return t;
@@ -113,7 +114,7 @@ static void read_macro_invocation(
         list_append(list, t);
     }
     if (nesting) {
-        error("Unbalanced invocation of macro '%s'.", macro->name.strval);
+        error("Unbalanced invocation of macro '%s'.", macro->name.strval.str);
         exit(1);
     }
 }
@@ -131,15 +132,15 @@ static void read_defined_operator(struct builder *list)
     }
     if (t.token != IDENTIFIER) {
         error("Expected identifier in 'defined' clause, but got '%s'",
-            t.strval);
+            t.strval.str);
         exit(1);
     }
     if (definition(t)) {
         t.intval = 1;
-        t.strval = "1";
+        t.strval = str_init("1");
     } else {
         t.intval = 0;
-        t.strval = "0";
+        t.strval = str_init("0");
     }
     t.token = INTEGER_CONSTANT;
     list_append(list, t);
@@ -166,12 +167,14 @@ static struct token *read_complete_line(struct token t)
         t = get_next(&line);
         is_expandable =
             (t.token == IF ||
-                (t.token == IDENTIFIER && !strcmp("elif", t.strval)));
+                (t.token == IDENTIFIER && !strcmp("elif", t.strval.str)));
     }
 
     while (t.token != NEWLINE && t.token != END) {
         if (t.token == IDENTIFIER) {
-            if (!strcmp("defined", t.strval) && is_directive && is_expandable) {
+            if (!strcmp("defined", t.strval.str) &&
+                is_directive && is_expandable)
+            {
                 read_defined_operator(&line);
             } else if (
                 (def = definition(t)) && def->type == FUNCTION_LIKE &&
@@ -202,8 +205,9 @@ static const struct token *skip_to(const struct token *list, int token)
 {
     while (list->token == SPACE) list++;
     if (list->token != token) {
-        assert(reserved[token]);
-        error("Expected '%s', but got '%s'.", reserved[token], list->strval);
+        assert(reserved[token].str);
+        error("Expected '%s', but got '%s'.",
+            reserved[token].str, list->strval.str);
     }
     return list;
 }
@@ -231,7 +235,7 @@ static int eval_primary(
         list = skip_to(list, ')');
         break;
     default:
-        error("Invalid primary expression '%s'.", list->strval);
+        error("Invalid primary expression '%s'.", list->strval.str);
         break;
     }
     *endptr = list + 1;
@@ -501,7 +505,7 @@ static struct macro preprocess_define(
         if (line->token == IDENTIFIER) {
             int i;
             for (i = 0; i < macro.params; ++i) {
-                if (!strcmp(line->strval, params[i].strval)) {
+                if (!str_cmp(line->strval, params[i].strval)) {
                     macro.replacement[macro.size - 1].param = i + 1;
                     break;
                 }
@@ -519,29 +523,29 @@ static struct macro preprocess_define(
  */
 static struct token pastetok(struct token a, struct token b)
 {
-    size_t len;
     char *str;
     struct token t = {STRING};
 
-    assert(a.strval && b.strval);
+    assert(a.strval.str);
+    assert(b.strval.str);
 
-    len = strlen(a.strval) + strlen(b.strval);
-    str = calloc(len + 1, sizeof(*str));
-    strcpy(str, a.strval);
-    strcat(str, b.strval);
+    t.strval.len = a.strval.len + b.strval.len;
+    str = calloc(t.strval.len + 1, sizeof(*str));
+    memcpy(str, a.strval.str, a.strval.len);
+    memcpy(str + a.strval.len, b.strval.str, b.strval.len);
 
-    t.strval = str_register_n(str, len);
+    t.strval = str_register(str, t.strval.len);
     free(str);
     return t;
 }
 
 static void preprocess_include(const struct token line[])
 {
-    struct token t = {STRING, ""};
+    struct token t = {STRING, {"", 0}};
 
     line = skip_ws(line);
     if (line->token == STRING) {
-        include_file(line->strval);
+        include_file(line->strval.str);
     } else if (line->token == '<') {
         line = skip_ws(line + 1);
         while (line->token != END) {
@@ -552,13 +556,13 @@ static void preprocess_include(const struct token line[])
             t = pastetok(t, *line++);
         }
 
-        if (!strlen(t.strval)) {
+        if (!t.strval.len) {
             error("Invalid include directive.");
             exit(1);
         }
 
         assert(line->token == '>');
-        include_system_file(t.strval);
+        include_system_file(t.strval.str);
     }
 }
 
@@ -602,7 +606,7 @@ static void preprocess_directive(struct token *original)
     line = skip_to(line, '#');
     line = skip_ws(line + 1);
     if (line->token == IF ||
-        (line->token == IDENTIFIER && !strcmp("elif", line->strval)))
+        (line->token == IDENTIFIER && !strcmp("elif", line->strval.str)))
     {
         /* Perform macro expansion only for if and elif directives, before doing
          * the expression parsing. */
@@ -622,31 +626,39 @@ static void preprocess_directive(struct token *original)
         }
     } else if (line->token == ELSE) {
         cnd_push(!cnd_pop() && cnd_peek());
-    } else if (line->token == IDENTIFIER && !strcmp("elif", line->strval)) {
+    } else if (line->token == IDENTIFIER &&
+        !strcmp("elif", line->strval.str))
+    {
         if (!cnd_pop() && cnd_peek()) {
             cnd_push(expression(line + 1, &line));
         } else {
             cnd_push(0);
         }
-    } else if (line->token == IDENTIFIER && !strcmp("endif", line->strval)) {
+    } else if (line->token == IDENTIFIER &&
+        !strcmp("endif", line->strval.str))
+    {
         cnd_pop();
-    } else if (line->token == IDENTIFIER && !strcmp("ifndef", line->strval)) {
+    } else if (line->token == IDENTIFIER &&
+        !strcmp("ifndef", line->strval.str))
+    {
         line = skip_to(line + 1, IDENTIFIER);
         cnd_push(!definition(*line) && cnd_peek());
-    } else if (line->token == IDENTIFIER && !strcmp("ifdef", line->strval)) {
+    } else if (line->token == IDENTIFIER &&
+        !strcmp("ifdef", line->strval.str))
+    {
         line = skip_to(line + 1, IDENTIFIER);
         cnd_push(definition(*line++) && cnd_peek());
     } else if (cnd_peek() && line->token == IDENTIFIER) {
-        if (!strcmp("define", line->strval)) {
+        if (!strcmp("define", line->strval.str)) {
             define(preprocess_define(line + 1, &line));
-        } else if (!strcmp("undef", line->strval)) {
+        } else if (!strcmp("undef", line->strval.str)) {
             line = skip_to(line + 1, IDENTIFIER);
             undef(*line++);
-        } else if (!strcmp("include", line->strval)) {
+        } else if (!strcmp("include", line->strval.str)) {
             preprocess_include(line + 1);
-        } else if (!strcmp("error", line->strval)) {
+        } else if (!strcmp("error", line->strval.str)) {
             line = skip_ws(line + 1);
-            error("%s", stringify(line).strval);
+            error("%s", stringify(line).strval.str);
             exit(1);
         }
     }
@@ -715,7 +727,7 @@ static void add(struct token t)
         lookahead[length - 1] = t;
     }
 
-    verbose("   token( %s )", t.strval);
+    verbose("   token( %s )", t.strval.str);
 }
 
 static void rewind_lookahead_buffer(void)
@@ -819,11 +831,11 @@ struct token consume(enum token_type type)
     struct token t = next();
 
     if (t.token != type) {
-        if (reserved[type])
-            error("Unexpected token '%s', expected '%s'.", t.strval,
+        if (reserved[type].str)
+            error("Unexpected token '%s', expected '%s'.", t.strval.str,
                 reserved[type]);
         else
-            error("Unexpected token '%s', expected %s.", t.strval,
+            error("Unexpected token '%s', expected %s.", t.strval.str,
                 (type == IDENTIFIER) ? "identifier" :
                 (type == INTEGER_CONSTANT) ? "number" : "string");
         exit(1);
@@ -844,10 +856,10 @@ void preprocess(FILE *output)
             fprintf(output, "%ld", t.intval);
             break;
         case STRING:
-            fprintf(output, "\"%s\"", t.strval);
+            fprintf(output, "\"%s\"", t.strval.str);
             break;
         default:
-            fprintf(output, "%s", t.strval);
+            fprintf(output, "%s", t.strval.str);
             break;
         }
         t = next();

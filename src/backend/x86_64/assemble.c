@@ -151,11 +151,12 @@ static const char *immediate(struct immediate imm, int *size)
     return buf;
 }
 
-static void output_escaped_string(const char *str)
+static void output_escaped_string(struct string string)
 {
-    char c;
+    int c, i;
 
-    while ((c = *str++) != '\0') {
+    for (i = 0; i < string.len; ++i) {
+        c = string.str[i];
         if (isprint(c) && c != '"' && c != '\\') {
             putc(c, asm_output);
             continue;

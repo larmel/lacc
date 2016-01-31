@@ -14,29 +14,31 @@
 static struct macro
     macro_hash_table[HASH_TABLE_LENGTH];
 
+static int tok_cmp(struct token a, struct token b)
+{
+    return (a.token != b.token) || str_cmp(a.strval, b.strval);
+}
+
 static int macrocmp(const struct macro *a, const struct macro *b)
 {
     int i;
+    struct replacement ra, rb;
 
-    if (strcmp(a->name.strval, b->name.strval) ||
-        a->type != b->type ||
-        a->params != b->params)
-    {
+    if ((a->type != b->type) || (a->params != b->params))
         return 1;
-    }
+
+    if (tok_cmp(a->name, b->name))
+        return 1;
 
     for (i = 0; i < a->size; ++i) {
-        if (a->replacement[i].param || b->replacement[i].param) {
-            if (a->replacement[i].param != b->replacement[i].param) {
-                return 1;
-            }
-        } else if (
-            a->replacement[i].token.token != b->replacement[i].token.token ||
-            strcmp(a->replacement[i].token.strval,
-                b->replacement[i].token.strval))
-        {
+        ra = a->replacement[i];
+        rb = b->replacement[i];
+
+        if ((ra.param || rb.param) && (ra.param != rb.param))
             return 1;
-        }
+
+        if (tok_cmp(ra.token, rb.token))
+            return 1;
     }
 
     return 0;
@@ -79,21 +81,20 @@ const struct macro *definition(struct token name)
     if (name.token != IDENTIFIER)
         return NULL;
 
-    hash = djb2_hash(name.strval);
+    hash = djb2_hash(name.strval.str);
     pos = hash % HASH_TABLE_LENGTH;
     ref = &macro_hash_table[pos];
-    if (!ref->name.strval) {
+    if (!ref->name.strval.str) {
         return NULL;
     }
 
-    while ((ref->hash.val != hash || strcmp(ref->name.strval, name.strval)) &&
+    while ((ref->hash.val != hash || tok_cmp(ref->name, name)) &&
             ref->hash.next)
         ref = ref->hash.next;
 
-    if (ref->hash.val == hash && !strcmp(ref->name.strval, name.strval)) {
-        if (!strcmp(ref->name.strval, "__LINE__")) {
+    if (ref->hash.val == hash && !tok_cmp(ref->name, name)) {
+        if (!strcmp(ref->name.strval.str, "__LINE__"))
             ref->replacement[0].token.intval = current_file.line;
-        }
         return ref;
     }
 
@@ -106,7 +107,7 @@ void define(struct macro macro)
 
     struct macro *ref;
     unsigned long
-        hash = djb2_hash(macro.name.strval),
+        hash = djb2_hash(macro.name.strval.str),
         pos = hash % HASH_TABLE_LENGTH;
 
     if (!clean_on_exit) {
@@ -115,27 +116,26 @@ void define(struct macro macro)
     }
 
     ref = &macro_hash_table[pos];
-    if (!ref->name.strval) {
+    if (!ref->name.strval.str) {
         *ref = macro;
         ref->hash.val = hash;
         return;
     }
 
-    while ((ref->hash.val != hash
-            || strcmp(ref->name.strval, macro.name.strval)) && ref->hash.next)
+    while ((ref->hash.val != hash || tok_cmp(ref->name, macro.name))
+            && ref->hash.next)
         ref = ref->hash.next;
 
-    if (ref->hash.val == hash && !strcmp(ref->name.strval, macro.name.strval)) {
+    if (ref->hash.val == hash && !tok_cmp(ref->name, macro.name)) {
         if (macrocmp(ref, &macro)) {
             error("Redefinition of macro '%s' with different substitution.",
-                macro.name.strval);
+                macro.name.strval.str);
             exit(1);
         }
         /* Already have this definition, but need to clean up memory that we
          * took ownership of. */
-        if (macro.size) {
+        if (macro.size)
             free(macro.replacement);
-        }
         return;
     }
 
@@ -154,16 +154,16 @@ void undef(struct token name)
     if (name.token != IDENTIFIER)
         return;
 
-    hash = djb2_hash(name.strval);
+    hash = djb2_hash(name.strval.str);
     pos = hash % HASH_TABLE_LENGTH;
     ref = &macro_hash_table[pos];
     prev = ref;
-    if (!ref->name.strval) {
+    if (!ref->name.strval.str) {
         return;
     }
 
     /* Special case if found in static buffer. */
-    if (ref->hash.val == hash && !strcmp(ref->name.strval, name.strval)) {
+    if (ref->hash.val == hash && !tok_cmp(ref->name, name)) {
         prev = ref->hash.next;
         if (ref->replacement)
             free(ref->replacement);
@@ -176,15 +176,15 @@ void undef(struct token name)
     }
 
     /* Get pointer to match, and predecessor. */
-    while ((ref->hash.val != hash || strcmp(ref->name.strval, name.strval))
-            && ref->hash.next)
+    while ((ref->hash.val != hash || tok_cmp(ref->name, name))
+        && ref->hash.next)
     {
         prev = ref;
         ref = ref->hash.next;
     }
 
     /* Remove node in middle of list. */
-    if (ref->hash.val == hash && !strcmp(ref->name.strval, name.strval)) {
+    if (ref->hash.val == hash && !tok_cmp(ref->name, name)) {
         assert(ref != prev);
         prev->hash.next = ref->hash.next;
         hash_node_free(ref);
@@ -195,13 +195,13 @@ void undef(struct token name)
  * up in this list for each new expansion.
  */
 static const struct macro **expand_stack;
-static size_t stack_size;
+static int stack_size;
 
 static int is_macro_expanded(const struct macro *macro)
 {
-    size_t i = 0;
+    int i = 0;
     for (; i < stack_size; ++i)
-        if (!strcmp(expand_stack[i]->name.strval, macro->name.strval))
+        if (!tok_cmp(expand_stack[i]->name, macro->name))
             return 1;
     return 0;
 }
@@ -243,7 +243,7 @@ void print_list(const struct token *list)
     while (list->token != END) {
         if (!first)
             printf(", ");
-        printf("'%s'", list->strval);
+        printf("'%s'", list->strval.str);
         first = 0;
         list++;
     }
@@ -294,14 +294,14 @@ static struct token paste(struct token left, struct token right)
     size_t length;
     char *data, *endptr;
 
-    length = strlen(left.strval) + strlen(right.strval);
+    length = left.strval.len + right.strval.len;
     data   = calloc(length + 1, sizeof(*data));
-    data   = strcpy(data, left.strval);
-    data   = strcat(data, right.strval);
+    data   = strcpy(data, left.strval.str);
+    data   = strcat(data, right.strval.str);
     result = tokenize(data, &endptr);
     if (endptr != data + length) {
         error("Invalid token resulting from pasting '%s' and '%s'.",
-            left.strval, right.strval);
+            left.strval.str, right.strval.str);
         exit(1);
     }
 
@@ -405,8 +405,9 @@ static const struct token *skip_to(const struct token *list, int token)
 {
     while (list->token == SPACE) list++;
     if (list->token != token) {
-        assert(reserved[token]);
-        error("Expected '%s', but got '%s'.", reserved[token], list->strval);
+        assert(reserved[token].str);
+        error("Expected '%s', but got '%s'.",
+            reserved[token].str, list->strval.str);
     }
     return list;
 }
@@ -537,13 +538,13 @@ struct token stringify(const struct token list[])
     struct token t = {STRING};
 
     while (list->token != END) {
-        len += strlen(list->strval);
+        len += list->strval.len;
         str = realloc(str, (len + 1) * sizeof(*str));
-        str = strncat(str, list->strval, len);
+        str = strncat(str, list->strval.str, len);
         list++;
     }
 
-    t.strval = str_register_n(str, len);
+    t.strval = str_register(str, len);
     free(str);
     return t;
 }
@@ -574,11 +575,12 @@ static struct replacement *parse(char *str, size_t *out_size)
 static void register__builtin_va_end(void)
 {
     struct macro macro = {
-        {IDENTIFIER, "__builtin_va_end"},
+        {IDENTIFIER},
         FUNCTION_LIKE,
         1, /* parameters */
     };
 
+    macro.name.strval = str_init("__builtin_va_end");
     macro.replacement = parse(
         "@[0].gp_offset=0;"
         "@[0].fp_offset=0;"
@@ -592,40 +594,40 @@ static void register__builtin_va_end(void)
 void register_builtin_definitions(void)
 {
     struct macro macro = {
-        {IDENTIFIER, NULL, 0},
+        {IDENTIFIER},
         OBJECT_LIKE,
         0, /* parameters */
     };
 
-    macro.name.strval = "__STDC_VERSION__";
+    macro.name.strval = str_init("__STDC_VERSION__");
     macro.replacement = parse("199409L", &macro.size);
     define(macro);
 
-    macro.name.strval = "__STDC__";
+    macro.name.strval = str_init("__STDC__");
     macro.replacement = parse("1", &macro.size);
     define(macro);
 
-    macro.name.strval = "__STDC_HOSTED__";
+    macro.name.strval = str_init("__STDC_HOSTED__");
     macro.replacement = parse("1", &macro.size);
     define(macro);
 
-    macro.name.strval = "__LINE__";
+    macro.name.strval = str_init("__LINE__");
     macro.replacement = parse("0", &macro.size);
     define(macro);
 
-    macro.name.strval = "__x86_64__";
+    macro.name.strval = str_init("__x86_64__");
     macro.replacement = parse("1", &macro.size);
     define(macro);
 
     /* For some reason this is not properly handled by macros in musl. */
-    macro.name.strval = "__inline";
+    macro.name.strval = str_init("__inline");
     macro.replacement = parse(" ", &macro.size);
     define(macro);
 
-    macro.name.strval = "__FILE__";
+    macro.name.strval = str_init("__FILE__");
     macro.replacement = calloc(1, sizeof(*macro.replacement));
     macro.replacement[0].token.token = STRING;
-    macro.replacement[0].token.strval = current_file.path;
+    macro.replacement[0].token.strval = str_init(current_file.path);
     macro.replacement[0].token.intval = 0;
     define(macro);
 

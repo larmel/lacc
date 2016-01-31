@@ -37,12 +37,12 @@ static struct block *parse__builtin_va_start(struct block *block)
     block = assignment_expression(block);
     consume(',');
     param = consume(IDENTIFIER);
-    sym = sym_lookup(&ns_ident, param.strval);
+    sym = sym_lookup(&ns_ident, param.strval.str);
 
     type = &current_func()->symbol->type;
     is_invalid = !sym || sym->depth != 1 || !is_function(type);
     is_invalid = is_invalid || !nmembers(type) || strcmp(
-        get_member(type, nmembers(type) - 1)->name, param.strval);
+        get_member(type, nmembers(type) - 1)->name, param.strval.str);
 
     if (is_invalid) {
         error("Second parameter of va_start must be last function argument.");
@@ -80,9 +80,9 @@ static struct block *primary_expression(struct block *block)
 
     switch ((tok = next()).token) {
     case IDENTIFIER:
-        sym = sym_lookup(&ns_ident, tok.strval);
+        sym = sym_lookup(&ns_ident, tok.strval.str);
         if (!sym) {
-            error("Undefined symbol '%s'.", tok.strval);
+            error("Undefined symbol '%s'.", tok.strval.str);
             exit(1);
         }
         /* Special handling for builtin pseudo functions. These are expected to
@@ -108,7 +108,7 @@ static struct block *primary_expression(struct block *block)
         sym =
             sym_add(&ns_ident,
                 ".LC",
-                type_init(T_ARRAY, &basic_type__char, strlen(tok.strval) + 1),
+                type_init(T_ARRAY, &basic_type__char, tok.strval.len + 1),
                 SYM_STRING_VALUE,
                 LINK_INTERN);
 
@@ -124,7 +124,8 @@ static struct block *primary_expression(struct block *block)
         assert(block->expr.kind == IMMEDIATE);
         break;
     default:
-        error("Unexpected '%s', not a valid primary expression.", tok.strval);
+        error("Unexpected '%s', not a valid primary expression.",
+            tok.strval.str);
         exit(1);
     }
 
@@ -197,10 +198,10 @@ static struct block *postfix_expression(struct block *block)
         case '.':
             consume('.');
             tok = consume(IDENTIFIER);
-            field = find_type_member(root.type, tok.strval);
+            field = find_type_member(root.type, tok.strval.str);
             if (!field) {
                 error("Invalid field access, no member named '%s'.",
-                    tok.strval);
+                    tok.strval.str);
                 exit(1);
             }
             root.type = field->type;
@@ -210,10 +211,10 @@ static struct block *postfix_expression(struct block *block)
             consume(ARROW);
             tok = consume(IDENTIFIER);
             if (is_pointer(root.type) && is_struct_or_union(root.type->next)) {
-                field = find_type_member(type_deref(root.type), tok.strval);
+                field = find_type_member(type_deref(root.type), tok.strval.str);
                 if (!field) {
                     error("Invalid field access, no member named '%s'.",
-                        tok.strval);
+                        tok.strval.str);
                     exit(1);
                 }
 
@@ -351,7 +352,7 @@ static struct block *cast_expression(struct block *block)
         tok = peekn(2);
         switch (tok.token) {
         case IDENTIFIER:
-            sym = sym_lookup(&ns_ident, tok.strval);
+            sym = sym_lookup(&ns_ident, tok.strval.str);
             if (!sym || sym->symtype != SYM_TYPEDEF)
                 break;
         case FIRST(type_name):

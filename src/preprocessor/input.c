@@ -1,6 +1,6 @@
 #if _XOPEN_SOURCE < 600
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 700 /* strndup */
+#  define _XOPEN_SOURCE 600 /* isblank */
 #endif
 #include "input.h"
 #include "strtab.h"
@@ -106,7 +106,7 @@ void include_file(const char *name)
         strncpy(path, current_file.path, current_file.dirlen);
         path[current_file.dirlen] = '/';
         strcpy(path + current_file.dirlen + 1, name);
-        source.path = str_register_n(path, length);
+        source.path = str_register(path, length).str;
         free(path);
 
         path = strrchr(source.path, '/');
@@ -152,7 +152,7 @@ void include_system_file(const char *name)
         source.file = fopen(inc_path, "r");
         if (source.file) {
             char *end = strrchr(inc_path, '/');
-            source.path = str_register_n(inc_path, len);
+            source.path = str_register(inc_path, len).str;
             source.dirlen = end - inc_path;
             break;
         }

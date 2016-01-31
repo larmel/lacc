@@ -1,6 +1,8 @@
 #ifndef TOKEN_H
 #define TOKEN_H
 
+#include "string.h"
+
 /* Map token type to corresponding numerical ascii value where possible,
  * and fit the remaining tokens in between.
  */
@@ -104,7 +106,7 @@ enum token_type {
  */
 struct token {
     enum token_type token;
-    const char *strval;
+    struct string strval;
     long intval;
 };
 

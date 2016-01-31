@@ -1,6 +1,6 @@
-#if _XOPEN_SOURCE < 700
+#if _XOPEN_SOURCE < 600
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 700 /* strndup, isblank */
+#  define _XOPEN_SOURCE 600 /* isblank */
 #endif
 #include "strtab.h"
 #include "tokenize.h"
@@ -12,43 +12,43 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct token
-    token_end = {END, "$"},
-    token_newline = {NEWLINE, "\n"};
+const struct token
+    token_end = {END, {"$", 1}},
+    token_newline = {NEWLINE, {"\n", 1}};
 
-const char *reserved[] = {
-/* 0x00 */  "$",        "auto",     "break",    "case",
-            "char",     "const",    "continue", "default",
-/* 0x08 */  "do",       "double",   "\n",       "else",
-            "enum",     "extern",   "float",    "for", 
-/* 0x10 */  "goto",     "if",       "int",      "long",
-            "register", "return",   "short",    "signed",
-/* 0x18 */  "sizeof",   "static",   "struct",   "switch",
-            "typedef",  "union",    "unsigned", "void",
-/* 0x20 */  " ",        "!",        "volatile", "#",
-            "while",    "\x25",     "&",        NULL,
-/* 0x28 */  "(",        ")",        "*",        "+",
-            ",",        "-",        ".",        "/",
-/* 0x30 */  NULL,       NULL,       NULL,       NULL,
-            NULL,       NULL,       NULL,       NULL,
-/* 0x38 */  NULL,       NULL,       ":",        ";",
-            "<",        "=",        ">",        "?",
-/* 0x40 */  "...",      "||",       "&&",       "<=",
-            ">=",       "==",       "!=",       "->",
-/* 0x48 */  "++",       "--",       "<<",       ">>",
-            "*=",       "/=",       "\x25=",    "+=",
-/* 0x50 */  "-=",       "<<=",      ">>=",      "&=",
-            "^=",       "|=",       "##",       NULL,
-/* 0x58 */  NULL,       NULL,       NULL,       "[",
-            NULL,       "]",        "^",        NULL,
-/* 0x60 */  NULL,       NULL,       NULL,       NULL,
-            NULL,       NULL,       NULL,       NULL,
-/* 0x68 */  NULL,       NULL,       NULL,       NULL,
-            NULL,       NULL,       NULL,       NULL,
-/* 0x70 */  NULL,       NULL,       NULL,       NULL,
-            NULL,       NULL,       NULL,       NULL,
-/* 0x78 */  NULL,       NULL,       NULL,       "{",
-            "|",        "}",        "~",        NULL,
+const struct string reserved[] = {
+/* 0x00 */  {"$", 1},        {"auto", 4},     {"break", 5},    {"case", 4},
+            {"char", 4},     {"const", 5},    {"continue", 8}, {"default", 7},
+/* 0x08 */  {"do", 2},       {"double", 6},   {"\n", 1},       {"else", 4},
+            {"enum", 4},     {"extern", 6},   {"float", 5},    {"for", 3}, 
+/* 0x10 */  {"goto", 4},     {"if", 2},       {"int", 3},      {"long", 4},
+            {"register", 8}, {"return", 6},   {"short", 5},    {"signed", 6},
+/* 0x18 */  {"sizeof", 6},   {"static", 6},   {"struct", 6},   {"switch", 6},
+            {"typedef", 7},  {"union", 5},    {"unsigned", 8}, {"void", 4},
+/* 0x20 */  {" ", 1},        {"!", 1},        {"volatile", 8}, {"#", 1},
+            {"while", 5},    {"\x25", 1},     {"&", 1},        {0},
+/* 0x28 */  {"(", 1},        {")", 1},        {"*", 1},        {"+", 1},
+            {",", 1},        {"-", 1},        {".", 1},        {"/", 1},
+/* 0x30 */  {0},             {0},             {0},             {0},
+            {0},             {0},             {0},             {0},
+/* 0x38 */  {0},             {0},             {":", 1},        {";", 1},
+            {"<", 1},        {"=", 1},        {">", 1},        {"?", 1},
+/* 0x40 */  {"...", 3},      {"||", 2},       {"&&", 2},       {"<=", 2},
+            {">=", 2},       {"==", 2},       {"!=", 2},       {"->", 2},
+/* 0x48 */  {"++", 2},       {"--", 2},       {"<<", 2},       {">>", 2},
+            {"*=", 2},       {"/=", 2},       {"\x25=", 2},    {"+=", 2},
+/* 0x50 */  {"-=", 2},       {"<<=", 3},      {">>=", 3},      {"&=", 2},
+            {"^=", 2},       {"|=", 2},       {"##", 2},       {0},
+/* 0x58 */  {0},             {0},             {0},             {"[", 1},
+            {0},             {"]", 1},        {"^", 1},        {0},
+/* 0x60 */  {0},             {0},             {0},             {0},
+            {0},             {0},             {0},             {0},
+/* 0x68 */  {0},             {0},             {0},             {0},
+            {0},             {0},             {0},             {0},
+/* 0x70 */  {0},             {0},             {0},             {0},
+            {0},             {0},             {0},             {0},
+/* 0x78 */  {0},             {0},             {0},             {"{", 1},
+            {"|", 1},        {"}", 1},        {"~", 1},        {0},
 };
 
 /* Valid identifier character, except in the first position which does not
@@ -156,9 +156,10 @@ static char strtochar(char *in, char **endptr)
  * quotes. The input buffer is destructively overwritten while resolving escape
  * sequences. Concatenate string literals separated by whitespace.
  */
-static const char *strtostr(char *in, char **endptr)
+static struct string strtostr(char *in, char **endptr)
 {
     char *start, *str;
+    int len = 0;
 
     start = str = in;
     *endptr = in;
@@ -167,6 +168,7 @@ static const char *strtostr(char *in, char **endptr)
         if (*in++ == '"') {
             while (*in != '"' && *in) {
                 *str++ = escpchar(in, &in);
+                len++;
             }
 
             if (*in++ == '"') {
@@ -183,10 +185,10 @@ static const char *strtostr(char *in, char **endptr)
 
     if (*endptr == start) {
         error("Invalid string literal.");
-        start++;
+        exit(1);
     }
 
-    return start;
+    return str_register(start, len);
 }
 
 /* Parse string as whitespace tokens, consuming space and tab characters.
@@ -374,28 +376,27 @@ struct token tokenize(char *in, char **endptr)
         res.token = SPACE;
         strtospace(in, endptr);
         assert(*endptr != in);
-        res.strval = str_register_n(in, *endptr - in);
+        res.strval = str_register(in, *endptr - in);
     } else if (isalpha(*in) || *in == '_') {
         res.token = strtoident(in, endptr);
         assert(*endptr != in);
         res.strval =
             (res.token == IDENTIFIER) ?
-                str_register_n(in, *endptr - in) :
+                str_register(in, *endptr - in) :
                 reserved[res.token];
     } else if (isdigit(*in)) {
         res.token = INTEGER_CONSTANT;
         res.intval = strtonum(in, endptr);
         assert(*endptr != in);
-        res.strval = str_register_n(in, *endptr - in);
+        res.strval = str_register(in, *endptr - in);
     } else if (*in == '"') {
         res.token = STRING;
         res.strval = strtostr(in, endptr);
-        res.strval = str_register(res.strval);
     } else if (*in == '\'') {
         res.token = INTEGER_CONSTANT;
         res.intval = strtochar(in, endptr);
         assert(*endptr != in);
-        res.strval = str_register_n(in, *endptr - in);
+        res.strval = str_register(in, *endptr - in);
     } else {
         res.token = strtoop(in, endptr);
         res.strval = reserved[res.token];

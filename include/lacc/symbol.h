@@ -1,6 +1,7 @@
 #ifndef SYMBOL_H
 #define SYMBOL_H
 
+#include "string.h"
 #include "typetree.h"
 
 #include <stdio.h>
@@ -45,7 +46,7 @@ struct symbol {
     /* String literals are also handled as symbols, having type [] const char.
      * Denoted by symtype SYM_STRING_VALUE. Free string constants are always
      * named '.LC', disambiguated with n. */ 
-    const char *string_value;
+    struct string string_value;
 
     /* Parameter or local variable offset to base pointer. This is kept as 0
      * during parsing, but assigned when passed to back-end. */

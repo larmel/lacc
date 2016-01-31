@@ -520,7 +520,7 @@ int elf_symbol(const struct symbol *sym)
 
         /* String value symbols contain the actual string value; write to
          * .rodata immediately. */
-        elf_section_write(SHID_RODATA, sym->string_value, entry.st_size);
+        elf_section_write(SHID_RODATA, sym->string_value.str, entry.st_size);
     } else if (sym->linkage == LINK_INTERN) {
         elf_section_align(SHID_BSS, sym_alignment(sym));
         entry.st_shndx = SHID_BSS;
@@ -573,8 +573,8 @@ int elf_data(struct immediate imm)
         elf_add_reloc_data(imm.d.addr.sym, R_X86_64_64, imm.d.addr.disp);
         break;
     case IMM_STRING:
-        assert(w == strlen(imm.d.string) + 1);
-        ptr = imm.d.string;
+        assert(w == imm.d.string.len + 1);
+        ptr = imm.d.string.str;
         break;
     }
 

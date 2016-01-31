@@ -1,7 +1,3 @@
-#if _XOPEN_SOURCE < 700
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 700 /* strndup */
-#endif
 #include "strtab.h"
 #include <lacc/hash.h>
 
@@ -12,46 +8,49 @@
 
 #define HASH_TABLE_LENGTH 1024
 
-struct string {
-    size_t length;
-    char *string;
-
-    struct hash {
+static struct entry {
+    struct string string;
+    struct {
         unsigned long val;
-        struct string *next;
+        struct entry *next;
     } hash;
-};
+} str_hash_tab[HASH_TABLE_LENGTH];
 
-static struct string
-    str_hash_tab[HASH_TABLE_LENGTH];
-
-static void hash_node_cleanup(struct string *ref)
+static void hash_node_cleanup(struct entry *ref)
 {
     if (ref->hash.next)
         hash_node_cleanup(ref->hash.next);
 
-    free(ref->string);
+    free((void *) ref->string.str);
     free(ref);
 }
 
 static void cleanup(void)
 {
     int i;
-    struct string *ref;
+    struct entry *ref;
 
     for (i = 0; i < HASH_TABLE_LENGTH; ++i) {
         ref = &str_hash_tab[i];
         if (ref->hash.next)
             hash_node_cleanup(ref->hash.next);
-        if (ref->string)
-            free(ref->string);
+        if (ref->string.len)
+            free((void *) ref->string.str);
     }
 }
 
-static struct string *hash_insert(const char *str, size_t len)
+static struct string str_dup(struct string s)
+{
+    char *buf = calloc(s.len + 1, sizeof(*buf));
+    s.str = memcpy(buf, s.str, s.len);
+    return s;
+}
+
+static struct entry *hash_insert(const char *str, size_t len)
 {
     static int reg_cleanup;
-    struct string *ref;
+    struct string s;
+    struct entry *ref;
     unsigned long
         hash = djb2_hash_p(str, str + len),
         pos = hash % HASH_TABLE_LENGTH;
@@ -61,19 +60,20 @@ static struct string *hash_insert(const char *str, size_t len)
         reg_cleanup = 1;
     }
 
+    s.str = str;
+    s.len = len;
+
     ref = &str_hash_tab[pos];
-    if (!ref->string) {
-        ref->length = len;
-        ref->string = strndup(str, len);
+    if (!ref->string.str) {
+        ref->string = str_dup(s);
         ref->hash.val = hash;
         return ref;
     }
 
-    while ((ref->hash.val != hash || strncmp(ref->string, str, len)) &&
-            ref->hash.next)
+    while ((ref->hash.val != hash || str_cmp(ref->string, s)) && ref->hash.next)
         ref = ref->hash.next;
 
-    if (ref->hash.val == hash && !strncmp(ref->string, str, len)) {
+    if (ref->hash.val == hash && !str_cmp(ref->string, s)) {
         return ref;
     }
 
@@ -81,20 +81,29 @@ static struct string *hash_insert(const char *str, size_t len)
     ref->hash.next = calloc(1, sizeof(*ref));
     ref = ref->hash.next;
 
-    ref->length = len;
-    ref->string = strndup(str, len);
+    ref->string = str_dup(s);
     ref->hash.val = hash;
     return ref;
 }
 
-const char *str_register(const char *s)
+struct string str_register(const char *str, size_t len)
 {
-    struct string *str = hash_insert(s, strlen(s));
-    return str->string;
+    struct entry *e;
+    assert(len >= 0);
+
+    e = hash_insert(str, len);
+    return e->string;
 }
 
-const char *str_register_n(const char *s, size_t n)
+struct string str_init(const char *str)
 {
-    struct string *str = hash_insert(s, n);
-    return str->string;
+    struct string s = {0};
+    s.str = str;
+    s.len = strlen(str);
+    return s;
+}
+
+int str_cmp(struct string s1, struct string s2)
+{
+    return (s1.len != s2.len) || memcmp(s1.str, s2.str, s1.len);
 }

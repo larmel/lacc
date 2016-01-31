@@ -46,7 +46,7 @@ struct immediate {
         int dword;
         long qword;
         struct address addr;
-        const char *string;
+        struct string string;
     } d;
 };
 
