@@ -12,43 +12,74 @@
 #include <stdlib.h>
 #include <string.h>
 
-const struct token
-    token_end = {END, {"$", 1}},
-    token_newline = {NEWLINE, {"\n", 1}};
+#define S(s) {(s), sizeof(s) - 1}
+#define T(t, s) {(t), S(s)}
 
-const struct string reserved[] = {
-/* 0x00 */  {"$", 1},        {"auto", 4},     {"break", 5},    {"case", 4},
-            {"char", 4},     {"const", 5},    {"continue", 8}, {"default", 7},
-/* 0x08 */  {"do", 2},       {"double", 6},   {"\n", 1},       {"else", 4},
-            {"enum", 4},     {"extern", 6},   {"float", 5},    {"for", 3}, 
-/* 0x10 */  {"goto", 4},     {"if", 2},       {"int", 3},      {"long", 4},
-            {"register", 8}, {"return", 6},   {"short", 5},    {"signed", 6},
-/* 0x18 */  {"sizeof", 6},   {"static", 6},   {"struct", 6},   {"switch", 6},
-            {"typedef", 7},  {"union", 5},    {"unsigned", 8}, {"void", 4},
-/* 0x20 */  {" ", 1},        {"!", 1},        {"volatile", 8}, {"#", 1},
-            {"while", 5},    {"\x25", 1},     {"&", 1},        {0},
-/* 0x28 */  {"(", 1},        {")", 1},        {"*", 1},        {"+", 1},
-            {",", 1},        {"-", 1},        {".", 1},        {"/", 1},
-/* 0x30 */  {0},             {0},             {0},             {0},
-            {0},             {0},             {0},             {0},
-/* 0x38 */  {0},             {0},             {":", 1},        {";", 1},
-            {"<", 1},        {"=", 1},        {">", 1},        {"?", 1},
-/* 0x40 */  {"...", 3},      {"||", 2},       {"&&", 2},       {"<=", 2},
-            {">=", 2},       {"==", 2},       {"!=", 2},       {"->", 2},
-/* 0x48 */  {"++", 2},       {"--", 2},       {"<<", 2},       {">>", 2},
-            {"*=", 2},       {"/=", 2},       {"\x25=", 2},    {"+=", 2},
-/* 0x50 */  {"-=", 2},       {"<<=", 3},      {">>=", 3},      {"&=", 2},
-            {"^=", 2},       {"|=", 2},       {"##", 2},       {0},
-/* 0x58 */  {0},             {0},             {0},             {"[", 1},
-            {0},             {"]", 1},        {"^", 1},        {0},
-/* 0x60 */  {0},             {0},             {0},             {0},
-            {0},             {0},             {0},             {0},
-/* 0x68 */  {0},             {0},             {0},             {0},
-            {0},             {0},             {0},             {0},
-/* 0x70 */  {0},             {0},             {0},             {0},
-            {0},             {0},             {0},             {0},
-/* 0x78 */  {0},             {0},             {0},             {"{", 1},
-            {"|", 1},        {"}", 1},        {"~", 1},        {0},
+const struct token basic_token[] = {
+/* 0x00 */  T(END, "$"),                T(AUTO, "auto"),
+            T(BREAK, "break"),          T(CASE, "case"),
+            T(CHAR, "char"),            T(CONST, "const"),
+            T(CONTINUE, "continue"),    T(DEFAULT, "default"),
+/* 0x08 */  T(DO, "do"),                T(DOUBLE, "double"),
+            T(NEWLINE, "\n"),           T(ELSE, "else"),
+            T(ENUM, "enum"),            T(EXTERN, "extern"),
+            T(FLOAT, "float"),          T(FOR, "for"), 
+/* 0x10 */  T(GOTO, "goto"),            T(IF, "if"),
+            T(INT, "int"),              T(LONG, "long"),
+            T(REGISTER, "register"),    T(RETURN, "return"),
+            T(SHORT, "short"),          T(SIGNED, "signed"),
+/* 0x18 */  T(SIZEOF, "sizeof"),        T(STATIC, "static"),
+            T(STRUCT, "struct"),        T(SWITCH, "switch"),
+            T(TYPEDEF, "typedef"),      T(UNION, "union"),
+            T(UNSIGNED, "unsigned"),    T(VOID, "void"),
+/* 0x20 */  T(SPACE, " "),              T(NOT, "!"),
+            T(VOLATILE, "volatile"),    T(HASH, "#"),
+            T(WHILE, "while"),          T(MODULO, "%"),
+            T(AND, "&"),                {0},
+/* 0x28 */  T(OPEN_PAREN, "("),         T(CLOSE_PAREN, ")"),
+            T(STAR, "*"),               T(PLUS, "+"),
+            T(COMMA, ","),              T(MINUS, "-"),
+            T(DOT, "."),                T(SLASH, "/"),
+/* 0x30 */  {0},                        {0},
+            {0},                        {0},
+            {0},                        {0},
+            {0},                        {0},
+/* 0x38 */  {0},                        {0},
+            T(COLON, ":"),              T(SEMICOLON, ";"),
+            T(LT, "<"),                 T(ASSIGN, "="),
+            T(GT, ">"),                 T(QUESTION, "?"),
+/* 0x40 */  T(DOTS, "..."),             T(LOGICAL_OR, "||"),
+            T(LOGICAL_AND, "&&"),       T(LEQ, "<="),
+            T(GEQ, ">="),               T(EQ, "=="),
+            T(NEQ, "!="),               T(ARROW, "->"),
+/* 0x48 */  T(INCREMENT, "++"),         T(DECREMENT, "--"),
+            T(LSHIFT, "<<"),            T(RSHIFT, ">>"),
+            T(MUL_ASSIGN, "*="),        T(DIV_ASSIGN, "/="),
+            T(MOD_ASSIGN, "%="),        T(PLUS_ASSIGN, "+="),
+/* 0x50 */  T(MINUS_ASSIGN, "-="),      T(LSHIFT_ASSIGN, "<<="),
+            T(RSHIFT_ASSIGN, ">>="),    T(AND_ASSIGN, "&="),
+            T(XOR_ASSIGN, "^="),        T(OR_ASSIGN, "|="),
+            T(TOKEN_PASTE, "##"),       {0},
+/* 0x58 */  {0},                        {0},
+            {0},                        T(OPEN_BRACKET, "["),
+            {0},                        T(CLOSE_BRACKET, "]"),
+            T(XOR, "^"),                {0},
+/* 0x60 */  {0},                        {0},
+            {0},                        {0},
+            {0},                        {0},
+            {0},                        {0},
+/* 0x68 */  {0},                        {0},
+            {0},                        {0},
+            {0},                        {0},
+            {0},                        {0},
+/* 0x70 */  {0},                        {0},
+            {0},                        {0},
+            {INTEGER_CONSTANT},         {IDENTIFIER},
+            {STRING},                   {0},
+/* 0x78 */  {0},                        {0},
+            {0},                        T(OPEN_CURLY, "{"),
+            T(OR, "|"),                 T(CLOSE_CURLY, "}"),
+            T(NEG, "~"),                {0},
 };
 
 /* Valid identifier character, except in the first position which does not
@@ -77,23 +108,21 @@ const struct string reserved[] = {
 /* Parse integer literal in the format '1234', '0x123', '077' using strtol,
  * then skip any type suffix (uUlL). The type is discarded.
  */
-static long strtonum(char *in, char **endptr)
+static struct token strtonum(char *in, char **endptr)
 {
-    long value;
+    struct token integer = {INTEGER_CONSTANT};
     char *e;
 
-    value = strtol(in, &e, 0);
-
+    integer.intval = strtol(in, &e, 0);
     if (e != in) {
         if (*e == 'u' || *e == 'U') e++;
         if (*e == 'l' || *e == 'L') e++;
         if (*e == 'l' || *e == 'L') e++;
     }
 
-    if (endptr)
-        *endptr = e;
-
-    return value;
+    *endptr = e;
+    integer.strval = str_register(in, *endptr - in);
+    return integer;
 }
 
 /* Parse character escape code, including octal and hexadecimal number
@@ -136,9 +165,10 @@ static char escpchar(char *in, char **endptr)
  * starting from *in. The position of the character after the last ' character
  * is stored in endptr. If no valid conversion can be made, *endptr == in.
  */
-static char strtochar(char *in, char **endptr)
+static struct token strtochar(char *in, char **endptr)
 {
-    char value;
+    struct token integer = {INTEGER_CONSTANT};
+    char value, *start = in;
 
     assert(*in == '\'');
 
@@ -149,15 +179,18 @@ static char strtochar(char *in, char **endptr)
     }
 
     *endptr += 1;
-    return value;
+    integer.intval = value;
+    integer.strval = str_register(start, *endptr - start);
+    return integer;
 }
 
 /* Parse string literal inputs delimited by quotation marks, handling escaped
  * quotes. The input buffer is destructively overwritten while resolving escape
  * sequences. Concatenate string literals separated by whitespace.
  */
-static struct string strtostr(char *in, char **endptr)
+static struct token strtostr(char *in, char **endptr)
 {
+    struct token string = {STRING};
     char *start, *str;
     int len = 0;
 
@@ -188,100 +221,108 @@ static struct string strtostr(char *in, char **endptr)
         exit(1);
     }
 
-    return str_register(start, len);
+    string.strval = str_register(start, len);
+    return string;
 }
 
 /* Parse string as whitespace tokens, consuming space and tab characters.
  */
-static void strtospace(char *in, char **endptr)
+static struct token strtospace(char *in, char **endptr)
 {
-    do in++;
-    while (isspace(*in));
+    struct token space = {SPACE};
+    char *start = in;
+
+    do in++; while (isspace(*in));
+
     *endptr = in;
+    space.strval = str_register(in, *endptr - start);
+    return space;
 }
 
 /* Parse string as keyword or identifier. First character should be alphabetic
  * or underscore.
  */
-static enum token_type strtoident(char *in, char **endptr)
+static struct token strtoident(char *in, char **endptr)
 {
+    struct token ident = {IDENTIFIER};
+
     *endptr = in;
     switch (*(*endptr)++) {
     case 'a':
-        if (S3('u', 't', 'o')) return AUTO;
+        if (S3('u', 't', 'o')) return basic_token[AUTO];
         break;
     case 'b':
-        if (S4('r', 'e', 'a', 'k')) return BREAK;
+        if (S4('r', 'e', 'a', 'k')) return basic_token[BREAK];
         break;
     case 'c':
-        if (S3('a', 's', 'e')) return CASE;
-        if (S3('h', 'a', 'r')) return CHAR;
+        if (S3('a', 's', 'e')) return basic_token[CASE];
+        if (S3('h', 'a', 'r')) return basic_token[CHAR];
         if (at('o') && get('n')) {
-            if (S2('s', 't')) return CONST;
-            if (S5('t', 'i', 'n', 'u', 'e')) return CONTINUE;
+            if (S2('s', 't')) return basic_token[CONST];
+            if (S5('t', 'i', 'n', 'u', 'e')) return basic_token[CONTINUE];
         }
         break;
     case 'd':
-        if (S6('e', 'f', 'a', 'u', 'l', 't')) return DEFAULT;
+        if (S6('e', 'f', 'a', 'u', 'l', 't')) return basic_token[DEFAULT];
         if (at('o')) {
-            if (S4('u', 'b', 'l', 'e')) return DOUBLE;
-            if (end()) return DO;
+            if (S4('u', 'b', 'l', 'e')) return basic_token[DOUBLE];
+            if (end()) return basic_token[DO];
         }
         break;
     case 'e':
-        if (S3('l', 's', 'e')) return ELSE;
-        if (S3('n', 'u', 'm')) return ENUM;
-        if (S5('x', 't', 'e', 'r', 'n')) return EXTERN;
+        if (S3('l', 's', 'e')) return basic_token[ELSE];
+        if (S3('n', 'u', 'm')) return basic_token[ENUM];
+        if (S5('x', 't', 'e', 'r', 'n')) return basic_token[EXTERN];
         break;
     case 'f':
-        if (S4('l', 'o', 'a', 't')) return FLOAT;
-        if (S2('o', 'r')) return FOR;
+        if (S4('l', 'o', 'a', 't')) return basic_token[FLOAT];
+        if (S2('o', 'r')) return basic_token[FOR];
         break;
     case 'g':
-        if (S3('o', 't', 'o')) return GOTO;
+        if (S3('o', 't', 'o')) return basic_token[GOTO];
         break;
     case 'i':
-        if (S1('f')) return IF;
-        if (S2('n', 't')) return INT;
+        if (S1('f')) return basic_token[IF];
+        if (S2('n', 't')) return basic_token[INT];
         break;
     case 'l':
-        if (S3('o', 'n', 'g')) return LONG;
+        if (S3('o', 'n', 'g')) return basic_token[LONG];
         break;
     case 'r':
         if (at('e')) {
-            if (S6('g', 'i', 's', 't', 'e', 'r')) return REGISTER;
-            if (S4('t', 'u', 'r', 'n')) return RETURN;
+            if (S6('g', 'i', 's', 't', 'e', 'r')) return basic_token[REGISTER];
+            if (S4('t', 'u', 'r', 'n')) return basic_token[RETURN];
         }
         break;
     case 's':
-        if (S4('h', 'o', 'r', 't')) return SHORT;
-        if (S5('w', 'i', 't', 'c', 'h')) return SWITCH;
+        if (S4('h', 'o', 'r', 't')) return basic_token[SHORT];
+        if (S5('w', 'i', 't', 'c', 'h')) return basic_token[SWITCH];
         if (at('i')) {
-            if (S4('g', 'n', 'e', 'd')) return SIGNED;
-            if (S4('z', 'e', 'o', 'f')) return SIZEOF;
+            if (S4('g', 'n', 'e', 'd')) return basic_token[SIGNED];
+            if (S4('z', 'e', 'o', 'f')) return basic_token[SIZEOF];
         }
         if (at('t')) {
-            if (S4('a', 't', 'i', 'c')) return STATIC;
-            if (S4('r', 'u', 'c', 't')) return STRUCT;
+            if (S4('a', 't', 'i', 'c')) return basic_token[STATIC];
+            if (S4('r', 'u', 'c', 't')) return basic_token[STRUCT];
         }
         break;
     case 't':
-        if (S6('y', 'p', 'e', 'd', 'e', 'f')) return TYPEDEF;
+        if (S6('y', 'p', 'e', 'd', 'e', 'f')) return basic_token[TYPEDEF];
         break;
     case 'u':
         if (at('n')) {
-            if (S3('i', 'o', 'n')) return UNION;
-            if (S6('s', 'i', 'g', 'n', 'e', 'd')) return UNSIGNED;
+            if (S3('i', 'o', 'n')) return basic_token[UNION];
+            if (S6('s', 'i', 'g', 'n', 'e', 'd')) return basic_token[UNSIGNED];
         }
         break;
     case 'v':
         if (at('o')) {
-            if (S2('i', 'd')) return VOID;
-            if (S6('l', 'a', 't', 'i', 'l', 'e')) return VOLATILE;
+            if (S2('i', 'd')) return basic_token[VOID];
+            if (S6('l', 'a', 't', 'i', 'l', 'e')) return basic_token[VOLATILE];
         }
         break;
     case 'w':
-        if (S4('h', 'i', 'l', 'e')) return WHILE;
+        if (S4('h', 'i', 'l', 'e')) return basic_token[WHILE];
     default:
         break;
     }
@@ -294,114 +335,101 @@ static enum token_type strtoident(char *in, char **endptr)
     while (isident(**endptr))
         (*endptr)++;
 
-    return IDENTIFIER;
+    ident.strval = str_register(in, *endptr - in);
+    return ident;
 }
 
-static enum token_type strtoop(char *in, char **endptr)
+static struct token strtoop(char *in, char **endptr)
 {
     *endptr = in;
     switch (*(*endptr)++) {
     case '*':
-        if (at('=')) return MUL_ASSIGN;
+        if (at('=')) return basic_token[MUL_ASSIGN];
         break;
     case '/':
-        if (at('=')) return DIV_ASSIGN;
+        if (at('=')) return basic_token[DIV_ASSIGN];
         break;
     case '%':
-        if (at('=')) return MOD_ASSIGN;
+        if (at('=')) return basic_token[MOD_ASSIGN];
         break;
     case '+':
-        if (at('+')) return INCREMENT;
-        if (at('=')) return PLUS_ASSIGN;
+        if (at('+')) return basic_token[INCREMENT];
+        if (at('=')) return basic_token[PLUS_ASSIGN];
         break;
     case '-':
-        if (at('>')) return ARROW;
-        if (at('-')) return DECREMENT;
-        if (at('=')) return MINUS_ASSIGN;
+        if (at('>')) return basic_token[ARROW];
+        if (at('-')) return basic_token[DECREMENT];
+        if (at('=')) return basic_token[MINUS_ASSIGN];
         break;
     case '<':
-        if (at('=')) return LEQ;
+        if (at('=')) return basic_token[LEQ];
         if (at('<')) {
-            if (at('=')) return LSHIFT_ASSIGN;
-            return LSHIFT;
+            if (at('=')) return basic_token[LSHIFT_ASSIGN];
+            return basic_token[LSHIFT];
         }
         break;
     case '>':
-        if (at('=')) return GEQ;
+        if (at('=')) return basic_token[GEQ];
         if (at('>')) {
-            if (at('=')) return RSHIFT_ASSIGN;
-            return RSHIFT;
+            if (at('=')) return basic_token[RSHIFT_ASSIGN];
+            return basic_token[RSHIFT];
         }
         break;
     case '&':
-        if (at('=')) return AND_ASSIGN;
-        if (at('&')) return LOGICAL_AND;
+        if (at('=')) return basic_token[AND_ASSIGN];
+        if (at('&')) return basic_token[LOGICAL_AND];
         break;
     case '^':
-        if (at('=')) return XOR_ASSIGN;
+        if (at('=')) return basic_token[XOR_ASSIGN];
         break;
     case '|':
-        if (at('=')) return OR_ASSIGN;
-        if (at('|')) return LOGICAL_OR;
+        if (at('=')) return basic_token[OR_ASSIGN];
+        if (at('|')) return basic_token[LOGICAL_OR];
         break;
     case '.':
-        if (at('.') && get('.')) return DOTS;
+        if (at('.') && get('.')) return basic_token[DOTS];
         break;
     case '=':
-        if (at('=')) return EQ;
+        if (at('=')) return basic_token[EQ];
         break;
     case '!':
-        if (at('=')) return NEQ;
+        if (at('=')) return basic_token[NEQ];
         break;
     case '#':
-        if (at('#')) return TOKEN_PASTE;
+        if (at('#')) return basic_token[TOKEN_PASTE];
         break;
     default:
         break;
     }
 
     *endptr = in + 1;
-    return *in;
+    return basic_token[(int) *in];
 }
 
 struct token tokenize(char *in, char **endptr)
 {
-    struct token res = {0};
-    assert(in && endptr);
+    assert(in);
+    assert(endptr);
 
     *endptr = in;
-    if (*in == '\0') {
-        res = token_end;
-    } else if (isspace(*in)) {
-        res.token = SPACE;
-        strtospace(in, endptr);
-        assert(*endptr != in);
-        res.strval = str_register(in, *endptr - in);
-    } else if (isalpha(*in) || *in == '_') {
-        res.token = strtoident(in, endptr);
-        assert(*endptr != in);
-        res.strval =
-            (res.token == IDENTIFIER) ?
-                str_register(in, *endptr - in) :
-                reserved[res.token];
-    } else if (isdigit(*in)) {
-        res.token = INTEGER_CONSTANT;
-        res.intval = strtonum(in, endptr);
-        assert(*endptr != in);
-        res.strval = str_register(in, *endptr - in);
-    } else if (*in == '"') {
-        res.token = STRING;
-        res.strval = strtostr(in, endptr);
-    } else if (*in == '\'') {
-        res.token = INTEGER_CONSTANT;
-        res.intval = strtochar(in, endptr);
-        assert(*endptr != in);
-        res.strval = str_register(in, *endptr - in);
-    } else {
-        res.token = strtoop(in, endptr);
-        res.strval = reserved[res.token];
-        assert(*endptr != in);
-    }
 
-    return res;
+    if (*in == '\0')
+        return basic_token[END];
+
+    if (isspace(*in))
+        return strtospace(in, endptr);
+
+    if (isalpha(*in) || *in == '_')
+        return strtoident(in, endptr);
+
+    if (isdigit(*in))
+        return strtonum(in, endptr);
+
+    if (*in == '"')
+        return strtostr(in, endptr);
+
+    if (*in == '\'')
+        return strtochar(in, endptr);
+    
+    return strtoop(in, endptr);
 }

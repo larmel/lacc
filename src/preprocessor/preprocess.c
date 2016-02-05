@@ -26,7 +26,7 @@ static struct token get_preprocessing_token(void)
     char *endptr;
 
     if (!line && getprepline(&line) == -1) {
-        r = token_end;
+        r = basic_token[END];
     } else {
         r = tokenize(line, &endptr);
         line = endptr;
@@ -35,7 +35,7 @@ static struct token get_preprocessing_token(void)
              * input data. Instead intercept end of string, which represents
              * end of line. */
             line = NULL;
-            r = token_newline;
+            r = basic_token[NEWLINE];
         }
     }
 
@@ -67,7 +67,7 @@ static struct token expect_next(struct builder *list, enum token_type type)
     struct token t = get_next(list);
     if (t.token != type) {
         error("Expected token '%s', but got '%s'.",
-            reserved[type].str, t.strval.str);
+            basic_token[type].strval.str, t.strval.str);
         exit(1);
     }
     return t;
@@ -191,7 +191,7 @@ static struct token *read_complete_line(struct token t)
         t = get_preprocessing_token();
     }
 
-    list_append(&line, token_end);
+    list_append(&line, basic_token[END]);
     return line.elem;
 }
 
@@ -205,9 +205,9 @@ static const struct token *skip_to(const struct token *list, int token)
 {
     while (list->token == SPACE) list++;
     if (list->token != token) {
-        assert(reserved[token].str);
+        assert(basic_token[token].strval.str);
         error("Expected '%s', but got '%s'.",
-            reserved[token].str, list->strval.str);
+            basic_token[token].strval.str, list->strval.str);
     }
     return list;
 }
@@ -831,9 +831,9 @@ struct token consume(enum token_type type)
     struct token t = next();
 
     if (t.token != type) {
-        if (reserved[type].str)
-            error("Unexpected token '%s', expected '%s'.", t.strval.str,
-                reserved[type]);
+        if (basic_token[type].strval.str)
+            error("Unexpected token '%s', expected '%s'.",
+                t.strval.str, basic_token[type].strval.str);
         else
             error("Unexpected token '%s', expected %s.", t.strval.str,
                 (type == IDENTIFIER) ? "identifier" :

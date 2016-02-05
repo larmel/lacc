@@ -370,7 +370,7 @@ static struct token *expand_macro(
     size_t i;
     struct token *res = calloc(1, sizeof(*res));
 
-    res[0] = token_end;
+    res[0] = basic_token[END];
     push_expand_stack(macro);
     for (i = 0; i < macro->size; ++i) {
         int n = macro->replacement[i].param;
@@ -405,9 +405,9 @@ static const struct token *skip_to(const struct token *list, int token)
 {
     while (list->token == SPACE) list++;
     if (list->token != token) {
-        assert(reserved[token].str);
+        assert(basic_token[token].strval.str);
         error("Expected '%s', but got '%s'.",
-            reserved[token].str, list->strval.str);
+            basic_token[token].strval.str, list->strval.str);
     }
     return list;
 }
@@ -457,7 +457,7 @@ static struct token *read_arg(
         SKIP_WS(list);
     } while (nesting || (list->token != ',' && list->token != ')'));
 
-    arg[n] = token_end;
+    arg[n] = basic_token[END];
     *endptr = list;
     return arg;
 }
@@ -510,7 +510,7 @@ struct token *expand(struct token *original)
 
     list = original;
     res = calloc(1, sizeof(*res));
-    res[0] = token_end;
+    res[0] = basic_token[END];
     while (list->token != END) {
         const struct macro *def = definition(*list);
         struct token **args;
