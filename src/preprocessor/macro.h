@@ -50,6 +50,10 @@ const struct macro *definition(struct token);
  */
 struct token *expand(struct token *list);
 
+/* Compare tokens for equality, returing 0 iff of same type and value.
+ */
+int tok_cmp(struct token a, struct token b);
+
 /* DEBUG */
 void print_list(const struct token *list);
 

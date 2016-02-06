@@ -14,11 +14,6 @@
 static struct macro
     macro_hash_table[HASH_TABLE_LENGTH];
 
-static int tok_cmp(struct token a, struct token b)
-{
-    return (a.token != b.token) || str_cmp(a.strval, b.strval);
-}
-
 static int macrocmp(const struct macro *a, const struct macro *b)
 {
     int i;
@@ -529,6 +524,11 @@ struct token *expand(struct token *original)
 
     free(original);
     return res;
+}
+
+int tok_cmp(struct token a, struct token b)
+{
+    return (a.token != b.token) || str_cmp(a.strval, b.strval);
 }
 
 struct token stringify(const struct token list[])

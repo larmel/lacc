@@ -10,8 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Helper structure and functions for aggregating tokens into a line before
- * preprocessing.
+/* Helper structure and functions for aggregating tokens into a line
+ * before preprocessing.
  */
 struct builder {
     struct token *elem;
@@ -31,9 +31,9 @@ static struct token get_preprocessing_token(void)
         r = tokenize(line, &endptr);
         line = endptr;
         if (r.token == END) {
-            /* Newlines are removed by getprepline, and never present in the
-             * input data. Instead intercept end of string, which represents
-             * end of line. */
+            /* Newlines are removed by getprepline, and never present in
+             * the input data. Instead intercept end of string, which
+             * represents end of line. */
             line = NULL;
             r = basic_token[NEWLINE];
         }
@@ -59,8 +59,8 @@ static struct token get_next(struct builder *list)
     return t;
 }
 
-/* Skip through whitespace and add token of expected type. Whitespace is also
- * added.
+/* Skip through whitespace and add token of expected type. Whitespace is
+ * also added.
  */
 static struct token expect_next(struct builder *list, enum token_type type)
 {
@@ -73,9 +73,10 @@ static struct token expect_next(struct builder *list, enum token_type type)
     return t;
 }
 
-/* Keep track of the nesting depth of macro arguments. For example MAX( MAX(10,
- * 12), 20 ) should complete on the last parenthesis, which makes the expression
- * balanced. Read lines until full macro invocation is included.
+/* Keep track of the nesting depth of macro arguments. For example;
+ * MAX( MAX(10, 12), 20 ) should complete on the last parenthesis, which
+ * makes the expression balanced. Read lines until full macro invocation
+ * is included.
  */
 static void read_macro_invocation(
     struct builder *list,
@@ -103,9 +104,9 @@ static void read_macro_invocation(
             nesting--;
         }
         if (t.token == NEWLINE) {
-            /* This is the only scenario where reading a line is not enough.
-             * Macro invocations can span lines, and we want to have
-             * everything in the same token list. */
+            /* This is the only scenario where reading a line is not
+             * enough. Macro invocations can span lines, and we want to
+             * have everything in the same token list. */
             continue;
         }
         if (t.token == END) {
@@ -149,32 +150,40 @@ static void read_defined_operator(struct builder *list)
     }
 }
 
-/* Read tokens until reaching newline or eof. If initial token is '#', stop on
- * newline. Otherwise make sure macro invocations spanning multiple lines are
- * joined, and replace 'defined' directives with constants.
+/* Determine if token is an identifier with the given name, returning 0
+ * otherwise.
+ */
+static int is_ident(struct token tok, const char *name)
+{
+    struct token ident = {IDENTIFIER};
+    ident.strval = str_init(name);
+    return !tok_cmp(tok, ident);
+}
+
+/* Read tokens until reaching newline or eof. If initial token is '#',
+ * stop on newline. Otherwise make sure macro invocations spanning
+ * multiple lines are joined, and replace 'defined' directives with
+ * constants.
  *
- * Returns a buffer containing all necessary tokens to preprocess a line.
+ * Returns a buffer containing all necessary tokens to preprocess a
+ * line.
  */
 static struct token *read_complete_line(struct token t)
 {
+    const struct macro *def;
     struct builder line = {0};
     int is_expandable = 1,
         is_directive = (t.token == '#');
-    const struct macro *def;
 
     if (is_directive) {
         list_append(&line, t);
         t = get_next(&line);
-        is_expandable =
-            (t.token == IF ||
-                (t.token == IDENTIFIER && !strcmp("elif", t.strval.str)));
+        is_expandable = (t.token == IF) || is_ident(t, "elif");
     }
 
     while (t.token != NEWLINE && t.token != END) {
         if (t.token == IDENTIFIER) {
-            if (!strcmp("defined", t.strval.str) &&
-                is_directive && is_expandable)
-            {
+            if (is_ident(t, "defined") && is_directive && is_expandable) {
                 read_defined_operator(&line);
             } else if (
                 (def = definition(t)) && def->type == FUNCTION_LIKE &&
@@ -226,8 +235,8 @@ static int eval_primary(
         value = list->intval;
         break;
     case IDENTIFIER:
-        /* Macro expansions should already have been done. Stray identifiers are
-         * interpreted as zero constants. */
+        /* Macro expansions should already have been done. Stray
+         * identifiers are interpreted as zero constants. */
         assert(!definition(*list));
         break;
     case '(':
@@ -472,7 +481,8 @@ static struct macro preprocess_define(
     macro.name = *line++;
     macro.type = OBJECT_LIKE;
 
-    /* Function-like macro iff parenthesis immediately after identifier. */
+    /* Function-like macro iff parenthesis immediately after
+     * identifier. */
     if (line->token == '(') {
         macro.type = FUNCTION_LIKE;
         line++;
@@ -595,8 +605,8 @@ static int cnd_pop(void) {
     return branch_stack.condition[--branch_stack.length];
 }
 
-/* Preprocess a line starting with a '#' directive. Takes ownership of input.
- *
+/* Preprocess a line starting with a '#' directive. Takes ownership of
+ * input.
  * Assumes input is END terminated, and not containing newline.
  */
 static void preprocess_directive(struct token *original)
@@ -605,11 +615,9 @@ static void preprocess_directive(struct token *original)
 
     line = skip_to(line, '#');
     line = skip_ws(line + 1);
-    if (line->token == IF ||
-        (line->token == IDENTIFIER && !strcmp("elif", line->strval.str)))
-    {
-        /* Perform macro expansion only for if and elif directives, before doing
-         * the expression parsing. */
+    if (line->token == IF || is_ident(*line, "elif")) {
+        /* Perform macro expansion only for if and elif directives,
+         * before doing the expression parsing. */
         original = expand(original);
         line = original;
         line = skip_to(line, '#');
@@ -617,8 +625,8 @@ static void preprocess_directive(struct token *original)
     }
 
     if (line->token == IF) {
-        /* Expressions are not necessarily valid in dead blocks, for example
-         * can function-like macros be undefined. */
+        /* Expressions are not necessarily valid in dead blocks, for
+         * example can function-like macros be undefined. */
         if (cnd_peek()) {
             cnd_push(expression(line + 1, &line));
         } else {
@@ -626,37 +634,29 @@ static void preprocess_directive(struct token *original)
         }
     } else if (line->token == ELSE) {
         cnd_push(!cnd_pop() && cnd_peek());
-    } else if (line->token == IDENTIFIER &&
-        !strcmp("elif", line->strval.str))
-    {
+    } else if (is_ident(*line, "elif")) {
         if (!cnd_pop() && cnd_peek()) {
             cnd_push(expression(line + 1, &line));
         } else {
             cnd_push(0);
         }
-    } else if (line->token == IDENTIFIER &&
-        !strcmp("endif", line->strval.str))
-    {
+    } else if (is_ident(*line, "endif")) {
         cnd_pop();
-    } else if (line->token == IDENTIFIER &&
-        !strcmp("ifndef", line->strval.str))
-    {
+    } else if (is_ident(*line, "ifndef")) {
         line = skip_to(line + 1, IDENTIFIER);
         cnd_push(!definition(*line) && cnd_peek());
-    } else if (line->token == IDENTIFIER &&
-        !strcmp("ifdef", line->strval.str))
-    {
+    } else if (is_ident(*line, "ifdef")) {
         line = skip_to(line + 1, IDENTIFIER);
         cnd_push(definition(*line++) && cnd_peek());
-    } else if (cnd_peek() && line->token == IDENTIFIER) {
-        if (!strcmp("define", line->strval.str)) {
+    } else if (cnd_peek()) {
+        if (is_ident(*line, "define")) {
             define(preprocess_define(line + 1, &line));
-        } else if (!strcmp("undef", line->strval.str)) {
+        } else if (is_ident(*line, "undef")) {
             line = skip_to(line + 1, IDENTIFIER);
             undef(*line++);
-        } else if (!strcmp("include", line->strval.str)) {
+        } else if (is_ident(*line, "include")) {
             preprocess_include(line + 1);
-        } else if (!strcmp("error", line->strval.str)) {
+        } else if (is_ident(*line, "error")) {
             line = skip_ws(line + 1);
             error("%s", stringify(line).strval.str);
             exit(1);
@@ -666,13 +666,13 @@ static void preprocess_directive(struct token *original)
     free(original);
 }
 
-/* Buffer of preprocessed tokens, ready to be consumed by the parser. Configured
- * to hold at least K tokens, enabling LL(K) parsing.
+/* Buffer of preprocessed tokens, ready to be consumed by the parser.
+ * Configured to hold at least K tokens, enabling LL(K) parsing.
  *
  * For the K&R grammar, it is sufficient to have K = 2.
  *
- * Cursor points to current position in lookahead buffer, the token to be
- * returned by next().
+ * Cursor points to current position in lookahead buffer, the token to
+ * be returned by next().
  */
 static struct token *lookahead;
 static size_t length;
@@ -708,10 +708,10 @@ static void add(struct token t)
     size_t i = length;
     int added = 0;
 
-    /* Combine adjacent string literals. This step is done after preprocessing
-     * and macro expansion; logic in preprocess_line will guarantee that we keep
-     * preprocessing lines and filling up the lookahead buffer for as long as
-     * there can be string continuations. */
+    /* Combine adjacent string literals. This step is done after
+     * preprocessing and macro expansion; logic in preprocess_line will
+     * guarantee that we keep preprocessing lines and filling up the
+     * lookahead buffer for as long as there can be continuations. */
     if (t.token == STRING) {
         while (i && lookahead[--i].token == SPACE)
             ;
@@ -745,8 +745,8 @@ static void rewind_lookahead_buffer(void)
     cursor = 0;
 }
 
-/* Consume at least one line, up until the final newline or end of file. Fill up
- * lookahead buffer and reset cursor.
+/* Consume at least one line, up until the final newline or end of file.
+ * Fill up lookahead buffer and reset cursor.
  */
 static void preprocess_line(void)
 {
@@ -809,8 +809,8 @@ struct token next(void)
 struct token peek(void)
 {
     if (!length) {
-        /* If peek() is the first call made, make sure there is an initial call
-         * to populate the lookahead buffer. */
+        /* If peek() is the first call made, make sure there is an
+         * initial call to populate the lookahead buffer. */
         preprocess_line();
     }
     return lookahead[cursor];
