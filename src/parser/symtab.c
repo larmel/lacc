@@ -20,51 +20,47 @@ struct namespace
 const struct symbol
     *decl_memcpy = NULL;
 
-/* Initialize hash table with initial size heuristic based on scope depth.
- * As a special case, depth 1 containing function arguments is assumed to
- * contain fewer symbols.
- */
-static size_t hash_cap[] = {256, 16, 128, 64, 32, 16};
-static size_t hash_cap_default = 8;
+static struct string sym_hash_key(void *ref)
+{
+    return str_init(((const struct symbol *) ref)->name);
+}
 
 void push_scope(struct namespace *ns)
 {
-    struct scope *scope;
+    /* Initialize hash table with initial size heuristic based on scope
+     * depth. As a special case, depth 1 containing function arguments
+     * is assumed to contain fewer symbols.
+     */
+    static unsigned hash_cap[] = {256, 16, 128, 64, 32, 16};
+    static unsigned hash_cap_default = 8;
+
+    struct hash_table *scope;
+    unsigned cap;
 
     ns->current_depth = (ns->scope) ? ns->current_depth + 1 : 0;
-    ns->scope = realloc(ns->scope, sizeof(*ns->scope)*(ns->current_depth + 1));
+    ns->scope = realloc(ns->scope, sizeof(*scope) * (ns->current_depth + 1));
+
+    cap = hash_cap_default;
+    if (ns->current_depth < sizeof(hash_cap) / sizeof(hash_cap[0]))
+        cap = hash_cap[ns->current_depth];
 
     scope = &ns->scope[ns->current_depth];
-    scope->hash_length = hash_cap_default;
-    if (ns->current_depth < sizeof(hash_cap) / sizeof(hash_cap[0]))
-        scope->hash_length = hash_cap[ns->current_depth];
-
-    scope->hash_tab = calloc(scope->hash_length, sizeof(*scope->hash_tab));
-}
-
-static void ref_list_free(struct sym_ref *ref)
-{
-    if (ref->next)
-        ref_list_free(ref->next);
-    free(ref);
+    hash_init(scope, cap, &sym_hash_key, NULL, NULL);
 }
 
 void pop_scope(struct namespace *ns)
 {
     size_t i;
-    struct scope *scope;
+    struct hash_table *scope;
 
     assert(ns->current_depth >= 0);
-    scope = &ns->scope[ns->current_depth];
-    for (i = 0; i < scope->hash_length; ++i)
-        if (scope->hash_tab[i].next)
-            ref_list_free(scope->hash_tab[i].next);
 
-    free(scope->hash_tab);
-    ns->current_depth--;
+    scope = &ns->scope[ns->current_depth--];
+    hash_destroy(scope);
 
-    /* Popping last scope frees the whole symbol table. This only happens once,
-     * after reaching the end of the translation unit. */
+    /* Popping last scope frees the whole symbol table, including the
+     * symbols themselves. This only happens once, after reaching the
+     * end of the translation unit. */
     if (ns->current_depth == -1) {
         free(ns->scope);
         if (ns->symbol) {
@@ -75,8 +71,9 @@ void pop_scope(struct namespace *ns)
     }
 }
 
-/* Create and add symbol to symbol table, but not to any scope. Symbol address
- * needs to be stable, so they are stored as a realloc-safe list of pointers.
+/* Create and add symbol to symbol table, but not to any scope. Symbol
+ * address need to be stable, so they are stored as a realloc-safe list
+ * of pointers.
  */
 static size_t create_symbol(struct namespace *ns, struct symbol arg)
 {
@@ -95,72 +92,37 @@ static size_t create_symbol(struct namespace *ns, struct symbol arg)
     return ns->length++;
 }
 
-/* Add symbol to current scope hash table, making it possible to look up.
- *
- * Here we don't need to care about collisions; adding a symbol to scope will
- * always create a new entry in the hash table.
+/* Add symbol to current scope hash table, making it possible to look
+ * up.
+ * Here we don't need to care about collisions; adding a symbol to scope
+ * will always create a new entry in the hash table.
  */
-static struct symbol *register_in_scope(struct namespace *ns, size_t index)
+static struct symbol *register_in_scope(struct namespace *ns, int index)
 {
-    struct scope *scope;
     struct symbol *sym;
-    struct sym_ref *ref;
-    size_t pos;
-    unsigned long hash;
-
     assert(index < ns->length);
 
-    scope = &ns->scope[ns->current_depth];
     sym = ns->symbol[index];
-    hash = djb2_hash(sym->name);
-    pos = hash % scope->hash_length;
-    ref = &scope->hash_tab[pos];
-
-    /* If direct slot is not available, allocate a new sym_ref structure and
-     * hook it up last in the chain. */
-    if (ref->index) {
-        while (ref->next)
-            ref = ref->next;
-        ref->next = calloc(1, sizeof(*ref));
-        ref = ref->next;
-    }
-
-    assert(!ref->index);
-    assert(!ref->next);
-
-    ref->index = index + 1;
-    ref->hash = hash;
+    hash_insert(&ns->scope[ns->current_depth], (void *) sym);
     return sym;
 }
 
 struct symbol *sym_lookup(struct namespace *ns, const char *name)
 {
-    struct scope *scope;
-    struct symbol *sym;
-    struct sym_ref *ref;
-    size_t pos;
     int depth;
-    unsigned long hash;
+    struct hash_table *scope;
+    struct string key;
+    struct symbol *sym;
+    assert(ns->current_depth >= 0);
 
+    key = str_init(name);
     depth = ns->current_depth;
-    hash = djb2_hash(name);
-
     do {
         scope = &ns->scope[depth];
-        pos = hash % scope->hash_length;
-        ref = &scope->hash_tab[pos];
-
-        /* Move ref until both hash value and symbol name matches, or we reach
-         * end of list. */
-        while (ref && ref->index) {
-            if (ref->hash == hash) {
-                sym = ns->symbol[ref->index - 1];
-                if (!strcmp(name, sym->name)) {
-                    sym->referenced++;
-                    return sym;
-                }
-            }
-            ref = ref->next;
+        sym = hash_lookup(scope, key);
+        if (sym) {
+            sym->referenced += 1;
+            return sym;
         }
     } while (depth--);
 
@@ -175,9 +137,9 @@ const char *sym_name(const struct symbol *sym)
         return sym->name;
 
     /* Temporary variables and string literals are named '.t' and '.LC',
-     * respectively. For those, append the numeral without anything in between.
-     * For other variables, which are disambiguated statics, insert a period
-     * between the name and the number. */
+     * respectively. For those, append the numeral without anything in
+     * between. For other variables, which are disambiguated statics,
+     * insert a period between the name and the number. */
     if (sym->name[0] == '.')
         snprintf(name, sizeof(name), "%s%d", sym->name, sym->n);
     else
@@ -186,12 +148,12 @@ const char *sym_name(const struct symbol *sym)
     return name;
 }
 
-/* Symbols can be declared multiple times, with incomplete or complete types.
- * Only functions and arrays can exist as incomplete declarations. Other symbols
- * can be re-declared, but must have identical type each time.
+/* Symbols can be declared multiple times, with incomplete or complete
+ * types. Only functions and arrays can exist as incomplete. Other
+ * symbols can be re-declared, but must have identical type each time.
  *
- * For functions, the last parameter list is applied for as long as the symbol
- * is still tentative.
+ * For functions, the last parameter list is applied for as long as the
+ * symbol is still tentative.
  */
 static void apply_type(struct symbol *sym, const struct typetree *type)
 {
@@ -286,8 +248,8 @@ struct symbol *sym_add(
     arg.symtype = symtype;
     arg.linkage = linkage;
 
-    /* Scoped static variable must get unique name in order to not collide with
-     * other external declarations. */
+    /* Scoped static variable must get unique name in order to not
+     * collide with other external declarations. */
     if (linkage == LINK_INTERN &&
         (ns->current_depth || symtype == SYM_STRING_VALUE))
     {
@@ -314,8 +276,8 @@ struct symbol *sym_add(
 
 struct symbol *sym_create_tmp(const struct typetree *type)
 {
-    /* Count number of temporary variables, giving each new one a unique name
-     * by setting the counter instead of creating a string. */
+    /* Count number of temporary variables, giving each new one a unique
+     * name by setting the counter instead of creating a string. */
     static int n;
 
     int i;
@@ -344,8 +306,8 @@ struct symbol *sym_create_label(void)
     sym.name = ".L";
     sym.n = ns_label.length + 1;
 
-    /* Construct symbol in label namespace, but do not add it to any scope.
-     * No need or use for searching in labels. */
+    /* Construct symbol in label namespace, but do not add it to any
+     * scope. No need or use for searching in labels. */
     i = create_symbol(&ns_label, sym);
     return ns_label.symbol[i];
 }
@@ -368,8 +330,9 @@ void register_builtin_types(struct namespace *ns)
     /* Define va_list as described in System V ABI. */
     sym_add(ns, "__builtin_va_list", type, SYM_TYPEDEF, LINK_NONE);
 
-    /* Add symbols with dummy types just to reserve them, and make them resolve
-     * during parsing. These are implemented as compiler intrinsics. */
+    /* Add symbols with dummy types just to reserve them, and make them
+     * resolve during parsing. These are implemented as compiler
+     * intrinsics. */
     sym_add(ns, "__builtin_va_start", none, SYM_DECLARATION, LINK_NONE);
     sym_add(ns, "__builtin_va_arg", none, SYM_DECLARATION, LINK_NONE);
 

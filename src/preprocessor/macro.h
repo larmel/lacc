@@ -3,25 +3,18 @@
 
 #include <lacc/token.h>
 
-#include <stdlib.h>
-
 struct macro {
     struct token name;
     enum { OBJECT_LIKE, FUNCTION_LIKE } type;
 
-    size_t params;
-    size_t size;
+    int params;
+    int size;
 
     /* A substitution is either a token or a parameter. */
     struct replacement {
         struct token token;
         int param;
     } *replacement;
-
-    struct {
-    	unsigned long val;
-    	struct macro *next;
-    } hash;
 };
 
 /* Define standard macros.

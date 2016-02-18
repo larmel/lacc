@@ -6,13 +6,16 @@
 #include <lacc/hash.h>
 
 #include <assert.h>
-#include <string.h>
 #include <ctype.h>
+#include <string.h>
+#include <stddef.h>
+#include <stdlib.h>
 
-#define HASH_TABLE_LENGTH 1024
+#define HASH_TABLE_BUCKETS 1024
 
-static struct macro
-    macro_hash_table[HASH_TABLE_LENGTH];
+static struct hash_table macro_hash_table;
+static int initialized;
+static int new_macro_added;
 
 static int macrocmp(const struct macro *a, const struct macro *b)
 {
@@ -23,6 +26,9 @@ static int macrocmp(const struct macro *a, const struct macro *b)
         return 1;
 
     if (tok_cmp(a->name, b->name))
+        return 1;
+
+    if (a->size != b->size)
         return 1;
 
     for (i = 0; i < a->size; ++i) {
@@ -39,155 +45,103 @@ static int macrocmp(const struct macro *a, const struct macro *b)
     return 0;
 }
 
-static void hash_node_free(struct macro *ref)
+static struct string macro_hash_key(void *ref)
 {
-    assert(ref);
-    if (ref->replacement)
-        free(ref->replacement);
-    free(ref);
+    return ((struct macro *) ref)->name.strval;
 }
 
-static void hash_chain_cleanup(struct macro *ref)
+static void macro_hash_del(void *ref)
 {
-    if (ref->hash.next)
-        hash_chain_cleanup(ref->hash.next);
-    hash_node_free(ref);
+    struct macro *macro = (struct macro *) ref;
+    if (macro->replacement)
+        free(macro->replacement);
+    free(macro);
+}
+
+static void *macro_hash_add(void *ref)
+{
+    struct macro *macro, *arg;
+
+    arg = (struct macro *) ref;
+    macro = calloc(1, sizeof(*macro));
+    *macro = *arg;
+
+    /* Signal that the hash table has ownership now, and it will not be
+     * freed in define(). */
+    new_macro_added = 1;
+    return macro;
 }
 
 static void cleanup(void)
 {
-    int i;
-    struct macro *ref;
+    hash_destroy(&macro_hash_table);
+}
 
-    for (i = 0; i < HASH_TABLE_LENGTH; ++i) {
-        ref = &macro_hash_table[i];
-        if (ref->hash.next)
-            hash_chain_cleanup(ref->hash.next);
-        if (ref->replacement)
-            free(ref->replacement);
-    }
+static void initialize(void)
+{
+    assert(!initialized);
+    hash_init(
+        &macro_hash_table,
+        HASH_TABLE_BUCKETS,
+        macro_hash_key,
+        macro_hash_add,
+        macro_hash_del);
+    atexit(cleanup);
+    initialized = 1;
 }
 
 const struct macro *definition(struct token name)
 {
-    struct macro *ref;
-    unsigned long hash, pos;
+    struct macro *ref = NULL;
 
-    if (name.token != IDENTIFIER)
-        return NULL;
+    if (!initialized)
+        initialize();
 
-    hash = djb2_hash(name.strval.str);
-    pos = hash % HASH_TABLE_LENGTH;
-    ref = &macro_hash_table[pos];
-    if (!ref->name.strval.str) {
-        return NULL;
+    if (name.token == IDENTIFIER) {
+        ref = hash_lookup(&macro_hash_table, name.strval);
+        if (ref) {
+            /* Replace __LINE__ with current line number, by mutating
+             * the replacement list on the fly. */
+            if (!str_cmp(ref->name.strval, str_init("__LINE__")))
+                ref->replacement[0].token.intval = current_file.line;
+        }
     }
 
-    while ((ref->hash.val != hash || tok_cmp(ref->name, name)) &&
-            ref->hash.next)
-        ref = ref->hash.next;
-
-    if (ref->hash.val == hash && !tok_cmp(ref->name, name)) {
-        if (!strcmp(ref->name.strval.str, "__LINE__"))
-            ref->replacement[0].token.intval = current_file.line;
-        return ref;
-    }
-
-    return NULL;
+    return ref;
 }
 
 void define(struct macro macro)
 {
-    static int clean_on_exit;
-
     struct macro *ref;
-    unsigned long
-        hash = djb2_hash(macro.name.strval.str),
-        pos = hash % HASH_TABLE_LENGTH;
 
-    if (!clean_on_exit) {
-        atexit(cleanup);
-        clean_on_exit = 1;
+    if (!initialized)
+        initialize();
+
+    new_macro_added = 0;
+    ref = hash_insert(&macro_hash_table, &macro);
+    if (macrocmp(ref, &macro)) {
+        error("Redefinition of macro '%s' with different substitution.",
+            macro.name.strval.str);
+        exit(1);
     }
 
-    ref = &macro_hash_table[pos];
-    if (!ref->name.strval.str) {
-        *ref = macro;
-        ref->hash.val = hash;
-        return;
-    }
-
-    while ((ref->hash.val != hash || tok_cmp(ref->name, macro.name))
-            && ref->hash.next)
-        ref = ref->hash.next;
-
-    if (ref->hash.val == hash && !tok_cmp(ref->name, macro.name)) {
-        if (macrocmp(ref, &macro)) {
-            error("Redefinition of macro '%s' with different substitution.",
-                macro.name.strval.str);
-            exit(1);
-        }
-        /* Already have this definition, but need to clean up memory that we
-         * took ownership of. */
-        if (macro.size)
-            free(macro.replacement);
-        return;
-    }
-
-    assert(!ref->hash.next);
-    ref->hash.next = calloc(1, sizeof(*ref));
-    ref = ref->hash.next;
-    *ref = macro;
-    ref->hash.val = hash;
+    /* Need to clean up memory for replacement list since ownership was
+     * not given to hash table. */
+    if (!new_macro_added && macro.replacement)
+        free(macro.replacement);
 }
 
 void undef(struct token name)
 {
-    struct macro *ref, *prev;
-    unsigned long hash, pos;
+    if (!initialized)
+        initialize();
 
-    if (name.token != IDENTIFIER)
-        return;
-
-    hash = djb2_hash(name.strval.str);
-    pos = hash % HASH_TABLE_LENGTH;
-    ref = &macro_hash_table[pos];
-    prev = ref;
-    if (!ref->name.strval.str) {
-        return;
-    }
-
-    /* Special case if found in static buffer. */
-    if (ref->hash.val == hash && !tok_cmp(ref->name, name)) {
-        prev = ref->hash.next;
-        if (ref->replacement)
-            free(ref->replacement);
-        memset(ref, 0, sizeof(*ref));
-        if (prev) {
-            *ref = *prev;
-            free(prev);
-        }
-        return;
-    }
-
-    /* Get pointer to match, and predecessor. */
-    while ((ref->hash.val != hash || tok_cmp(ref->name, name))
-        && ref->hash.next)
-    {
-        prev = ref;
-        ref = ref->hash.next;
-    }
-
-    /* Remove node in middle of list. */
-    if (ref->hash.val == hash && !tok_cmp(ref->name, name)) {
-        assert(ref != prev);
-        prev->hash.next = ref->hash.next;
-        hash_node_free(ref);
-    }
+    if (name.token == IDENTIFIER)
+        hash_remove(&macro_hash_table, name.strval);
 }
 
-/* Keep track of which macros have been expanded, avoiding recursion by looking
- * up in this list for each new expansion.
+/* Keep track of which macros have been expanded, avoiding recursion by
+ * looking up in this list for each new expansion.
  */
 static const struct macro **expand_stack;
 static int stack_size;
@@ -245,8 +199,8 @@ void print_list(const struct token *list)
     printf("] (%lu)\n", l);
 }
 
-/* Extend input list with concatinating another list to it. Takes ownership of
- * both arguments.
+/* Extend input list with concatinating another list to it. Takes
+ * ownership of both arguments.
  */
 static struct token *concat(struct token *list, struct token *other)
 {
@@ -420,9 +374,10 @@ static enum token_type peek_next(const struct token *list)
     return list->token;
 }
 
-/* Read argument in macro expansion, starting from one offset from the initial
- * open parenthesis. Stop readin when reaching a comma, and nesting depth is
- * zero. Track nesting depth to allow things like MAX( foo(a), b ).
+/* Read argument in macro expansion, starting from one offset from the
+ * initial open parenthesis. Stop readin when reaching a comma, and
+ * nesting depth is zero. Track nesting depth to allow things like
+ * MAX( foo(a), b ).
  */
 static struct token *read_arg(
     const struct token *list,
@@ -549,10 +504,10 @@ struct token stringify(const struct token list[])
     return t;
 }
 
-static struct replacement *parse(char *str, size_t *out_size)
+static struct replacement *parse(char *str, int *out_size)
 {
     char *endptr;
-    size_t n = 0;
+    int n = 0;
     struct replacement *repl = NULL;
 
     while (*str) {
@@ -619,7 +574,7 @@ void register_builtin_definitions(void)
     macro.replacement = parse("1", &macro.size);
     define(macro);
 
-    /* For some reason this is not properly handled by macros in musl. */
+    /* For some reason this is not properly handled by musl. */
     macro.name.strval = str_init("__inline");
     macro.replacement = parse(" ", &macro.size);
     define(macro);
