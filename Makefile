@@ -1,7 +1,7 @@
 DIRS := ${shell find src -type d -print}
 SOURCES := $(foreach sdir,$(DIRS),$(wildcard $(sdir)/*.c))
 
-CFLAGS := -Wall -pedantic -std=c89 -I include/
+CFLAGS := -Wall -pedantic -std=c89 -g -I include/
 LACCFLAGS := -I include/
 
 all: bin/lacc
