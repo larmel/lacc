@@ -211,7 +211,7 @@ static struct token strtostr(char *in, char **endptr)
         }
 
         /* See if there is another string after this one. */
-        while (isspace(*in)) in++;
+        while (isblank(*in)) in++;
         if (*in != '"')
             break;
     } while (1);
@@ -229,13 +229,14 @@ static struct token strtostr(char *in, char **endptr)
  */
 static struct token strtospace(char *in, char **endptr)
 {
-    struct token space = {SPACE};
+    struct token space = basic_token[SPACE];
     char *start = in;
 
-    do in++; while (isspace(*in));
+    do in++;
+    while (isblank(*in));
 
     *endptr = in;
-    space.strval = str_register(in, *endptr - start);
+    space.intval = in - start;
     return space;
 }
 

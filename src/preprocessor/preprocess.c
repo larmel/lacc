@@ -852,11 +852,11 @@ void preprocess(FILE *output)
     t = next();
     while (t.token != END) {
         switch (t.token) {
-        case INTEGER_CONSTANT:
-            fprintf(output, "%ld", t.intval);
-            break;
         case STRING:
             fprintf(output, "\"%s\"", t.strval.str);
+            break;
+        case SPACE:
+            fprintf(output, "%*s", (int) t.intval, t.strval.str);
             break;
         default:
             fprintf(output, "%s", t.strval.str);
