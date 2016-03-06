@@ -10,6 +10,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Buffer of preprocessed tokens, ready to be consumed by the parser.
+ * Configured to hold at least K tokens, enabling LL(K) parsing.
+ *
+ * For the K&R grammar, it is sufficient to have K = 2.
+ *
+ * Cursor points to current position in lookahead buffer, the token to
+ * be returned by next().
+ */
+static struct token *lookahead;
+static size_t length;
+static size_t cursor;
+
+static const int K = 2;
+
+/* Toggle for producing preprocessed output (-E).
+ */
+static int preserve_whitespace;
+
 /* Helper structure and functions for aggregating tokens into a line
  * before preprocessing.
  */
@@ -200,7 +218,10 @@ static struct token *read_complete_line(struct token t)
         t = get_preprocessing_token();
     }
 
+    if (preserve_whitespace && t.token == NEWLINE)
+        list_append(&line, basic_token[NEWLINE]);
     list_append(&line, basic_token[END]);
+
     return line.elem;
 }
 
@@ -666,24 +687,6 @@ static void preprocess_directive(struct token *original)
     free(original);
 }
 
-/* Buffer of preprocessed tokens, ready to be consumed by the parser.
- * Configured to hold at least K tokens, enabling LL(K) parsing.
- *
- * For the K&R grammar, it is sufficient to have K = 2.
- *
- * Cursor points to current position in lookahead buffer, the token to
- * be returned by next().
- */
-static struct token *lookahead;
-static size_t length;
-static size_t cursor;
-
-static const int K = 2;
-
-/* Toggle for producing preprocessed output (-E).
- */
-static int preserve_whitespace;
-
 static void cleanup(void)
 {
     if (lookahead) {
@@ -745,6 +748,11 @@ static void rewind_lookahead_buffer(void)
     cursor = 0;
 }
 
+static int is_whitespace(enum token_type t)
+{
+    return t == SPACE || t == NEWLINE;
+}
+
 /* Consume at least one line, up until the final newline or end of file.
  * Fill up lookahead buffer and reset cursor.
  */
@@ -763,21 +771,30 @@ static void preprocess_line(void)
     do {
         struct token
             *line, *expanded;
+        struct builder leading_ws = {0};
 
         do {
             t = get_preprocessing_token();
+            if (t.token == SPACE && preserve_whitespace) {
+                list_append(&leading_ws, t);
+            }
         } while (t.token == SPACE);
 
         if (t.token == '#') {
             line = read_complete_line(t);
             preprocess_directive(line);
         } else if (cnd_peek()) {
+            if (preserve_whitespace) {
+                int i;
+                for (i = 0; i < leading_ws.length; ++i)
+                    add(leading_ws.elem[i]);
+            }
             line = read_complete_line(t);
             expanded = expand(line);
             line = expanded;
             while (line->token != END) {
-                if (line->token != SPACE || preserve_whitespace) {
-                    if (line->token != SPACE)
+                if (!is_whitespace(line->token) || preserve_whitespace) {
+                    if (!is_whitespace(line->token))
                         t = *line;
                     add(*line);
                 }
@@ -857,6 +874,9 @@ void preprocess(FILE *output)
             break;
         case SPACE:
             fprintf(output, "%*s", (int) t.intval, t.strval.str);
+            break;
+        case INTEGER_CONSTANT:
+            fprintf(output, "%ld", t.intval);
             break;
         default:
             fprintf(output, "%s", t.strval.str);

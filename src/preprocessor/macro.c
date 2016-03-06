@@ -260,12 +260,12 @@ static struct token paste(struct token left, struct token right)
 
 static struct token *skip_ws(struct token *list)
 {
-    while (list->token == SPACE) list++;
+    while (list->token == SPACE || list->token == NEWLINE) list++;
     return list;
 }
 
 #define SKIP_WS(lst) \
-    while (lst->token == SPACE) lst++;
+    while (lst->token == SPACE || list->token == NEWLINE) lst++;
 
 /* In-place expansion of token paste operators, '##'.
  * ['foo', ' ', '##', '_f', ' ', '##', ' ', 'u', '##', 'nc']
@@ -304,7 +304,7 @@ static struct token *expand_paste_operators(struct token *list)
             do {
                 start++;
                 *start = *end++;
-            } while (end->token == SPACE);
+            } while (end->token == SPACE || end->token == NEWLINE);
         }
     }
 
@@ -352,7 +352,7 @@ static struct token *expand_macro(
 
 static const struct token *skip_to(const struct token *list, int token)
 {
-    while (list->token == SPACE) list++;
+    while (list->token == SPACE || list->token == NEWLINE) list++;
     if (list->token != token) {
         assert(basic_token[token].strval.str);
         error("Expected '%s', but got '%s'.",
@@ -364,13 +364,13 @@ static const struct token *skip_to(const struct token *list, int token)
 static const struct token *skip_past(const struct token *list, int token)
 {
     list = skip_to(list, token) + 1;
-    while (list->token == SPACE) list++;
+    while (list->token == SPACE || list->token == NEWLINE) list++;
     return list;
 }
 
 static enum token_type peek_next(const struct token *list)
 {
-    while (list->token == SPACE) list++;
+    while (list->token == SPACE || list->token == NEWLINE) list++;
     return list->token;
 }
 
@@ -404,7 +404,6 @@ static struct token *read_arg(
         }
         arg = realloc(arg, (++n + 1) * sizeof(*arg));
         arg[n - 1] = *list++;
-        SKIP_WS(list);
     } while (nesting || (list->token != ',' && list->token != ')'));
 
     arg[n] = basic_token[END];
@@ -486,16 +485,38 @@ int tok_cmp(struct token a, struct token b)
     return (a.token != b.token) || str_cmp(a.strval, b.strval);
 }
 
+/* From GCC documentation: All leading and trailing whitespace in text
+ * being stringified is ignored. Any sequence of whitespace in the
+ * middle of the text is converted to a single space in the stringified
+ * result.
+ */
 struct token stringify(const struct token list[])
 {
     char *str = calloc(1, sizeof(*str));
+    int prev_space;
     size_t len = 0;
     struct token t = {STRING};
 
+    /* Ignore leading whitespace. */
+    while (list->token == SPACE)
+        list++;
+
+    prev_space = 0;
     while (list->token != END) {
-        len += list->strval.len;
-        str = realloc(str, (len + 1) * sizeof(*str));
-        str = strncat(str, list->strval.str, len);
+        if (list->token == SPACE) {
+            prev_space = 1;
+        } else {
+            len += list->strval.len + prev_space;
+            str = realloc(str, (len + 1) * sizeof(*str));
+            if (prev_space) {
+                /* Reduce to a single space, and only insert between
+                 * other tokens in the list. */
+                str[len - list->strval.len - prev_space] = ' ';
+                str[len - list->strval.len] = '\0';
+            }
+            str = strncat(str, list->strval.str, len);
+            prev_space = 0;
+        }
         list++;
     }
 

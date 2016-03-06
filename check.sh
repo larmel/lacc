@@ -10,7 +10,7 @@ cc $file -o ${file}.out
 if [ "$?" -ne "0" ]; then
 	echo "${file}: $(tput setaf 1)Invalid input file!$(tput sgr 0)"; exit
 fi
-./${file}.out > ${file}.expected.txt
+./${file}.out > ${file}.ans.txt
 answer="$?"
 
 function check {
@@ -18,7 +18,13 @@ function check {
 	if [ "$?" -ne "0" ]; then
 		echo "$(tput setaf 1)Compilation failed!$(tput sgr 0)"; return
 	fi
-	if [ "$1" == "-S" ]; then
+	if [ "$1" == "-E" ]; then
+		mv ${file}.s ${file}.prep.c
+		cc -c ${file}.prep.c -o ${file}.o
+		if [ "$?" -ne "0" ]; then
+			echo "$(tput setaf 1)Compilation failed!$(tput sgr 0)"; return
+		fi
+	elif [ "$1" == "-S" ]; then
 		cc -c ${file}.s -o ${file}.o
 		if [ "$?" -ne "0" ]; then
 			echo "$(tput setaf 1)Assembly failed!$(tput sgr 0)"; return
@@ -33,7 +39,7 @@ function check {
 
 	./${file}.out > ${file}.txt
 	result="$?"
-	difference=`diff ${file}.expected.txt ${file}.txt`
+	difference=`diff ${file}.ans.txt ${file}.txt`
 	diffres="$?"
 
 	if [[ "$result" -eq "$answer" && "$diffres" -eq "0" ]]; then
@@ -50,5 +56,5 @@ function check {
 	fi
 }
 
-echo "[-S: $(check "-S")] [-c: $(check "-c")] :: ${file}"
-rm -f ${file}.out ${file}.expected.txt ${file}.txt ${file}.s ${file}.o
+echo "[-E: $(check "-E")] [-S: $(check "-S")] [-c: $(check "-c")] :: ${file}"
+rm -f ${file}.out ${file}.ans.txt ${file}.txt ${file}.s ${file}.prep.c ${file}.o
