@@ -853,7 +853,7 @@ void preprocess(FILE *output)
     while (t.token != END) {
         switch (t.token) {
         case STRING:
-            fprintf(output, "\"%s\"", t.strval.str);
+            fprintstr(output, t.strval);
             break;
         case SPACE:
             fprintf(output, "%*s", (int) t.intval, t.strval.str);

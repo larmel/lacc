@@ -2,7 +2,6 @@
 #include <lacc/hash.h>
 
 #include <assert.h>
-#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -68,17 +67,4 @@ struct string str_register(const char *str, size_t len)
 
     ref = hash_insert(&strtab, &data);
     return *ref;
-}
-
-struct string str_init(const char *str)
-{
-    struct string s = {0};
-    s.str = str;
-    s.len = strlen(str);
-    return s;
-}
-
-int str_cmp(struct string s1, struct string s2)
-{
-    return (s1.len != s2.len) || memcmp(s1.str, s2.str, s1.len);
 }

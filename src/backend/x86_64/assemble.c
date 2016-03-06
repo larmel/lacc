@@ -151,32 +151,6 @@ static const char *immediate(struct immediate imm, int *size)
     return buf;
 }
 
-static void output_escaped_string(struct string string)
-{
-    int c, i;
-
-    for (i = 0; i < string.len; ++i) {
-        c = string.str[i];
-        if (isprint(c) && c != '"' && c != '\\') {
-            putc(c, asm_output);
-            continue;
-        }
-
-        switch (c) {
-        case '\b': fprintf(asm_output, "\\b");  break;
-        case '\t': fprintf(asm_output, "\\t");  break;
-        case '\n': fprintf(asm_output, "\\n");  break;
-        case '\f': fprintf(asm_output, "\\f");  break;
-        case '\r': fprintf(asm_output, "\\r");  break;
-        case '\\': fprintf(asm_output, "\\\\"); break;
-        case '"':  fprintf(asm_output, "\\\""); break;
-        default:
-            fprintf(asm_output, "\\0%02o", c);
-            break;
-        }
-    }
-}
-
 int asm_symbol(const struct symbol *sym)
 {
     /* Labels stay in the same function context, otherwise flush to write any
@@ -220,9 +194,9 @@ int asm_symbol(const struct symbol *sym)
         out("\t.type\t%s, @object\n", sym_name(sym));
         out("\t.size\t%s, %d\n", sym_name(sym), size_of(&sym->type));
         out("%s:\n", sym_name(sym));
-        out("\t.string\t\"");
-        output_escaped_string(sym->string_value);
-        out("\"\n");
+        out("\t.string\t");
+        fprintstr(asm_output, sym->string_value);
+        out("\n");
         break;
     case SYM_LABEL:
         out("%s:\n", sym_name(sym));
@@ -358,9 +332,9 @@ int asm_data(struct immediate data)
             out("\t.quad\t%s\n", sym_name(data.d.addr.sym));
         break;
     case IMM_STRING:
-        out("\t.string\t\"");
-        output_escaped_string(data.d.string);
-        out("\"\n");
+        out("\t.string\t");
+        fprintstr(asm_output, data.d.string);
+        out("\n");
         break;
     }
     return 0;
