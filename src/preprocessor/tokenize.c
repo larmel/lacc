@@ -13,7 +13,7 @@
 #include <string.h>
 
 #define S(s) {(s), sizeof(s) - 1}
-#define T(t, s) {(t), S(s)}
+#define T(t, s) {(t), 0, S(s)}
 
 const struct token basic_token[] = {
 /* 0x00 */  T(END, "$"),                T(AUTO, "auto"),
@@ -32,7 +32,7 @@ const struct token basic_token[] = {
             T(STRUCT, "struct"),        T(SWITCH, "switch"),
             T(TYPEDEF, "typedef"),      T(UNION, "union"),
             T(UNSIGNED, "unsigned"),    T(VOID, "void"),
-/* 0x20 */  T(SPACE, " "),              T(NOT, "!"),
+/* 0x20 */  {0},                        T(NOT, "!"),
             T(VOLATILE, "volatile"),    T(HASH, "#"),
             T(WHILE, "while"),          T(MODULO, "%"),
             T(AND, "&"),                {0},
@@ -225,21 +225,6 @@ static struct token strtostr(char *in, char **endptr)
     return string;
 }
 
-/* Parse string as whitespace tokens, consuming space and tab characters.
- */
-static struct token strtospace(char *in, char **endptr)
-{
-    struct token space = basic_token[SPACE];
-    char *start = in;
-
-    do in++;
-    while (isblank(*in));
-
-    *endptr = in;
-    space.intval = in - start;
-    return space;
-}
-
 /* Parse string as keyword or identifier. First character should be alphabetic
  * or underscore.
  */
@@ -407,30 +392,45 @@ static struct token strtoop(char *in, char **endptr)
     return basic_token[(int) *in];
 }
 
+/* Parse string as whitespace tokens, consuming space and tabs. Return
+ * number of characters.
+ */
+static int skip_spaces(char *in, char **endptr)
+{
+    char *start = in;
+
+    while (isblank(*in))
+        in++;
+
+    *endptr = in;
+    return in - start;
+}
+
 struct token tokenize(char *in, char **endptr)
 {
+    int ws;
+    struct token tok;
+
     assert(in);
     assert(endptr);
 
-    *endptr = in;
+    ws = skip_spaces(in, endptr);
+    in = *endptr;
 
-    if (*in == '\0')
-        return basic_token[END];
+    if (isalpha(*in) || *in == '_') {
+        tok = strtoident(in, endptr);
+    } else if (*in == '\0') {
+        tok = basic_token[END];
+    } else if (isdigit(*in)) {
+        tok = strtonum(in, endptr);
+    } else if (*in == '"') {
+        tok = strtostr(in, endptr);
+    } else if (*in == '\'') {
+        tok = strtochar(in, endptr);
+    } else {
+        tok = strtoop(in, endptr);
+    }
 
-    if (isspace(*in))
-        return strtospace(in, endptr);
-
-    if (isalpha(*in) || *in == '_')
-        return strtoident(in, endptr);
-
-    if (isdigit(*in))
-        return strtonum(in, endptr);
-
-    if (*in == '"')
-        return strtostr(in, endptr);
-
-    if (*in == '\'')
-        return strtochar(in, endptr);
-    
-    return strtoop(in, endptr);
+    tok.leading_whitespace = ws;
+    return tok;
 }

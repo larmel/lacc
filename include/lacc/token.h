@@ -39,7 +39,7 @@ enum token_type {
     UNION,
     UNSIGNED,
     VOID,
-    SPACE = ' ',
+
     NOT = '!',
     VOLATILE = NOT + 1,
     HASH = '#',
@@ -106,6 +106,7 @@ enum token_type {
  */
 struct token {
     enum token_type token;
+    int leading_whitespace;
     struct string strval;
     long intval;
 };

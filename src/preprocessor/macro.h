@@ -10,7 +10,9 @@ struct macro {
     int params;
     int size;
 
-    /* A substitution is either a token or a parameter. */
+    /* A substitution is either a token or a parameter. 
+     * todo: param could be a type of token, then whitespace can be
+     * handled elegantly. */
     struct replacement {
         struct token token;
         int param;

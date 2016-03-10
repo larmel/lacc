@@ -192,7 +192,15 @@ void print_list(const struct token *list)
     while (list->token != END) {
         if (!first)
             printf(", ");
-        printf("'%s'", list->strval.str);
+        printf("'");
+        if (list->leading_whitespace > 0) {
+            printf("%*s", list->leading_whitespace, " ");
+        }
+        if (list->token == NEWLINE)
+            printf("\\n");
+        else
+            printf("%s", list->strval.str);
+        printf("'");
         first = 0;
         list++;
     }
@@ -254,61 +262,47 @@ static struct token paste(struct token left, struct token right)
         exit(1);
     }
 
+    result.leading_whitespace = left.leading_whitespace;
     free(data);
     return result;
 }
 
-static struct token *skip_ws(struct token *list)
-{
-    while (list->token == SPACE || list->token == NEWLINE) list++;
-    return list;
-}
-
 #define SKIP_WS(lst) \
-    while (lst->token == SPACE || list->token == NEWLINE) lst++;
+    while (list->token == NEWLINE) lst++;
 
-/* In-place expansion of token paste operators, '##'.
- * ['foo', ' ', '##', '_f', ' ', '##', ' ', 'u', '##', 'nc']
- * becomes
- * ['foo_func']
- *
- * NB: Probably not preserving whitespace..
+/* In-place expansion of token paste operators.
+ * ['foo', '##', '_f', '##', 'u', '##', 'nc'] becomes ['foo_func']
  */
 static struct token *expand_paste_operators(struct token *list)
 {
     struct token
-        *start = list,
-        *end;
+        *ptr = list,
+        *end = list + 1;
 
-    if (list->token == END) {
+    if (list->token == END)
         return list;
-    }
 
-    end = skip_ws(list + 1);
-
-    if (start->token == TOKEN_PASTE) {
-        error("Invalid token paste operator at beginning of line.");
+    if (list->token == TOKEN_PASTE) {
+        error("Unexpected token paste operator at beginning of line.");
         exit(1);
     }
 
     while (end->token != END) {
         if (end->token == TOKEN_PASTE) {
-            end = skip_ws(end + 1);
+            end++;
             if (end->token == END) {
-                error("Invalid paste operator at end of line.");
+                error("Unexpected token paste operator at end of line.");
                 exit(1);
             }
-            *start = paste(*start, *end);
-            end = skip_ws(end + 1);
+            *ptr = paste(*ptr, *end);
+            end++;
         } else {
-            do {
-                start++;
-                *start = *end++;
-            } while (end->token == SPACE || end->token == NEWLINE);
+            *(++ptr) = *end++;
+            assert(end->token != NEWLINE);
         }
     }
 
-    *(start + 1) = *end;
+    *(ptr + 1) = *end;
     return list;
 }
 
@@ -352,25 +346,32 @@ static struct token *expand_macro(
 
 static const struct token *skip_to(const struct token *list, int token)
 {
-    while (list->token == SPACE || list->token == NEWLINE) list++;
+    while (list->token == NEWLINE)
+        list++;
+
     if (list->token != token) {
         assert(basic_token[token].strval.str);
         error("Expected '%s', but got '%s'.",
             basic_token[token].strval.str, list->strval.str);
     }
+
     return list;
 }
 
 static const struct token *skip_past(const struct token *list, int token)
 {
     list = skip_to(list, token) + 1;
-    while (list->token == SPACE || list->token == NEWLINE) list++;
+    while (list->token == NEWLINE)
+        list++;
+
     return list;
 }
 
 static enum token_type peek_next(const struct token *list)
 {
-    while (list->token == SPACE || list->token == NEWLINE) list++;
+    while (list->token == NEWLINE)
+        list++;
+
     return list->token;
 }
 
@@ -457,11 +458,16 @@ struct token *expand(struct token *original)
     if (!needs_expansion(original))
         return original;
 
+    /*printf("Expanding ");
+    print_list(original);*/
+
     list = original;
     res = calloc(1, sizeof(*res));
     res[0] = basic_token[END];
     while (list->token != END) {
         const struct macro *def = definition(*list);
+        int leading_whitespace = list->leading_whitespace;
+        struct token *expn;
         struct token **args;
 
         /* Only expand function-like macros if they appear as function
@@ -470,11 +476,19 @@ struct token *expand(struct token *original)
             (def->type != FUNCTION_LIKE || peek_next(list + 1) == '('))
         {
             args = read_args(list + 1, &list, def);
-            res = concat(res, expand_macro(def, args));
+            expn = expand_macro(def, args);
+
+            /* Dirty fix for adding whitespace after expansion. Fill in
+             * correct number of spaces from the expanded token. */
+            expn->leading_whitespace = leading_whitespace;
+            res = concat(res, expn);
         } else {
             res = append(res, *list++);
         }
     }
+
+    /*printf("Result: ");
+    print_list(res);*/
 
     free(original);
     return res;
@@ -492,32 +506,26 @@ int tok_cmp(struct token a, struct token b)
  */
 struct token stringify(const struct token list[])
 {
-    char *str = calloc(1, sizeof(*str));
-    int prev_space;
+    int n = 0;
     size_t len = 0;
     struct token t = {STRING};
+    char *str = calloc(1, sizeof(*str));
 
-    /* Ignore leading whitespace. */
-    while (list->token == SPACE)
-        list++;
-
-    prev_space = 0;
     while (list->token != END) {
-        if (list->token == SPACE) {
-            prev_space = 1;
-        } else {
-            len += list->strval.len + prev_space;
-            str = realloc(str, (len + 1) * sizeof(*str));
-            if (prev_space) {
-                /* Reduce to a single space, and only insert between
-                 * other tokens in the list. */
-                str[len - list->strval.len - prev_space] = ' ';
-                str[len - list->strval.len] = '\0';
-            }
-            str = strncat(str, list->strval.str, len);
-            prev_space = 0;
+        assert(list->token != NEWLINE);
+
+        /* Reduce to a single space, and only insert between other
+         * tokens in the list. */
+        len += list->strval.len + (list->leading_whitespace && n);
+        str = realloc(str, (len + 1) * sizeof(*str));
+        if (n && list->leading_whitespace) {
+            str[len - list->strval.len - 1] = ' ';
+            str[len - list->strval.len] = '\0';
         }
+
+        str = strncat(str, list->strval.str, len);
         list++;
+        n++;
     }
 
     t.strval = str_register(str, len);

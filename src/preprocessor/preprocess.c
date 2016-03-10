@@ -36,7 +36,7 @@ struct builder {
     size_t length;
 };
 
-static struct token get_preprocessing_token(void)
+static struct token get_token(void)
 {
     static char *line;
 
@@ -67,22 +67,12 @@ static void list_append(struct builder *list, struct token t)
     list->elem[list->length - 1] = t;
 }
 
-static struct token get_next(struct builder *list)
-{
-    struct token t = get_preprocessing_token();
-    while (t.token == SPACE) {
-        list_append(list, t);
-        t = get_preprocessing_token();
-    }
-    return t;
-}
-
 /* Skip through whitespace and add token of expected type. Whitespace is
  * also added.
  */
 static struct token expect_next(struct builder *list, enum token_type type)
 {
-    struct token t = get_next(list);
+    struct token t = get_token();
     if (t.token != type) {
         error("Expected token '%s', but got '%s'.",
             basic_token[type].strval.str, t.strval.str);
@@ -104,7 +94,7 @@ static void read_macro_invocation(
     struct token t;
     assert(macro->type == FUNCTION_LIKE);
 
-    t = get_next(list);
+    t = get_token();
     list_append(list, t);
     if (t.token != '(')
         /* Only expand function-like macros if they appear as function
@@ -113,7 +103,7 @@ static void read_macro_invocation(
 
     nesting = 1;
     while (nesting) {
-        t = get_next(list);
+        t = get_token();
         if (t.token == '(') {
             nesting++;
         }
@@ -143,10 +133,10 @@ static void read_macro_invocation(
 static void read_defined_operator(struct builder *list)
 {
     int is_parens = 0;
-    struct token t = get_next(list);
+    struct token t = get_token();
 
     if (t.token == '(') {
-        t = get_next(list);
+        t = get_token();
         is_parens = 1;
     }
     if (t.token != IDENTIFIER) {
@@ -195,7 +185,7 @@ static struct token *read_complete_line(struct token t)
 
     if (is_directive) {
         list_append(&line, t);
-        t = get_next(&line);
+        t = get_token();
         is_expandable = (t.token == IF) || is_ident(t, "elif");
     }
 
@@ -215,7 +205,7 @@ static struct token *read_complete_line(struct token t)
         } else {
             list_append(&line, t);
         }
-        t = get_preprocessing_token();
+        t = get_token();
     }
 
     if (preserve_whitespace && t.token == NEWLINE)
@@ -225,21 +215,13 @@ static struct token *read_complete_line(struct token t)
     return line.elem;
 }
 
-static const struct token *skip_ws(const struct token *list)
+static void expect(const struct token *list, int token)
 {
-    while (list->token == SPACE) list++;
-    return list;
-}
-
-static const struct token *skip_to(const struct token *list, int token)
-{
-    while (list->token == SPACE) list++;
     if (list->token != token) {
         assert(basic_token[token].strval.str);
         error("Expected '%s', but got '%s'.",
             basic_token[token].strval.str, list->strval.str);
     }
-    return list;
 }
 
 static int expression(const struct token *list, const struct token **endptr);
@@ -250,7 +232,6 @@ static int eval_primary(
 {
     int value = 0;
 
-    list = skip_ws(list);
     switch (list->token) {
     case INTEGER_CONSTANT:
         value = list->intval;
@@ -262,7 +243,7 @@ static int eval_primary(
         break;
     case '(':
         value = expression(list + 1, &list);
-        list = skip_to(list, ')');
+        expect(list, ')');
         break;
     default:
         error("Invalid primary expression '%s'.", list->strval.str);
@@ -274,7 +255,6 @@ static int eval_primary(
 
 static int eval_unary(const struct token *list, const struct token **endptr)
 {
-    list = skip_ws(list);
     switch (list->token) {
     case '+':
         return + eval_unary(list + 1, endptr);
@@ -297,7 +277,6 @@ static int eval_multiplicative(
         done = 0;
 
     do {
-        list = skip_ws(list);
         switch (list->token) {
         case '*':
             val = val * eval_unary(list + 1, &list);
@@ -323,7 +302,6 @@ static int eval_additive(const struct token *list, const struct token **endptr)
         done = 0;
 
     do {
-        list = skip_ws(list);
         switch (list->token) {
         case '+':
             val = val + eval_multiplicative(list + 1, &list);
@@ -346,7 +324,6 @@ static int eval_shift(const struct token *list, const struct token **endptr)
         done = 0;
 
     do {
-        list = skip_ws(list);
         switch (list->token) {
         case LSHIFT:
             val = val << eval_additive(list + 1, &list);
@@ -371,7 +348,6 @@ static int eval_relational(
         done = 0;
 
     do {
-        list = skip_ws(list);
         switch (list->token) {
         case '<':
             val = val < eval_shift(list + 1, &list);
@@ -390,6 +366,7 @@ static int eval_relational(
             break;
         }
     } while (!done);
+
     *endptr = list;
     return val;
 }
@@ -398,12 +375,12 @@ static int eval_equality(const struct token *list, const struct token **endptr)
 {
     int val = eval_relational(list, &list);
 
-    list = skip_ws(list);
     if (list->token == EQ) {
         val = (val == eval_equality(list + 1, &list));
     } else if (list->token == NEQ) {
         val = (val != eval_equality(list + 1, &list));
     }
+
     *endptr = list;
     return val;
 }
@@ -412,10 +389,9 @@ static int eval_and(const struct token *list, const struct token **endptr)
 {
     int val = eval_equality(list, &list);
 
-    list = skip_ws(list);
-    if (list->token == '&') {
+    if (list->token == '&')
         val = eval_and(list + 1, &list) & val;
-    }
+
     *endptr = list;
     return val;
 }
@@ -426,10 +402,9 @@ static int eval_exclusive_or(
 {
     int val = eval_and(list, &list);
 
-    list = skip_ws(list);
-    if (list->token == '^') {
+    if (list->token == '^')
         val = eval_exclusive_or(list + 1, &list) ^ val;
-    }
+
     *endptr = list;
     return val;
 }
@@ -440,10 +415,9 @@ static int eval_inclusive_or(
 {
     int val = eval_exclusive_or(list, &list);
 
-    list = skip_ws(list);
-    if (list->token == '|') {
+    if (list->token == '|')
         val = eval_inclusive_or(list + 1, &list) | val;
-    }
+
     *endptr = list;
     return val;
 }
@@ -454,10 +428,9 @@ static int eval_logical_and(
 {
     int val = eval_inclusive_or(list, &list);
 
-    list = skip_ws(list);
-    if (list->token == LOGICAL_AND) {
+    if (list->token == LOGICAL_AND)
         val = eval_logical_and(list + 1, &list) && val;
-    }
+
     *endptr = list;
     return val;
 }
@@ -468,10 +441,9 @@ static int eval_logical_or(
 {
     int val = eval_logical_and(list, &list);
 
-    list = skip_ws(list);
-    if (list->token == LOGICAL_OR) {
+    if (list->token == LOGICAL_OR)
         val = eval_logical_or(list + 1, &list) || val;
-    }
+
     *endptr = list;
     return val;
 }
@@ -480,13 +452,13 @@ static int expression(const struct token *list, const struct token **endptr)
 {
     int a = eval_logical_or(list, &list), b, c;
 
-    list = skip_ws(list);
     if (list->token == '?') {
         b = expression(list + 1, &list);
-        list = skip_to(list, ':');
+        expect(list, ':');
         c = expression(list + 1, &list);
         return a ? b : c;
     }
+
     *endptr = list;
     return a;
 }
@@ -497,17 +469,18 @@ static struct macro preprocess_define(
 {
     struct macro macro = {{0}};
     struct token *params = NULL;
+    int i;
 
-    line = skip_to(line, IDENTIFIER);
+    expect(line, IDENTIFIER);
     macro.name = *line++;
     macro.type = OBJECT_LIKE;
 
     /* Function-like macro iff parenthesis immediately after
      * identifier. */
-    if (line->token == '(') {
+    if (line->token == '(' && !line->leading_whitespace) {
         macro.type = FUNCTION_LIKE;
         line++;
-        while ((line = skip_ws(line))->token != ')') {
+        while (line->token != ')') {
             if (line->token != IDENTIFIER) {
                 error("Invalid macro parameter, expected identifer.");
                 exit(1);
@@ -515,28 +488,23 @@ static struct macro preprocess_define(
             macro.params++;
             params = realloc(params, macro.params * sizeof(*params));
             params[macro.params - 1] = *line++;
-            if ((line = skip_ws(line))->token != ',') {
+            if (line->token != ',')
                 break;
-            }
             line++;
         }
-        line = skip_to(line, ')') + 1;
+        expect(line, ')');
+        line++;
     }
 
-    /* First whitespace not part of replacement list. */
-    line = skip_ws(line);
-
-    /* Everything else is... */
-    while (line->token != END) {
+    while (line->token != END && line->token != NEWLINE) {
         macro.size++;
         macro.replacement = 
             realloc(macro.replacement, macro.size * sizeof(*macro.replacement));
         macro.replacement[macro.size - 1].token = *line;
         macro.replacement[macro.size - 1].param = 0;
-        if (line->token == IDENTIFIER) {
-            int i;
+        if (line->token == IDENTIFIER && macro.type == FUNCTION_LIKE) {
             for (i = 0; i < macro.params; ++i) {
-                if (!str_cmp(line->strval, params[i].strval)) {
+                if (!tok_cmp(*line, params[i])) {
                     macro.replacement[macro.size - 1].param = i + 1;
                     break;
                 }
@@ -572,18 +540,16 @@ static struct token pastetok(struct token a, struct token b)
 
 static void preprocess_include(const struct token line[])
 {
-    struct token t = {STRING, {"", 0}};
+    struct token t = {STRING, 0, {"", 0}};
 
-    line = skip_ws(line);
     if (line->token == STRING) {
         include_file(line->strval.str);
     } else if (line->token == '<') {
-        line = skip_ws(line + 1);
+        line++;
         while (line->token != END) {
             if (line->token == '>') {
                 break;
             }
-            line = skip_ws(line);
             t = pastetok(t, *line++);
         }
 
@@ -611,6 +577,7 @@ static void cnd_push(int c) {
         branch_stack.condition = 
             realloc(branch_stack.condition, branch_stack.cap * sizeof(int));
     }
+
     branch_stack.condition[branch_stack.length++] = c;
 }
 
@@ -620,9 +587,9 @@ static int cnd_peek(void) {
 }
 
 static int cnd_pop(void) {
-    if (!branch_stack.length) {
+    if (!branch_stack.length)
         error("Unmatched #endif directive.");
-    }
+
     return branch_stack.condition[--branch_stack.length];
 }
 
@@ -634,15 +601,15 @@ static void preprocess_directive(struct token *original)
 {
     const struct token *line = original;
 
-    line = skip_to(line, '#');
-    line = skip_ws(line + 1);
+    expect(line, '#');
+    line++;
     if (line->token == IF || is_ident(*line, "elif")) {
         /* Perform macro expansion only for if and elif directives,
          * before doing the expression parsing. */
         original = expand(original);
         line = original;
-        line = skip_to(line, '#');
-        line = skip_ws(line + 1);
+        expect(line, '#');
+        line++;
     }
 
     if (line->token == IF) {
@@ -664,21 +631,21 @@ static void preprocess_directive(struct token *original)
     } else if (is_ident(*line, "endif")) {
         cnd_pop();
     } else if (is_ident(*line, "ifndef")) {
-        line = skip_to(line + 1, IDENTIFIER);
+        expect(++line, IDENTIFIER);
         cnd_push(!definition(*line) && cnd_peek());
     } else if (is_ident(*line, "ifdef")) {
-        line = skip_to(line + 1, IDENTIFIER);
+        expect(++line, IDENTIFIER);
         cnd_push(definition(*line++) && cnd_peek());
     } else if (cnd_peek()) {
         if (is_ident(*line, "define")) {
             define(preprocess_define(line + 1, &line));
         } else if (is_ident(*line, "undef")) {
-            line = skip_to(line + 1, IDENTIFIER);
+            expect(++line, IDENTIFIER);
             undef(*line++);
         } else if (is_ident(*line, "include")) {
             preprocess_include(line + 1);
         } else if (is_ident(*line, "error")) {
-            line = skip_ws(line + 1);
+            line++;
             error("%s", stringify(line).strval.str);
             exit(1);
         }
@@ -706,7 +673,7 @@ static void cleanup(void)
 
 /* Add preprocessed token to lookahead buffer.
  */
-static void add(struct token t)
+static void add_to_lookahead(struct token t)
 {
     size_t i = length;
     int added = 0;
@@ -716,9 +683,7 @@ static void add(struct token t)
      * guarantee that we keep preprocessing lines and filling up the
      * lookahead buffer for as long as there can be continuations. */
     if (t.token == STRING) {
-        while (i && lookahead[--i].token == SPACE)
-            ;
-        if (lookahead[i].token == STRING) {
+        if (i-- && lookahead[i].token == STRING) {
             lookahead[i] = pastetok(lookahead[i], t);
             added = 1;
         }
@@ -748,11 +713,6 @@ static void rewind_lookahead_buffer(void)
     cursor = 0;
 }
 
-static int is_whitespace(enum token_type t)
-{
-    return t == SPACE || t == NEWLINE;
-}
-
 /* Consume at least one line, up until the final newline or end of file.
  * Fill up lookahead buffer and reset cursor.
  */
@@ -771,39 +731,27 @@ static void preprocess_line(void)
     do {
         struct token
             *line, *expanded;
-        struct builder leading_ws = {0};
 
-        do {
-            t = get_preprocessing_token();
-            if (t.token == SPACE && preserve_whitespace) {
-                list_append(&leading_ws, t);
-            }
-        } while (t.token == SPACE);
-
+        t = get_token();
         if (t.token == '#') {
             line = read_complete_line(t);
             preprocess_directive(line);
         } else if (cnd_peek()) {
-            if (preserve_whitespace) {
-                int i;
-                for (i = 0; i < leading_ws.length; ++i)
-                    add(leading_ws.elem[i]);
-            }
             line = read_complete_line(t);
             expanded = expand(line);
             line = expanded;
             while (line->token != END) {
-                if (!is_whitespace(line->token) || preserve_whitespace) {
-                    if (!is_whitespace(line->token))
+                if (line->token != NEWLINE || preserve_whitespace) {
+                    if (line->token != NEWLINE)
                         t = *line;
-                    add(*line);
+                    add_to_lookahead(*line);
                 }
                 line++;
             }
             free(expanded);
         } else {
             while (t.token != NEWLINE && t.token != END) {
-                t = get_preprocessing_token();
+                t = get_token();
             }
         }
     } while ((length < K || t.token == STRING) && t.token != END);
@@ -811,7 +759,7 @@ static void preprocess_line(void)
     /* Fill remainder of lookahead buffer. */
     while (length < K) {
         assert(t.token == END);
-        add(t);
+        add_to_lookahead(t);
     }
 }
 
@@ -820,17 +768,13 @@ struct token next(void)
     if (cursor + K >= length) {
         preprocess_line();
     }
+
     return lookahead[cursor++];
 }
 
 struct token peek(void)
 {
-    if (!length) {
-        /* If peek() is the first call made, make sure there is an
-         * initial call to populate the lookahead buffer. */
-        preprocess_line();
-    }
-    return lookahead[cursor];
+    return peekn(1);
 }
 
 struct token peekn(unsigned n)
@@ -838,8 +782,11 @@ struct token peekn(unsigned n)
     assert(n && n <= K);
 
     if (!length) {
+        /* If peek() is the first call made, make sure there is an
+         * initial call to populate the lookahead buffer. */
         preprocess_line();
     }
+
     return lookahead[cursor + n - 1];
 }
 
@@ -868,12 +815,12 @@ void preprocess(FILE *output)
     preserve_whitespace = 1;
     t = next();
     while (t.token != END) {
+        if (t.leading_whitespace > 0) {
+            fprintf(output, "%*s", t.leading_whitespace, " ");
+        }
         switch (t.token) {
         case STRING:
             fprintstr(output, t.strval);
-            break;
-        case SPACE:
-            fprintf(output, "%*s", (int) t.intval, t.strval.str);
             break;
         case INTEGER_CONSTANT:
             fprintf(output, "%ld", t.intval);
