@@ -10,6 +10,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Helper structure and functions for aggregating tokens into a line
+ * before preprocessing.
+ */
+struct builder {
+    struct token *elem;
+    size_t length;
+};
+
 /* Buffer of preprocessed tokens, ready to be consumed by the parser.
  * Configured to hold at least K tokens, enabling LL(K) parsing.
  *
@@ -28,13 +36,54 @@ static const int K = 2;
  */
 static int preserve_whitespace;
 
-/* Helper structure and functions for aggregating tokens into a line
- * before preprocessing.
+/* Push and pop branch conditions for #if, #elif and #endif.
  */
-struct builder {
-    struct token *elem;
+static struct {
+    int *condition;
     size_t length;
-};
+    size_t cap;
+} branch_stack;
+
+static int expression(const struct token *list, const struct token **endptr);
+
+static void cnd_push(int c) {
+    if (branch_stack.length == branch_stack.cap) {
+        branch_stack.cap += 16;
+        branch_stack.condition = 
+            realloc(branch_stack.condition, branch_stack.cap * sizeof(int));
+    }
+
+    branch_stack.condition[branch_stack.length++] = c;
+}
+
+static int cnd_peek(void) {
+    return branch_stack.length ? 
+        branch_stack.condition[branch_stack.length - 1] : 1;
+}
+
+static int cnd_pop(void) {
+    if (!branch_stack.length)
+        error("Unmatched #endif directive.");
+
+    return branch_stack.condition[--branch_stack.length];
+}
+
+static void cleanup(void)
+{
+    if (lookahead) {
+        free(lookahead);
+        lookahead = NULL;
+        length = 0;
+        cursor = 0;
+    }
+
+    if (branch_stack.condition) {
+        free(branch_stack.condition);
+        branch_stack.condition = NULL;
+        branch_stack.length = 0;
+        branch_stack.cap = 0;
+    }
+}
 
 static struct token get_token(void)
 {
@@ -65,20 +114,6 @@ static void list_append(struct builder *list, struct token t)
     list->length++;
     list->elem = realloc(list->elem, sizeof(*list->elem) * list->length);
     list->elem[list->length - 1] = t;
-}
-
-/* Skip through whitespace and add token of expected type. Whitespace is
- * also added.
- */
-static struct token expect_next(struct builder *list, enum token_type type)
-{
-    struct token t = get_token();
-    if (t.token != type) {
-        error("Expected token '%s', but got '%s'.",
-            basic_token[type].strval.str, t.strval.str);
-        exit(1);
-    }
-    return t;
 }
 
 /* Keep track of the nesting depth of macro arguments. For example;
@@ -154,7 +189,11 @@ static void read_defined_operator(struct builder *list)
     t.token = INTEGER_CONSTANT;
     list_append(list, t);
     if (is_parens) {
-        expect_next(list, ')');
+        t = get_token();
+        if (t.token != ')') {
+            error("Expected ')' to close 'defined' clause.");
+            exit(1);
+        }
     }
 }
 
@@ -209,9 +248,9 @@ static struct token *read_complete_line(struct token t)
     }
 
     if (preserve_whitespace && t.token == NEWLINE)
-        list_append(&line, basic_token[NEWLINE]);
-    list_append(&line, basic_token[END]);
+        list_append(&line, t);
 
+    list_append(&line, basic_token[END]);
     return line.elem;
 }
 
@@ -223,8 +262,6 @@ static void expect(const struct token *list, int token)
             basic_token[token].strval.str, list->strval.str);
     }
 }
-
-static int expression(const struct token *list, const struct token **endptr);
 
 static int eval_primary(
     const struct token *list,
@@ -563,39 +600,8 @@ static void preprocess_include(const struct token line[])
     }
 }
 
-/* Push and pop branch conditions for #if, #elif and #endif.
- */
-static struct {
-    int *condition;
-    size_t length;
-    size_t cap;
-} branch_stack;
-
-static void cnd_push(int c) {
-    if (branch_stack.length == branch_stack.cap) {
-        branch_stack.cap += 16;
-        branch_stack.condition = 
-            realloc(branch_stack.condition, branch_stack.cap * sizeof(int));
-    }
-
-    branch_stack.condition[branch_stack.length++] = c;
-}
-
-static int cnd_peek(void) {
-    return branch_stack.length ? 
-        branch_stack.condition[branch_stack.length - 1] : 1;
-}
-
-static int cnd_pop(void) {
-    if (!branch_stack.length)
-        error("Unmatched #endif directive.");
-
-    return branch_stack.condition[--branch_stack.length];
-}
-
 /* Preprocess a line starting with a '#' directive. Takes ownership of
- * input.
- * Assumes input is END terminated, and not containing newline.
+ * input. Assume input is END terminated, and not containing newline.
  */
 static void preprocess_directive(struct token *original)
 {
@@ -654,25 +660,6 @@ static void preprocess_directive(struct token *original)
     free(original);
 }
 
-static void cleanup(void)
-{
-    if (lookahead) {
-        free(lookahead);
-        lookahead = NULL;
-        length = 0;
-        cursor = 0;
-    }
-
-    if (branch_stack.condition) {
-        free(branch_stack.condition);
-        branch_stack.condition = NULL;
-        branch_stack.length = 0;
-        branch_stack.cap = 0;
-    }
-}
-
-/* Add preprocessed token to lookahead buffer.
- */
 static void add_to_lookahead(struct token t)
 {
     size_t i = length;
