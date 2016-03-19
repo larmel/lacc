@@ -365,7 +365,7 @@ struct block *statement(struct block *parent)
         }
         break;
     case IDENTIFIER:
-        sym = sym_lookup(&ns_ident, tok.strval.str);
+        sym = sym_lookup(&ns_ident, tok.d.string.str);
         if (sym && sym->symtype == SYM_TYPEDEF) {
             parent = declaration(parent);
             break;

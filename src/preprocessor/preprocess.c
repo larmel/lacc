@@ -158,7 +158,7 @@ static void read_macro_invocation(
         list_append(list, t);
     }
     if (nesting) {
-        error("Unbalanced invocation of macro '%s'.", macro->name.strval.str);
+        error("Unbalanced invocation of macro '%s'.", macro->name.d.string.str);
         exit(1);
     }
 }
@@ -168,25 +168,25 @@ static void read_macro_invocation(
 static void read_defined_operator(struct builder *list)
 {
     int is_parens = 0;
+    char *endptr;
     struct token t = get_token();
 
     if (t.token == '(') {
         t = get_token();
         is_parens = 1;
     }
+
     if (t.token != IDENTIFIER) {
         error("Expected identifier in 'defined' clause, but got '%s'",
-            t.strval.str);
+            t.d.string.str);
         exit(1);
     }
-    if (definition(t)) {
-        t.intval = 1;
-        t.strval = str_init("1");
-    } else {
-        t.intval = 0;
-        t.strval = str_init("0");
-    }
-    t.token = INTEGER_CONSTANT;
+
+    if (definition(t))
+        t = tokenize("1", &endptr);
+    else
+        t = tokenize("0", &endptr);
+
     list_append(list, t);
     if (is_parens) {
         t = get_token();
@@ -203,7 +203,7 @@ static void read_defined_operator(struct builder *list)
 static int is_ident(struct token tok, const char *name)
 {
     struct token ident = {IDENTIFIER};
-    ident.strval = str_init(name);
+    ident.d.string = str_init(name);
     return !tok_cmp(tok, ident);
 }
 
@@ -257,9 +257,9 @@ static struct token *read_complete_line(struct token t)
 static void expect(const struct token *list, int token)
 {
     if (list->token != token) {
-        assert(basic_token[token].strval.str);
+        assert(basic_token[token].d.string.str);
         error("Expected '%s', but got '%s'.",
-            basic_token[token].strval.str, list->strval.str);
+            basic_token[token].d.string.str, list->d.string.str);
     }
 }
 
@@ -271,7 +271,7 @@ static int eval_primary(
 
     switch (list->token) {
     case INTEGER_CONSTANT:
-        value = list->intval;
+        value = list->d.integer.val.i;
         break;
     case IDENTIFIER:
         /* Macro expansions should already have been done. Stray
@@ -283,7 +283,7 @@ static int eval_primary(
         expect(list, ')');
         break;
     default:
-        error("Invalid primary expression '%s'.", list->strval.str);
+        error("Invalid primary expression '%s'.", list->d.string.str);
         break;
     }
     *endptr = list + 1;
@@ -562,25 +562,25 @@ static struct token pastetok(struct token a, struct token b)
     char *str;
     struct token t = {STRING};
 
-    assert(a.strval.str);
-    assert(b.strval.str);
+    assert(a.d.string.str);
+    assert(b.d.string.str);
 
-    t.strval.len = a.strval.len + b.strval.len;
-    str = calloc(t.strval.len + 1, sizeof(*str));
-    memcpy(str, a.strval.str, a.strval.len);
-    memcpy(str + a.strval.len, b.strval.str, b.strval.len);
+    t.d.string.len = a.d.string.len + b.d.string.len;
+    str = calloc(t.d.string.len + 1, sizeof(*str));
+    memcpy(str, a.d.string.str, a.d.string.len);
+    memcpy(str + a.d.string.len, b.d.string.str, b.d.string.len);
 
-    t.strval = str_register(str, t.strval.len);
+    t.d.string = str_register(str, t.d.string.len);
     free(str);
     return t;
 }
 
 static void preprocess_include(const struct token line[])
 {
-    struct token t = {STRING, 0, {"", 0}};
+    struct token t = {STRING, 0, {{""}}};
 
     if (line->token == STRING) {
-        include_file(line->strval.str);
+        include_file(line->d.string.str);
     } else if (line->token == '<') {
         line++;
         while (line->token != END) {
@@ -590,13 +590,13 @@ static void preprocess_include(const struct token line[])
             t = pastetok(t, *line++);
         }
 
-        if (!t.strval.len) {
+        if (!t.d.string.len) {
             error("Invalid include directive.");
             exit(1);
         }
 
         assert(line->token == '>');
-        include_system_file(t.strval.str);
+        include_system_file(t.d.string.str);
     }
 }
 
@@ -652,7 +652,7 @@ static void preprocess_directive(struct token *original)
             preprocess_include(line + 1);
         } else if (is_ident(*line, "error")) {
             line++;
-            error("%s", stringify(line).strval.str);
+            error("%s", stringify(line).d.string.str);
             exit(1);
         }
     }
@@ -682,7 +682,7 @@ static void add_to_lookahead(struct token t)
         lookahead[length - 1] = t;
     }
 
-    verbose("   token( %s )", t.strval.str);
+    verbose("   token( %s )", t.d.string.str);
 }
 
 static void rewind_lookahead_buffer(void)
@@ -782,11 +782,11 @@ struct token consume(enum token_type type)
     struct token t = next();
 
     if (t.token != type) {
-        if (basic_token[type].strval.str)
+        if (basic_token[type].d.string.str)
             error("Unexpected token '%s', expected '%s'.",
-                t.strval.str, basic_token[type].strval.str);
+                t.d.string.str, basic_token[type].d.string.str);
         else
-            error("Unexpected token '%s', expected %s.", t.strval.str,
+            error("Unexpected token '%s', expected %s.", t.d.string.str,
                 (type == IDENTIFIER) ? "identifier" :
                 (type == INTEGER_CONSTANT) ? "number" : "string");
         exit(1);
@@ -807,13 +807,20 @@ void preprocess(FILE *output)
         }
         switch (t.token) {
         case STRING:
-            fprintstr(output, t.strval);
+            fprintstr(output, t.d.string);
             break;
         case INTEGER_CONSTANT:
-            fprintf(output, "%ld", t.intval);
+            if (t.d.integer.type->type == T_UNSIGNED)
+                fprintf(output, "%luu", t.d.integer.val.u);
+            else
+                fprintf(output, "%ld", t.d.integer.val.i);
+            if (t.d.integer.type->size == 8)
+                fputc('l', output);
+            else
+                assert(t.d.integer.type->size == 4);
             break;
         default:
-            fprintf(output, "%s", t.strval.str);
+            fprintf(output, "%s", t.d.string.str);
             break;
         }
         t = next();

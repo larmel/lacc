@@ -47,7 +47,7 @@ static int macrocmp(const struct macro *a, const struct macro *b)
 
 static struct string macro_hash_key(void *ref)
 {
-    return ((struct macro *) ref)->name.strval;
+    return ((struct macro *) ref)->name.d.string;
 }
 
 static void macro_hash_del(void *ref)
@@ -98,12 +98,12 @@ const struct macro *definition(struct token name)
         initialize();
 
     if (name.token == IDENTIFIER) {
-        ref = hash_lookup(&macro_hash_table, name.strval);
+        ref = hash_lookup(&macro_hash_table, name.d.string);
         if (ref) {
             /* Replace __LINE__ with current line number, by mutating
              * the replacement list on the fly. */
-            if (!str_cmp(ref->name.strval, str_init("__LINE__")))
-                ref->replacement[0].token.intval = current_file.line;
+            if (!str_cmp(ref->name.d.string, str_init("__LINE__")))
+                ref->replacement[0].token.d.integer.val.i = current_file.line;
         }
     }
 
@@ -121,7 +121,7 @@ void define(struct macro macro)
     ref = hash_insert(&macro_hash_table, &macro);
     if (macrocmp(ref, &macro)) {
         error("Redefinition of macro '%s' with different substitution.",
-            macro.name.strval.str);
+            macro.name.d.string.str);
         exit(1);
     }
 
@@ -137,7 +137,7 @@ void undef(struct token name)
         initialize();
 
     if (name.token == IDENTIFIER)
-        hash_remove(&macro_hash_table, name.strval);
+        hash_remove(&macro_hash_table, name.d.string);
 }
 
 /* Keep track of which macros have been expanded, avoiding recursion by
@@ -199,7 +199,7 @@ void print_list(const struct token *list)
         if (list->token == NEWLINE)
             printf("\\n");
         else
-            printf("%s", list->strval.str);
+            printf("%s", list->d.string.str);
         printf("'");
         first = 0;
         list++;
@@ -251,14 +251,14 @@ static struct token paste(struct token left, struct token right)
     size_t length;
     char *data, *endptr;
 
-    length = left.strval.len + right.strval.len;
+    length = left.d.string.len + right.d.string.len;
     data   = calloc(length + 1, sizeof(*data));
-    data   = strcpy(data, left.strval.str);
-    data   = strcat(data, right.strval.str);
+    data   = strcpy(data, left.d.string.str);
+    data   = strcat(data, right.d.string.str);
     result = tokenize(data, &endptr);
     if (endptr != data + length) {
         error("Invalid token resulting from pasting '%s' and '%s'.",
-            left.strval.str, right.strval.str);
+            left.d.string.str, right.d.string.str);
         exit(1);
     }
 
@@ -344,9 +344,9 @@ static struct token *expand_macro(
 static const struct token *skip(const struct token *list, enum token_type token)
 {
     if (list->token != token) {
-        assert(basic_token[token].strval.str);
+        assert(basic_token[token].d.string.str);
         error("Expected '%s', but got '%s'.",
-            basic_token[token].strval.str, list->strval.str);
+            basic_token[token].d.string.str, list->d.string.str);
     }
 
     list++;
@@ -474,7 +474,19 @@ struct token *expand(struct token *original)
 
 int tok_cmp(struct token a, struct token b)
 {
-    return (a.token != b.token) || str_cmp(a.strval, b.strval);
+    if (a.token != b.token)
+        return 1;
+
+    if (a.token == INTEGER_CONSTANT) {
+        if (!type_equal(a.d.integer.type, b.d.integer.type))
+            return 1;
+        return
+            (a.d.integer.type->type == T_UNSIGNED) ?
+                a.d.integer.val.u != b.d.integer.val.u :
+                a.d.integer.val.i != b.d.integer.val.i;
+    } else {
+        return str_cmp(a.d.string, b.d.string);
+    }
 }
 
 /* From GCC documentation: All leading and trailing whitespace in text
@@ -494,19 +506,19 @@ struct token stringify(const struct token list[])
 
         /* Reduce to a single space, and only insert between other
          * tokens in the list. */
-        len += list->strval.len + (list->leading_whitespace && n);
+        len += list->d.string.len + (list->leading_whitespace && n);
         str = realloc(str, (len + 1) * sizeof(*str));
         if (n && list->leading_whitespace) {
-            str[len - list->strval.len - 1] = ' ';
-            str[len - list->strval.len] = '\0';
+            str[len - list->d.string.len - 1] = ' ';
+            str[len - list->d.string.len] = '\0';
         }
 
-        str = strncat(str, list->strval.str, len);
+        str = strncat(str, list->d.string.str, len);
         list++;
         n++;
     }
 
-    t.strval = str_register(str, len);
+    t.d.string = str_register(str, len);
     free(str);
     return t;
 }
@@ -542,7 +554,7 @@ static void register__builtin_va_end(void)
         1, /* parameters */
     };
 
-    macro.name.strval = str_init("__builtin_va_end");
+    macro.name.d.string = str_init("__builtin_va_end");
     macro.replacement = parse(
         "@[0].gp_offset=0;"
         "@[0].fp_offset=0;"
@@ -561,36 +573,35 @@ void register_builtin_definitions(void)
         0, /* parameters */
     };
 
-    macro.name.strval = str_init("__STDC_VERSION__");
+    macro.name.d.string = str_init("__STDC_VERSION__");
     macro.replacement = parse("199409L", &macro.size);
     define(macro);
 
-    macro.name.strval = str_init("__STDC__");
+    macro.name.d.string = str_init("__STDC__");
     macro.replacement = parse("1", &macro.size);
     define(macro);
 
-    macro.name.strval = str_init("__STDC_HOSTED__");
+    macro.name.d.string = str_init("__STDC_HOSTED__");
     macro.replacement = parse("1", &macro.size);
     define(macro);
 
-    macro.name.strval = str_init("__LINE__");
+    macro.name.d.string = str_init("__LINE__");
     macro.replacement = parse("0", &macro.size);
     define(macro);
 
-    macro.name.strval = str_init("__x86_64__");
+    macro.name.d.string = str_init("__x86_64__");
     macro.replacement = parse("1", &macro.size);
     define(macro);
 
     /* For some reason this is not properly handled by musl. */
-    macro.name.strval = str_init("__inline");
+    macro.name.d.string = str_init("__inline");
     macro.replacement = parse(" ", &macro.size);
     define(macro);
 
-    macro.name.strval = str_init("__FILE__");
+    macro.name.d.string = str_init("__FILE__");
     macro.replacement = calloc(1, sizeof(*macro.replacement));
     macro.replacement[0].token.token = STRING;
-    macro.replacement[0].token.strval = str_init(current_file.path);
-    macro.replacement[0].token.intval = 0;
+    macro.replacement[0].token.d.string = str_init(current_file.path);
     define(macro);
 
     register__builtin_va_end();

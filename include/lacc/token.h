@@ -2,6 +2,7 @@
 #define TOKEN_H
 
 #include "string.h"
+#include "typetree.h"
 
 /* Map token type to corresponding numerical ascii value where possible,
  * and fit the remaining tokens in between.
@@ -101,14 +102,31 @@ enum token_type {
     STRING
 };
 
-/* Every token has a reference to its textual value. The integer value is
- * kept for numeric constants.
+/* Tokens keep track of typed integers, to capture difference between
+ * literals like 1 and 1ul. Type should always correspond to one of the
+ * basic integer types.
+ *
+ * The value union is also used in internal representation of integer
+ * constant values.
+ */
+struct integer {
+    const struct typetree *type;
+    union value {
+        unsigned long u;
+        signed long i;
+    } val;
+};
+
+/* Representation of token; used in preprocessing, and interface to
+ * parser.
  */
 struct token {
     enum token_type token;
     int leading_whitespace;
-    struct string strval;
-    long intval;
+    union {
+        struct string string;
+        struct integer integer;
+    } d;
 };
 
 /* Peek lookahead of 1.

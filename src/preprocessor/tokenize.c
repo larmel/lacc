@@ -1,19 +1,21 @@
 #if _XOPEN_SOURCE < 600
 #  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 600 /* isblank */
+#  define _XOPEN_SOURCE 600 /* isblank, strtoul */
 #endif
 #include "strtab.h"
 #include "tokenize.h"
 #include <lacc/cli.h>
+#include <lacc/typetree.h>
 
 #include <assert.h>
-#include <stdio.h>
 #include <ctype.h>
+#include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define S(s) {(s), sizeof(s) - 1}
-#define T(t, s) {(t), 0, S(s)}
+#define T(t, s) {(t), 0, {S(s)}}
 
 const struct token basic_token[] = {
 /* 0x00 */  T(END, "$"),                T(AUTO, "auto"),
@@ -82,13 +84,13 @@ const struct token basic_token[] = {
             T(NEG, "~"),                {0},
 };
 
-/* Valid identifier character, except in the first position which does not
- * allow numbers.
+/* Valid identifier character, except in the first position which does
+ * not allow numbers.
  */
 #define isident(c) (isalnum(c) || (c) == '_')
 
-/* Macros to make state state machine implementation of identifier and operator
- * tokenization simpler.
+/* Macros to make state state machine implementation of identifier and
+ * operator tokenization simpler.
  */
 #define at(c) (**endptr == (c) && (*endptr)++)
 #define get(c) (*(*endptr)++ == (c))
@@ -105,29 +107,58 @@ const struct token basic_token[] = {
 #define S7(a, b, c, d, e, f, g) \
     (at(a) && get(b) && get(c) && get(d) && get(e) && get(f) && get(g) && end())
 
-/* Parse integer literal in the format '1234', '0x123', '077' using strtol,
- * then skip any type suffix (uUlL). The type is discarded.
+/* Parse integer literal in the format '1234', '0x123', '077' using
+ * strtoul, then consider type suffix if any. Valid suffixes are
+ * {'ul', 'Ul', 'uL', 'UL', 'u', 'l'}.
+ *
+ * There is no such thing as a negative literal; expressions like '-2'
+ * is the unary operator applied to the number 2.
  */
 static struct token strtonum(char *in, char **endptr)
 {
-    struct token integer = {INTEGER_CONSTANT};
-    char *e;
+    struct token tok = {INTEGER_CONSTANT};
 
-    integer.intval = strtol(in, &e, 0);
-    if (e != in) {
-        if (*e == 'u' || *e == 'U') e++;
-        if (*e == 'l' || *e == 'L') e++;
-        if (*e == 'l' || *e == 'L') e++;
+    errno = 0;
+    tok.d.integer.type = &basic_type__int;
+    tok.d.integer.val.u = strtoul(in, endptr, 0);
+    if (errno == ERANGE) {
+        error("Integer literal out of range.");
+        exit(1);
     }
 
-    *endptr = e;
-    integer.strval = str_register(in, *endptr - in);
-    return integer;
+    if (**endptr == 'u' || **endptr == 'U') {
+        tok.d.integer.type = &basic_type__unsigned_int;
+        (*endptr)++;
+    }
+    if (**endptr == 'l' || **endptr == 'L') {
+        tok.d.integer.type = 
+            (tok.d.integer.type->type == T_UNSIGNED) ?
+                &basic_type__unsigned_long :
+                &basic_type__long;
+        (*endptr)++;
+
+        /* Also consider additional suffix for long long, not part
+         * of C89. */
+        if (**endptr == *(*endptr - 1)) {
+            (*endptr)++;
+        }
+    }
+    if (tok.d.integer.type->type != T_UNSIGNED) {
+        if (**endptr == 'u' || **endptr == 'U') {
+            tok.d.integer.type =
+                (tok.d.integer.type->size == 4) ?
+                    &basic_type__unsigned_int :
+                    &basic_type__unsigned_long;
+            (*endptr)++;
+        }
+    }
+
+    return tok;
 }
 
 /* Parse character escape code, including octal and hexadecimal number
- * literals. Unescaped characters are returned as-is. Invalid escape sequences
- * continues with an error, consuming only the backslash.
+ * literals. Unescaped characters are returned as-is. Invalid escape
+ * sequences continues with an error, consuming only the backslash.
  */
 static char escpchar(char *in, char **endptr)
 {
@@ -162,31 +193,29 @@ static char escpchar(char *in, char **endptr)
 }
 
 /* Parse character literals in the format 'a', '\xaf', '\0', '\077' etc,
- * starting from *in. The position of the character after the last ' character
- * is stored in endptr. If no valid conversion can be made, *endptr == in.
+ * starting from *in. The position of the character after the last '
+ * character is stored in endptr. If no valid conversion can be made,
+ * *endptr == in.
  */
 static struct token strtochar(char *in, char **endptr)
 {
-    struct token integer = {INTEGER_CONSTANT};
-    char value, *start = in;
-
+    struct token tok = {INTEGER_CONSTANT};
     assert(*in == '\'');
 
     in++;
-    value = escpchar(in, endptr);
-    if (**endptr != '\'') {
+    tok.d.integer.type = &basic_type__int;
+    tok.d.integer.val.i = escpchar(in, endptr);
+    if (**endptr != '\'')
         error("Invalid character constant %c.", *in);
-    }
 
     *endptr += 1;
-    integer.intval = value;
-    integer.strval = str_register(start, *endptr - start);
-    return integer;
+    return tok;
 }
 
-/* Parse string literal inputs delimited by quotation marks, handling escaped
- * quotes. The input buffer is destructively overwritten while resolving escape
- * sequences. Concatenate string literals separated by whitespace.
+/* Parse string literal inputs delimited by quotation marks, handling
+ * escaped quotes. The input buffer is destructively overwritten while
+ * resolving escape sequences. Concatenate string literals separated by
+ * whitespace.
  */
 static struct token strtostr(char *in, char **endptr)
 {
@@ -221,12 +250,12 @@ static struct token strtostr(char *in, char **endptr)
         exit(1);
     }
 
-    string.strval = str_register(start, len);
+    string.d.string = str_register(start, len);
     return string;
 }
 
-/* Parse string as keyword or identifier. First character should be alphabetic
- * or underscore.
+/* Parse string as keyword or identifier. First character should be
+ * alphabetic or underscore.
  */
 static struct token strtoident(char *in, char **endptr)
 {
@@ -313,15 +342,15 @@ static struct token strtoident(char *in, char **endptr)
         break;
     }
 
-    /* Fallthrough means we have consumed at least one character, and the token
-     * should be identifier. Backtrack one position to correct a get() that
-     * moved us past the end. */
+    /* Fallthrough means we have consumed at least one character, and
+     * the token should be identifier. Backtrack one position to correct
+     * a get() that moved us past the end. */
     (*endptr)--;
 
     while (isident(**endptr))
         (*endptr)++;
 
-    ident.strval = str_register(in, *endptr - in);
+    ident.d.string = str_register(in, *endptr - in);
     return ident;
 }
 

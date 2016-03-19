@@ -193,7 +193,7 @@ static struct typetree *direct_declarator(
             error("Unexpected identifier in abstract declarator.");
             exit(1);
         }
-        *symbol = ident.strval.str;
+        *symbol = ident.d.string.str;
         break;
     case '(':
         consume('(');
@@ -234,10 +234,10 @@ static struct typetree *pointer(const struct typetree *base)
 {
     struct typetree *type = type_init(T_POINTER, base);
 
-    #define set_qualifier(d) \
-        if (type->qualifier & d) \
-            error("Duplicate type qualifier '%s'.", peek().strval.str); \
-        type->qualifier |= d;
+    #define set_qualifier(arg) \
+        if (type->qualifier & arg) \
+            error("Duplicate type qualifier '%s'.", peek().d.string.str); \
+        type->qualifier |= arg;
 
     consume('*');
     while (1) {
@@ -310,7 +310,7 @@ static struct typetree *struct_or_union_declaration(void)
         (next().token == STRUCT) ? T_STRUCT : T_UNION;
 
     if (peek().token == IDENTIFIER) {
-        const char *name = consume(IDENTIFIER).strval.str;
+        const char *name = consume(IDENTIFIER).d.string.str;
         sym = sym_lookup(&ns_tag, name);
         if (!sym) {
             type = type_init(kind);
@@ -360,7 +360,7 @@ static void enumerator_list(void)
 
     consume('{');
     do {
-        const char *name = consume(IDENTIFIER).strval.str;
+        const char *name = consume(IDENTIFIER).d.string.str;
 
         if (peek().token == '=') {
             consume('=');
@@ -393,7 +393,7 @@ static struct typetree *enum_declaration(void)
     consume(ENUM);
     if (peek().token == IDENTIFIER) {
         struct symbol *tag = NULL;
-        const char *name = consume(IDENTIFIER).strval.str;
+        const char *name = consume(IDENTIFIER).d.string.str;
 
         tag = sym_lookup(&ns_tag, name);
         if (!tag || tag->depth < ns_tag.current_depth) {
@@ -488,17 +488,19 @@ struct typetree *declaration_specifiers(int *stc)
     enum qualifier qual = Q_NONE;
     if (stc)       *stc =    '$';
 
-    #define set_specifier(d) \
-        if (spec & d) error("Duplicate type specifier '%s'.", tok.strval.str); \
-        next(); spec |= d;
+    #define set_specifier(arg) \
+        if (spec & arg)                                                        \
+            error("Duplicate type specifier '%s'.", tok.d.string.str);         \
+        next(); spec |= arg;
 
-    #define set_qualifier(d) \
-        if (qual & d) error("Duplicate type qualifier '%s'.", tok.strval.str); \
-        next(); qual |= d;
+    #define set_qualifier(arg) \
+        if (qual & arg)                                                        \
+            error("Duplicate type qualifier '%s'.", tok.d.string.str);         \
+        next(); qual |= arg;
 
     #define set_storage_class(t) \
-        if (!stc) error("Unexpected storage class in qualifier list."); \
-        else if (*stc != '$') error("Multiple storage class specifiers."); \
+        if (!stc) error("Unexpected storage class in qualifier list.");        \
+        else if (*stc != '$') error("Multiple storage class specifiers.");     \
         next(); *stc = t;
 
     do {
@@ -521,7 +523,7 @@ struct typetree *declaration_specifiers(int *stc)
         case CONST:     set_qualifier(Q_CONST); break;
         case VOLATILE:  set_qualifier(Q_VOLATILE); break;
         case IDENTIFIER: {
-            struct symbol *tag = sym_lookup(&ns_ident, tok.strval.str);
+            struct symbol *tag = sym_lookup(&ns_ident, tok.d.string.str);
             if (tag && tag->symtype == SYM_TYPEDEF && !type) {
                 consume(IDENTIFIER);
                 type = type_init(T_STRUCT);

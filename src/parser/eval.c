@@ -70,10 +70,18 @@ struct var var_direct(const struct symbol *sym)
 struct var var_int(int value)
 {
     struct var var = {0};
-
     var.kind = IMMEDIATE;
     var.type = &basic_type__int;
     var.imm.i = value;
+    return var;
+}
+
+struct var var_numeric(struct integer n)
+{
+    struct var var = {0};
+    var.kind = IMMEDIATE;
+    var.type = n.type;
+    var.imm = n.val;
     return var;
 }
 

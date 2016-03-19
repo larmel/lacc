@@ -2,6 +2,7 @@
 #define IR_H
 
 #include "symbol.h"
+#include "token.h"
 
 #include <stddef.h>
 
@@ -70,10 +71,7 @@ struct var {
         IMMEDIATE
     } kind;
 
-    union value {
-        long i;
-        unsigned long u;
-    } imm;
+    union value imm;
 
     int offset;
     int lvalue;
@@ -182,8 +180,12 @@ struct definition parse(void);
  */
 struct var var_direct(const struct symbol *sym);
 
-/* A constant value of integer type.
+/* Immediate numeric value of type int.
  */
 struct var var_int(int value);
+
+/* Immediate numeric value from integer.
+ */
+struct var var_numeric(struct integer n);
 
 #endif
