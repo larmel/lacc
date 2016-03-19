@@ -267,9 +267,6 @@ static struct token paste(struct token left, struct token right)
     return result;
 }
 
-#define SKIP_WS(lst) \
-    while (list->token == NEWLINE) lst++;
-
 /* In-place expansion of token paste operators.
  * ['foo', '##', '_f', '##', 'u', '##', 'nc'] becomes ['foo_func']
  */
@@ -344,35 +341,17 @@ static struct token *expand_macro(
     return res;
 }
 
-static const struct token *skip_to(const struct token *list, int token)
+static const struct token *skip(const struct token *list, enum token_type token)
 {
-    while (list->token == NEWLINE)
-        list++;
-
     if (list->token != token) {
         assert(basic_token[token].strval.str);
         error("Expected '%s', but got '%s'.",
             basic_token[token].strval.str, list->strval.str);
     }
 
+    list++;
+    assert(list->token != NEWLINE || (list + 1)->token == END);
     return list;
-}
-
-static const struct token *skip_past(const struct token *list, int token)
-{
-    list = skip_to(list, token) + 1;
-    while (list->token == NEWLINE)
-        list++;
-
-    return list;
-}
-
-static enum token_type peek_next(const struct token *list)
-{
-    while (list->token == NEWLINE)
-        list++;
-
-    return list->token;
 }
 
 /* Read argument in macro expansion, starting from one offset from the
@@ -388,7 +367,6 @@ static struct token *read_arg(
     struct token *arg = calloc(1, sizeof(*arg));
     int nesting = 0;
 
-    SKIP_WS(list);
     do {
         if (list->token == END) {
             error("Unexpected end of input in expansion.");
@@ -421,14 +399,14 @@ static struct token **read_args(
     int n = 0;
 
     if (macro->type == FUNCTION_LIKE) {
-        list = skip_past(list, '(');
+        list = skip(list, '(');
         for (; n < macro->params; ++n) {
             args[n] = read_arg(list, &list);
             if (n < macro->params - 1) {
-                list = skip_past(list, ',');
+                list = skip(list, ',');
             }
         }
-        list = skip_past(list, ')');
+        list = skip(list, ')');
     }
 
     *endptr = list;
@@ -473,7 +451,7 @@ struct token *expand(struct token *original)
         /* Only expand function-like macros if they appear as function
          * invocations, beginning with an open paranthesis. */
         if (def && !is_macro_expanded(def) &&
-            (def->type != FUNCTION_LIKE || peek_next(list + 1) == '('))
+            (def->type != FUNCTION_LIKE || (list + 1)->token == '('))
         {
             args = read_args(list + 1, &list, def);
             expn = expand_macro(def, args);
