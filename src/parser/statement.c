@@ -371,7 +371,7 @@ struct block *statement(struct block *parent)
             break;
         }
         /* fallthrough */
-    case INTEGER_CONSTANT:
+    case NUMBER:
     case STRING:
     case '*':
     case '(':

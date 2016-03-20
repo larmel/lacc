@@ -97,19 +97,19 @@ enum token_type {
 
     /* The remaining tokens do not correspond to any fixed string, and
      * are placed at arbitrary locations. */
-    INTEGER_CONSTANT = 116,
+    NUMBER = 116,
     IDENTIFIER,
     STRING
 };
 
-/* Tokens keep track of typed integers, to capture difference between
+/* Tokens keep track of typed numbers, to capture difference between
  * literals like 1 and 1ul. Type should always correspond to one of the
  * basic integer types.
  *
- * The value union is also used in internal representation of integer
- * constant values.
+ * The value union is also used in internal representation of immediate
+ * numeric values.
  */
-struct integer {
+struct number {
     const struct typetree *type;
     union value {
         unsigned long u;
@@ -125,7 +125,7 @@ struct token {
     int leading_whitespace;
     union {
         struct string string;
-        struct integer integer;
+        struct number number;
     } d;
 };
 

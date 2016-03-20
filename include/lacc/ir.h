@@ -186,8 +186,8 @@ struct var var_direct(const struct symbol *sym);
  */
 struct var var_int(int value);
 
-/* Immediate numeric value from integer.
+/* Immediate numeric value from typed number.
  */
-struct var var_numeric(struct integer n);
+struct var var_numeric(struct number n);
 
 #endif

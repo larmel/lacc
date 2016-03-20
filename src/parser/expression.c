@@ -97,8 +97,8 @@ static struct block *primary_expression(struct block *block)
             block->expr = var_direct(sym);
         }
         break;
-    case INTEGER_CONSTANT:
-        block->expr = var_numeric(tok.d.integer);
+    case NUMBER:
+        block->expr = var_numeric(tok.d.number);
         break;
     case '(':
         block = expression(block);

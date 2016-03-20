@@ -76,7 +76,7 @@ struct var var_int(int value)
     return var;
 }
 
-struct var var_numeric(struct integer n)
+struct var var_numeric(struct number n)
 {
     struct var var = {0};
     var.kind = IMMEDIATE;

@@ -270,8 +270,8 @@ static int eval_primary(
     int value = 0;
 
     switch (list->token) {
-    case INTEGER_CONSTANT:
-        value = list->d.integer.val.i;
+    case NUMBER:
+        value = list->d.number.val.i;
         break;
     case IDENTIFIER:
         /* Macro expansions should already have been done. Stray
@@ -788,7 +788,7 @@ struct token consume(enum token_type type)
         else
             error("Unexpected token '%s', expected %s.", t.d.string.str,
                 (type == IDENTIFIER) ? "identifier" :
-                (type == INTEGER_CONSTANT) ? "number" : "string");
+                (type == NUMBER) ? "number" : "string");
         exit(1);
     }
 
@@ -809,15 +809,15 @@ void preprocess(FILE *output)
         case STRING:
             fprintstr(output, t.d.string);
             break;
-        case INTEGER_CONSTANT:
-            if (t.d.integer.type->type == T_UNSIGNED)
-                fprintf(output, "%luu", t.d.integer.val.u);
+        case NUMBER:
+            if (t.d.number.type->type == T_UNSIGNED)
+                fprintf(output, "%luu", t.d.number.val.u);
             else
-                fprintf(output, "%ld", t.d.integer.val.i);
-            if (t.d.integer.type->size == 8)
+                fprintf(output, "%ld", t.d.number.val.i);
+            if (t.d.number.type->size == 8)
                 fputc('l', output);
             else
-                assert(t.d.integer.type->size == 4);
+                assert(t.d.number.type->size == 4);
             break;
         default:
             fprintf(output, "%s", t.d.string.str);

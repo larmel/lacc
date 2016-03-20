@@ -76,7 +76,7 @@ const struct token basic_token[] = {
             {0},                        {0},
 /* 0x70 */  {0},                        {0},
             {0},                        {0},
-            {INTEGER_CONSTANT},         {IDENTIFIER},
+            {NUMBER},                   {IDENTIFIER},
             {STRING},                   {0},
 /* 0x78 */  {0},                        {0},
             {0},                        T(OPEN_CURLY, "{"),
@@ -116,23 +116,23 @@ const struct token basic_token[] = {
  */
 static struct token strtonum(char *in, char **endptr)
 {
-    struct token tok = {INTEGER_CONSTANT};
+    struct token tok = {NUMBER};
 
     errno = 0;
-    tok.d.integer.type = &basic_type__int;
-    tok.d.integer.val.u = strtoul(in, endptr, 0);
+    tok.d.number.type = &basic_type__int;
+    tok.d.number.val.u = strtoul(in, endptr, 0);
     if (errno == ERANGE) {
         error("Integer literal out of range.");
         exit(1);
     }
 
     if (**endptr == 'u' || **endptr == 'U') {
-        tok.d.integer.type = &basic_type__unsigned_int;
+        tok.d.number.type = &basic_type__unsigned_int;
         (*endptr)++;
     }
     if (**endptr == 'l' || **endptr == 'L') {
-        tok.d.integer.type = 
-            (tok.d.integer.type->type == T_UNSIGNED) ?
+        tok.d.number.type = 
+            (tok.d.number.type->type == T_UNSIGNED) ?
                 &basic_type__unsigned_long :
                 &basic_type__long;
         (*endptr)++;
@@ -143,10 +143,10 @@ static struct token strtonum(char *in, char **endptr)
             (*endptr)++;
         }
     }
-    if (tok.d.integer.type->type != T_UNSIGNED) {
+    if (tok.d.number.type->type != T_UNSIGNED) {
         if (**endptr == 'u' || **endptr == 'U') {
-            tok.d.integer.type =
-                (tok.d.integer.type->size == 4) ?
+            tok.d.number.type =
+                (tok.d.number.type->size == 4) ?
                     &basic_type__unsigned_int :
                     &basic_type__unsigned_long;
             (*endptr)++;
@@ -199,12 +199,12 @@ static char escpchar(char *in, char **endptr)
  */
 static struct token strtochar(char *in, char **endptr)
 {
-    struct token tok = {INTEGER_CONSTANT};
+    struct token tok = {NUMBER};
     assert(*in == '\'');
 
     in++;
-    tok.d.integer.type = &basic_type__int;
-    tok.d.integer.val.i = escpchar(in, endptr);
+    tok.d.number.type = &basic_type__int;
+    tok.d.number.val.i = escpchar(in, endptr);
     if (**endptr != '\'')
         error("Invalid character constant %c.", *in);
 

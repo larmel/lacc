@@ -103,7 +103,7 @@ const struct macro *definition(struct token name)
             /* Replace __LINE__ with current line number, by mutating
              * the replacement list on the fly. */
             if (!str_cmp(ref->name.d.string, str_init("__LINE__")))
-                ref->replacement[0].token.d.integer.val.i = current_file.line;
+                ref->replacement[0].token.d.number.val.i = current_file.line;
         }
     }
 
@@ -477,13 +477,13 @@ int tok_cmp(struct token a, struct token b)
     if (a.token != b.token)
         return 1;
 
-    if (a.token == INTEGER_CONSTANT) {
-        if (!type_equal(a.d.integer.type, b.d.integer.type))
+    if (a.token == NUMBER) {
+        if (!type_equal(a.d.number.type, b.d.number.type))
             return 1;
         return
-            (a.d.integer.type->type == T_UNSIGNED) ?
-                a.d.integer.val.u != b.d.integer.val.u :
-                a.d.integer.val.i != b.d.integer.val.i;
+            (a.d.number.type->type == T_UNSIGNED) ?
+                a.d.number.val.u != b.d.number.val.u :
+                a.d.number.val.i != b.d.number.val.i;
     } else {
         return str_cmp(a.d.string, b.d.string);
     }
