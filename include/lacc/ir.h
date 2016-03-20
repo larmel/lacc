@@ -6,8 +6,8 @@
 
 #include <stddef.h>
 
-/* Find the number of operands to a given operation type, using the fact that
- * enumeration constants are sorted by operand count. 
+/* Find the number of operands to a given operation type, using the fact
+ * that enumeration constants are sorted by operand count. 
  */
 #define NOPERANDS(t) ((t) > IR_CAST ? 2 : (t) > IR_PARAM)
 #define IS_COMPARISON(t) ((t) == IR_OP_EQ || (t) == IR_OP_GE || (t) == IR_OP_GT)
@@ -39,35 +39,37 @@ enum optype {
     IR_OP_GE,    /* a = b >= c */
     IR_OP_GT,    /* a = b > c  */
 
-    /* Call va_start(a), setting reg_save_area and overflow_arg_area. This,
-     * together with va_arg assumes some details about memory layout that can
-     * only be known by backend, thus the need for these operations. */
+    /* Call va_start(a), setting reg_save_area and overflow_arg_area.
+     * This, together with va_arg assumes some details about memory
+     * layout that can only be known by backend, thus the need for these
+     * operations. */
     IR_VA_START,
 
-    /* Call a = va_arg(b, T), with type T taken from a. Intercepted as call to
-     * __builtin_va_arg in parser. */
+    /* Call a = va_arg(b, T), with type T taken from a. Intercepted as
+     * call to __builtin_va_arg in parser. */
     IR_VA_ARG
 };
 
-/* A reference to some storage location or direct value, used in intermediate
- * representation of expressions.
+/* A reference to some storage location or direct value, used in
+ * intermediate representation of expressions.
  */
 struct var {
     const struct typetree *type;
     const struct symbol *symbol;
 
     enum {
-        /* l-value or r-value reference to symbol, which must have some storage
-         * location. Offset evaluate to *(&symbol + offset). Offset in bytes,
-         * not pointer arithmetic. */
+        /* l-value or r-value reference to symbol, which must have some
+         * storage location. Offset evaluate to *(&symbol + offset).
+         * Offset in bytes, not pointer arithmetic. */
         DIRECT,
-        /* l-value or r-value reference to *(symbol + offset). Symbol must have
-         * pointer type. Offset in bytes, not pointer arithmetic. */
+        /* l-value or r-value reference to *(symbol + offset). Symbol
+         * must have pointer type. Offset in bytes, not pointer
+         * arithmetic. */
         DEREF,
-        /* r-value immediate, with the type specified. Symbol is NULL, or be of
-         * type SYM_STRING_VALUE. String immediates can either have type array
-         * of char, or pointer to char. They can also have offsets, representing
-         * constants such as .LC1+3. */
+        /* r-value immediate, with the type specified. Symbol is NULL,
+         * or be of type SYM_STRING_VALUE. String immediates can either
+         * have type array of char, or pointer to char. They can also
+         * have offsets, representing constants such as .LC1+3. */
         IMMEDIATE
     } kind;
 
@@ -77,8 +79,8 @@ struct var {
     int lvalue;
 };
 
-/* Basic block in function control flow graph, containing a symbolic address
- * and a contiguous list of IR operations.
+/* Basic block in function control flow graph, containing a symbolic
+ * address and a contiguous list of IR operations.
  */
 struct block {
     /* Unique jump target address, symbol of type SYM_LABEL. */
@@ -95,20 +97,21 @@ struct block {
     /* Number of ir operations. */
     int n;
 
-    /* Toggle last statement was return, meaning expr is valid. There are cases
-     * where we reach end of control in a non-void function, but not wanting to
-     * return a value. For example when exit has been called. */
+    /* Toggle last statement was return, meaning expr is valid. There
+     * are cases where we reach end of control in a non-void function,
+     * but not wanting to return a value. For example when exit has been
+     * called. */
     int has_return_value;
 
-    /* Value to evaluate in branch conditions, or return value. Also used for
-     * return value from expression parsing rules, as a convenience. The
-     * decision on whether this block is a branch or not is done purely based
-     * on the jump target list. */
+    /* Value to evaluate in branch conditions, or return value. Also
+     * used for return value from expression parsing rules, as a
+     * convenience. The decision on whether this block is a branch or
+     * not is done purely based on the jump target list. */
     struct var expr;
 
     /* Branch targets.
      * - (NULL, NULL): Terminal node, return expr from function.
-     * - (x, NULL)   : Unconditional jump, f.ex break, goto, or bottom of loop.
+     * - (x, NULL)   : Unconditional jump; break, continue, goto, loop.
      * - (x, y)      : False and true branch targets, respectively. */
     struct block *jump[2];
 
@@ -125,17 +128,17 @@ struct block_list {
     int capacity;
 };
 
-/* Represents a function or object definition. Parsing emits one definition at
- * a time, which is passed on to backend. A simple definition can be a static
- * or external symbol assigned to a value:
+/* Represents a function or object definition. Parsing emits one
+ * definition at a time, which is passed on to backend. A simple
+ * definition can be a static or external symbol assigned to a value:
  * 
  *      int foo = 123, bar = 89;
  *
  * The whole statement is parsed in one go, but results yielded as two
  * definitions; foo, bar.
  *
- * Function definitions include a collection of blocks to model control flow,
- * and can include nested static definitions.
+ * Function definitions include a collection of blocks to model control
+ * flow, and can include nested static definitions.
  *
  *      int baz(void) {
  *          static int i = 0;
@@ -143,40 +146,39 @@ struct block_list {
  *          else return i++;
  *      }
  *
- * In the above example, baz and i are emitted as separate definitions from
- * parser.
- *
+ * In the above example, baz and i are emitted as separate definitions
+ * from parser.
  */
 struct definition {
-    /* Symbol definition, which is assigned some value. A definition only
-     * concerns a single symbol. */
+    /* Symbol definition, which is assigned some value. A definition
+     * only concerns a single symbol. */
     const struct symbol *symbol;
 
-    /* Function definitions are associated with a control flow graph, where
-     * this is the entry point. Static and extern definitions are represented
-     * as a series of assignment IR operations. */
+    /* Function definitions are associated with a control flow graph,
+     * where this is the entry point. Static and extern definitions are
+     * represented as a series of assignment IR operations. */
     struct block *body;
 
-    /* Store all symbols associated with a function definition. Need non-const
-     * references, as backend will use this to assign stack offset of existing
-     * symbols. */
+    /* Store all symbols associated with a function definition. Need
+     * non-const references, as backend will use this to assign stack
+     * offset of existing symbols. */
     struct symbol_list
         params,
         locals;
 
-    /* Store all associated nodes in a list to be able to free everything at
-     * the end. */
+    /* Store all associated nodes in a list to be able to free
+     * everything at the end. */
     struct block_list nodes;
 };
 
-/* Parse input for the next function or object definition. Symbol is NULL on
- * end of input. Takes ownership of memory, which must be cleaned up by calling
- * free_definition.
+/* Parse input for the next function or object definition. Symbol is
+ * NULL on end of input. Takes ownership of memory, which must be
+ * cleaned up by calling free_definition.
  */
 struct definition parse(void);
 
-/* A direct reference to given symbol, with two exceptions: SYM_ENUM_VALUE and
- * SYM_STRING_VALUE reduce to IMMEDIATE values.
+/* A direct reference to given symbol, with two exceptions:
+ * SYM_ENUM_VALUE and SYM_STRING_VALUE reduce to IMMEDIATE values.
  */
 struct var var_direct(const struct symbol *sym);
 

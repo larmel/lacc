@@ -6,16 +6,16 @@
 
 #include <stdio.h>
 
-/* A symbol represents declarations that may have a storage location at runtime,
- * such as functions, static and local variables. Store offset to base pointer
- * for automatic variables and function arguments.
+/* A symbol represents declarations that may have a storage location at
+ * runtime, such as functions, static and local variables. Store offset
+ * to base pointer for automatic variables and function arguments.
  */
 struct symbol {
     const char *name;
 
-    /* Top-level type is inlined in the symbol. Partial declarations are updated
-     * by writing directly to this object. Members are still const, and should
-     * never be mutated. */
+    /* Top-level type is inlined in the symbol. Partial declarations are
+     * updated by writing directly to this object. Members are still
+     * const, and should never be mutated. */
     struct typetree type;
 
     enum symtype {
@@ -28,28 +28,29 @@ struct symbol {
         SYM_LABEL
     } symtype;
 
-    /* Visibility of external declarations, or LINK_NONE for other symbols. */
+    /* Visibility of external declarations, or LINK_NONE for other
+     * symbols. */
     enum linkage {
         LINK_NONE = 0,
         LINK_INTERN,
         LINK_EXTERN
     } linkage;
 
-    /* Tag to disambiguate differently scoped static variables with the same
-     * name. */
+    /* Tag to disambiguate differently scoped static variables with the
+     * same name. */
     int n;
 
-    /* Enumeration constants live in the normal symbol table, and always have
-     * integer type. Denoted by symtype SYM_ENUM_VALUE. */
+    /* Enumeration constants live in the normal symbol table, and always
+     * have integer type. Denoted by symtype SYM_ENUM_VALUE. */
     int enum_value;
 
-    /* String literals are also handled as symbols, having type [] const char.
-     * Denoted by symtype SYM_STRING_VALUE. Free string constants are always
-     * named '.LC', disambiguated with n. */ 
+    /* String literals are also handled as symbols, having type [] const
+     * char. Denoted by symtype SYM_STRING_VALUE. Free string constants
+     * are always named '.LC', disambiguated with n. */ 
     struct string string_value;
 
-    /* Parameter or local variable offset to base pointer. This is kept as 0
-     * during parsing, but assigned when passed to back-end. */
+    /* Parameter or local variable offset to base pointer. This is kept
+     * as 0 during parsing, but assigned when passed to back-end. */
     int stack_offset;
 
     /* Scope depth. */

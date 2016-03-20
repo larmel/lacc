@@ -63,13 +63,13 @@ struct typetree {
     /* Function parameters, or struct/union members. */
     const struct member_list *member_list;
 
-    /* Function return value, pointer target, array base, or pointer to tagged
-     * struct or union type. Tag indirections are used to avoid loops in type
-     * trees. */
+    /* Function return value, pointer target, array base, or pointer to
+     * tagged struct or union type. Tag indirections are used to avoid
+     * loops in type trees. */
     const struct typetree *next;
 
-    /* Struct or union tag name, taken from symbol table in order to be able to
-     * print the reference. */
+    /* Struct or union tag name, taken from symbol table in order to be
+     * able to print the reference. */
     const char *tag_name;
 };
 
@@ -119,13 +119,13 @@ int type_alignment(const struct typetree *type);
  */
 int type_equal(const struct typetree *l, const struct typetree *r);
 
-/* Return tagged type if this is an indirection, ignoring cv-qualifiers. The tag
- * is immutable.
+/* Return tagged type if this is an indirection, ignoring cv-qualifiers.
+ * The tag is immutable.
  */
 const struct typetree *unwrapped(const struct typetree *type);
 
-/* Serialize type to string. Allocates memory with malloc, caller is responsible
- * for calling free.
+/* Serialize type to string. Allocates memory with malloc, caller is
+ * responsible for calling free.
  */
 char *typetostr(const struct typetree *type);
 
