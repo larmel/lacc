@@ -586,27 +586,38 @@ struct typetree *declaration_specifiers(int *stc)
     return type;
 }
 
-/* Set var = 0, using simple assignment on members for composite types. This
- * rule does not consume any input, but generates a series of assignments on the
- * given variable. Point is to be able to zero initialize using normal simple
- * assignment rules, although IR can become verbose for large structures.
+/* Set var = 0, using simple assignment on members for composite types.
+ * This rule does not consume any input, but generates a series of
+ * assignments on the given variable. Point is to be able to zero
+ * initialize using normal simple assignment rules, although IR can
+ * become verbose for large structures.
  */
 static void zero_initialize(struct block *block, struct var target)
 {
     int i;
     struct var var;
+    const struct member *member;
     assert(target.kind == DIRECT);
 
     switch (target.type->type) {
     case T_STRUCT:
-    case T_UNION:
         target.type = unwrapped(target.type);
         var = target;
         for (i = 0; i < nmembers(var.type); ++i) {
-            target.type = get_member(var.type, i)->type;
-            target.offset = var.offset + get_member(var.type, i)->offset;
+            member = get_member(var.type, i);
+            target.type = member->type;
+            target.offset = var.offset + member->offset;
             zero_initialize(block, target);
         }
+        break;
+    case T_UNION:
+        /* We don't want garbage in any union member after zero-
+         * initialization, so set full width to zero. */
+        target.type =
+            (size_of(target.type) % 8) ?
+                type_init(T_ARRAY, &basic_type__char, size_of(target.type)) :
+                type_init(T_ARRAY, &basic_type__long, size_of(target.type) / 8);
+        zero_initialize(block, target);
         break;
     case T_ARRAY:
         assert(target.type->size);
@@ -636,9 +647,9 @@ static void zero_initialize(struct block *block, struct var target)
 
 static struct block *object_initializer(struct block *block, struct var target)
 {
-    int i,
-        filled = target.offset;
+    int i, filled = target.offset;
     const struct typetree *type = target.type;
+    const struct member *member;
 
     assert(!is_tagged(type));
 
@@ -646,17 +657,21 @@ static struct block *object_initializer(struct block *block, struct var target)
     target.lvalue = 1;
     switch (type->type) {
     case T_UNION:
-        /* C89 states that only the first element of a union can be
-         * initialized. Zero the whole thing first if there is padding. */
-        if (size_of(get_member(type, 0)->type) < type->size) {
+        member = get_member(type, 0);
+        target.type = member->type;
+        block = initializer(block, target);
+        if (size_of(member->type) < type->size) {
+            /* Only the first element of a union can be initialized.
+             * Zero the remaining memory if there is padding, or the
+             * first member is not the largest one. */
             target.type =
-                (type->size % 8) ?
-                    type_init(T_ARRAY, &basic_type__char, type->size) :
-                    type_init(T_ARRAY, &basic_type__long, type->size / 8);
+                type_init(
+                    T_ARRAY,
+                    &basic_type__char,
+                    type->size - size_of(member->type));
+            target.offset += size_of(member->type);
             zero_initialize(block, target);
         }
-        target.type = get_member(type, 0)->type;
-        block = initializer(block, target);
         if (peek().token != '}') {
             error("Excess elements in union initializer.");
             exit(1);
@@ -664,8 +679,9 @@ static struct block *object_initializer(struct block *block, struct var target)
         break;
     case T_STRUCT:
         for (i = 0; i < nmembers(type); ++i) {
-            target.type = get_member(type, i)->type;
-            target.offset = filled + get_member(type, i)->offset;
+            member = get_member(type, i);
+            target.type = member->type;
+            target.offset = filled + member->offset;
             block = initializer(block, target);
             if (peek().token == ',') {
                 consume(',');
@@ -675,8 +691,9 @@ static struct block *object_initializer(struct block *block, struct var target)
             }
         }
         while (++i < nmembers(type)) {
-            target.type = get_member(type, i)->type;
-            target.offset = filled + get_member(type, i)->offset;
+            member = get_member(type, i);
+            target.type = member->type;
+            target.offset = filled + member->offset;
             zero_initialize(block, target);
         }
         break;
@@ -696,8 +713,8 @@ static struct block *object_initializer(struct block *block, struct var target)
             assert(!target.symbol->type.size);
             assert(is_array(&target.symbol->type));
 
-            /* Incomplete array type can only be in the root level of target
-             * type tree, overwrite type directly in symbol. */
+            /* Incomplete array type can only be in the root level of
+             * target type tree, overwrite type directly in symbol. */
             ((struct symbol *) target.symbol)->type.size =
                 (i + 1) * size_of(type->next);
         } else {
@@ -716,9 +733,9 @@ static struct block *object_initializer(struct block *block, struct var target)
     return block;
 }
 
-/* Parse and emit initializer code for target variable in statements such as
- * int b[] = {0, 1, 2, 3}. Generate a series of assignment operations on
- * references to target variable.
+/* Parse and emit initializer code for target variable in statements
+ * such as int b[] = {0, 1, 2, 3}. Generate a series of assignment
+ * operations on references to target variable.
  */
 static struct block *initializer(struct block *block, struct var target)
 {
@@ -741,8 +758,8 @@ static struct block *initializer(struct block *block, struct var target)
             assert(block->expr.symbol->symtype == SYM_STRING_VALUE);
             assert(is_array(block->expr.type));
 
-            /* Complete type based on string literal. Evaluation does not have
-             * the required context to do this logic. */
+            /* Complete type based on string literal. Evaluation does
+             * not have the required context to do this logic. */
             ((struct symbol *) target.symbol)->type.size =
                 block->expr.type->size;
             target.type = block->expr.type;

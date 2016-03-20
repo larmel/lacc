@@ -11,8 +11,9 @@ struct registr {
     int w;
 };
 
-/* Full addressing is disp(base register, offset register, scalar multiplier).
- * Displacement can be relative to symbol, for ex foo+3(%rip)
+/* Full addressing is disp(base register, offset register, scalar
+ * multiplier). Displacement can be relative to symbol, for example
+ * foo+3(%rip)
  */
 struct address {
     const struct symbol *sym;
@@ -29,9 +30,9 @@ struct memory {
     int w;
 };
 
-/* Immediates can be numeric (fit in registers), or references to static string
- * values. Expressions like "hello" + 1 can result in for ex $.LC1+1 in gnu
- * assembly.
+/* Immediates can be numeric (fit in registers), or references to static
+ * string values. Expressions like "hello" + 1 can result in for ex
+ * $.LC1+1 in GNU assembly.
  */
 struct immediate {
     enum {
