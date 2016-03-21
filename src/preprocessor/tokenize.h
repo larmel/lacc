@@ -8,6 +8,10 @@
  */
 extern const struct token basic_token[128];
 
+/* String representation of token.
+ */
+struct string tokstr(struct token tok);
+
 /* Parse and return next preprocessing token from given line. Assume comments
  * are removed and line continuations are applied. endptr is set to point to
  * one index past the last character producing the token.

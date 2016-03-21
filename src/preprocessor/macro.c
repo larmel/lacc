@@ -499,27 +499,29 @@ struct token stringify(const struct token list[])
     int n = 0;
     size_t len = 0;
     struct token t = {STRING};
-    char *str = calloc(1, sizeof(*str));
+    struct string strval;
+    char *buf = calloc(1, sizeof(*buf));
 
     while (list->token != END) {
         assert(list->token != NEWLINE);
 
         /* Reduce to a single space, and only insert between other
          * tokens in the list. */
-        len += list->d.string.len + (list->leading_whitespace && n);
-        str = realloc(str, (len + 1) * sizeof(*str));
+        strval = tokstr(*list);
+        len += strval.len + (list->leading_whitespace && n);
+        buf = realloc(buf, (len + 1) * sizeof(*buf));
         if (n && list->leading_whitespace) {
-            str[len - list->d.string.len - 1] = ' ';
-            str[len - list->d.string.len] = '\0';
+            buf[len - strval.len - 1] = ' ';
+            buf[len - strval.len] = '\0';
         }
 
-        str = strncat(str, list->d.string.str, len);
+        buf = strncat(buf, strval.str, len);
         list++;
         n++;
     }
 
-    t.d.string = str_register(str, len);
-    free(str);
+    t.d.string = str_register(buf, len);
+    free(buf);
     return t;
 }
 
