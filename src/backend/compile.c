@@ -1109,20 +1109,20 @@ static void zero_fill_data(size_t bytes)
         emit_data(zero_byte);
 }
 
-static void compile_data(struct definition def)
+static void compile_data(struct definition *def)
 {
     struct op *op;
     int i,
-        total_size = size_of(&def.symbol->type),
+        total_size = size_of(&def->symbol->type),
         initialized = 0;
 
-    enter_context(def.symbol);
-    for (i = 0; i < def.body->n; ++i) {
-        op = def.body->code + i;
+    enter_context(def->symbol);
+    for (i = 0; i < def->body->n; ++i) {
+        op = def->body->code + i;
 
         assert(op->type == IR_ASSIGN);
         assert(op->a.kind == DIRECT);
-        assert(op->a.symbol == def.symbol);
+        assert(op->a.symbol == def->symbol);
         assert(op->a.offset >= initialized);
 
         zero_fill_data(op->a.offset - initialized);
@@ -1134,21 +1134,22 @@ static void compile_data(struct definition def)
     zero_fill_data(total_size - initialized);
 }
 
-static void compile_function(struct definition def)
+static void compile_function(struct definition *def)
 {
     enum param_class *result_class;
 
-    assert(is_function(&def.symbol->type));
-    enter_context(def.symbol);
+    assert(is_function(&def->symbol->type));
+    enter_context(def->symbol);
     emit(INSTR_PUSH, OPT_REG, reg(BP, 8));
     emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(BP, 8));
 
-    /* Make sure parameters and local variables are placed on stack. Keep
-     * parameter class of return value for later assembling return. */
-    result_class = enter(&def.symbol->type, def.params, def.locals);
+    /* Make sure parameters and local variables are placed on stack.
+     * Keep parameter class of return value for later assembling return
+     * statement. */
+    result_class = enter(&def->symbol->type, def->params, def->locals);
 
     /* Recursively assemble body. */
-    compile_block(def.body, result_class);
+    compile_block(def->body, result_class);
 
     free(result_class);
 }
@@ -1178,9 +1179,11 @@ void set_compile_target(FILE *stream, enum compile_target target)
     }
 }
 
-int compile(struct definition def)
+int compile(struct definition *def)
 {
-    assert(decl_memcpy != NULL);
+    assert(decl_memcpy);
+    assert(def->symbol);
+
     switch (compile_target) {
     case TARGET_IR_DOT:
         fdotgen(output_stream, def);
@@ -1188,7 +1191,7 @@ int compile(struct definition def)
         break;
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
-        if (is_function(&def.symbol->type))
+        if (is_function(&def->symbol->type))
             compile_function(def);
         else
             compile_data(def);

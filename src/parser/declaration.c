@@ -4,56 +4,13 @@
 #include "expression.h"
 #include "symtab.h"
 #include "type.h"
-#include <lacc/token.h>
 #include <lacc/cli.h>
+#include <lacc/list.h>
+#include <lacc/token.h>
 
 #include <assert.h>
 
-/* Parser consumes whole declaration statements, which can include multiple
- * definitions. For example 'int foo = 1, bar = 2;'. These are buffered and
- * returned one by one on calls to parse().
- */
-static struct definition_list {
-    struct definition *def;
-    int cur;                    /* Index of definition to return next */
-    int len;
-} defs;
-
-static struct definition fallback;
-
 static struct block *initializer(struct block *block, struct var target);
-
-static struct definition *push_back_definition(const struct symbol *sym)
-{
-    struct definition *def;
-    assert(sym->symtype == SYM_DEFINITION);
-
-    defs.def = realloc(defs.def, (defs.len + 1) * sizeof(*defs.def));
-    def = &defs.def[defs.len++];
-
-    memset(def, 0, sizeof(*def));
-    def->symbol = sym;
-    def->body = cfg_block_init();
-    return def;
-}
-
-static void clear_definition(struct definition *def)
-{
-    int i;
-    struct block *block;
-    if (def->params.capacity) free(def->params.symbol);
-    if (def->locals.capacity) free(def->locals.symbol);
-    if (def->nodes.capacity) {
-        for (i = 0; i < def->nodes.length; ++i) {
-            block = def->nodes.block[i];
-            if (block->n)
-                free(block->code);
-            free(block);
-        }
-        free(def->nodes.block);
-    }
-    memset(def, 0, sizeof(*def));
-}
 
 static struct var var_zero(int size)
 {
@@ -787,6 +744,109 @@ static void define_builtin__func__(const char *name)
     sym->string_value = str_init(name);
 }
 
+/* Parser consumes whole declaration statements, which can include
+ * multiple definitions. For example 'int foo = 1, bar = 2;'. These are
+ * buffered and returned one by one on calls to parse().
+ */
+static struct list
+    definitions;
+
+/* A list of blocks kept for housekeeping when parsing declarations that
+ * do not have a full definition object associated. For example, the
+ * following constant expression would be evaluated by a dummy block
+ * holding the immediate value:
+ *
+ *  enum { A = 1 };
+ *
+ */
+static struct list
+    expr_blocks;
+
+static void free_block(void *elem)
+{
+    struct block *block = (struct block *) elem;
+    if (block->n) {
+        free(block->code);
+    }
+    free(block);
+}
+
+struct block *cfg_block_init(void)
+{
+    struct definition *def;
+    struct block *block;
+
+    block = calloc(1, sizeof(*block));
+    if (list_len(&definitions)) {
+        block->label = sym_create_label();
+
+        /* Block is owned by last added definition, also when they are
+         * not functions. */
+        def = list_get(&definitions, list_len(&definitions) - 1);
+        def->nodes = block_list_add(def->nodes, block);
+    } else {
+        list_push_back(&expr_blocks, block);
+    }
+
+    return block;
+}
+
+static struct definition *create_definition(const struct symbol *sym)
+{
+    struct definition *def;
+    assert(sym->symtype == SYM_DEFINITION);
+
+    def = calloc(1, sizeof(*def));
+    def->symbol = sym;
+
+    /* A bit tricky: need to add definition to list before creating
+     * block, otherwise block will have wrong owner. */
+    def = list_push_back(&definitions, def);
+    def->body = cfg_block_init();
+
+    return def;
+}
+
+static void free_definition(struct definition *def)
+{
+    int i;
+    if (def->params.capacity) free(def->params.symbol);
+    if (def->locals.capacity) free(def->locals.symbol);
+    if (def->nodes.capacity) {
+        for (i = 0; i < def->nodes.length; ++i)
+            free_block(def->nodes.block[i]);
+        free(def->nodes.block);
+    }
+    free(def);
+}
+
+struct definition *current_func(void)
+{
+    int i;
+    struct definition *def;
+
+    for (i = list_len(&definitions); i > 0; --i) {
+        def = (struct definition *) list_get(&definitions, i - 1);
+        assert(def);
+        if (is_function(&def->symbol->type))
+            return def;
+    }
+
+    assert(0);
+    return NULL;
+}
+
+struct var create_var(const struct typetree *type)
+{
+    struct definition *def = current_func();
+    struct symbol *temp = sym_create_tmp(type);
+    struct var res = var_direct(temp);
+
+    def->locals = sym_list_add(def->locals, temp);
+    res.lvalue = 1;
+    return res;
+}
+
 /* Cover both external declarations, functions, and local declarations (with
  * optional initialization code) inside functions.
  */
@@ -863,7 +923,7 @@ struct block *declaration(struct block *parent)
                 parent = initializer(parent, var_direct(sym));
             } else {
                 assert(sym->depth || !parent);
-                def = push_back_definition(sym);
+                def = create_definition(sym);
                 initializer(def->body, var_direct(sym));
             }
             assert(size_of(&sym->type) > 0);
@@ -881,7 +941,7 @@ struct block *declaration(struct block *parent)
             assert(!parent);
             assert(sym->linkage != LINK_NONE);
             sym->symtype = SYM_DEFINITION;
-            def = push_back_definition(sym);
+            def = create_definition(sym);
             push_scope(&ns_ident);
             define_builtin__func__(sym->name);
             for (i = 0; i < nmembers(&sym->type); ++i) {
@@ -907,72 +967,31 @@ struct block *declaration(struct block *parent)
     }
 }
 
-struct definition *current_func(void)
+struct definition *parse(void)
 {
-    int i;
-    for (i = defs.len - 1; i >= defs.cur; --i)
-        if (is_function(&defs.def[i].symbol->type))
-            return &defs.def[i];
-    assert(0);
-    return NULL;
-}
+    static struct definition *def;
 
-struct var create_var(const struct typetree *type)
-{
-    struct definition *def = current_func();
-    struct symbol *temp = sym_create_tmp(type);
-    struct var res = var_direct(temp);
+    /* Clear memory allocated for previous result. Parse is called until
+     * no more input can be consumed. */
+    if (def) {
+        free_definition(def);
+    }
 
-    def->locals = sym_list_add(def->locals, temp);
-    res.lvalue = 1;
-    return res;
-}
-
-struct block *cfg_block_init(void)
-{
-    struct definition *def;
-    struct block *block;
-
-    block = calloc(1, sizeof(*block));
-    block->label = sym_create_label();
-
-    /* Block is owned by last added definition, also non-functions. The fallback
-     * solution is to get some owner for expressiong like enum { A = 1 } foo;
-     * where the constant expression is evaluated by instantiating blocks. */
-    def = (defs.len) ? &defs.def[defs.len - 1] : &fallback;
-    def->nodes = block_list_add(def->nodes, block);
-
-    return block;
-}
-
-struct definition parse(void)
-{
-    static struct definition last_def_returned;
-    struct definition def = {0};
-
-    while (!defs.len && peek().token != END) {
-        /* Parse a declaration, which can include definitions that will fill
-         * up the buffer. Tentative declarations will only affect the symbol
-         * table. */
+    /* Parse a declaration, which can include definitions that will fill
+     * up the buffer. Tentative declarations will only affect the symbol
+     * table. */
+    while (!list_len(&definitions) && peek().token != END) {
         declaration(NULL);
-        clear_definition(&fallback);
     }
 
-    if (defs.cur < defs.len) {
-        def = defs.def[defs.cur++];
-        if (defs.cur == defs.len) {
-            /* Clear definition list once the last entry is returned. No leaks
-             * after everything is consumed. */
-            free(defs.def);
-            memset(&defs, 0, sizeof(defs));
-        }
+    /* The next definition is taken from queue. Free memory in case we
+     * reach end of input. */
+    def = list_pop(&definitions);
+    if (peek().token == END && !def) {
+        assert(!list_len(&definitions));
+        list_clear(&definitions, NULL);
+        list_clear(&expr_blocks, &free_block);
     }
 
-    /* Clear memory allocated for previous result. Parse is called until no
-     * more input can be consumed, letting us free all memory. */
-    if (last_def_returned.symbol)
-        clear_definition(&last_def_returned);
-
-    last_def_returned = def;
     return def;
 }

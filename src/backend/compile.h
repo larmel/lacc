@@ -19,7 +19,7 @@ void set_compile_target(FILE *stream, enum compile_target target);
 
 /* Compile symbol definition.
  */
-int compile(struct definition def);
+int compile(struct definition *def);
 
 /* Compile tentative symbols, that have not been assigned a value in this
  * translation unit.

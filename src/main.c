@@ -70,7 +70,7 @@ static enum compile_target parse_args(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-    struct definition def;
+    struct definition *def;
     enum compile_target target = parse_args(argc, argv);
 
     /* Add default search paths last, with lowest priority. These are searched
@@ -93,9 +93,9 @@ int main(int argc, char *argv[])
 
         do {
             def = parse();
-            if (def.symbol && !errors)
+            if (def && !errors)
                 compile(def);
-        } while (def.symbol && !errors);
+        } while (def && !errors);
 
         if (errors)
             error("Aborting because of previous %s.",

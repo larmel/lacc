@@ -215,17 +215,17 @@ static void foutputnode(FILE *stream, struct block *node)
     }
 }
 
-void fdotgen(FILE *stream, struct definition def)
+void fdotgen(FILE *stream, struct definition *def)
 {
     fprintf(stream, "digraph {\n");
     fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,"
                     "style=\"setlinewidth(0.1)\",shape=record];\n");
     fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,"
                     "style=\"setlinewidth(0.1)\"];\n");
-    if (is_function(&def.symbol->type)) {
-        fprintf(stream, "\tlabel=\"%s\"\n", def.symbol->name);
+    if (is_function(&def->symbol->type)) {
+        fprintf(stream, "\tlabel=\"%s\"\n", def->symbol->name);
         fprintf(stream, "\tlabelloc=\"t\"\n");
     }
-    foutputnode(stream, def.body);
+    foutputnode(stream, def->body);
     fprintf(stream, "}\n");
 }
