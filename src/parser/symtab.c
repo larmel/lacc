@@ -344,31 +344,24 @@ void register_builtin_types(struct namespace *ns)
     decl_memcpy = sym_add(ns, "memcpy", type, SYM_DECLARATION, LINK_EXTERN);
 }
 
-struct symbol_list get_tentative_definitions(const struct namespace *ns)
+const struct symbol *yield_declaration(struct namespace *ns)
 {
-    struct symbol_list list = {0};
-    struct symbol *sym;
-    int i, include;
+    const struct symbol *sym;
 
-    for (i = 0; i < ns->length; ++i) {
-        sym = ns->symbol[i];
-        include =
-            sym->symtype == SYM_TENTATIVE ||
+    while (ns->cursor < ns->length) {
+        sym = ns->symbol[ns->cursor];
+        ns->cursor++;
+        if (sym->symtype == SYM_TENTATIVE ||
             sym->symtype == SYM_STRING_VALUE ||
             (sym->symtype == SYM_DECLARATION &&
                 sym->linkage == LINK_EXTERN &&
-                (sym->referenced || sym == decl_memcpy));
-
-        if (include) {
-            list.length += 1;
-            list.symbol =
-                realloc(list.symbol, list.length * sizeof(*list.symbol));
-            list.symbol[list.length - 1] = sym;
+                (sym->referenced || sym == decl_memcpy)))
+        {
+            return sym;
         }
     }
 
-    list.capacity = list.length;
-    return list;
+    return NULL;
 }
 
 void output_symbols(FILE *stream, struct namespace *ns)

@@ -12,19 +12,20 @@ enum compile_target {
     TARGET_x86_64_ELF
 };
 
-/* Initialize compile target format and output stream. Must be called before
- * any other compile function.
+/* Initialize compile target format and output stream. Must be called
+ * before any other compile function.
  */
 void set_compile_target(FILE *stream, enum compile_target target);
 
-/* Compile symbol definition.
+/* Compile definition, symbols which are assigned some storage.
  */
 int compile(struct definition *def);
 
-/* Compile tentative symbols, that have not been assigned a value in this
- * translation unit.
+/* Compile tentative definitions and declarations; symbols which have
+ * not been assigned a value in this translation unit, but must be known
+ * for linkage.
  */
-int compile_symbols(struct symbol_list list);
+int declare(const struct symbol *sym);
 
 /* Flush any buffered output, no more input will follow.
  */

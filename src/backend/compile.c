@@ -1201,21 +1201,15 @@ int compile(struct definition *def)
     return 0;
 }
 
-int compile_symbols(struct symbol_list list)
+int declare(const struct symbol *sym)
 {
-    int i;
-
     switch (compile_target) {
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
-        for (i = 0; i < list.length; ++i)
-            enter_context(list.symbol[i]);
+        return enter_context(sym);
     default:
-        break;
+        return 0;
     }
-
-    free(list.symbol);
-    return 0;
 }
 
 void flush(void)

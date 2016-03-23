@@ -71,6 +71,7 @@ static enum compile_target parse_args(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
     struct definition *def;
+    const struct symbol *sym;
     enum compile_target target = parse_args(argc, argv);
 
     /* Add default search paths last, with lowest priority. These are searched
@@ -101,8 +102,9 @@ int main(int argc, char *argv[])
             error("Aborting because of previous %s.",
                 (errors > 1) ? "errors" : "error");
 
-        compile_symbols(
-            get_tentative_definitions(&ns_ident));
+        while ((sym = yield_declaration(&ns_ident)) != NULL) {
+            declare(sym);
+        }
 
         if (verbose_level) {
             output_symbols(stdout, &ns_ident);

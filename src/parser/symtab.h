@@ -25,6 +25,9 @@ struct namespace {
     /* Current depth, and number of scopes. Depth 0 is translation unit,
      * 1 is function arguments, and n is local or member variables. */
     int current_depth;
+
+    /* Iterator for successive calls to yield. */
+    int cursor;
 };
 
 extern struct namespace
@@ -61,10 +64,9 @@ struct symbol *sym_create_tmp(const struct typetree *type);
  */
 void register_builtin_types(struct namespace *ns);
 
-/* Retrieve all tentative definitions from given scope. Caller takes
- * ownership of memory allocated to hold the list.
+/* Retrieve next tentative definition or declaration from given scope.
  */
-struct symbol_list get_tentative_definitions(const struct namespace *ns);
+const struct symbol *yield_declaration(struct namespace *ns);
 
 /* Verbose output all symbols from symbol table.
  */
