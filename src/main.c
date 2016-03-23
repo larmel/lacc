@@ -92,15 +92,14 @@ int main(int argc, char *argv[])
         push_scope(&ns_label);
         register_builtin_types(&ns_ident);
 
-        do {
-            def = parse();
-            if (def && !errors)
-                compile(def);
-        } while (def && !errors);
-
-        if (errors)
-            error("Aborting because of previous %s.",
-                (errors > 1) ? "errors" : "error");
+        while ((def = parse()) != NULL) {
+            if (errors) {
+                error("Aborting because of previous %s.",
+                    (errors > 1) ? "errors" : "error");
+                break;
+            }
+            compile(def);
+        }
 
         while ((sym = yield_declaration(&ns_ident)) != NULL) {
             declare(sym);
