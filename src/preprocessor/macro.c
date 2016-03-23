@@ -4,6 +4,7 @@
 #include "tokenize.h"
 #include <lacc/cli.h>
 #include <lacc/hash.h>
+#include <lacc/list.h>
 
 #include <assert.h>
 #include <ctype.h>
@@ -143,33 +144,35 @@ void undef(struct token name)
 /* Keep track of which macros have been expanded, avoiding recursion by
  * looking up in this list for each new expansion.
  */
-static const struct macro **expand_stack;
-static int stack_size;
+static struct list expand_stack;
 
 static int is_macro_expanded(const struct macro *macro)
 {
-    int i = 0;
-    for (; i < stack_size; ++i)
-        if (!tok_cmp(expand_stack[i]->name, macro->name))
+    int i;
+    const struct macro *other;
+
+    for (i = 0; i < list_len(&expand_stack); ++i) {
+        other = (const struct macro *) list_get(&expand_stack, i);
+        if (!tok_cmp(other->name, macro->name))
             return 1;
+    }
+
     return 0;
 }
 
 static void push_expand_stack(const struct macro *macro)
 {
     assert(!is_macro_expanded(macro));
-    stack_size++;
-    expand_stack = realloc(expand_stack, stack_size * sizeof(*expand_stack));
-    expand_stack[stack_size - 1] = macro;
+    list_push(&expand_stack, (void *) macro);
 }
 
 static void pop_expand_stack(void)
 {
-    assert(stack_size);
-    stack_size--;
-    if (!stack_size) {
-        free(expand_stack);
-        expand_stack = NULL;
+    void *macro = list_pop(&expand_stack);
+
+    assert(macro);
+    if (!list_len(&expand_stack)) {
+        list_clear(&expand_stack, NULL);
     }
 }
 
