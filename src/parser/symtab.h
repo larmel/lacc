@@ -1,8 +1,9 @@
 #ifndef SYMTAB_H
 #define SYMTAB_H
 
-#include <lacc/symbol.h>
 #include <lacc/hash.h>
+#include <lacc/list.h>
+#include <lacc/symbol.h>
 
 /* A namespace holds symbols and manage resolution in scopes as they are
  * pushed or popped.
@@ -14,9 +15,7 @@ struct namespace {
 
     /* All symbols, regardless of scope, are stored in the same list.
      * Must not be affected by reallocation, so store pointers. */
-    struct symbol **symbol;
-    size_t length;
-    size_t capacity;
+    struct list symbol_list;
 
     /* Hold a list of symbols per depth, optimizing lookup. Store
      * pointers to symbols. */

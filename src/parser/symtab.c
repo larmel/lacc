@@ -50,9 +50,7 @@ void push_scope(struct namespace *ns)
 
 void pop_scope(struct namespace *ns)
 {
-    size_t i;
     struct hash_table *scope;
-
     assert(ns->current_depth >= 0);
 
     scope = &ns->scope[ns->current_depth--];
@@ -63,47 +61,19 @@ void pop_scope(struct namespace *ns)
      * end of the translation unit. */
     if (ns->current_depth == -1) {
         free(ns->scope);
-        if (ns->symbol) {
-            for (i = 0; i < ns->length; ++i)
-                free(ns->symbol[i]);
-            free(ns->symbol);
-        }
+        list_clear(&ns->symbol_list, &free);
     }
 }
 
 /* Create and add symbol to symbol table, but not to any scope. Symbol
- * address need to be stable, so they are stored as a realloc-safe list
- * of pointers.
+ * address need to be stable.
  */
-static size_t create_symbol(struct namespace *ns, struct symbol arg)
+static struct symbol *create_symbol(struct namespace *ns, struct symbol arg)
 {
-    struct symbol *sym;
-
+    struct symbol *sym = calloc(1, sizeof(*sym));
     arg.depth = ns->current_depth;
-    if (ns->length == ns->capacity) {
-        ns->capacity = (ns->capacity) ? ns->capacity * 2 : 128;
-        ns->symbol = realloc(ns->symbol, sizeof(*ns->symbol) * ns->capacity);
-    }
-
-    sym = calloc(1, sizeof(*sym));
     *sym = arg;
-    ns->symbol[ns->length] = sym;
-
-    return ns->length++;
-}
-
-/* Add symbol to current scope hash table, making it possible to look
- * up.
- * Here we don't need to care about collisions; adding a symbol to scope
- * will always create a new entry in the hash table.
- */
-static struct symbol *register_in_scope(struct namespace *ns, int index)
-{
-    struct symbol *sym;
-    assert(index < ns->length);
-
-    sym = ns->symbol[index];
-    hash_insert(&ns->scope[ns->current_depth], (void *) sym);
+    list_push_back(&ns->symbol_list, sym);
     return sym;
 }
 
@@ -257,7 +227,8 @@ struct symbol *sym_add(
         arg.n = ++counter;
     }
 
-    sym = register_in_scope(ns, create_symbol(ns, arg));
+    sym = create_symbol(ns, arg);
+    hash_insert(&ns->scope[ns->current_depth], (void *) sym);
     verbose(
         "\t[type: %s, link: %s]\n"
         "\t%s :: %t",
@@ -280,7 +251,6 @@ struct symbol *sym_create_tmp(const struct typetree *type)
      * name by setting the counter instead of creating a string. */
     static int n;
 
-    int i;
     struct symbol sym = {0};
 
     sym.symtype = SYM_DEFINITION;
@@ -291,25 +261,22 @@ struct symbol *sym_create_tmp(const struct typetree *type)
 
     /* Add temporary to normal identifier namespace, but do not make it
      * searchable through any scope. */
-    i = create_symbol(&ns_ident, sym);
-    return ns_ident.symbol[i];
+    return create_symbol(&ns_ident, sym);
 }
 
 struct symbol *sym_create_label(void)
 {
-    int i;
     struct symbol sym = {0};
 
     sym.type = basic_type__void;
     sym.symtype = SYM_LABEL;
     sym.linkage = LINK_INTERN;
     sym.name = ".L";
-    sym.n = ns_label.length + 1;
+    sym.n = list_len(&ns_label.symbol_list) + 1;
 
     /* Construct symbol in label namespace, but do not add it to any
      * scope. No need or use for searching in labels. */
-    i = create_symbol(&ns_label, sym);
-    return ns_label.symbol[i];
+    return create_symbol(&ns_label, sym);
 }
 
 void register_builtin_types(struct namespace *ns)
@@ -348,8 +315,8 @@ const struct symbol *yield_declaration(struct namespace *ns)
 {
     const struct symbol *sym;
 
-    while (ns->cursor < ns->length) {
-        sym = ns->symbol[ns->cursor];
+    while (ns->cursor < list_len(&ns->symbol_list)) {
+        sym = (const struct symbol *) list_get(&ns->symbol_list, ns->cursor);
         ns->cursor++;
         if (sym->symtype == SYM_TENTATIVE ||
             sym->symtype == SYM_STRING_VALUE ||
@@ -366,40 +333,40 @@ const struct symbol *yield_declaration(struct namespace *ns)
 
 void output_symbols(FILE *stream, struct namespace *ns)
 {
-    size_t i;
-    enum symtype st;
+    unsigned i;
+    struct symbol *sym;
     char *tstr;
 
-    if (ns->length)
-        verbose("namespace %s:", ns->name);
-
-    for (i = 0; i < ns->length; ++i) {
-        st = ns->symbol[i]->symtype;
-        fprintf(stream, "%*s", ns->symbol[i]->depth * 2, "");
-        if (ns->symbol[i]->linkage != LINK_NONE) {
+    for (i = 0; i < list_len(&ns->symbol_list); ++i) {
+        if (!i) {
+            verbose("namespace %s:", ns->name);
+        }
+        sym = (struct symbol *) list_get(&ns->symbol_list, i);
+        fprintf(stream, "%*s", sym->depth * 2, "");
+        if (sym->linkage != LINK_NONE) {
             fprintf(stream, "%s ",
-                (ns->symbol[i]->linkage == LINK_INTERN) ? "static" : "global");
+                (sym->linkage == LINK_INTERN) ? "static" : "global");
         }
 
         fprintf(stream, "%s ",
-            (st == SYM_TENTATIVE) ? "tentative" : 
-            (st == SYM_DEFINITION) ? "definition" :
-            (st == SYM_DECLARATION) ? "declaration" :
-            (st == SYM_TYPEDEF) ? "typedef" :
-            (st == SYM_ENUM_VALUE) ? "enum" :
-            (st == SYM_STRING_VALUE) ? "string" : "label");
+            (sym->symtype == SYM_TENTATIVE) ? "tentative" : 
+            (sym->symtype == SYM_DEFINITION) ? "definition" :
+            (sym->symtype == SYM_DECLARATION) ? "declaration" :
+            (sym->symtype == SYM_TYPEDEF) ? "typedef" :
+            (sym->symtype == SYM_ENUM_VALUE) ? "enum" :
+            (sym->symtype == SYM_STRING_VALUE) ? "string" : "label");
 
-        fprintf(stream, "%s :: ", sym_name(ns->symbol[i]));
-        tstr = typetostr(&ns->symbol[i]->type);
+        fprintf(stream, "%s :: ", sym_name(sym));
+        tstr = typetostr(&sym->type);
         fprintf(stream, "%s", tstr);
         free(tstr);
 
-        fprintf(stream, ", size=%d", size_of(&ns->symbol[i]->type));
-        if (ns->symbol[i]->stack_offset)
-            fprintf(stream, " (stack_offset: %d)", ns->symbol[i]->stack_offset);
+        fprintf(stream, ", size=%d", size_of(&sym->type));
+        if (sym->stack_offset)
+            fprintf(stream, " (stack_offset: %d)", sym->stack_offset);
 
-        if (ns->symbol[i]->symtype == SYM_ENUM_VALUE)
-            fprintf(stream, ", value=%d", ns->symbol[i]->enum_value);
+        if (sym->symtype == SYM_ENUM_VALUE)
+            fprintf(stream, ", value=%d", sym->enum_value);
 
         fprintf(stream, "\n");
     }
