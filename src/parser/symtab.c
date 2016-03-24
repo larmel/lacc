@@ -65,18 +65,6 @@ void pop_scope(struct namespace *ns)
     }
 }
 
-/* Create and add symbol to symbol table, but not to any scope. Symbol
- * address need to be stable.
- */
-static struct symbol *create_symbol(struct namespace *ns, struct symbol arg)
-{
-    struct symbol *sym = calloc(1, sizeof(*sym));
-    arg.depth = ns->current_depth;
-    *sym = arg;
-    list_push_back(&ns->symbol_list, sym);
-    return sym;
-}
-
 struct symbol *sym_lookup(struct namespace *ns, const char *name)
 {
     int depth;
@@ -169,12 +157,10 @@ struct symbol *sym_add(
     enum symtype symtype,
     enum linkage linkage)
 {
-    struct symbol
-        *sym = NULL,
-        arg = {0};
-
+    struct symbol *sym;
     assert(symtype != SYM_LABEL);
 
+    /* Look up and try to complete existing tentative definition. */
     if (symtype != SYM_STRING_VALUE && (sym = sym_lookup(ns, name))) {
         if (linkage == LINK_EXTERN && symtype == SYM_DECLARATION
             && (sym->symtype == SYM_TENTATIVE
@@ -213,22 +199,26 @@ struct symbol *sym_add(
         }
     }
 
-    arg.name = name;
-    arg.type = *type;
-    arg.symtype = symtype;
-    arg.linkage = linkage;
+    /* Create new symbol. */
+    sym = calloc(1, sizeof(*sym));
+    sym->depth = ns->current_depth;
+    sym->name = name;
+    sym->type = *type;
+    sym->symtype = symtype;
+    sym->linkage = linkage;
 
     /* Scoped static variable must get unique name in order to not
      * collide with other external declarations. */
-    if (linkage == LINK_INTERN &&
-        (ns->current_depth || symtype == SYM_STRING_VALUE))
-    {
-        static int counter;
-        arg.n = ++counter;
+    if (linkage == LINK_INTERN && (sym->depth || symtype == SYM_STRING_VALUE)) {
+        static int n;
+        sym->n = ++n;
     }
 
-    sym = create_symbol(ns, arg);
+    /* Add to normal identifier namespace, and make it searchable
+     * through current scope. */
+    list_push_back(&ns->symbol_list, sym);
     hash_insert(&ns->scope[ns->current_depth], (void *) sym);
+
     verbose(
         "\t[type: %s, link: %s]\n"
         "\t%s :: %t",
@@ -251,32 +241,32 @@ struct symbol *sym_create_tmp(const struct typetree *type)
      * name by setting the counter instead of creating a string. */
     static int n;
 
-    struct symbol sym = {0};
-
-    sym.symtype = SYM_DEFINITION;
-    sym.linkage = LINK_NONE;
-    sym.name = ".t";
-    sym.n = ++n;
-    sym.type = *type;
+    struct symbol *sym = calloc(1, sizeof(*sym));
+    sym->symtype = SYM_DEFINITION;
+    sym->linkage = LINK_NONE;
+    sym->name = ".t";
+    sym->n = ++n;
+    sym->type = *type;
 
     /* Add temporary to normal identifier namespace, but do not make it
      * searchable through any scope. */
-    return create_symbol(&ns_ident, sym);
+    list_push_back(&ns_ident.symbol_list, sym);
+    return sym;
 }
 
 struct symbol *sym_create_label(void)
 {
-    struct symbol sym = {0};
-
-    sym.type = basic_type__void;
-    sym.symtype = SYM_LABEL;
-    sym.linkage = LINK_INTERN;
-    sym.name = ".L";
-    sym.n = list_len(&ns_label.symbol_list) + 1;
+    struct symbol *sym = calloc(1, sizeof(*sym));
+    sym->type = basic_type__void;
+    sym->symtype = SYM_LABEL;
+    sym->linkage = LINK_INTERN;
+    sym->name = ".L";
+    sym->n = list_len(&ns_label.symbol_list) + 1;
 
     /* Construct symbol in label namespace, but do not add it to any
      * scope. No need or use for searching in labels. */
-    return create_symbol(&ns_label, sym);
+    list_push_back(&ns_label.symbol_list, sym);
+    return sym;
 }
 
 void register_builtin_types(struct namespace *ns)
