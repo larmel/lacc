@@ -325,7 +325,7 @@ static struct typetree *enum_declaration(void)
         const char *name = consume(IDENTIFIER).d.string.str;
 
         tag = sym_lookup(&ns_tag, name);
-        if (!tag || tag->depth < ns_tag.current_depth) {
+        if (!tag || tag->depth < current_scope_depth(&ns_tag)) {
             tag = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
         } else if (!is_integer(&tag->type)) {
             error("Tag '%s' was previously defined as aggregate type.",
@@ -707,7 +707,7 @@ static void define_builtin__func__(const char *name)
 {
     struct typetree *type;
     struct symbol *sym;
-    assert(ns_ident.current_depth == 1);
+    assert(current_scope_depth(&ns_ident) == 1);
 
     /* Just add the symbol directly as a special string value. No explicit
      * assignment reflected in the IR. */
@@ -839,7 +839,7 @@ struct block *declaration(struct block *parent)
         linkage = LINK_NONE;
         break;
     default:
-        if (!ns_ident.current_depth) {
+        if (!current_scope_depth(&ns_ident)) {
             symtype = SYM_TENTATIVE;
             linkage = LINK_EXTERN;
         } else {
@@ -864,8 +864,8 @@ struct block *declaration(struct block *parent)
         if (is_function(type))
             symtype = SYM_DECLARATION;
         sym = sym_add(&ns_ident, name, type, symtype, linkage);
-        if (ns_ident.current_depth) {
-            assert(ns_ident.current_depth > 1);
+        if (current_scope_depth(&ns_ident)) {
+            assert(current_scope_depth(&ns_ident) > 1);
             def = current_func();
             list_push_back(&def->locals, sym);
         }

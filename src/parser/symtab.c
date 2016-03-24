@@ -38,13 +38,12 @@ void push_scope(struct namespace *ns)
     struct hash_table *scope;
 
     cap = hash_cap_default;
-    if (ns->current_depth < sizeof(hash_cap) / sizeof(hash_cap[0]))
-        cap = hash_cap[ns->current_depth];
+    if (list_len(&ns->scope_list) < sizeof(hash_cap) / sizeof(hash_cap[0]))
+        cap = hash_cap[list_len(&ns->scope_list)];
 
     scope = calloc(1, sizeof(*scope));
     hash_init(scope, cap, &sym_hash_key, NULL, NULL);
     list_push(&ns->scope_list, scope);
-    ns->current_depth = list_len(&ns->scope_list) - 1;
 }
 
 void pop_scope(struct namespace *ns)
@@ -53,7 +52,6 @@ void pop_scope(struct namespace *ns)
     assert(list_len(&ns->scope_list));
 
     scope = list_pop(&ns->scope_list);
-    ns->current_depth = list_len(&ns->scope_list) - 1;
     hash_destroy(scope);
     free(scope);
 
@@ -64,6 +62,13 @@ void pop_scope(struct namespace *ns)
         list_clear(&ns->scope_list, NULL);
         list_clear(&ns->symbol_list, &free);
     }
+}
+
+unsigned current_scope_depth(struct namespace *ns)
+{
+    unsigned depth = list_len(&ns->scope_list);
+    assert(depth);
+    return depth - 1;
 }
 
 struct symbol *sym_lookup(struct namespace *ns, const char *name)
@@ -168,7 +173,7 @@ struct symbol *sym_add(
             apply_type(sym, type);
             return sym;
         }
-        if (sym->depth == ns->current_depth && !ns->current_depth) {
+        if (sym->depth == current_scope_depth(ns) && !sym->depth) {
             if (sym->linkage == linkage
                 && ((sym->symtype == SYM_TENTATIVE
                         && symtype == SYM_DEFINITION)
@@ -192,7 +197,7 @@ struct symbol *sym_add(
                 apply_type(sym, type);
             }
             return sym;
-        } else if (sym->depth == ns->current_depth && ns->current_depth) {
+        } else if (sym->depth == current_scope_depth(ns) && sym->depth) {
             error("Duplicate definition of symbol '%s'.", name);
             exit(1);
         }
@@ -200,7 +205,7 @@ struct symbol *sym_add(
 
     /* Create new symbol. */
     sym = calloc(1, sizeof(*sym));
-    sym->depth = ns->current_depth;
+    sym->depth = current_scope_depth(ns);
     sym->name = name;
     sym->type = *type;
     sym->symtype = symtype;

@@ -22,10 +22,6 @@ struct namespace {
      * list. */
     struct list scope_list;
 
-    /* Current depth, and number of scopes. Depth 0 is translation unit,
-     * 1 is function arguments, and n is local or member variables. */
-    int current_depth;
-
     /* Iterator for successive calls to yield. */
     int cursor;
 };
@@ -37,6 +33,12 @@ extern struct namespace
 
 void push_scope(struct namespace *ns);
 void pop_scope(struct namespace *ns);
+
+/* Current depth as translation pushes and pops scopes. Depth 0 is
+ * translation unit, 1 is function arguments, and n is local or member
+ * variables.
+ */
+unsigned current_scope_depth(struct namespace *ns);
 
 /* Retrieve a symbol based on identifier name, or NULL of not registered
  * or visible from current scope.
