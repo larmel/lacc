@@ -22,34 +22,6 @@ static struct var var_zero(int size)
     return var;
 }
 
-static struct block_list block_list_add(
-    struct block_list list,
-    struct block *block)
-{
-    assert(block);
-    if (list.capacity <= list.length) {
-        list.capacity += 32;
-        list.block = realloc(list.block, list.capacity * sizeof(*block));
-    }
-
-    list.block[list.length++] = block;
-    return list;
-}
-
-static struct symbol_list sym_list_add(
-    struct symbol_list list,
-    struct symbol *sym)
-{
-    assert(sym);
-    if (list.capacity <= list.length) {
-        list.capacity += 32;
-        list.symbol = realloc(list.symbol, list.capacity * sizeof(*sym));
-    }
-
-    list.symbol[list.length++] = sym;
-    return list;
-}
-
 /* FOLLOW(parameter-list) = { ')' }, peek to return empty list; even though K&R
  * require at least specifier: (void)
  * Set parameter-type-list = parameter-list, including the , ...
@@ -783,7 +755,7 @@ struct block *cfg_block_init(void)
         /* Block is owned by last added definition, also when they are
          * not functions. */
         def = list_get(&definitions, list_len(&definitions) - 1);
-        def->nodes = block_list_add(def->nodes, block);
+        list_push_back(&def->nodes, block);
     } else {
         list_push_back(&expr_blocks, block);
     }
@@ -809,14 +781,9 @@ static struct definition *create_definition(const struct symbol *sym)
 
 static void free_definition(struct definition *def)
 {
-    int i;
-    if (def->params.capacity) free(def->params.symbol);
-    if (def->locals.capacity) free(def->locals.symbol);
-    if (def->nodes.capacity) {
-        for (i = 0; i < def->nodes.length; ++i)
-            free_block(def->nodes.block[i]);
-        free(def->nodes.block);
-    }
+    list_clear(&def->params, NULL);
+    list_clear(&def->locals, NULL);
+    list_clear(&def->nodes, &free_block);
     free(def);
 }
 
@@ -842,7 +809,7 @@ struct var create_var(const struct typetree *type)
     struct symbol *temp = sym_create_tmp(type);
     struct var res = var_direct(temp);
 
-    def->locals = sym_list_add(def->locals, temp);
+    list_push_back(&def->locals, temp);
     res.lvalue = 1;
     return res;
 }
@@ -900,7 +867,7 @@ struct block *declaration(struct block *parent)
         if (ns_ident.current_depth) {
             assert(ns_ident.current_depth > 1);
             def = current_func();
-            def->locals = sym_list_add(def->locals, sym);
+            list_push_back(&def->locals, sym);
         }
 
         switch (peek().token) {
@@ -953,7 +920,7 @@ struct block *declaration(struct block *parent)
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
                 }
-                def->params = sym_list_add(def->params,
+                list_push_back(&def->params,
                     sym_add(&ns_ident, name, type, symtype, linkage));
             }
             parent = block(def->body);

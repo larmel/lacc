@@ -60,12 +60,6 @@ struct symbol {
     int referenced;
 };
 
-struct symbol_list {
-    struct symbol **symbol;
-    int length;
-    int capacity;
-};
-
 /* Holds the declaration for memcpy, which is needed for codegen.
  */
 extern const struct symbol *decl_memcpy;

@@ -410,12 +410,12 @@ static void call(int n, const struct var *args, struct var res, struct var func)
 
 /* Assign storage to local variables.
  */
-static int assign_locals_storage(struct symbol_list locals, int offset)
+static int assign_locals_storage(struct list *locals, int offset)
 {
     int i;
 
-    for (i = 0; i < locals.length; ++i) {
-        struct symbol *sym = locals.symbol[i];
+    for (i = 0; i < list_len(locals); ++i) {
+        struct symbol *sym = (struct symbol *) list_get(locals, i);
         assert(!sym->stack_offset);
 
         if (sym->linkage == LINK_NONE) {
@@ -432,8 +432,8 @@ static int assign_locals_storage(struct symbol_list locals, int offset)
  */
 static enum param_class *enter(
     const struct typetree *type,
-    struct symbol_list params,
-    struct symbol_list locals)
+    struct list *params,
+    struct list *locals)
 {
     int i,
         next_integer_reg = 0,
@@ -467,8 +467,8 @@ static enum param_class *enter(
     }
 
     /* Assign storage to parameters. */
-    for (i = 0; i < params.length; ++i) {
-        struct symbol *sym = params.symbol[i];
+    for (i = 0; i < list_len(params); ++i) {
+        struct symbol *sym = (struct symbol *) list_get(params, i);
 
         assert(!sym->stack_offset);
         assert(sym->linkage == LINK_NONE);
@@ -523,7 +523,7 @@ static enum param_class *enter(
     }
 
     /* Move arguments from register to stack. */
-    for (i = 0; i < params.length; ++i) {
+    for (i = 0; i < list_len(params); ++i) {
         enum param_class *eightbyte = params_pc[i];
 
         /* Here it is ok to not separate between object and other types. Data in
@@ -534,7 +534,7 @@ static enum param_class *enter(
                 size = size_of(get_member(type, i)->type),
                 j;
 
-            ref.symbol = params.symbol[i];
+            ref.symbol = (struct symbol *) list_get(params, i);
             for (j = 0; j < n; ++j) {
                 int width = (size < 8) ? size : 8;
                 ref.type = BASIC_TYPE_UNSIGNED(width);
@@ -554,7 +554,7 @@ static enum param_class *enter(
         overflow_arg_area_offset = mem_offset;
     }
 
-    for (i = 0; i < params.length; ++i)
+    for (i = 0; i < list_len(params); ++i)
         free(params_pc[i]);
     free(params_pc);
 
@@ -1146,7 +1146,7 @@ static void compile_function(struct definition *def)
     /* Make sure parameters and local variables are placed on stack.
      * Keep parameter class of return value for later assembling return
      * statement. */
-    result_class = enter(&def->symbol->type, def->params, def->locals);
+    result_class = enter(&def->symbol->type, &def->params, &def->locals);
 
     /* Recursively assemble body. */
     compile_block(def->body, result_class);

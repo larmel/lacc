@@ -1,6 +1,7 @@
 #ifndef IR_H
 #define IR_H
 
+#include "list.h"
 #include "symbol.h"
 #include "token.h"
 
@@ -122,12 +123,6 @@ struct block {
     } color;
 };
 
-struct block_list {
-    struct block **block;
-    int length;
-    int capacity;
-};
-
 /* Represents a function or object definition. Parsing emits one
  * definition at a time, which is passed on to backend. A simple
  * definition can be a static or external symbol assigned to a value:
@@ -162,13 +157,13 @@ struct definition {
     /* Store all symbols associated with a function definition. Need
      * non-const references, as backend will use this to assign stack
      * offset of existing symbols. */
-    struct symbol_list
+    struct list
         params,
         locals;
 
     /* Store all associated nodes in a list to be able to free
      * everything at the end. */
-    struct block_list nodes;
+    struct list nodes;
 };
 
 /* Parse input for the next function or object definition, or NULL on
