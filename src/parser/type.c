@@ -3,6 +3,7 @@
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
 #include "type.h"
+#include <lacc/list.h>
 
 #include <assert.h>
 #include <stdarg.h>
@@ -24,8 +25,8 @@ const struct typetree
     basic_type__float = { T_REAL, 4 },
     basic_type__double = { T_REAL, 8 };
 
-/* Store member list separate from type to make memory ownership easier, types
- * do not own their member list.
+/* Store member list separate from type to make memory ownership easier,
+ * types do not own their member list.
  */
 struct member_list {
     int length;
@@ -34,69 +35,46 @@ struct member_list {
     struct member *member;
 };
 
-static struct typetree **type_registry;
-static size_t length;
-static size_t cap;
+/* Manage memory ownership of all dynamically allocated types and type
+ * members, freeing them on exit.
+ */
+static struct list type_registry;
+static struct list member_list_registry;
+static int init;
 
-static struct member_list **mem_list_registry;
-static size_t mem_length, mem_cap;
+static void free_member_list(void *elem)
+{
+    struct member_list *ml = (struct member_list *) elem;
+    free(ml->member);
+    free(ml);
+}
 
 static void cleanup(void)
 {
-    size_t i = 0;
-    struct typetree *t;
-
-    for ( ; i < length; ++i) {
-        t = type_registry[i];
-        free(t);
-    }
-
-    if (type_registry) {
-        free(type_registry);
-        type_registry = NULL;
-        length = cap = 0;
-    }
-
-    for (i = 0; i < mem_length; ++i) {
-        free(mem_list_registry[i]->member);
-        free(mem_list_registry[i]);
-    }
-
-    if (mem_list_registry) {
-        free(mem_list_registry);
-        mem_list_registry = NULL;
-        mem_length = 0;
-        mem_cap = 0;
-    }
+    list_clear(&type_registry, &free);
+    list_clear(&member_list_registry, &free_member_list);
 }
 
-static struct typetree *calloc_type(void)
+static struct typetree *mktype(void)
 {
-    if (!length && !mem_length)
+    struct typetree *type = calloc(1, sizeof(*type));
+    list_push_back(&type_registry, type);
+    if (!init) {
+        init = 1;
         atexit(cleanup);
-
-    if (length == cap) {
-        cap = (!cap) ? 32 : cap * 2;
-        type_registry = realloc(type_registry, cap * sizeof(*type_registry));
     }
-
-    type_registry[length] = calloc(1, sizeof(**type_registry));
-    return type_registry[length++];
+    return type;
 }
 
 static struct member_list *allocmembers(void)
 {
-    if (!length && !mem_length)
+    struct member_list *mem = calloc(1, sizeof(*mem));
+    list_push_back(&member_list_registry, mem);
+    if (!init) {
+        init = 1;
         atexit(cleanup);
-
-    if (mem_length == mem_cap) {
-        mem_cap = (!mem_cap) ? 32 : mem_cap * 2;
-        mem_list_registry =
-            realloc(mem_list_registry, mem_cap * sizeof(*mem_list_registry));
     }
-
-    mem_list_registry[mem_length] = calloc(1, sizeof(**mem_list_registry));
-    return mem_list_registry[mem_length++];
+    return mem;
 }
 
 int type_alignment(const struct typetree *type)
@@ -182,8 +160,8 @@ void type_add_member(
 
     list = (struct member_list *) type->member_list;
 
-    /* Adding function parameters have special case for "..." meaning variable
-     * argument list, and array types decaying to pointer. */
+    /* Adding function parameters have special case for "..." meaning
+     * variable argument list, and array types decaying to pointer. */
     if (is_function(type)) {
         if (member_name && !strcmp(member_name, "...")) {
             list->func_vararg = 1;
@@ -230,7 +208,7 @@ struct typetree *type_init(enum type tt, ...)
     va_list args;
     va_start(args, tt);
 
-    type = calloc_type();
+    type = mktype();
     type->type = tt;
     if (tt == T_POINTER || tt == T_ARRAY) {
         type->next = va_arg(args, const struct typetree *);
@@ -261,15 +239,15 @@ struct typetree *type_tagged_copy(const struct typetree *type, const char *name)
     assert(!is_tagged(type));
     assert(is_struct_or_union(type));
 
-    tag = calloc_type();
+    tag = mktype();
     tag->type = type->type;
     tag->tag_name = name;
     tag->next = type;
     return tag;
 }
 
-/* Determine whether two types are the same. Disregarding qualifiers, and names
- * of function parameters.
+/* Determine whether two types are the same. Disregarding qualifiers,
+ * and names of function parameters.
  */
 int type_equal(const struct typetree *a, const struct typetree *b)
 {
@@ -308,7 +286,7 @@ int type_equal(const struct typetree *a, const struct typetree *b)
 static const struct typetree *remove_qualifiers(const struct typetree *type)
 {
     if (type->qualifier) {
-        struct typetree *copy = calloc_type();
+        struct typetree *copy = mktype();
         assert(!nmembers(type));
 
         *copy = *type;
