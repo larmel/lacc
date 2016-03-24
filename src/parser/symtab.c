@@ -20,6 +20,13 @@ struct namespace
 const struct symbol
     *decl_memcpy = NULL;
 
+/* Initialize hash table with initial size heuristic based on scope
+ * depth. As a special case, depth 1 containing function arguments is
+ * assumed to contain fewer symbols.
+ */
+static unsigned hash_cap[] = {256, 16, 128, 64, 32, 16};
+static unsigned hash_cap_default = 8;
+
 static struct string sym_hash_key(void *ref)
 {
     return str_init(((const struct symbol *) ref)->name);
@@ -27,62 +34,54 @@ static struct string sym_hash_key(void *ref)
 
 void push_scope(struct namespace *ns)
 {
-    /* Initialize hash table with initial size heuristic based on scope
-     * depth. As a special case, depth 1 containing function arguments
-     * is assumed to contain fewer symbols.
-     */
-    static unsigned hash_cap[] = {256, 16, 128, 64, 32, 16};
-    static unsigned hash_cap_default = 8;
-
-    struct hash_table *scope;
     unsigned cap;
-
-    ns->current_depth = (ns->scope) ? ns->current_depth + 1 : 0;
-    ns->scope = realloc(ns->scope, sizeof(*scope) * (ns->current_depth + 1));
+    struct hash_table *scope;
 
     cap = hash_cap_default;
     if (ns->current_depth < sizeof(hash_cap) / sizeof(hash_cap[0]))
         cap = hash_cap[ns->current_depth];
 
-    scope = &ns->scope[ns->current_depth];
+    scope = calloc(1, sizeof(*scope));
     hash_init(scope, cap, &sym_hash_key, NULL, NULL);
+    list_push(&ns->scope_list, scope);
+    ns->current_depth = list_len(&ns->scope_list) - 1;
 }
 
 void pop_scope(struct namespace *ns)
 {
     struct hash_table *scope;
-    assert(ns->current_depth >= 0);
+    assert(list_len(&ns->scope_list));
 
-    scope = &ns->scope[ns->current_depth--];
+    scope = list_pop(&ns->scope_list);
+    ns->current_depth = list_len(&ns->scope_list) - 1;
     hash_destroy(scope);
+    free(scope);
 
     /* Popping last scope frees the whole symbol table, including the
      * symbols themselves. This only happens once, after reaching the
      * end of the translation unit. */
-    if (ns->current_depth == -1) {
-        free(ns->scope);
+    if (!list_len(&ns->scope_list)) {
+        list_clear(&ns->scope_list, NULL);
         list_clear(&ns->symbol_list, &free);
     }
 }
 
 struct symbol *sym_lookup(struct namespace *ns, const char *name)
 {
-    int depth;
+    int i;
     struct hash_table *scope;
     struct string key;
     struct symbol *sym;
-    assert(ns->current_depth >= 0);
 
     key = str_init(name);
-    depth = ns->current_depth;
-    do {
-        scope = &ns->scope[depth];
+    for (i = 0; i < list_len(&ns->scope_list); ++i) {
+        scope = list_get(&ns->scope_list, i);
         sym = hash_lookup(scope, key);
         if (sym) {
             sym->referenced += 1;
             return sym;
         }
-    } while (depth--);
+    }
 
     return NULL;
 }
@@ -217,7 +216,7 @@ struct symbol *sym_add(
     /* Add to normal identifier namespace, and make it searchable
      * through current scope. */
     list_push_back(&ns->symbol_list, sym);
-    hash_insert(&ns->scope[ns->current_depth], (void *) sym);
+    hash_insert(list_get(&ns->scope_list, 0), (void *) sym);
 
     verbose(
         "\t[type: %s, link: %s]\n"

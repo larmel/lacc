@@ -17,9 +17,10 @@ struct namespace {
      * Must not be affected by reallocation, so store pointers. */
     struct list symbol_list;
 
-    /* Hold a list of symbols per depth, optimizing lookup. Store
-     * pointers to symbols. */
-    struct hash_table *scope;
+    /* Hold a list of 'struct hash_table *', per scope depth, optimizing
+     * lookup. The hash table stores pointers to symbols in the symbol
+     * list. */
+    struct list scope_list;
 
     /* Current depth, and number of scopes. Depth 0 is translation unit,
      * 1 is function arguments, and n is local or member variables. */
