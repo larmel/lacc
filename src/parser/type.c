@@ -3,6 +3,7 @@
 #  define _XOPEN_SOURCE 500 /* snprintf */
 #endif
 #include "type.h"
+#include <lacc/array.h>
 #include <lacc/list.h>
 
 #include <assert.h>
@@ -29,10 +30,8 @@ const struct typetree
  * types do not own their member list.
  */
 struct member_list {
-    int length;
-    int cap;
     int func_vararg;
-    struct member *member;
+    array_of(struct member) member;
 };
 
 /* Manage memory ownership of all dynamically allocated types and type
@@ -45,7 +44,7 @@ static int init;
 static void free_member_list(void *elem)
 {
     struct member_list *ml = (struct member_list *) elem;
-    free(ml->member);
+    array_clear(&ml->member);
     free(ml);
 }
 
@@ -107,8 +106,8 @@ static int align_struct_members(struct member_list *list)
         max_alignment = 0;
     struct member *field;
 
-    for (i = 0; i < list->length; ++i) {
-        field = &list->member[i];
+    for (i = 0; i < array_len(&list->member); ++i) {
+        field = &array_get(&list->member, i);
         alignment = type_alignment(field->type);
         if (alignment > max_alignment) {
             max_alignment = alignment;
@@ -134,14 +133,14 @@ static int align_struct_members(struct member_list *list)
 
 int nmembers(const struct typetree *type)
 {
-    return (type->member_list) ? type->member_list->length : 0;
+    return (type->member_list) ? array_len(&type->member_list->member) : 0;
 }
 
 const struct member *get_member(const struct typetree *type, int n)
 {
-    if (!type->member_list || type->member_list->length <= n)
+    if (!type->member_list || array_len(&type->member_list->member) <= n)
         return NULL;
-    return type->member_list->member + n;
+    return &array_get(&type->member_list->member, n);
 }
 
 void type_add_member(
@@ -150,6 +149,7 @@ void type_add_member(
     const struct typetree *member_type)
 {
     struct member_list *list;
+    struct member member;
 
     assert(is_struct_or_union(type) || is_function(type));
     assert(!is_function(type) || !is_vararg(type));
@@ -167,20 +167,15 @@ void type_add_member(
             list->func_vararg = 1;
             return;
         }
-        if (is_array(member_type))
+        if (is_array(member_type)) {
             member_type = type_init(T_POINTER, member_type->next);
+        }
     }
 
-    if (list->length == list->cap) {
-        list->cap = 2 * list->cap + 2;
-        list->member = realloc(list->member, list->cap * sizeof(*list->member));
-    }
-
-    assert(list->length < list->cap);
-    list->member[list->length].name = member_name;
-    list->member[list->length].type = member_type;
-    list->member[list->length].offset = 0;
-    list->length++;
+    member.name = member_name;
+    member.type = member_type;
+    member.offset = 0;
+    array_push_back(&list->member, member);
 
     /* Align new struct members immediately. */
     if (is_struct(type)) {
