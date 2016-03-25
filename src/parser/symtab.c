@@ -129,10 +129,10 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
     case T_FUNCTION:
         if (is_function(type) && type_equal(sym->type.next, type->next)) {
             conflict =
-                sym->type.member_list &&
+                sym->type.signature &&
                 nmembers(&sym->type) != nmembers(type);
             if (!conflict)
-                sym->type.member_list = type->member_list;
+                sym->type.signature = type->signature;
         }
         break;
     case T_ARRAY:

@@ -29,29 +29,29 @@ const struct typetree
 /* Store member list separate from type to make memory ownership easier,
  * types do not own their member list.
  */
-struct member_list {
-    int func_vararg;
-    array_of(struct member) member;
+struct signature {
+    int is_vararg;
+    array_of(struct member) members;
 };
 
 /* Manage memory ownership of all dynamically allocated types and type
  * members, freeing them on exit.
  */
 static struct list type_registry;
-static struct list member_list_registry;
+static struct list signature_registry;
 static int init;
 
-static void free_member_list(void *elem)
+static void free_signature(void *elem)
 {
-    struct member_list *ml = (struct member_list *) elem;
-    array_clear(&ml->member);
-    free(ml);
+    struct signature *sig = (struct signature *) elem;
+    array_clear(&sig->members);
+    free(sig);
 }
 
 static void cleanup(void)
 {
     list_clear(&type_registry, &free);
-    list_clear(&member_list_registry, &free_member_list);
+    list_clear(&signature_registry, &free_signature);
 }
 
 static struct typetree *mktype(void)
@@ -65,15 +65,15 @@ static struct typetree *mktype(void)
     return type;
 }
 
-static struct member_list *allocmembers(void)
+static struct signature *mksignature(void)
 {
-    struct member_list *mem = calloc(1, sizeof(*mem));
-    list_push_back(&member_list_registry, mem);
+    struct signature *sig = calloc(1, sizeof(*sig));
+    list_push_back(&signature_registry, sig);
     if (!init) {
         init = 1;
         atexit(cleanup);
     }
-    return mem;
+    return sig;
 }
 
 int type_alignment(const struct typetree *type)
@@ -98,7 +98,7 @@ int type_alignment(const struct typetree *type)
     }
 }
 
-static int align_struct_members(struct member_list *list)
+static int align_struct_members(struct signature *sig)
 {
     int i,
         size = 0,
@@ -106,8 +106,8 @@ static int align_struct_members(struct member_list *list)
         max_alignment = 0;
     struct member *field;
 
-    for (i = 0; i < array_len(&list->member); ++i) {
-        field = &array_get(&list->member, i);
+    for (i = 0; i < array_len(&sig->members); ++i) {
+        field = &array_get(&sig->members, i);
         alignment = type_alignment(field->type);
         if (alignment > max_alignment) {
             max_alignment = alignment;
@@ -133,14 +133,15 @@ static int align_struct_members(struct member_list *list)
 
 int nmembers(const struct typetree *type)
 {
-    return (type->member_list) ? array_len(&type->member_list->member) : 0;
+    return (type->signature) ? array_len(&type->signature->members) : 0;
 }
 
 const struct member *get_member(const struct typetree *type, int n)
 {
-    if (!type->member_list || array_len(&type->member_list->member) <= n)
-        return NULL;
-    return &array_get(&type->member_list->member, n);
+    return
+        (!type->signature || array_len(&type->signature->members) <= n) ?
+            NULL :
+            &array_get(&type->signature->members, n);
 }
 
 void type_add_member(
@@ -148,23 +149,23 @@ void type_add_member(
     const char *member_name,
     const struct typetree *member_type)
 {
-    struct member_list *list;
+    struct signature *sig;
     struct member member;
 
     assert(is_struct_or_union(type) || is_function(type));
     assert(!is_function(type) || !is_vararg(type));
     assert(!is_tagged(type));
 
-    if (!type->member_list)
-        type->member_list = allocmembers();
-
-    list = (struct member_list *) type->member_list;
+    if (!type->signature) {
+        type->signature = mksignature();
+    }
+    sig = (struct signature *) type->signature;
 
     /* Adding function parameters have special case for "..." meaning
      * variable argument list, and array types decaying to pointer. */
     if (is_function(type)) {
         if (member_name && !strcmp(member_name, "...")) {
-            list->func_vararg = 1;
+            sig->is_vararg = 1;
             return;
         }
         if (is_array(member_type)) {
@@ -175,11 +176,11 @@ void type_add_member(
     member.name = member_name;
     member.type = member_type;
     member.offset = 0;
-    array_push_back(&list->member, member);
+    array_push_back(&sig->members, member);
 
     /* Align new struct members immediately. */
     if (is_struct(type)) {
-        type->size = align_struct_members(list);
+        type->size = align_struct_members(sig);
     }
 
     /* Size of union is the largest of the fields. */
@@ -194,7 +195,7 @@ int is_vararg(const struct typetree *type)
 {
     assert(is_function(type));
 
-    return (type->member_list) ? type->member_list->func_vararg : 0;
+    return (type->signature) ? type->signature->is_vararg : 0;
 }
 
 struct typetree *type_init(enum type tt, ...)

@@ -33,7 +33,7 @@
 #define is_volatile(t) ((t)->qualifier & Q_VOLATILE)
 #define is_tagged(t) (is_struct_or_union(t) && (t)->next)
 
-struct member_list;
+struct signature;
 
 /* Internal representation of a type.
  */
@@ -61,7 +61,7 @@ struct typetree {
     } qualifier;
 
     /* Function parameters, or struct/union members. */
-    const struct member_list *member_list;
+    const struct signature *signature;
 
     /* Function return value, pointer target, array base, or pointer to
      * tagged struct or union type. Tag indirections are used to avoid
