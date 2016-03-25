@@ -3,6 +3,7 @@
 #include "preprocess.h"
 #include "strtab.h"
 #include "tokenize.h"
+#include <lacc/array.h>
 #include <lacc/cli.h>
 
 #include <assert.h>
@@ -38,50 +39,37 @@ static int preserve_whitespace;
 
 /* Push and pop branch conditions for #if, #elif and #endif.
  */
-static struct {
-    int *condition;
-    size_t length;
-    size_t cap;
-} branch_stack;
+static array_of(int) branch_stack;
 
-static int expression(const struct token *list, const struct token **endptr);
-
-static void cnd_push(int c) {
-    if (branch_stack.length == branch_stack.cap) {
-        branch_stack.cap += 16;
-        branch_stack.condition = 
-            realloc(branch_stack.condition, branch_stack.cap * sizeof(int));
-    }
-
-    branch_stack.condition[branch_stack.length++] = c;
+static void cnd_push(int c)
+{
+    array_push_back(&branch_stack, c);
 }
 
-static int cnd_peek(void) {
-    return branch_stack.length ? 
-        branch_stack.condition[branch_stack.length - 1] : 1;
+static int cnd_peek(void)
+{
+    return array_len(&branch_stack) ?
+        array_get(&branch_stack, array_len(&branch_stack) - 1) :
+        1;
 }
 
-static int cnd_pop(void) {
-    if (!branch_stack.length)
+static int cnd_pop(void)
+{
+    if (!array_len(&branch_stack)) {
         error("Unmatched #endif directive.");
-
-    return branch_stack.condition[--branch_stack.length];
+        exit(1);
+    }
+    return array_pop_back(&branch_stack);
 }
 
 static void cleanup(void)
 {
+    array_clear(&branch_stack);
     if (lookahead) {
         free(lookahead);
         lookahead = NULL;
         length = 0;
         cursor = 0;
-    }
-
-    if (branch_stack.condition) {
-        free(branch_stack.condition);
-        branch_stack.condition = NULL;
-        branch_stack.length = 0;
-        branch_stack.cap = 0;
     }
 }
 
@@ -262,6 +250,8 @@ static void expect(const struct token *list, int token)
             basic_token[token].d.string.str, list->d.string.str);
     }
 }
+
+static int expression(const struct token *list, const struct token **endptr);
 
 static int eval_primary(
     const struct token *list,

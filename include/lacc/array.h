@@ -36,6 +36,12 @@
         (arr)->data[(arr)->length++] = elem;                                   \
     }
 
+/* Remove and return last element in array. Expands to expression of
+ * element type.
+ */
+#define array_pop_back(arr) \
+    (arr)->data[--(arr)->length]
+
 /* Get element from array. Expands to expression, of type being
  * whatever is stored in the array.
  */
