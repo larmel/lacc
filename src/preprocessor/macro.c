@@ -15,7 +15,6 @@
 #define HASH_TABLE_BUCKETS 1024
 
 static struct hash_table macro_hash_table;
-static int initialized;
 static int new_macro_added;
 
 static int macrocmp(const struct macro *a, const struct macro *b)
@@ -78,26 +77,27 @@ static void cleanup(void)
     hash_destroy(&macro_hash_table);
 }
 
-static void initialize(void)
+static void ensure_initialized(void)
 {
-    assert(!initialized);
-    hash_init(
-        &macro_hash_table,
-        HASH_TABLE_BUCKETS,
-        macro_hash_key,
-        macro_hash_add,
-        macro_hash_del);
-    atexit(cleanup);
-    initialized = 1;
+    static int done;
+
+    if (!done) {
+        hash_init(
+            &macro_hash_table,
+            HASH_TABLE_BUCKETS,
+            macro_hash_key,
+            macro_hash_add,
+            macro_hash_del);
+        atexit(cleanup);
+        done = 1;
+    }
 }
 
 const struct macro *definition(struct token name)
 {
     struct macro *ref = NULL;
 
-    if (!initialized)
-        initialize();
-
+    ensure_initialized();
     if (name.token == IDENTIFIER) {
         ref = hash_lookup(&macro_hash_table, name.d.string);
         if (ref) {
@@ -115,9 +115,7 @@ void define(struct macro macro)
 {
     struct macro *ref;
 
-    if (!initialized)
-        initialize();
-
+    ensure_initialized();
     new_macro_added = 0;
     ref = hash_insert(&macro_hash_table, &macro);
     if (macrocmp(ref, &macro)) {
@@ -128,17 +126,17 @@ void define(struct macro macro)
 
     /* Need to clean up memory for replacement list since ownership was
      * not given to hash table. */
-    if (!new_macro_added && macro.replacement)
+    if (!new_macro_added && macro.replacement) {
         free(macro.replacement);
+    }
 }
 
 void undef(struct token name)
 {
-    if (!initialized)
-        initialize();
-
-    if (name.token == IDENTIFIER)
+    ensure_initialized();
+    if (name.token == IDENTIFIER) {
         hash_remove(&macro_hash_table, name.d.string);
+    }
 }
 
 /* Keep track of which macros have been expanded, avoiding recursion by
