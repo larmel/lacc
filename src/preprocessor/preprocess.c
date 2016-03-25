@@ -19,6 +19,10 @@ struct builder {
     size_t length;
 };
 
+/* Toggle for producing preprocessed output (-E).
+ */
+static int preserve_whitespace;
+
 /* Buffer of preprocessed tokens, ready to be consumed by the parser.
  * Configured to hold at least K tokens, enabling LL(K) parsing.
  *
@@ -27,15 +31,9 @@ struct builder {
  * Cursor points to current position in lookahead buffer, the token to
  * be returned by next().
  */
-static struct token *lookahead;
-static size_t length;
-static size_t cursor;
-
+static array_of(struct token) lookahead;
+static unsigned cursor;
 static const int K = 2;
-
-/* Toggle for producing preprocessed output (-E).
- */
-static int preserve_whitespace;
 
 /* Push and pop branch conditions for #if, #elif and #endif.
  */
@@ -65,12 +63,7 @@ static int cnd_pop(void)
 static void cleanup(void)
 {
     array_clear(&branch_stack);
-    if (lookahead) {
-        free(lookahead);
-        lookahead = NULL;
-        length = 0;
-        cursor = 0;
-    }
+    array_clear(&lookahead);
 }
 
 static struct token get_token(void)
@@ -652,41 +645,46 @@ static void preprocess_directive(struct token *original)
 
 static void add_to_lookahead(struct token t)
 {
-    size_t i = length;
+    unsigned i = array_len(&lookahead);
+    struct token prev;
     int added = 0;
 
     /* Combine adjacent string literals. This step is done after
      * preprocessing and macro expansion; logic in preprocess_line will
      * guarantee that we keep preprocessing lines and filling up the
      * lookahead buffer for as long as there can be continuations. */
-    if (t.token == STRING) {
-        if (i-- && lookahead[i].token == STRING) {
-            lookahead[i] = pastetok(lookahead[i], t);
+    if (t.token == STRING && i--) {
+        prev = array_get(&lookahead, i);
+        if (prev.token == STRING) {
+            array_get(&lookahead, i) = pastetok(prev, t);
             added = 1;
         }
     }
 
     if (!added) {
-        length++;
-        lookahead = realloc(lookahead, length * sizeof(*lookahead));
-        lookahead[length - 1] = t;
+        array_push_back(&lookahead, t);
     }
 
     verbose("   token( %s )", t.d.string.str);
 }
 
+/* Break array abstraction to move data after cursor to the front, as we
+ * consume tokens towards the end of list.
+ */
 static void rewind_lookahead_buffer(void)
 {
-    size_t remaining;
-    assert(length >= cursor);
+    unsigned remaining;
+    assert(array_len(&lookahead) >= cursor);
 
-    remaining = length - cursor;
+    remaining = array_len(&lookahead) - cursor;
     if (remaining) {
-        lookahead =
-            memmove(lookahead,
-                lookahead + cursor, remaining * sizeof(*lookahead));
+        memmove(
+            lookahead.data,
+            lookahead.data + cursor,
+            remaining * sizeof(*lookahead.data));
     }
-    length = remaining;
+
+    array_len(&lookahead) = remaining;
     cursor = 0;
 }
 
@@ -731,10 +729,11 @@ static void preprocess_line(void)
                 t = get_token();
             }
         }
-    } while ((length < K || t.token == STRING) && t.token != END);
+    } while (
+        (array_len(&lookahead) < K || t.token == STRING) && t.token != END);
 
     /* Fill remainder of lookahead buffer. */
-    while (length < K) {
+    while (array_len(&lookahead) < K) {
         assert(t.token == END);
         add_to_lookahead(t);
     }
@@ -742,11 +741,11 @@ static void preprocess_line(void)
 
 struct token next(void)
 {
-    if (cursor + K >= length) {
+    if (cursor + K >= array_len(&lookahead)) {
         preprocess_line();
     }
 
-    return lookahead[cursor++];
+    return array_get(&lookahead, cursor++);
 }
 
 struct token peek(void)
@@ -758,13 +757,13 @@ struct token peekn(unsigned n)
 {
     assert(n && n <= K);
 
-    if (!length) {
+    if (!array_len(&lookahead)) {
         /* If peek() is the first call made, make sure there is an
          * initial call to populate the lookahead buffer. */
         preprocess_line();
     }
 
-    return lookahead[cursor + n - 1];
+    return array_get(&lookahead, cursor + n - 1);
 }
 
 struct token consume(enum token_type type)
