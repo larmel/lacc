@@ -971,7 +971,7 @@ static void compile_op(const struct op *op)
 static void tail_cmp_jump(struct block *block, const enum param_class *res)
 {
     struct instruction instr = {0};
-    struct op *cmp = block->code + block->n - 1;
+    struct op *cmp = &array_get(&block->code, array_len(&block->code) - 1);
 
     /* Target of assignment should be temporary, thus we do not lose any side
      * effects from not storing the value to stack. */
@@ -1036,25 +1036,31 @@ static void tail_generic(struct block *block, const enum param_class *res)
 
 static void compile_block(struct block *block, const enum param_class *res)
 {
-    int i;
+    int i, length;
+    struct op *op = NULL;
 
-    if (block->color == BLACK)
-        return;
+    if (block->color == WHITE) {
+        block->color = BLACK;
+        length = array_len(&block->code);
+        enter_context(block->label);
 
-    block->color = BLACK;
-    enter_context(block->label);
-    for (i = 0; i < block->n - 1; ++i)
-        compile_op(block->code + i);
+        /* Visit all operations, except the last one. */
+        for (i = 0; i < length; ++i) {
+            op = &array_get(&block->code, i);
+            if (i < length - 1)
+                compile_op(op);
+        }
 
-    /* Special case on comparison + jump, saving some space by not writing
-     * the result of comparison (always a temporary). */
-    if (block->n && IS_COMPARISON(block->code[i].type) && block->jump[1]) {
-        assert(block->jump[0]);
-        tail_cmp_jump(block, res);
-    } else {
-        if (block->n)
-            compile_op(block->code + i);
-        tail_generic(block, res);
+        /* Special case on comparison + jump, saving some space by not
+         * writing the result of comparison (always a temporary). */
+        if (op && IS_COMPARISON(op->type) && block->jump[1]) {
+            assert(block->jump[0]);
+            tail_cmp_jump(block, res);
+        } else {
+            if (op)
+                compile_op(op);
+            tail_generic(block, res);
+        }
     }
 }
 
@@ -1117,8 +1123,8 @@ static void compile_data(struct definition *def)
         initialized = 0;
 
     enter_context(def->symbol);
-    for (i = 0; i < def->body->n; ++i) {
-        op = def->body->code + i;
+    for (i = 0; i < array_len(&def->body->code); ++i) {
+        op = &array_get(&def->body->code, i);
 
         assert(op->type == IR_ASSIGN);
         assert(op->a.kind == DIRECT);

@@ -93,8 +93,8 @@ static void foutputnode(FILE *stream, struct block *node)
     fprintf(stream, "\t%s [label=\"{ %s",
         sanitize(node->label), escape(node->label));
 
-    for (i = 0; i < node->n; ++i) {
-        struct op op = node->code[i];
+    for (i = 0; i < array_len(&node->code); ++i) {
+        struct op op = array_get(&node->code, i);
         switch (op.type) {
         case IR_ASSIGN:
             fprintf(stream, " | %s = %s",

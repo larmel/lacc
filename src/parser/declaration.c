@@ -737,9 +737,7 @@ static struct list
 static void free_block(void *elem)
 {
     struct block *block = (struct block *) elem;
-    if (block->n) {
-        free(block->code);
-    }
+    array_clear(&block->code);
     free(block);
 }
 

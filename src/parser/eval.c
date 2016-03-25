@@ -24,12 +24,10 @@ static int is_string(struct var val)
 
 static void ir_append(struct block *block, struct op op)
 {
-    /* Current block can be NULL when parsing an expression that should not be
-     * evaluated, for example argument to sizeof. */
+    /* Current block can be NULL when parsing an expression that should
+     * not be evaluated, for example argument to sizeof. */
     if (block) {
-        block->n += 1;
-        block->code = realloc(block->code, sizeof(*block->code) * block->n);
-        block->code[block->n - 1] = op;
+        array_push_back(&block->code, op);
     }
 }
 

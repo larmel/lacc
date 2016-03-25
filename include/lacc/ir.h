@@ -1,6 +1,7 @@
 #ifndef IR_H
 #define IR_H
 
+#include "array.h"
 #include "list.h"
 #include "symbol.h"
 #include "token.h"
@@ -80,23 +81,25 @@ struct var {
     int lvalue;
 };
 
+/* Three-address code, specifying a target (a), left and right operand
+ * (b and c, respectively), and the operation type.
+ */
+struct op {
+    enum optype type;
+    struct var a;
+    struct var b;
+    struct var c;
+};
+
 /* Basic block in function control flow graph, containing a symbolic
- * address and a contiguous list of IR operations.
+ * address and a list of IR operations. Each block has a unique jump
+ * target address, a symbol of type SYM_LABEL.
  */
 struct block {
-    /* Unique jump target address, symbol of type SYM_LABEL. */
     const struct symbol *label;
 
-    /* Realloc-able list of 3-address code operations. */
-    struct op {
-        enum optype type;
-        struct var a;
-        struct var b;
-        struct var c;
-    } *code;
-
-    /* Number of ir operations. */
-    int n;
+    /* Contiguous block of three-address code operations. */
+    array_of(struct op) code;
 
     /* Toggle last statement was return, meaning expr is valid. There
      * are cases where we reach end of control in a non-void function,
