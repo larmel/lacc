@@ -239,6 +239,7 @@ static int elf_section_write(int shid, const void *data, size_t n)
     assert(0 < shid && shid < SHNUM);
     assert(
         shdr[shid].sh_type == SHT_STRTAB ||
+        shdr[shid].sh_type == SHT_SYMTAB ||
         shdr[shid].sh_type == SHT_PROGBITS ||
         shdr[shid].sh_type == SHT_NOBITS);
 
@@ -297,27 +298,27 @@ static int elf_symtab_add(Elf64_Sym entry)
         {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHID_TEXT, 0, 0}
     };
 
-    Elf64_Sym **symtab;
     int i;
 
-    symtab = &sbuf[SHID_SYMTAB].sym;
-    if (!*symtab) {
-        *symtab = calloc(1, sizeof(default_symbols));
-        *symtab = memcpy(*symtab, default_symbols, sizeof(default_symbols));
-        shdr[SHID_SYMTAB].sh_size = sizeof(default_symbols);
+    if (!shdr[SHID_SYMTAB].sh_size) {
+        elf_section_write(
+            SHID_SYMTAB,
+            &default_symbols,
+            sizeof(default_symbols));
     }
 
+    assert(shdr[SHID_SYMTAB].sh_size);
     i = shdr[SHID_SYMTAB].sh_size / sizeof(Elf64_Sym);
-    shdr[SHID_SYMTAB].sh_size += sizeof(Elf64_Sym);
-    *symtab = realloc(*symtab, shdr[SHID_SYMTAB].sh_size);
-    (*symtab)[i] = entry;
+    elf_section_write(SHID_SYMTAB, &entry, sizeof(Elf64_Sym));
 
     /* All STB_LOCAL must come before STB_GLOBAL. Index of the first
      * non-local symbol is stored in section header field. */
     if (entry.st_info >> 4 == STB_GLOBAL && !shdr[SHID_SYMTAB].sh_info) {
         shdr[SHID_SYMTAB].sh_info = i;
-    } else
-        assert((entry.st_info >> 4) == ((*symtab)[i - 1].st_info >> 4));
+    } else {
+        assert(
+            (entry.st_info >> 4) == (sbuf[SHID_SYMTAB].sym[i-1].st_info >> 4));
+    }
 
     return i;
 }
