@@ -1,5 +1,6 @@
 #include "abi.h"
 #include "elf.h"
+#include <lacc/array.h>
 
 #include <assert.h>
 
@@ -183,16 +184,18 @@ static union {
     Elf64_Rela *rela;
 } sbuf[SHNUM];
 
-/* Pending relocations, waiting for sym->stack_offset to be resolved to index
- * into .symtab.
+/* Pending relocations, waiting for sym->stack_offset to be resolved to
+ * index into .symtab.
  */
-static struct pending_relocation {
+struct pending_relocation {
     const struct symbol *symbol;
     enum rel_type type;
     int section;                /* section id of .rela.X */
     int offset;                 /* offset into .text */
     int addend;                 /* offset into symbol ? */
-} *prl;
+};
+
+static array_of(struct pending_relocation) pending_relocation_list;
 
 static int
     n_rela_data,
@@ -203,25 +206,28 @@ static int
  */
 static Elf64_Sym *current_function_entry;
 
-/* List of pending global symbols, not yet added to .symtab. All globals have
- * to come after LOCAL symbols, according to spec. Also, ld will segfault(!)
- * otherwise.
+/* List of pending global symbols, not yet added to .symtab. All globals
+ * have to come after LOCAL symbols, according to spec. Also, ld will
+ * segfault(!) otherwise.
  */
-static struct {
+struct global {
     struct symbol *sym;
     Elf64_Sym entry;
-} *globals;
-static int n_globals;
+};
 
-/* Text section contains offsets to labels, also in text. Forward references
- * cannot be resolved immediately, as translation is single pass. Store offsets
- * into .text, paired with symbol (label) which offsets should be calculated.
+static array_of(struct global) globals;
+
+/* Text section contains offsets to labels, also in text. Forward
+ * references cannot be resolved immediately, as translation is single
+ * pass. Store offsets into .text, paired with symbol (label) which
+ * offsets should be calculated.
  */
-static struct pending_displacement {
+struct pending_displacement {
     const struct symbol *label;
     int text_offset;
-} *toff;
-static int n_toff;
+};
+
+static array_of(struct pending_displacement) pending_displacement_list;
 
 /* Write bytes to section. If ptr is NULL, fill with zeros.
  */
@@ -263,7 +269,8 @@ static int elf_section_write(int shid, const void *data, size_t n)
 }
 
 /* Align data section to specified number of bytes. Following calls to
- * elf_section_write start at this alignment. Padding is filled with zero.
+ * elf_section_write start at this alignment. Padding is filled with
+ * zero.
  */
 static int elf_section_align(int shid, int align)
 {
@@ -305,8 +312,8 @@ static int elf_symtab_add(Elf64_Sym entry)
     *symtab = realloc(*symtab, shdr[SHID_SYMTAB].sh_size);
     (*symtab)[i] = entry;
 
-    /* All STB_LOCAL must come before STB_GLOBAL. Index of the first non-local
-     * symbol is stored in section header field. */
+    /* All STB_LOCAL must come before STB_GLOBAL. Index of the first
+     * non-local symbol is stored in section header field. */
     if (entry.st_info >> 4 == STB_GLOBAL && !shdr[SHID_SYMTAB].sh_info) {
         shdr[SHID_SYMTAB].sh_info = i;
     } else
@@ -315,40 +322,51 @@ static int elf_symtab_add(Elf64_Sym entry)
     return i;
 }
 
-/* Associate symbol with symtab entry. Internal symbols are added to table right
- * away, but global symbols have to be buffered and flushed at the end. (Mis-)
- * use member for storing index into ELF symbol table. Stack offset is otherwise
- * only used for local variables, which will not live in this symbol table.
+/* Associate symbol with symtab entry. Internal symbols are added to
+ * table right away, but global symbols have to be buffered and flushed
+ * at the end. (Mis-)use member for storing index into ELF symbol table.
+ * Stack offset is otherwise only used for local variables, which will
+ * not live in this symbol table.
  */
 static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
 {
+    struct global var;
     if (sym->linkage == LINK_INTERN) {
         sym->stack_offset = elf_symtab_add(entry);
-        if (is_function(&sym->type))
+        if (is_function(&sym->type)) {
             current_function_entry = &sbuf[SHID_SYMTAB].sym[sym->stack_offset];
+        }
     } else {
         assert((entry.st_info >> 4) == STB_GLOBAL);
-        globals = realloc(globals, (n_globals + 1) * sizeof(*globals));
-        globals[n_globals].sym = sym;
-        globals[n_globals].entry = entry;
-        if (is_function(&sym->type))
-            current_function_entry = &globals[n_globals].entry;
-        n_globals += 1;
+        var.sym = sym;
+        var.entry = entry;
+        array_push_back(&globals, var);
+        if (is_function(&sym->type)) {
+            /* This seems a bit shady, assumes the array address is kept
+             * stable. Same with LINK_INTERN case... */
+            current_function_entry
+                = &array_get(&globals, array_len(&globals) - 1).entry;
+        }
     }
 }
 
-/* Write global symtab entries to table.
+/* Write global symtab entries to section data.
  */
 static void flush_symtab_globals(void)
 {
     int i;
-    for (i = 0; i < n_globals; ++i)
-        globals[i].sym->stack_offset = elf_symtab_add(globals[i].entry);
-    free(globals);
+    struct global var;
+
+    for (i = 0; i < array_len(&globals); ++i) {
+        var = array_get(&globals, i);
+        var.sym->stack_offset = elf_symtab_add(var.entry);
+    }
+
+    array_clear(&globals);
 }
 
-/* Add string to strtab section, returning its offset into the section for use
- * in references.
+/* Add string to strtab section, returning its offset into the section
+ * for use in references.
  */
 static int elf_strtab_add(int shid, const char *str)
 {
@@ -368,14 +386,13 @@ static int elf_strtab_add(int shid, const char *str)
 
 static void elf_add_reloc(struct pending_relocation entry)
 {
-    if (entry.section == SHID_RELA_TEXT)
+    array_push_back(&pending_relocation_list, entry);
+    if (entry.section == SHID_RELA_TEXT) {
         n_rela_text++;
-    else {
+    } else {
         assert(entry.section == SHID_RELA_DATA);
         n_rela_data++;
     }
-    prl = realloc(prl, (n_rela_text + n_rela_data) * sizeof(*prl));
-    prl[n_rela_text + n_rela_data - 1] = entry;
 }
 
 void elf_add_reloc_text(
@@ -407,10 +424,10 @@ static void elf_add_reloc_data(
     elf_add_reloc(r);
 }
 
-/* Construct relocation entries from pending relocations. Invoked with flush(),
- * after all data and code is processed. It is important that this is called
- * once all symbols have been written to symtab, as it relies on stack_offset
- * pointing to symtab entry index.
+/* Construct relocation entries from pending relocations. Invoked with
+ * flush(), after all data and code is processed. It is important that
+ * this is called once all symbols have been written to symtab, as it
+ * relies on stack_offset pointing to symtab entry index.
  */
 static void flush_relocations(void)
 {
@@ -418,6 +435,7 @@ static void flush_relocations(void)
         *entry,
         *data_entry = NULL,
         *text_entry = NULL;
+    struct pending_relocation pending;
     int i;
 
     if (n_rela_text) {
@@ -432,66 +450,62 @@ static void flush_relocations(void)
         data_entry = sbuf[SHID_RELA_DATA].rela;
     }
 
+    assert(array_len(&pending_relocation_list) == n_rela_text + n_rela_data);
     for (i = 0; i < n_rela_text + n_rela_data; ++i) {
-        assert(prl[i].type != R_X86_64_NONE);
-        if (prl[i].section == SHID_RELA_DATA)
+        pending = array_get(&pending_relocation_list, i);
+        assert(pending.type != R_X86_64_NONE);
+        if (pending.section == SHID_RELA_DATA)
             entry = data_entry++;
         else {
-            assert(prl[i].section == SHID_RELA_TEXT);
+            assert(pending.section == SHID_RELA_TEXT);
             entry = text_entry++;
         }
 
-        entry->r_offset = prl[i].offset;
-        entry->r_addend = prl[i].addend;
+        entry->r_offset = pending.offset;
+        entry->r_addend = pending.addend;
         entry->r_info =
-            ELF64_R_INFO(symtab_index_of(prl[i].symbol), prl[i].type);
+            ELF64_R_INFO(symtab_index_of(pending.symbol), pending.type);
 
         /* Subtract 4 to account for the size occupied by the relocation
          * slot itself, it takes up 4 bytes in the instruction. */
-        if (prl[i].type == R_X86_64_PC32)
+        if (pending.type == R_X86_64_PC32)
             entry->r_addend -= 4;
     }
 
-    free(prl);
+    array_clear(&pending_relocation_list);
 }
 
-/* Must be called before writing text segment. Overwrite locations with offsets
- * now found in stack_offset member of label symbols.
+/* Must be called before writing text segment. Overwrite locations with
+ * offsets now found in stack_offset member of label symbols.
  */
 static void flush_text_displacements(void)
 {
     int i, *ptr;
-    const struct pending_displacement *entry;
+    struct pending_displacement entry;
 
-    if (!toff)
-        return;
+    for (i = 0; i < array_len(&pending_displacement_list); ++i) {
+        entry = array_get(&pending_displacement_list, i);
+        assert(entry.label->stack_offset);
 
-    assert(n_toff);
-    for (i = 0; i < n_toff; ++i) {
-        entry = &toff[i];
-        assert(entry->label->stack_offset);
-
-        ptr = (int *) (sbuf[SHID_TEXT].data + entry->text_offset);
-        *ptr += entry->label->stack_offset - entry->text_offset;
+        ptr = (int *) (sbuf[SHID_TEXT].data + entry.text_offset);
+        *ptr += entry.label->stack_offset - entry.text_offset;
     }
 
-    free(toff);
-    toff = NULL;
-    n_toff = 0;
+    array_clear(&pending_displacement_list);
 }
 
 int elf_text_displacement(const struct symbol *label, int instr_offset)
 {
+    struct pending_displacement entry;
     assert(label->symtype == SYM_LABEL);
 
     if (label->stack_offset) {
         return label->stack_offset - shdr[SHID_TEXT].sh_size - instr_offset;
     }
 
-    toff = realloc(toff, (n_toff + 1) * sizeof(*toff));
-    toff[n_toff].label = label;
-    toff[n_toff].text_offset = shdr[SHID_TEXT].sh_size + instr_offset;
-    n_toff += 1;
+    entry.label = label;
+    entry.text_offset = shdr[SHID_TEXT].sh_size + instr_offset;
+    array_push_back(&pending_displacement_list, entry);
     return 0;
 }
 
@@ -530,8 +544,8 @@ int elf_symbol(const struct symbol *sym)
         entry.st_value = shdr[SHID_RODATA].sh_size;
         entry.st_info |= STT_OBJECT;
 
-        /* String value symbols contain the actual string value; write to
-         * .rodata immediately. */
+        /* String value symbols contain the actual string value; write
+         * to .rodata immediately. */
         elf_section_write(SHID_RODATA, sym->string_value.str, entry.st_size);
     } else if (sym->linkage == LINK_INTERN) {
         elf_section_align(SHID_BSS, sym_alignment(sym));
