@@ -225,11 +225,11 @@ static int n_toff;
 
 /* Write bytes to section. If ptr is NULL, fill with zeros.
  */
-static int elf_section_write(int shid, const void *ptr, size_t n)
+static int elf_section_write(int shid, const void *data, size_t n)
 {
-    size_t offset;
-    unsigned char **data;
+    static unsigned scap[SHNUM];
 
+    size_t offset;
     assert(0 < shid && shid < SHNUM);
     assert(
         shdr[shid].sh_type == SHT_STRTAB ||
@@ -238,12 +238,24 @@ static int elf_section_write(int shid, const void *ptr, size_t n)
 
     offset = shdr[shid].sh_size;
     if (shdr[shid].sh_type != SHT_NOBITS) {
-        data = &sbuf[shid].data;
-        *data = realloc(*data, offset + n);
-        if (ptr)
-            memcpy(*data + offset, ptr, n);
-        else
-            memset(*data + offset, 0, n);
+        if (offset + n >= scap[shid]) {
+            if (!scap[shid]) {
+                assert(!offset);
+                assert(!sbuf[shid].data);
+                scap[shid] = 10 * n;
+                sbuf[shid].data = malloc(scap[shid]);
+            } else {
+                assert(offset);
+                assert(sbuf[shid].data);
+                scap[shid] = 2 * scap[shid] + n;
+                sbuf[shid].data = realloc(sbuf[shid].data, scap[shid]);
+            }
+        }
+        if (data) {
+            memcpy(sbuf[shid].data + offset, data, n);
+        } else {
+            memset(sbuf[shid].data + offset, 0, n);
+        }
     }
 
     shdr[shid].sh_size += n;
