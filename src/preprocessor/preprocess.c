@@ -14,10 +14,7 @@
 /* Helper structure and functions for aggregating tokens into a line
  * before preprocessing.
  */
-struct builder {
-    struct token *elem;
-    size_t length;
-};
+typedef array_of(struct token) TokenArray;
 
 /* Toggle for producing preprocessed output (-E).
  */
@@ -31,7 +28,7 @@ static int preserve_whitespace;
  * Cursor points to current position in lookahead buffer, the token to
  * be returned by next().
  */
-static array_of(struct token) lookahead;
+static TokenArray lookahead;
 static unsigned cursor;
 static const int K = 2;
 
@@ -90,28 +87,18 @@ static struct token get_token(void)
     return r;
 }
 
-static void list_append(struct builder *list, struct token t)
-{
-    list->length++;
-    list->elem = realloc(list->elem, sizeof(*list->elem) * list->length);
-    list->elem[list->length - 1] = t;
-}
-
 /* Keep track of the nesting depth of macro arguments. For example;
  * MAX( MAX(10, 12), 20 ) should complete on the last parenthesis, which
  * makes the expression balanced. Read lines until full macro invocation
  * is included.
  */
-static void read_macro_invocation(
-    struct builder *list,
-    const struct macro *macro)
-{
+static void read_macro_invocation(TokenArray *line, const struct macro *macro) {
     int nesting;
     struct token t;
     assert(macro->type == FUNCTION_LIKE);
 
     t = get_token();
-    list_append(list, t);
+    array_push_back(line, t);
     if (t.token != '(')
         /* Only expand function-like macros if they appear as function
          * invocations, beginning with an open paranthesis. */
@@ -136,7 +123,7 @@ static void read_macro_invocation(
         if (t.token == END) {
             break;
         }
-        list_append(list, t);
+        array_push_back(line, t);
     }
     if (nesting) {
         error("Unbalanced invocation of macro '%s'.", macro->name.d.string.str);
@@ -146,7 +133,7 @@ static void read_macro_invocation(
 
 /* Replace 'defined name' and 'defined (name)' with 0 or 1 constants.
  */
-static void read_defined_operator(struct builder *list)
+static void read_defined_operator(TokenArray *line)
 {
     int is_parens = 0;
     char *endptr;
@@ -168,7 +155,7 @@ static void read_defined_operator(struct builder *list)
     else
         t = tokenize("0", &endptr);
 
-    list_append(list, t);
+    array_push_back(line, t);
     if (is_parens) {
         t = get_token();
         if (t.token != ')') {
@@ -198,13 +185,13 @@ static int is_ident(struct token tok, const char *name)
  */
 static struct token *read_complete_line(struct token t)
 {
+    TokenArray line = {0};
     const struct macro *def;
-    struct builder line = {0};
     int is_expandable = 1,
         is_directive = (t.token == '#');
 
     if (is_directive) {
-        list_append(&line, t);
+        array_push_back(&line, t);
         t = get_token();
         is_expandable = (t.token == IF) || is_ident(t, "elif");
     }
@@ -217,22 +204,22 @@ static struct token *read_complete_line(struct token t)
                 (def = definition(t)) && def->type == FUNCTION_LIKE &&
                 is_expandable)
             {
-                list_append(&line, t);
+                array_push_back(&line, t);
                 read_macro_invocation(&line, def);
             } else {
-                list_append(&line, t);
+                array_push_back(&line, t);
             }
         } else {
-            list_append(&line, t);
+            array_push_back(&line, t);
         }
         t = get_token();
     }
 
     if (preserve_whitespace && t.token == NEWLINE)
-        list_append(&line, t);
+        array_push_back(&line, t);
 
-    list_append(&line, basic_token[END]);
-    return line.elem;
+    array_push_back(&line, basic_token[END]);
+    return line.data;
 }
 
 static void expect(const struct token *list, int token)
