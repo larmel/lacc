@@ -63,6 +63,16 @@ static void cleanup(void)
     array_clear(&lookahead);
 }
 
+static void ensure_initialized(void)
+{
+    static int done;
+
+    if (!done) {
+        atexit(cleanup);
+        done = 1;
+    }
+}
+
 static struct token get_token(void)
 {
     static char *line;
@@ -676,24 +686,17 @@ static void rewind_lookahead_buffer(void)
 }
 
 /* Consume at least one line, up until the final newline or end of file.
- * Fill up lookahead buffer and reset cursor.
+ * Fill up lookahead buffer and reset cursor. In case of end of input,
+ * put END tokens in remaining lookahead slots.
  */
 static void preprocess_line(void)
 {
-    static int call_cleanup;
-    struct token t = {0};
+    struct token t;
+    struct token *line, *expanded;
 
-    if (!call_cleanup) {
-        call_cleanup = 1;
-        atexit(cleanup);
-    }
-
+    ensure_initialized();
     rewind_lookahead_buffer();
-
     do {
-        struct token
-            *line, *expanded;
-
         t = get_token();
         if (t.token == '#') {
             line = read_complete_line(t);
@@ -719,7 +722,6 @@ static void preprocess_line(void)
     } while (
         (array_len(&lookahead) < K || t.token == STRING) && t.token != END);
 
-    /* Fill remainder of lookahead buffer. */
     while (array_len(&lookahead) < K) {
         assert(t.token == END);
         add_to_lookahead(t);
