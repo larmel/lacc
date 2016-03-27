@@ -4,6 +4,7 @@
 #include "expression.h"
 #include "symtab.h"
 #include "type.h"
+#include <lacc/array.h>
 #include <lacc/token.h>
 #include <lacc/cli.h>
 
@@ -30,36 +31,35 @@ static struct block
     *break_target,
     *continue_target;
 
-/* Keep track of nested switch statements and their case labels.
- */
-static struct switch_context {
+struct switch_case {
+    struct block *label;
+    struct var value;
+};
+
+struct switch_context {
     struct block *default_label;
-    struct block **case_label;
-    struct var *case_value;
-    int n;
-} *switch_ctx;
+    array_of(struct switch_case) cases;
+};
+
+/* Keep track of nested switch statements and their case labels. This
+ * reference always points to the current context, and backtracking is
+ * managed recursively by switch_statement.
+ */
+static struct switch_context *switch_context;
 
 static void add_switch_case(struct block *label, struct var value)
 {
-    struct switch_context *ctx = switch_ctx;
+    struct switch_case sc;
 
-    ctx->n++;
-    ctx->case_label =
-        realloc(ctx->case_label, ctx->n * sizeof(*ctx->case_label));
-    ctx->case_value =
-        realloc(ctx->case_value, ctx->n * sizeof(*ctx->case_value));
-
-    ctx->case_label[ctx->n - 1] = label;
-    ctx->case_value[ctx->n - 1] = value;
+    sc.label = label;
+    sc.value = value;
+    array_push_back(&switch_context->cases, sc);
 }
 
 static void free_switch_context(struct switch_context *ctx)
 {
     assert(ctx);
-    if (ctx->n) {
-        free(ctx->case_label);
-        free(ctx->case_value);
-    }
+    array_clear(&ctx->cases);
     free(ctx);
 }
 
@@ -245,8 +245,8 @@ static struct block *switch_statement(struct block *parent)
     struct block *old_break_target;
 
     set_break_target(old_break_target, next);
-    old_switch_ctx = switch_ctx;
-    switch_ctx = calloc(1, sizeof(*switch_ctx));
+    old_switch_ctx = switch_context;
+    switch_context = calloc(1, sizeof(*switch_context));
 
     consume(SWITCH);
     consume('(');
@@ -255,30 +255,29 @@ static struct block *switch_statement(struct block *parent)
     last = statement(body);
     last->jump[0] = next;
 
-    if (!switch_ctx->n && !switch_ctx->default_label) {
+    if (!array_len(&switch_context->cases) && !switch_context->default_label) {
         parent->jump[0] = next;
     } else {
         int i;
         struct block *cond = parent;
 
-        for (i = 0; i < switch_ctx->n; ++i) {
+        for (i = 0; i < array_len(&switch_context->cases); ++i) {
             struct block *prev_cond = cond;
-            struct block *label = switch_ctx->case_label[i];
-            struct var value = switch_ctx->case_value[i];
+            struct switch_case sc = array_get(&switch_context->cases, i);
 
             cond = cfg_block_init();
-            cond->expr = eval_expr(cond, IR_OP_EQ, value, parent->expr);
-            cond->jump[1] = label;
+            cond->expr = eval_expr(cond, IR_OP_EQ, sc.value, parent->expr);
+            cond->jump[1] = sc.label;
             prev_cond->jump[0] = cond;
         }
 
-        cond->jump[0] = (switch_ctx->default_label) ?
-            switch_ctx->default_label : next;
+        cond->jump[0] = (switch_context->default_label) ?
+            switch_context->default_label : next;
     }
 
-    free_switch_context(switch_ctx);
+    free_switch_context(switch_context);
     restore_break_target(old_break_target);
-    switch_ctx = old_switch_ctx;
+    switch_context = old_switch_ctx;
     return next;
 }
 
@@ -337,7 +336,7 @@ struct block *statement(struct block *parent)
         break;
     case CASE:
         consume(CASE);
-        if (!switch_ctx) {
+        if (!switch_context) {
             error("Stray 'case' label, must be inside a switch statement.");
         } else {
             struct block *next = cfg_block_init();
@@ -352,14 +351,14 @@ struct block *statement(struct block *parent)
     case DEFAULT:
         consume(DEFAULT);
         consume(':');
-        if (!switch_ctx) {
+        if (!switch_context) {
             error("Stray 'default' label, must be inside a switch statement.");
-        } else if (switch_ctx->default_label) {
+        } else if (switch_context->default_label) {
             error("Multiple 'default' labels inside the same switch.");
         } else {
             struct block *next = cfg_block_init();
             parent->jump[0] = next;
-            switch_ctx->default_label = next;
+            switch_context->default_label = next;
             next = statement(next);
             parent = next;
         }
