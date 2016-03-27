@@ -24,6 +24,10 @@ struct source current_file;
  */
 static char *input_line;
 
+/* Temporary buffer used to construct search paths.
+ */
+static char *path_buffer;
+
 /* List of directories to search on resolving include directives.
  */
 static array_of(const char *) search_path_list;
@@ -32,13 +36,6 @@ static array_of(const char *) search_path_list;
  * from the end of the list.
  */
 static array_of(struct source) source_stack;
-
-/* Re-use static buffer to save some allocations. Each lookup constructs
- * new strings by combining include directory and filename. There is no
- * specific limit on the length of file names.
- */
-static char *inc_path;
-static size_t inc_path_len;
 
 static struct source push(struct source source)
 {
@@ -73,34 +70,44 @@ static void finalize(void)
 
     array_clear(&source_stack);
     array_clear(&search_path_list);
-    free(inc_path);
+    free(path_buffer);
     free(input_line);
+}
+
+static char *create_path(const char *path, size_t dirlen, const char *name)
+{
+    static size_t path_buffer_length;
+    size_t len;
+
+    len = dirlen + strlen(name) + 2;
+    if (len > path_buffer_length) {
+        path_buffer_length = len;
+        path_buffer = realloc(path_buffer, path_buffer_length);
+    }
+
+    strncpy(path_buffer, path, dirlen);
+    path_buffer[dirlen] = '/';
+    strcpy(path_buffer + dirlen + 1, name);
+    return path_buffer;
 }
 
 void include_file(const char *name)
 {
+    const char *path;
     struct source source = {0};
 
     /* Construct path by combining current directory and include name,
      * which itself can include folders. */
     if (current_file.dirlen) {
-        int length = current_file.dirlen + strlen(name) + 1;
-        char *path = calloc(length + 1, sizeof(*path));
-
-        strncpy(path, current_file.path, current_file.dirlen);
-        path[current_file.dirlen] = '/';
-        strcpy(path + current_file.dirlen + 1, name);
-        source.path = str_register(path, length).str;
-        free(path);
-
-        path = strrchr(source.path, '/');
-        source.dirlen = path - source.path;
+        path = create_path(current_file.path, current_file.dirlen, name);
     } else {
-        source.path = name;
+        path = name;
     }
 
-    source.file = fopen(source.path, "r");
+    source.file = fopen(path, "r");
     if (source.file) {
+        source.path = str_register(path, strlen(path)).str;
+        source.dirlen = strrchr(path, '/') - path;
         current_file = push(source);
     } else {
         include_system_file(name);
@@ -111,34 +118,21 @@ void include_system_file(const char *name)
 {
     struct source source = {0};
     const char *path;
-    size_t dir, len;
+    size_t dirlen;
     int i;
 
     for (i = 0; i < array_len(&search_path_list); ++i) {
         path = array_get(&search_path_list, i);
-        dir = strlen(path);
-        len = dir + strlen(name) + 1;
-
-        if (len > inc_path_len) {
-            inc_path_len = len * 2;
-            inc_path = realloc(inc_path, inc_path_len * sizeof(*inc_path));
+        dirlen = strlen(path);
+        while (path[dirlen - 1] == '/') {
+            dirlen--;
+            assert(dirlen);
         }
-
-        strcpy(inc_path, path);
-        if (inc_path[dir - 1] == '/') {
-            /* Include paths can be specified with or without trailing
-             * slash. Do not normalize initially, but handle it here. */
-            dir--;
-        } else {
-            inc_path[dir] = '/';
-        }
-
-        strcpy(inc_path + dir + 1, name);
-        source.file = fopen(inc_path, "r");
+        path = create_path(path, dirlen, name);
+        source.file = fopen(path, "r");
         if (source.file) {
-            char *end = strrchr(inc_path, '/');
-            source.path = str_register(inc_path, len).str;
-            source.dirlen = end - inc_path;
+            source.path = str_register(path, strlen(path)).str;
+            source.dirlen = strrchr(path, '/') - path;
             break;
         }
     }
