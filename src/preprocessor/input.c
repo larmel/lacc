@@ -4,6 +4,7 @@
 #endif
 #include "input.h"
 #include "strtab.h"
+#include <lacc/array.h>
 #include <lacc/cli.h>
 
 #include <assert.h>
@@ -17,10 +18,20 @@
  */
 struct source current_file;
 
+/* Scratchpad buffer for assembling lines to return. The same buffer is
+ * resized if needed, enforcing no specific limit on how long a line can
+ * be.
+ */
+static char *input_line;
+
 /* List of directories to search on resolving include directives.
  */
-static const char **search_path;
-static size_t search_path_count;
+static array_of(const char *) search_path_list;
+
+/* Keep stack of file descriptors as resolved by includes. Push and pop
+ * from the end of the list.
+ */
+static array_of(struct source) source_stack;
 
 /* Re-use static buffer to save some allocations. Each lookup constructs
  * new strings by combining include directory and filename. There is no
@@ -29,76 +40,49 @@ static size_t search_path_count;
 static char *inc_path;
 static size_t inc_path_len;
 
-/* Scratchpad buffer for assembling lines to return. The same buffer is
- * resized if needed, enforcing no specific limit on how long a line can be.
- */
-static char *input_line;
-static size_t input_line_len;
-
-/* Keep stack of file descriptors as resolved by includes. Push and pop from
- * the end of the list.
- */
-static struct source *src_stack;
-static size_t src_count;
-
 static struct source push(struct source source)
 {
-    src_count++;
-    src_stack = realloc(src_stack, src_count * sizeof(*src_stack));
-    src_stack[src_count - 1] = source;
+    array_push_back(&source_stack, source);
     return source;
 }
 
 static int pop(void)
 {
-    if (src_count) {
-        struct source *source = &src_stack[--src_count];
-        if (source->file != stdin) {
-            fclose(source->file);
+    unsigned len;
+    struct source source;
+
+    len = array_len(&source_stack);
+    if (len) {
+        source = array_pop_back(&source_stack);
+        if (source.file != stdin) {
+            fclose(source.file);
         }
-        memset(source, 0, sizeof(*source));
-        if (src_count) {
-            current_file = src_stack[src_count - 1];
+        if (len - 1) {
+            current_file = array_get(&source_stack, len - 2);
             return 1;
         }
     }
+
     return EOF;
 }
 
 static void finalize(void)
 {
-    assert(src_stack);
-
     while (pop() != EOF)
         ;
 
-    free(src_stack);
-
-    if (search_path) {
-        free(search_path);
-        search_path = NULL;
-        search_path_count = 0;
-    }
-
-    if (inc_path) {
-        free(inc_path);
-        inc_path = NULL;
-        inc_path_len = 0;
-    }
-
-    if (input_line) {
-        free(input_line);
-        input_line = NULL;
-        input_line_len = 0;
-    }
+    array_clear(&source_stack);
+    array_clear(&search_path_list);
+    free(inc_path);
+    free(input_line);
 }
 
 void include_file(const char *name)
 {
     struct source source = {0};
 
-    /* Construct path by combining current directory and include name, which
-     * itself can include folders. */
+    /* Construct path by combining current directory and include name,
+     * which itself can include folders. */
     if (current_file.dirlen) {
         int length = current_file.dirlen + strlen(name) + 1;
         char *path = calloc(length + 1, sizeof(*path));
@@ -126,23 +110,24 @@ void include_file(const char *name)
 void include_system_file(const char *name)
 {
     struct source source = {0};
+    const char *path;
+    size_t dir, len;
     int i;
 
-    assert(search_path_count);
-
-    for (i = 0; i < search_path_count; ++i) {
-        size_t dir = strlen(search_path[i]);
-        size_t len = dir + strlen(name) + 1;
+    for (i = 0; i < array_len(&search_path_list); ++i) {
+        path = array_get(&search_path_list, i);
+        dir = strlen(path);
+        len = dir + strlen(name) + 1;
 
         if (len > inc_path_len) {
             inc_path_len = len * 2;
             inc_path = realloc(inc_path, inc_path_len * sizeof(*inc_path));
         }
 
-        strcpy(inc_path, search_path[i]);
+        strcpy(inc_path, path);
         if (inc_path[dir - 1] == '/') {
-            /* Include paths can be specified with or without trailing slash.
-             * Do not normalize initially, but handle it here. */
+            /* Include paths can be specified with or without trailing
+             * slash. Do not normalize initially, but handle it here. */
             dir--;
         } else {
             inc_path[dir] = '/';
@@ -168,19 +153,7 @@ void include_system_file(const char *name)
 
 void add_include_search_path(const char *path)
 {
-    static size_t cap;
-
-    if (!cap) {
-        cap = 16;
-        search_path = calloc(cap, sizeof(*search_path));
-    } else if (search_path_count + 1 == cap) {
-        cap *= 2;
-        search_path = realloc(search_path, cap * sizeof(*search_path));
-    }
-
-    assert(search_path_count < cap);
-    search_path_count++;
-    search_path[search_path_count - 1] = path;
+    array_push_back(&search_path_list, path);
 }
 
 void init(const char *path)
@@ -205,7 +178,8 @@ void init(const char *path)
 
     current_file = push(source);
 
-    /* Make sure file handles are closed on exit, and free string buffers. */
+    /* Make sure file handles are closed on exit, and free string
+     * buffers. */
     atexit(finalize);
 }
 
@@ -214,15 +188,15 @@ void init(const char *path)
  *  - Keep track of and remove comments.
  *  - Join lines ending with '\'.
  *
- * Increment line counter in fnt structure for each line consumed. Ignore all-
- * whitespace lines.
+ * Increment line counter in fnt structure for each line consumed.
+ * Ignore all-whitespace lines.
  */
 static int getcleanline(char **lineptr, size_t *n, struct source *fn)
 {
     enum { NORMAL, COMMENT } state = 0;
-    int c, next;            /* Return value of getc. */
-    int i = 0,              /* Number of chars written to output buffer. */
-        last = '\0';        /* Last non-whitespace character consumed. */
+    int c, next;        /* Return value of getc. */
+    int i = 0,          /* Number of chars written to output buffer. */
+        last = '\0';    /* Last non-whitespace character consumed. */
     assert(fn);
 
     /* Need to have room for terminating '\0' byte. */
@@ -279,7 +253,8 @@ static int getcleanline(char **lineptr, size_t *n, struct source *fn)
             last = c;
         }
 
-        /* Make sure we have room for trailing null byte, and copy character. */
+        /* Make sure we have room for trailing null byte, and copy
+         * character. */
         if (i + 1 >= *n) {
             *n = (i + 1) * 2;
             *lineptr = realloc(*lineptr, (*n) * sizeof(**lineptr));
@@ -293,35 +268,27 @@ static int getcleanline(char **lineptr, size_t *n, struct source *fn)
 
 int getprepline(char **buffer)
 {
-    int read,
-        processed;
+    static size_t length;
 
-    while (1) {
-        if (!src_count) {
+    struct source *source;
+    unsigned len;
+    int read;
+
+    do {
+        len = array_len(&source_stack);
+        if (!len) {
             return -1;
         }
-
-        read =
-            getcleanline(
-                &input_line,
-                &input_line_len,
-                &src_stack[src_count - 1]);
-
-        if (read == 0) {
-            if (pop() == EOF) {
-                return -1;
-            }
-            continue;
+        source = &array_get(&source_stack, len - 1);
+        read = getcleanline(&input_line, &length, source);
+        if (!read && pop() == EOF) {
+            return -1;
         }
-
-        processed = read;
-        break;
-    }
+    } while (!read);
 
     *buffer = input_line;
-    current_file = src_stack[src_count - 1];
+    current_file = *source;
 
     verbose("(%s, %d): `%s`", current_file.path, current_file.line, input_line);
-
-    return processed;
+    return read;
 }
