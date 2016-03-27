@@ -166,9 +166,8 @@ static void push_expand_stack(const struct macro *macro)
 
 static void pop_expand_stack(void)
 {
-    void *macro = list_pop(&expand_stack);
-
-    assert(macro);
+    assert(list_len(&expand_stack));
+    list_pop(&expand_stack);
     if (!list_len(&expand_stack)) {
         list_clear(&expand_stack, NULL);
     }

@@ -112,7 +112,7 @@ static struct typetree *direct_declarator(
     const char **symbol)
 {
     struct typetree *type = base;
-    struct typetree *head, *tail = NULL;
+    struct typetree *head = NULL, *tail = NULL;
     struct token ident;
 
     switch (peek().token) {
@@ -150,6 +150,7 @@ static struct typetree *direct_declarator(
             assert(0);
         }
         if (tail) {
+            assert(head);
             tail->next = type;
             type = head;
         }
