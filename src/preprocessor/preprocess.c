@@ -11,11 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Helper structure and functions for aggregating tokens into a line
- * before preprocessing.
- */
-typedef array_of(struct token) TokenArray;
-
 /* Toggle for producing preprocessed output (-E).
  */
 static int preserve_whitespace;
@@ -485,7 +480,8 @@ static struct macro preprocess_define(
     const struct token **endptr)
 {
     struct macro macro = {{0}};
-    struct token *params = NULL;
+    struct token param = {PARAM};
+    TokenArray params = {0};
     int i;
 
     expect(line, IDENTIFIER);
@@ -502,9 +498,7 @@ static struct macro preprocess_define(
                 error("Invalid macro parameter, expected identifer.");
                 exit(1);
             }
-            macro.params++;
-            params = realloc(params, macro.params * sizeof(*params));
-            params[macro.params - 1] = *line++;
+            array_push_back(&params, *line++);
             if (line->token != ',')
                 break;
             line++;
@@ -513,25 +507,28 @@ static struct macro preprocess_define(
         line++;
     }
 
+    macro.params = array_len(&params);
+
     while (line->token != END && line->token != NEWLINE) {
-        macro.size++;
-        macro.replacement = 
-            realloc(macro.replacement, macro.size * sizeof(*macro.replacement));
-        macro.replacement[macro.size - 1].token = *line;
-        macro.replacement[macro.size - 1].param = 0;
+        param.d.number.val.i = -1;
         if (line->token == IDENTIFIER && macro.type == FUNCTION_LIKE) {
             for (i = 0; i < macro.params; ++i) {
-                if (!tok_cmp(*line, params[i])) {
-                    macro.replacement[macro.size - 1].param = i + 1;
+                if (!tok_cmp(*line, array_get(&params, i))) {
+                    param.d.number.val.i = i;
                     break;
                 }
             }
+        }
+        if (param.d.number.val.i != -1) {
+            array_push_back(&macro.replacement, param);
+        } else {
+            array_push_back(&macro.replacement, *line);
         }
         line++;
     }
 
     *endptr = line;
-    free(params);
+    array_clear(&params);
     return macro;
 }
 

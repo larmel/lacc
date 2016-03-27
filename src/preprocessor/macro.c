@@ -20,7 +20,6 @@ static int new_macro_added;
 static int macrocmp(const struct macro *a, const struct macro *b)
 {
     int i;
-    struct replacement ra, rb;
 
     if ((a->type != b->type) || (a->params != b->params))
         return 1;
@@ -28,17 +27,13 @@ static int macrocmp(const struct macro *a, const struct macro *b)
     if (tok_cmp(a->name, b->name))
         return 1;
 
-    if (a->size != b->size)
+    if (array_len(&a->replacement) != array_len(&b->replacement))
         return 1;
 
-    for (i = 0; i < a->size; ++i) {
-        ra = a->replacement[i];
-        rb = b->replacement[i];
-
-        if ((ra.param || rb.param) && (ra.param != rb.param))
-            return 1;
-
-        if (tok_cmp(ra.token, rb.token))
+    for (i = 0; i < array_len(&a->replacement); ++i) {
+        if (tok_cmp(
+                array_get(&a->replacement, i),
+                array_get(&b->replacement, i)))
             return 1;
     }
 
@@ -53,8 +48,7 @@ static struct string macro_hash_key(void *ref)
 static void macro_hash_del(void *ref)
 {
     struct macro *macro = (struct macro *) ref;
-    if (macro->replacement)
-        free(macro->replacement);
+    array_clear(&macro->replacement);
     free(macro);
 }
 
@@ -96,6 +90,7 @@ static void ensure_initialized(void)
 const struct macro *definition(struct token name)
 {
     struct macro *ref = NULL;
+    struct token *tok;
 
     ensure_initialized();
     if (name.token == IDENTIFIER) {
@@ -103,8 +98,10 @@ const struct macro *definition(struct token name)
         if (ref) {
             /* Replace __LINE__ with current line number, by mutating
              * the replacement list on the fly. */
-            if (!str_cmp(ref->name.d.string, str_init("__LINE__")))
-                ref->replacement[0].token.d.number.val.i = current_file.line;
+            if (!str_cmp(ref->name.d.string, str_init("__LINE__"))) {
+                tok = &array_get(&ref->replacement, 0);
+                tok->d.number.val.i = current_file.line;
+            }
         }
     }
 
@@ -126,8 +123,8 @@ void define(struct macro macro)
 
     /* Need to clean up memory for replacement list since ownership was
      * not given to hash table. */
-    if (!new_macro_added && macro.replacement) {
-        free(macro.replacement);
+    if (!new_macro_added) {
+        array_clear(&macro.replacement);
     }
 }
 
@@ -307,27 +304,29 @@ static struct token *expand_macro(
     const struct macro *macro,
     struct token *args[])
 {
-    size_t i;
+    int i, param;
     struct token *res = calloc(1, sizeof(*res));
+    struct token *tok;
 
     res[0] = basic_token[END];
     push_expand_stack(macro);
-    for (i = 0; i < macro->size; ++i) {
-        int n = macro->replacement[i].param;
-        if (n) {
+    for (i = 0; i < array_len(&macro->replacement); ++i) {
+        tok = &array_get(&macro->replacement, i);
+        if (tok->token == PARAM) {
             /* Create a copy of args before expanding to avoid it being
              * free'd. */
-            res = concat(res, expand(copy(args[n - 1])));
+            param = tok->d.number.val.i;
+            res = concat(res, expand(copy(args[param])));
         } else if (
-            i < macro->size - 1 &&
-            macro->replacement[i].token.token == '#' &&
-            macro->replacement[i + 1].param)
+            i < array_len(&macro->replacement) - 1 &&
+            tok->token == '#' &&
+            (tok + 1)->token == PARAM)
         {
             i++;
-            n = macro->replacement[i].param;
-            res = append(res, stringify(args[n - 1]));
+            param = (tok + 1)->d.number.val.i;
+            res = append(res, stringify(args[param]));
         } else {
-            res = append(res, macro->replacement[i].token);
+            res = append(res, *tok);
         }
     }
     res = expand_paste_operators(res);
@@ -477,7 +476,9 @@ int tok_cmp(struct token a, struct token b)
     if (a.token != b.token)
         return 1;
 
-    if (a.token == NUMBER) {
+    if (a.token == PARAM) {
+        return a.d.number.val.i != b.d.number.val.i;
+    } else if (a.token == NUMBER) {
         if (!type_equal(a.d.number.type, b.d.number.type))
             return 1;
         return
@@ -525,27 +526,24 @@ struct token stringify(const struct token list[])
     return t;
 }
 
-static struct replacement *parse(char *str, int *out_size)
+static TokenArray parse(char *str)
 {
     char *endptr;
-    int n = 0;
-    struct replacement *repl = NULL;
+    struct token param = {PARAM};
+    TokenArray arr = {0};
 
     while (*str) {
-        n++;
-        repl = realloc(repl, sizeof(*repl) * n);
-        memset(repl + n - 1, 0, sizeof(*repl));
         if (*str == '@') {
-            repl[n - 1].param = 1;
+            array_push_back(&arr, param);
             str++;
         } else {
-            repl[n - 1].token = tokenize(str, &endptr);
+            array_push_back(&arr, tokenize(str, &endptr));
             assert(str != endptr);
             str = endptr;
         }
     }
-    *out_size = n;
-    return repl;
+
+    return arr;
 }
 
 static void register__builtin_va_end(void)
@@ -561,9 +559,25 @@ static void register__builtin_va_end(void)
         "@[0].gp_offset=0;"
         "@[0].fp_offset=0;"
         "@[0].overflow_arg_area=(void*)0;"
-        "@[0].reg_save_area=(void*)0;", &macro.size);
+        "@[0].reg_save_area=(void*)0;");
 
-    assert(macro.size == 44);
+    assert(array_len(&macro.replacement) == 44);
+    define(macro);
+}
+
+static void register__builtin__FILE__(void)
+{
+    struct token file = {STRING};
+    struct macro macro = {
+        {IDENTIFIER},
+        OBJECT_LIKE,
+        0, /* parameters */
+    };
+
+    file.d.string = str_init(current_file.path);
+    array_push_back(&macro.replacement, file);
+
+    macro.name.d.string = str_init("__FILE__");
     define(macro);
 }
 
@@ -576,35 +590,30 @@ void register_builtin_definitions(void)
     };
 
     macro.name.d.string = str_init("__STDC_VERSION__");
-    macro.replacement = parse("199409L", &macro.size);
+    macro.replacement = parse("199409L");
     define(macro);
 
     macro.name.d.string = str_init("__STDC__");
-    macro.replacement = parse("1", &macro.size);
+    macro.replacement = parse("1");
     define(macro);
 
     macro.name.d.string = str_init("__STDC_HOSTED__");
-    macro.replacement = parse("1", &macro.size);
+    macro.replacement = parse("1");
     define(macro);
 
     macro.name.d.string = str_init("__LINE__");
-    macro.replacement = parse("0", &macro.size);
+    macro.replacement = parse("0");
     define(macro);
 
     macro.name.d.string = str_init("__x86_64__");
-    macro.replacement = parse("1", &macro.size);
+    macro.replacement = parse("1");
     define(macro);
 
     /* For some reason this is not properly handled by musl. */
     macro.name.d.string = str_init("__inline");
-    macro.replacement = parse(" ", &macro.size);
+    macro.replacement = parse(" ");
     define(macro);
 
-    macro.name.d.string = str_init("__FILE__");
-    macro.replacement = calloc(1, sizeof(*macro.replacement));
-    macro.replacement[0].token.token = STRING;
-    macro.replacement[0].token.d.string = str_init(current_file.path);
-    define(macro);
-
+    register__builtin__FILE__();
     register__builtin_va_end();
 }

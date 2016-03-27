@@ -1,22 +1,22 @@
 #ifndef MACRO_H
 #define MACRO_H
 
+#include <lacc/array.h>
 #include <lacc/token.h>
+
+typedef array_of(struct token) TokenArray;
 
 struct macro {
     struct token name;
     enum { OBJECT_LIKE, FUNCTION_LIKE } type;
 
+    /* Number of parameters required for substitution. */
     int params;
-    int size;
 
-    /* A substitution is either a token or a parameter. 
-     * todo: param could be a type of token, then whitespace can be
-     * handled elegantly. */
-    struct replacement {
-        struct token token;
-        int param;
-    } *replacement;
+    /* A substitution is either a token or a parameter, and parameters
+     * are represented by PARAM tokens with an integer index between
+     * 0 and params. */
+    TokenArray replacement;
 };
 
 /* Define standard macros.
@@ -32,8 +32,8 @@ struct token stringify(const struct token list[]);
  */
 void define(struct macro macro);
 
-/* Remove macro definition corresponding to identifier. If the name has not
- * previously been defined, this is a no-op.
+/* Remove macro definition corresponding to identifier. If the name has
+ * not previously been defined, this is a no-op.
  */
 void undef(struct token name);
 

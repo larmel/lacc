@@ -77,7 +77,7 @@ const struct token basic_token[] = {
 /* 0x70 */  {0},                        {0},
             {0},                        {0},
             {NUMBER},                   {IDENTIFIER},
-            {STRING},                   {0},
+            {STRING},                   {PARAM},
 /* 0x78 */  {0},                        {0},
             {0},                        T(OPEN_CURLY, "{"),
             T(OR, "|"),                 T(CLOSE_CURLY, "}"),

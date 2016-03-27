@@ -99,7 +99,11 @@ enum token_type {
      * are placed at arbitrary locations. */
     NUMBER = 116,
     IDENTIFIER,
-    STRING
+    STRING,
+
+    /* Pseudo-token representing parameter substitution in macros. Has
+     * an immediate integer value referring to the parameter index. */
+    PARAM
 };
 
 /* Tokens keep track of typed numbers, to capture difference between
