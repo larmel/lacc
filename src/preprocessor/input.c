@@ -1,7 +1,3 @@
-#if _XOPEN_SOURCE < 600
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 600 /* isblank */
-#endif
 #include "input.h"
 #include "strtab.h"
 #include <lacc/array.h>
@@ -14,15 +10,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#define FILE_BUFFER_SIZE 4096
+
 /* Globally exposed for diagnostics info and default macro values.
  */
 struct source current_file;
-
-/* Scratchpad buffer for assembling lines to return. The same buffer is
- * resized if needed, enforcing no specific limit on how long a line can
- * be.
- */
-static char *input_line;
 
 /* Temporary buffer used to construct search paths.
  */
@@ -39,6 +31,11 @@ static array_of(struct source) source_stack;
 
 static struct source push(struct source source)
 {
+    assert(source.file);
+    assert(source.path);
+
+    source.buffer = malloc(FILE_BUFFER_SIZE);
+    source.size = FILE_BUFFER_SIZE;
     array_push_back(&source_stack, source);
     return source;
 }
@@ -54,6 +51,7 @@ static int pop(void)
         if (source.file != stdin) {
             fclose(source.file);
         }
+        free(source.buffer);
         if (len - 1) {
             current_file = array_get(&source_stack, len - 2);
             return 1;
@@ -71,7 +69,6 @@ static void finalize(void)
     array_clear(&source_stack);
     array_clear(&search_path_list);
     free(path_buffer);
-    free(input_line);
 }
 
 static char *create_path(const char *path, size_t dirlen, const char *name)
@@ -171,102 +168,164 @@ void init(const char *path)
     }
 
     current_file = push(source);
-
-    /* Make sure file handles are closed on exit, and free string
-     * buffers. */
     atexit(finalize);
 }
 
-/* Read characters from stream and assemble a line.
- *
- *  - Keep track of and remove comments.
- *  - Join lines ending with '\'.
- *
- * Increment line counter in fnt structure for each line consumed.
- * Ignore all-whitespace lines.
- */
-static int getcleanline(char **lineptr, size_t *n, struct source *fn)
+static size_t process_chunk(char *line, size_t len, int *linecount)
 {
-    enum { NORMAL, COMMENT } state = 0;
-    int c, next;        /* Return value of getc. */
-    int i = 0,          /* Number of chars written to output buffer. */
-        last = '\0';    /* Last non-whitespace character consumed. */
-    assert(fn);
+    /* Preserve progress made between resizing or moving. Both for
+     * optimization, and to not have to backtrack mutations done on the
+     * string, like replacing comments with a single space character. */
+    static ptrdiff_t prev_ptr, prev_tail, prev_end;
+    static int continuations;
+    static enum {
+        NORMAL,
+        COMMENT
+    } state = NORMAL;
 
-    /* Need to have room for terminating '\0' byte. */
-    if (!*n) {
-        *n = 1;
-        *lineptr = calloc(1, sizeof(**lineptr));
-    }
+    /* Invariant: ptr always points to one past the last character of
+     * the result string, at loop exit this should be '\0'. The end
+     * pointer always points to, at the start of each iteration, the
+     * next character to consider part of the string.
+     * Tail is the previous content character skipped over by end. This
+     * Needs to be tracked for comments, like *\ (newline) /. Logically,
+     * the character at *(end - 1), when skipping continuations.
+     * Characters are copied from *end to *ptr as processing moves
+     * along, skipping over line continuations and comments.
+     * The preprocessing is successful iff *ptr == '\0' at loop exit,
+     * meaning we were able to process a whole line. */
+    char
+        *ptr = line + prev_ptr,
+        *end = line + prev_end,
+        *tail = line + prev_tail;
 
-    while ((c = getc(fn->file)) != EOF) {
-        /* Line continuation */
-        if (c == '\\') {
-            next = getc(fn->file);
-            if (next == EOF) {
-                error("Invalid end of file after line continuation.");
-                exit(1);
+    while (end - line < len) {
+        assert(*end != '\0');
+        if (*end == '\\') {
+            if (*(end + 1) == '\0') break;
+            else if (*(end + 1) == '\n') {
+                continuations++;
+                end += 2;
+            } else {
+                if (ptr != end) {
+                    *ptr = *end;
+                }
+                tail = end++;
+                ptr++;
             }
-            if (next == '\n') {
-                fn->line++;
-                continue;
+        } else if (*end == '\n') {
+            end++;
+            if (state == NORMAL) {
+                *ptr = '\0';
+                (*linecount) += continuations + 1;
+                prev_ptr = prev_tail = prev_end = 0;
+                continuations = 0;
+                return end - line;
             }
-            ungetc(next, fn->file);
-        }
-        /* End of comment. */
-        if (state == COMMENT) {
-            if (c == '*') {
-                next = getc(fn->file);
-                if (next == '/')
-                    state = NORMAL;
-                else
-                    ungetc(next, fn->file);
-            } else if (c == '\n')
-                fn->line++;
-            continue;
-        }
-        /* Start of comment. */
-        if (c == '/') {
-            next = getc(fn->file);
-            if (next == '*') {
+        } else {
+            if (ptr > line && *(ptr - 1) == '/' && *end == '*' &&
+                state == NORMAL)
+            {
                 state = COMMENT;
-                continue;
+                *(ptr - 1) = ' ';
+                end++;
+            } else if (*tail == '*' && *end == '/' && state == COMMENT) {
+                state = NORMAL;
+                tail = end++;
+            } else if (state == NORMAL) {
+                if (ptr != end) {
+                    *ptr = *end;
+                }
+                tail = end++;
+                ptr++;
+            } else {
+                tail = end++;
             }
-            ungetc(next, fn->file);
         }
-        /* End of line, return if we have some content. */
-        if (c == '\n') {
-            fn->line++;
-            if (last != '\0')
-                break;
-            else
-                continue;
-        }
-        /* Count non-whitespace. */
-        if (!isblank(c)) {
-            last = c;
-        }
-
-        /* Make sure we have room for trailing null byte, and copy
-         * character. */
-        if (i + 1 >= *n) {
-            *n = (i + 1) * 2;
-            *lineptr = realloc(*lineptr, (*n) * sizeof(**lineptr));
-        }
-        (*lineptr)[i++] = c;
+        assert(end - line <= len);
     }
 
-    (*lineptr)[i] = '\0';
-    return i;
+    prev_ptr = ptr - line;
+    prev_end = end - line;
+    prev_tail = tail - line;
+    return 0;
+}
+
+/* Read the next line from file input, doing initial pre-preprocessing.
+ */
+static char *initial_preprocess_line(struct source *fn)
+{
+    size_t added;
+    assert(fn->buffer);
+    assert(fn->processed <= fn->read);
+    assert(fn->read < fn->size);
+
+    do {
+        if (fn->processed == fn->read || !fn->processed) {
+            if (feof(fn->file)) {
+                if (fn->read > fn->processed) {
+                    error("Unable to process the whole input.");
+                    exit(1);
+                }
+                return NULL;
+            }
+            if (!fn->processed) {
+                fn->read += fread(
+                    fn->buffer + fn->read,
+                    sizeof(char),
+                    fn->size - fn->read - 1,
+                    fn->file);
+            } else {
+                fn->read = fread(
+                    fn->buffer,
+                    sizeof(char),
+                    fn->size - 1,
+                    fn->file);
+            }
+            fn->processed = 0;
+            fn->buffer[fn->read] = '\0';
+            if (feof(fn->file)) {
+                if (!fn->read) {
+                    return NULL;
+                }
+                if (fn->buffer[fn->read - 1] != '\n') {
+                    error("Missing newline at end of file.");
+                    fn->buffer[fn->read] = '\n';
+                }
+            }
+        }
+
+        assert(fn->processed < fn->read);
+        added = process_chunk(
+            fn->buffer + fn->processed,
+            fn->read - fn->processed,
+            &fn->line);
+
+        if (!added) {
+            if (!fn->processed) {
+                fn->size += FILE_BUFFER_SIZE;
+                fn->buffer = realloc(fn->buffer, fn->size);
+            } else {
+                memmove(
+                    fn->buffer,
+                    fn->buffer + fn->processed,
+                    fn->read - fn->processed);
+                assert(fn->read > fn->processed);
+                fn->read -= fn->processed;
+                fn->processed = 0;
+            }
+        }
+    } while (!added);
+
+    fn->processed += added;
+    return fn->buffer + fn->processed - added;
 }
 
 int getprepline(char **buffer)
 {
-    static size_t length;
-
     struct source *source;
     unsigned len;
-    int read;
+    char *line;
 
     do {
         len = array_len(&source_stack);
@@ -274,15 +333,15 @@ int getprepline(char **buffer)
             return -1;
         }
         source = &array_get(&source_stack, len - 1);
-        read = getcleanline(&input_line, &length, source);
-        if (!read && pop() == EOF) {
+        line = initial_preprocess_line(source);
+        if (!line && pop() == EOF) {
             return -1;
         }
-    } while (!read);
+    } while (!line);
 
-    *buffer = input_line;
+    *buffer = line;
     current_file = *source;
 
-    verbose("(%s, %d): `%s`", current_file.path, current_file.line, input_line);
-    return read;
+    verbose("(%s, %d): `%s`", source->path, source->line, source->buffer);
+    return 1;
 }

@@ -7,6 +7,16 @@
 struct source {
     FILE *file;
 
+    /* Total capacity of the line buffer is represented by size. The
+     * number of characters already handled, a prefix, is 'processed'.
+     * Read is the number of valid characters in the buffer. The
+     * processed count grows on successive calls towards the read
+     * number. When all read characters are processed, or the remaining
+     * interval between (processed, read) does not contain a full line,
+     * rewind the buffer, or increase if necessary. */
+    char *buffer;
+    size_t size, processed, read;
+
     /* Full path, or relative to invocation directory. */
     const char *path;
 
