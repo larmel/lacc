@@ -50,7 +50,7 @@ static struct token get_token(void)
     struct token r;
     char *endptr;
 
-    if (!line && getprepline(&line) == -1) {
+    if (!line && (line = getprepline()) == NULL) {
         r = basic_token[END];
     } else {
         r = tokenize(line, &endptr);

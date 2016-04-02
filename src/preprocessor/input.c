@@ -17,9 +17,29 @@
 
 #define FILE_BUFFER_SIZE 4096
 
-/* Globally exposed for diagnostics info and default macro values.
- */
-struct source current_file;
+struct source {
+    FILE *file;
+
+    /* Total capacity of the line buffer is represented by size. The
+     * number of characters already handled, a prefix, is 'processed'.
+     * Read is the number of valid characters in the buffer. The
+     * processed count grows on successive calls towards the read
+     * number. When all read characters are processed, or the remaining
+     * interval between (processed, read) does not contain a full line,
+     * rewind the buffer, or increase if necessary. */
+    char *buffer;
+    size_t size, processed, read;
+
+    /* Full path, or relative to invocation directory. */
+    const char *path;
+
+    /* Number of characters into path occupied by directory, not
+     * including the last slash. */
+    int dirlen;
+
+    /* Current line. */
+    int line;
+};
 
 /* Temporary buffer used to construct search paths.
  */
@@ -34,7 +54,24 @@ static array_of(const char *) search_path_list;
  */
 static array_of(struct source) source_stack;
 
-static struct source push(struct source source)
+static struct source *current_file(void)
+{
+    unsigned len = array_len(&source_stack);
+    assert(len);
+    return &array_get(&source_stack, len - 1);
+}
+
+const char *current_file_path(void)
+{
+    return current_file()->path;
+}
+
+int current_file_line(void)
+{
+    return current_file()->line;
+}
+
+static void push(struct source source)
 {
     assert(source.file);
     assert(source.path);
@@ -42,7 +79,6 @@ static struct source push(struct source source)
     source.buffer = malloc(FILE_BUFFER_SIZE);
     source.size = FILE_BUFFER_SIZE;
     array_push_back(&source_stack, source);
-    return source;
 }
 
 static int pop(void)
@@ -58,7 +94,6 @@ static int pop(void)
         }
         free(source.buffer);
         if (len - 1) {
-            current_file = array_get(&source_stack, len - 2);
             return 1;
         }
     }
@@ -96,12 +131,14 @@ static char *create_path(const char *path, size_t dirlen, const char *name)
 void include_file(const char *name)
 {
     const char *path;
+    struct source *file;
     struct source source = {0};
 
     /* Construct path by combining current directory and include name,
      * which itself can include folders. */
-    if (current_file.dirlen) {
-        path = create_path(current_file.path, current_file.dirlen, name);
+    file = current_file();
+    if (file->dirlen) {
+        path = create_path(file->path, file->dirlen, name);
     } else {
         path = name;
     }
@@ -110,7 +147,7 @@ void include_file(const char *name)
     if (source.file) {
         source.path = str_register(path, strlen(path)).str;
         source.dirlen = strrchr(path, '/') - path;
-        current_file = push(source);
+        push(source);
     } else {
         include_system_file(name);
     }
@@ -140,7 +177,7 @@ void include_system_file(const char *name)
     }
 
     if (source.file) {
-        current_file = push(source);
+        push(source);
     } else {
         error("Unable to resolve include file '%s'.", name);
         exit(1);
@@ -172,7 +209,7 @@ void init(const char *path)
         source.path = "<stdin>";
     }
 
-    current_file = push(source);
+    push(source);
     atexit(finalize);
 }
 
@@ -333,7 +370,7 @@ static int is_directive(const char *line)
     return *line == '#';
 }
 
-int getprepline(char **buffer)
+char *getprepline(void)
 {
     struct source *source;
     unsigned len;
@@ -342,21 +379,18 @@ int getprepline(char **buffer)
     do {
         len = array_len(&source_stack);
         if (!len) {
-            return -1;
+            return NULL;
         }
         source = &array_get(&source_stack, len - 1);
         line = initial_preprocess_line(source);
         if (!line && pop() == EOF) {
-            return -1;
+            return NULL;
         }
         if (!in_active_block() && !is_directive(line)) {
             line = NULL;
         }
     } while (!line);
 
-    *buffer = line;
-    current_file = *source;
-
     verbose("(%s, %d): `%s`", source->path, source->line, source->buffer);
-    return 1;
+    return line;
 }

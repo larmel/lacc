@@ -100,7 +100,7 @@ const struct macro *definition(struct token name)
              * the replacement list on the fly. */
             if (!str_cmp(ref->name.d.string, str_init("__LINE__"))) {
                 tok = &array_get(&ref->replacement, 0);
-                tok->d.number.val.i = current_file.line;
+                tok->d.number.val.i = current_file_line();
             }
         }
     }
@@ -574,7 +574,7 @@ static void register__builtin__FILE__(void)
         0, /* parameters */
     };
 
-    file.d.string = str_init(current_file.path);
+    file.d.string = str_init(current_file_path());
     array_push_back(&macro.replacement, file);
 
     macro.name.d.string = str_init("__FILE__");
