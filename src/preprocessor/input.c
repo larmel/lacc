@@ -1,3 +1,8 @@
+#if _XOPEN_SOURCE < 600
+#  undef _XOPEN_SOURCE
+#  define _XOPEN_SOURCE 600 /* isblank */
+#endif
+#include "directive.h"
 #include "input.h"
 #include "strtab.h"
 #include <lacc/array.h>
@@ -321,6 +326,13 @@ static char *initial_preprocess_line(struct source *fn)
     return fn->buffer + fn->processed - added;
 }
 
+static int is_directive(const char *line)
+{
+    while (isblank(*line))
+        line++;
+    return *line == '#';
+}
+
 int getprepline(char **buffer)
 {
     struct source *source;
@@ -336,6 +348,9 @@ int getprepline(char **buffer)
         line = initial_preprocess_line(source);
         if (!line && pop() == EOF) {
             return -1;
+        }
+        if (!in_active_block() && !is_directive(line)) {
+            line = NULL;
         }
     } while (!line);
 
