@@ -28,6 +28,10 @@ static TokenArray lookahead;
 static unsigned cursor;
 static const int K = 2;
 
+/* Line currently being tokenized.
+ */
+static char *line_buffer;
+
 static void cleanup(void)
 {
     array_clear(&lookahead);
@@ -45,21 +49,19 @@ static void ensure_initialized(void)
 
 static struct token get_token(void)
 {
-    static char *line;
-
     struct token r;
     char *endptr;
 
-    if (!line && (line = getprepline()) == NULL) {
+    if (!line_buffer && (line_buffer = getprepline()) == NULL) {
         r = basic_token[END];
     } else {
-        r = tokenize(line, &endptr);
-        line = endptr;
+        r = tokenize(line_buffer, &endptr);
+        line_buffer = endptr;
         if (r.token == END) {
             /* Newlines are removed by getprepline, and never present in
              * the input data. Instead intercept end of string, which
              * represents end of line. */
-            line = NULL;
+            line_buffer = NULL;
             r = basic_token[NEWLINE];
         }
     }
@@ -153,17 +155,16 @@ static void read_defined_operator(TokenArray *line)
  * Returns a buffer containing all necessary tokens to preprocess a
  * line.
  */
-static struct token *read_complete_line(struct token t)
+static struct token *read_complete_line(struct token t, int is_directive)
 {
     TokenArray line = {0};
     const struct macro *def;
-    int is_expandable = 1,
-        is_directive = (t.token == '#');
+    int is_expandable = 1;
 
     if (is_directive) {
         array_push_back(&line, t);
-        t = get_token();
         is_expandable = (t.token == IF) || !tok_cmp(t, ident__elif);
+        t = get_token();
     }
 
     while (t.token != NEWLINE && t.token != END) {
@@ -251,10 +252,23 @@ static void preprocess_line(void)
     do {
         t = get_token();
         if (t.token == '#') {
-            line = read_complete_line(t);
-            preprocess_directive(line);
-        } else if (in_active_block()) {
-            line = read_complete_line(t);
+            t = get_token();
+            if (in_active_block() || (
+                t.token == IF ||
+                !tok_cmp(t, ident__ifdef) ||
+                !tok_cmp(t, ident__ifndef) ||
+                !tok_cmp(t, ident__elif) ||
+                !tok_cmp(t, ident__endif) ||
+                t.token == ELSE))
+            {
+                line = read_complete_line(t, 1);
+                preprocess_directive(line);
+            } else {
+                line_buffer = NULL;
+            }
+        } else {
+            assert(in_active_block());
+            line = read_complete_line(t, 0);
             expanded = expand(line);
             line = expanded;
             while (line->token != END) {
@@ -266,10 +280,6 @@ static void preprocess_line(void)
                 line++;
             }
             free(expanded);
-        } else {
-            while (t.token != NEWLINE && t.token != END) {
-                t = get_token();
-            }
         }
     } while (
         (array_len(&lookahead) < K || t.token == STRING) && t.token != END);

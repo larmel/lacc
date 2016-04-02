@@ -388,15 +388,11 @@ void preprocess_directive(struct token *original)
 {
     const struct token *line = original;
 
-    expect(line, '#');
-    line++;
     if (line->token == IF || !tok_cmp(*line, ident__elif)) {
         /* Perform macro expansion only for if and elif directives,
          * before doing the expression parsing. */
         original = expand(original);
         line = original;
-        expect(line, '#');
-        line++;
     }
 
     if (line->token == IF) {
