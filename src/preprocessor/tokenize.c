@@ -459,6 +459,24 @@ struct string tokstr(struct token tok)
     return tok.d.string;
 }
 
+struct token pastetok(struct token a, struct token b)
+{
+    char *str;
+    struct token t = {STRING};
+
+    assert(a.d.string.str);
+    assert(b.d.string.str);
+
+    t.d.string.len = a.d.string.len + b.d.string.len;
+    str = calloc(t.d.string.len + 1, sizeof(*str));
+    memcpy(str, a.d.string.str, a.d.string.len);
+    memcpy(str + a.d.string.len, b.d.string.str, b.d.string.len);
+
+    t.d.string = str_register(str, t.d.string.len);
+    free(str);
+    return t;
+}
+
 struct token tokenize(char *in, char **endptr)
 {
     int ws;
