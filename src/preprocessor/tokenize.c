@@ -440,16 +440,17 @@ struct string tokstr(struct token tok)
     static char buf[64];
     int w = 0;
 
+    assert(tok.token != PARAM);
     if (tok.token == NUMBER) {
         /* The string representation is lost during tokenization, so we
          * cannot reconstruct necessarily the same suffixes. */
         if (tok.d.number.type->type == T_UNSIGNED) {
-            w += sprintf(buf, "%luu", tok.d.number.val.u);
+            w += snprintf(buf + w, sizeof(buf) - w, "%luu", tok.d.number.val.u);
         } else {
-            w += sprintf(buf, "%ld", tok.d.number.val.i);    
+            w += snprintf(buf + w, sizeof(buf) - w, "%ld", tok.d.number.val.i);
         }
         if (tok.d.number.type->size == 8) {
-            w += sprintf(buf, "l");
+            w += snprintf(buf + w, sizeof(buf) - w, "l");
         } else {
             assert(tok.d.number.type->size == 4);
         }

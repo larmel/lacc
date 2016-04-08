@@ -338,31 +338,18 @@ struct token consume(enum token_type type)
 void preprocess(FILE *output)
 {
     struct token t;
+    struct string s;
 
     preserve_whitespace = 1;
-    t = next();
-    while (t.token != END) {
-        if (t.leading_whitespace > 0) {
+    while ((t = next()).token != END) {
+        if (t.leading_whitespace) {
             fprintf(output, "%*s", t.leading_whitespace, " ");
         }
-        switch (t.token) {
-        case STRING:
-            fprintstr(output, t.d.string);
-            break;
-        case NUMBER:
-            if (t.d.number.type->type == T_UNSIGNED)
-                fprintf(output, "%luu", t.d.number.val.u);
-            else
-                fprintf(output, "%ld", t.d.number.val.i);
-            if (t.d.number.type->size == 8)
-                fputc('l', output);
-            else
-                assert(t.d.number.type->size == 4);
-            break;
-        default:
-            fprintf(output, "%s", t.d.string.str);
-            break;
+        if (t.token == STRING) {
+            fprintstr(output, t.d.string); 
+        } else {
+            s = tokstr(t);
+            fprintf(output, "%s", s.str);
         }
-        t = next();
     }
 }
