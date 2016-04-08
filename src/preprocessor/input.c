@@ -391,6 +391,6 @@ char *getprepline(void)
         }
     } while (!line);
 
-    verbose("(%s, %d): `%s`", source->path, source->line, source->buffer);
+    verbose("(%s, %d): `%s`", source->path, source->line, line);
     return line;
 }

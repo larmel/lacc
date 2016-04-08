@@ -170,78 +170,36 @@ static void pop_expand_stack(void)
     }
 }
 
-/* Calculate length of list, excluding trailing END marker.
- */
-static size_t len(const struct token *list)
+void print_token_array(const TokenArray *list)
 {
-    size_t i = 0;
-    assert(list);
-    while (list[i].token != END)
-        i++;
-    return i;
-}
+    int i;
+    struct token t;
 
-void print_list(const struct token *list)
-{
-    int first = 1;
-    size_t l = len(list);
-    printf("[");
-    while (list->token != END) {
-        if (!first)
+    putchar('[');
+    for (i = 0; i < array_len(list); ++i) {
+        if (i) {
             printf(", ");
-        printf("'");
-        if (list->leading_whitespace > 0) {
-            printf("%*s", list->leading_whitespace, " ");
         }
-        if (list->token == NEWLINE)
-            printf("\\n");
-        else
-            printf("%s", list->d.string.str);
-        printf("'");
-        first = 0;
-        list++;
+        t = array_get(list, i);
+        if (t.token == PARAM) {
+            printf("<param %ld>", t.d.number.val.i);
+        } else {
+            putchar('\'');
+            if (t.leading_whitespace > 0) {
+                printf("%*s", t.leading_whitespace, " ");
+            }
+            if (t.token == NEWLINE) {
+                printf("\\n");
+            } else {
+                printf("%s", tokstr(t).str);
+            }
+            putchar('\'');
+        }
     }
-    printf("] (%lu)\n", l);
+
+    printf("] (%u)\n", array_len(list));
 }
 
-/* Extend input list with concatinating another list to it. Takes
- * ownership of both arguments.
- */
-static struct token *concat(struct token *list, struct token *other)
-{
-    size_t i = len(list);
-    size_t j = len(other);
-
-    list = realloc(list, (i + j + 1) * sizeof(*list));
-    memmove(list + i, other, (j + 1) * sizeof(*list));
-    assert(list[i + j].token == END);
-    free(other);
-    return list;
-}
-
-/* Extend input list by a single token. Take ownership of input.
- */
-static struct token *append(struct token *list, struct token other)
-{
-    size_t i = len(list);
-
-    assert(list[i].token == END);
-    list = realloc(list, (i + 2) * sizeof(*list));
-    list[i + 1] = list[i];
-    list[i] = other;
-    return list;
-}
-
-static struct token *copy(const struct token *list)
-{
-    size_t i = len(list) + 1;
-    struct token *c = calloc(i, sizeof(*c));
-
-    return memcpy(c, list, i * sizeof(*c));
-}
-
-/* Paste together two tokens.
- */
 static struct token paste(struct token left, struct token right)
 {
     struct token result;
@@ -264,80 +222,88 @@ static struct token paste(struct token left, struct token right)
     return result;
 }
 
-/* In-place expansion of token paste operators.
- * ['foo', '##', '_f', '##', 'u', '##', 'nc'] becomes ['foo_func']
- */
-static struct token *expand_paste_operators(struct token *list)
+static void expand_paste_operators(TokenArray *list)
 {
-    struct token
-        *ptr = list,
-        *end = list + 1;
+    unsigned i, j, len;
+    struct token t;
 
-    if (list->token == END)
-        return list;
-
-    if (list->token == TOKEN_PASTE) {
-        error("Unexpected token paste operator at beginning of line.");
-        exit(1);
-    }
-
-    while (end->token != END) {
-        if (end->token == TOKEN_PASTE) {
-            end++;
-            if (end->token == END) {
+    len = array_len(list);
+    if (len) {
+        if (array_get(list, 0).token == TOKEN_PASTE) {
+            error("Unexpected token paste operator at beginning of line.");
+            exit(1);
+        } else if (len > 2) {
+            if (array_get(list, len - 1).token == TOKEN_PASTE) {
                 error("Unexpected token paste operator at end of line.");
                 exit(1);
             }
-            *ptr = paste(*ptr, *end);
-            end++;
-        } else {
-            *(++ptr) = *end++;
-            assert(end->token != NEWLINE);
+
+            /* In-place expansion of token paste operators.
+             * ['f', '##', 'u', '##', 'nction'] becomes ['function']. */
+            for (i = 0, j = 1; j < len; ++j) {
+                assert(i < len);
+                t = array_get(list, j);
+                if (t.token == TOKEN_PASTE) {
+                    array_get(list, i) = paste(
+                        array_get(list, i), array_get(list, j + 1));
+                    j++;
+                } else if (i < j - 1) {
+                    array_get(list, i) = array_get(list, j);
+                    i++;
+                } else {
+                    i++;
+                }
+            }
+
+            list->length = i + 1;
         }
     }
-
-    *(ptr + 1) = *end;
-    return list;
 }
 
-static struct token *expand_macro(
-    const struct macro *macro,
-    struct token *args[])
+static TokenArray expand_macro(const struct macro *def, TokenArray *args)
 {
     int i, param;
-    struct token *res = calloc(1, sizeof(*res));
-    struct token *tok;
+    struct token t;
+    struct token *stringified = NULL;
+    TokenArray list = {0};
 
-    res[0] = basic_token[END];
-    push_expand_stack(macro);
-    for (i = 0; i < array_len(&macro->replacement); ++i) {
-        tok = &array_get(&macro->replacement, i);
-        if (tok->token == PARAM) {
-            /* Create a copy of args before expanding to avoid it being
-             * free'd. */
-            param = tok->d.number.val.i;
-            res = concat(res, expand(copy(args[param])));
-        } else if (
-            i < array_len(&macro->replacement) - 1 &&
-            tok->token == '#' &&
-            (tok + 1)->token == PARAM)
-        {
-            i++;
-            param = (tok + 1)->d.number.val.i;
-            res = append(res, stringify(args[param]));
-        } else {
-            res = append(res, *tok);
+    push_expand_stack(def);
+    if (def->params) {
+        stringified = calloc(def->params, sizeof(*stringified));
+        for (i = 0; i < def->params; ++i) {
+            stringified[i] = stringify(&args[i]);
+            expand(&args[i]);
         }
     }
-    res = expand_paste_operators(res);
-    res = expand(res);
-    pop_expand_stack();
 
-    for (i = 0; i < macro->params; ++i) {
-        free(args[i]);
+    for (i = 0; i < array_len(&def->replacement); ++i) {
+        t = array_get(&def->replacement, i);
+        if (t.token == PARAM) {
+            param = t.d.number.val.i;
+            assert(param < def->params);
+            array_concat(&list, &args[param]);
+        } else if (t.token == '#' &&
+            i < array_len(&def->replacement) - 1 &&
+            array_get(&def->replacement, i + 1).token == PARAM)
+        {
+            i++;
+            param = array_get(&def->replacement, i).d.number.val.i;
+            array_push_back(&list, stringified[param]);
+        } else {
+            array_push_back(&list, t);
+        }
     }
+
+    expand_paste_operators(&list);
+    expand(&list);
+    pop_expand_stack();
+    for (i = 0; i < def->params; ++i) {
+        array_clear(&args[i]);
+    }
+
     free(args);
-    return res;
+    free(stringified);
+    return list;
 }
 
 static const struct token *skip(const struct token *list, enum token_type token)
@@ -349,25 +315,18 @@ static const struct token *skip(const struct token *list, enum token_type token)
     }
 
     list++;
-    assert(list->token != NEWLINE || (list + 1)->token == END);
     return list;
 }
 
-/* Read argument in macro expansion, starting from one offset from the
- * initial open parenthesis. Stop readin when reaching a comma, and
- * nesting depth is zero. Track nesting depth to allow things like
- * MAX( foo(a), b ).
- */
-static struct token *read_arg(
+static TokenArray read_arg(
     const struct token *list,
     const struct token **endptr)
 {
-    size_t n = 0;
-    struct token *arg = calloc(1, sizeof(*arg));
     int nesting = 0;
+    TokenArray arg = {0};
 
     do {
-        if (list->token == END) {
+        if (list->token == NEWLINE) {
             error("Unexpected end of input in expansion.");
             exit(1);
         }
@@ -380,28 +339,27 @@ static struct token *read_arg(
                 exit(1);
             }
         }
-        arg = realloc(arg, (++n + 1) * sizeof(*arg));
-        arg[n - 1] = *list++;
+        array_push_back(&arg, *list++);
     } while (nesting || (list->token != ',' && list->token != ')'));
 
-    arg[n] = basic_token[END];
     *endptr = list;
     return arg;
 }
 
-static struct token **read_args(
+static TokenArray *read_args(
+    const struct macro *def,
     const struct token *list,
-    const struct token **endptr,
-    const struct macro *macro)
+    const struct token **endptr)
 {
-    struct token **args = calloc(macro->params, sizeof(*args));
-    int n = 0;
+    int i;
+    TokenArray *args = NULL;
 
-    if (macro->type == FUNCTION_LIKE) {
+    if (def->type == FUNCTION_LIKE) {
+        args = malloc(def->params * sizeof(*args));
         list = skip(list, '(');
-        for (; n < macro->params; ++n) {
-            args[n] = read_arg(list, &list);
-            if (n < macro->params - 1) {
+        for (i = 0; i < def->params; ++i) {
+            args[i] = read_arg(list, &list);
+            if (i < def->params - 1) {
                 list = skip(list, ',');
             }
         }
@@ -412,63 +370,84 @@ static struct token **read_args(
     return args;
 }
 
-static int needs_expansion(const struct token *list)
+/* Replace content of list between indices [start, end] with contents of
+ * slice.
+ */ 
+static void array_replace_slice(
+    TokenArray *list,
+    unsigned start,
+    unsigned size,
+    TokenArray *slice)
 {
-    const struct macro *def;
+    unsigned length, end;
+    int offset;
+    assert(size <= array_len(list));
 
-    while (list->token != END) {
-        def = definition(*list);
-        if (def && !is_macro_expanded(def))
-            return 1;
-        list++;
+    end = start + size;
+    offset = array_len(slice) - size;
+    length = array_len(list) - size + array_len(slice);
+
+    if (length > list->capacity) {
+        list->capacity = length;
+        list->data = realloc(list->data, list->capacity * sizeof(*list->data));
     }
 
-    return 0;
+    /* Move trailing data out of the way, or move closer to prefix, to
+     * align exactly where slice is inserted. */
+    if (offset != 0) {
+        memmove(
+            list->data + end + offset,
+            list->data + end,
+            (array_len(list) - end) * sizeof(*list->data));
+    }
+
+    /* Copy slice directly into now vacant space in list. */
+    if (array_len(slice)) {
+        memcpy(
+            list->data + start,
+            slice->data,
+            array_len(slice) * sizeof(*list->data));
+    }
+
+    list->length = length;
 }
 
-struct token *expand(struct token *original)
+void expand(TokenArray *list)
 {
-    const struct token *list;
-    struct token *res;
+    struct token t;
+    unsigned i, size;
+    const struct macro *def;
+    const struct token *endptr;
+    TokenArray *args, expn;
 
-    /* Do nothing if there is nothing to expand. */
-    if (!needs_expansion(original))
-        return original;
+    for (i = 0; i < array_len(list); ++i) {
+        t = array_get(list, i);
+        if (t.token == IDENTIFIER) {
+            def = definition(t);
 
-    /*printf("Expanding ");
-    print_list(original);*/
+            /* Only expand function-like macros if they appear as func-
+             * tion invocations, beginning with an open paranthesis. */
+            if (def && !is_macro_expanded(def) &&
+                (def->type != FUNCTION_LIKE ||
+                    array_get(list, i + 1).token == '('))
+            {
+                args = read_args(def, list->data + i + 1, &endptr);
+                expn = expand_macro(def, args);
+                size = (endptr - list->data) - i;
 
-    list = original;
-    res = calloc(1, sizeof(*res));
-    res[0] = basic_token[END];
-    while (list->token != END) {
-        const struct macro *def = definition(*list);
-        int leading_whitespace = list->leading_whitespace;
-        struct token *expn;
-        struct token **args;
+                /* Fix leading whitespace after expansion. */
+                if (array_len(&expn)) {
+                    expn.data[0].leading_whitespace = t.leading_whitespace;
+                }
 
-        /* Only expand function-like macros if they appear as function
-         * invocations, beginning with an open paranthesis. */
-        if (def && !is_macro_expanded(def) &&
-            (def->type != FUNCTION_LIKE || (list + 1)->token == '('))
-        {
-            args = read_args(list + 1, &list, def);
-            expn = expand_macro(def, args);
-
-            /* Dirty fix for adding whitespace after expansion. Fill in
-             * correct number of spaces from the expanded token. */
-            expn->leading_whitespace = leading_whitespace;
-            res = concat(res, expn);
-        } else {
-            res = append(res, *list++);
+                /* Squeeze in expn in list, starting from index i and
+                 * extending size elements. */
+                array_replace_slice(list, i, size, &expn);
+                array_clear(&expn);
+                i += size;
+            }
         }
     }
-
-    /*printf("Result: ");
-    print_list(res);*/
-
-    free(original);
-    return res;
 }
 
 int tok_cmp(struct token a, struct token b)
@@ -495,32 +474,38 @@ int tok_cmp(struct token a, struct token b)
  * middle of the text is converted to a single space in the stringified
  * result.
  */
-struct token stringify(const struct token list[])
+struct token stringify(const TokenArray *list)
 {
-    int n = 0;
-    size_t len = 0;
-    struct token t = {STRING};
+    int i, len = 0;
+    struct token t;
     struct string strval;
     char *buf = calloc(1, sizeof(*buf));
 
-    while (list->token != END) {
-        assert(list->token != NEWLINE);
+    for (i = 0; i < array_len(list); ++i) {
+        t = array_get(list, i);
+        assert(t.token != END);
+
+        /* Do not include trailing space of line. This case hits when
+         * producing message for #error directives. */
+        if (t.token == NEWLINE) {
+            assert(i == array_len(list) - 1);
+            break;
+        }
 
         /* Reduce to a single space, and only insert between other
          * tokens in the list. */
-        strval = tokstr(*list);
-        len += strval.len + (list->leading_whitespace && n);
+        strval = tokstr(t);
+        len += strval.len + (t.leading_whitespace && i);
         buf = realloc(buf, (len + 1) * sizeof(*buf));
-        if (n && list->leading_whitespace) {
+        if (i && t.leading_whitespace) {
             buf[len - strval.len - 1] = ' ';
             buf[len - strval.len] = '\0';
         }
 
         buf = strncat(buf, strval.str, len);
-        list++;
-        n++;
     }
 
+    t.token = STRING;
     t.d.string = str_register(buf, len);
     free(buf);
     return t;
@@ -611,7 +596,7 @@ void register_builtin_definitions(void)
 
     /* For some reason this is not properly handled by musl. */
     macro.name.d.string = str_init("__inline");
-    macro.replacement = parse(" ");
+    macro.replacement = parse("");
     define(macro);
 
     register__builtin__FILE__();

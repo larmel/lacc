@@ -310,7 +310,7 @@ static void preprocess_include(const struct token line[])
         include_file(line->d.string.str);
     } else if (line->token == '<') {
         line++;
-        while (line->token != END) {
+        while (line->token != NEWLINE) {
             if (line->token == '>') {
                 break;
             }
@@ -361,7 +361,8 @@ static struct macro preprocess_define(
 
     macro.params = array_len(&params);
 
-    while (line->token != END && line->token != NEWLINE) {
+    while (line->token != NEWLINE) {
+        assert(line->token != END);
         param.d.number.val.i = -1;
         if (line->token == IDENTIFIER && macro.type == FUNCTION_LIKE) {
             for (i = 0; i < macro.params; ++i) {
@@ -384,15 +385,15 @@ static struct macro preprocess_define(
     return macro;
 }
 
-void preprocess_directive(struct token *original)
+void preprocess_directive(TokenArray *array)
 {
-    const struct token *line = original;
+    const struct token *line = array->data;
 
     if (line->token == IF || !tok_cmp(*line, ident__elif)) {
         /* Perform macro expansion only for if and elif directives,
          * before doing the expression parsing. */
-        original = expand(original);
-        line = original;
+        expand(array);
+        line = array->data;
     }
 
     if (line->token == IF) {
@@ -418,21 +419,20 @@ void preprocess_directive(struct token *original)
         push(!definition(*line) && in_active_block());
     } else if (!tok_cmp(*line, ident__ifdef)) {
         expect(++line, IDENTIFIER);
-        push(definition(*line++) && in_active_block());
+        push(definition(*line) && in_active_block());
     } else if (in_active_block()) {
         if (!tok_cmp(*line, ident__define)) {
             define(preprocess_define(line + 1, &line));
         } else if (!tok_cmp(*line, ident__undef)) {
             expect(++line, IDENTIFIER);
-            undef(*line++);
+            undef(*line);
         } else if (!tok_cmp(*line, ident__include)) {
             preprocess_include(line + 1);
         } else if (!tok_cmp(*line, ident__error)) {
-            line++;
-            error("%s", stringify(line).d.string.str);
+            array->data++;
+            array->length--;
+            error("%s", stringify(array).d.string.str);
             exit(1);
         }
     }
-
-    free(original);
 }

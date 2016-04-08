@@ -22,7 +22,7 @@
 /* Add element to array. Expands to a block statement.
  */
 #define array_push_back(arr, elem) \
-    {                                                                          \
+    do {                                                                       \
         if ((arr)->length == (arr)->capacity) {                                \
             if (!(arr)->capacity) {                                            \
                 (arr)->capacity = ARRAY_CAPACITY_INITIAL;                      \
@@ -34,7 +34,24 @@
             }                                                                  \
         }                                                                      \
         (arr)->data[(arr)->length++] = elem;                                   \
-    }
+    } while (0)
+
+/* Copy elements from b to end of a, keeping b unchanged. Expands to a
+ * block statement.
+ */
+#define array_concat(a, b) \
+    do {                                                                       \
+        if ((a)->capacity < array_len(a) + array_len(b)) {                     \
+            (a)->capacity =                                                    \
+                array_len(a) + array_len(b) + ARRAY_CAPACITY_INITIAL;          \
+            (a)->data = realloc((a)->data, (a)->capacity * sizeof(*(a)->data));\
+        }                                                                      \
+        memcpy(                                                                \
+            (a)->data + array_len(a),                                          \
+            (b)->data,                                                         \
+            array_len(b) * sizeof(*(a)->data));                                \
+        (a)->length += array_len(b);                                           \
+    } while (0)
 
 /* Remove and return last element in array. Expands to expression of
  * element type.
@@ -58,12 +75,12 @@
  * statement.
  */
 #define array_clear(arr) \
-    {                                                                          \
+    do {                                                                       \
         if ((arr)->capacity)                                                   \
             free((arr)->data);                                                 \
         (arr)->length = 0;                                                     \
         (arr)->capacity = 0;                                                   \
         (arr)->data = NULL;                                                    \
-    }
+    } while (0)
 
 #endif

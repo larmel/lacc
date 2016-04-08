@@ -23,9 +23,9 @@ struct macro {
  */
 void register_builtin_definitions(void);
 
-/* Stringify a list of tokens, returning a newtoken of type STRING.
+/* Stringify a list of tokens, returning a new token of type STRING.
  */
-struct token stringify(const struct token list[]);
+struct token stringify(const TokenArray *list);
 
 /* Add macro definition. Takes ownership of any dynamically allocated
  * replacement list.
@@ -41,15 +41,13 @@ void undef(struct token name);
  */
 const struct macro *definition(struct token);
 
-/* Expand a list of tokens, replacing any macro definitions. 
+/* Expand a list of tokens, replacing any macro definitions. Mutates
+ * input list as necessary.
  */
-struct token *expand(struct token *list);
+void expand(TokenArray *list);
 
 /* Compare tokens for equality, returing 0 iff of same type and value.
  */
 int tok_cmp(struct token a, struct token b);
-
-/* DEBUG */
-void print_list(const struct token *list);
 
 #endif

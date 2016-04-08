@@ -74,7 +74,8 @@ static struct token get_token(void)
  * makes the expression balanced. Read lines until full macro invocation
  * is included.
  */
-static void read_macro_invocation(TokenArray *line, const struct macro *macro) {
+static void read_macro_invocation(TokenArray *line, const struct macro *macro)
+{
     int nesting;
     struct token t;
     assert(macro->type == FUNCTION_LIKE);
@@ -102,9 +103,7 @@ static void read_macro_invocation(TokenArray *line, const struct macro *macro) {
              * have everything in the same token list. */
             continue;
         }
-        if (t.token == END) {
-            break;
-        }
+        assert(t.token != END);
         array_push_back(line, t);
     }
     if (nesting) {
@@ -147,50 +146,47 @@ static void read_defined_operator(TokenArray *line)
     }
 }
 
-/* Read tokens until reaching newline or eof. If initial token is '#',
- * stop on newline. Otherwise make sure macro invocations spanning
- * multiple lines are joined, and replace 'defined' directives with
- * constants.
+/* Read tokens until reaching end of line. If initial token is '#', stop
+ * on first newline. Otherwise make sure macro invocations spanning mul-
+ * tiple lines are joined, and replace 'defined' directives with 0 or 1.
  *
  * Returns a buffer containing all necessary tokens to preprocess a
- * line.
+ * line. Always ends with a newline (\n) token, but never contains any
+ * newlines in the array itself.
  */
-static struct token *read_complete_line(struct token t, int is_directive)
+static void read_complete_line(TokenArray *line, struct token t, int directive)
 {
-    TokenArray line = {0};
+    int expandable = 1;
     const struct macro *def;
-    int is_expandable = 1;
 
-    if (is_directive) {
-        array_push_back(&line, t);
-        is_expandable = (t.token == IF) || !tok_cmp(t, ident__elif);
+    if (directive) {
+        array_push_back(line, t);
+        expandable = (t.token == IF) || !tok_cmp(t, ident__elif);
         t = get_token();
     }
 
-    while (t.token != NEWLINE && t.token != END) {
+    while (t.token != NEWLINE) {
+        assert(t.token != END);
         if (t.token == IDENTIFIER) {
-            if (!tok_cmp(t, ident__defined) && is_directive && is_expandable) {
-                read_defined_operator(&line);
+            if (!tok_cmp(t, ident__defined) && directive && expandable) {
+                read_defined_operator(line);
             } else if (
                 (def = definition(t)) && def->type == FUNCTION_LIKE &&
-                is_expandable)
+                expandable)
             {
-                array_push_back(&line, t);
-                read_macro_invocation(&line, def);
+                array_push_back(line, t);
+                read_macro_invocation(line, def);
             } else {
-                array_push_back(&line, t);
+                array_push_back(line, t);
             }
         } else {
-            array_push_back(&line, t);
+            array_push_back(line, t);
         }
         t = get_token();
     }
 
-    if (preserve_whitespace && t.token == NEWLINE)
-        array_push_back(&line, t);
-
-    array_push_back(&line, basic_token[END]);
-    return line.data;
+    assert(t.token == NEWLINE);
+    array_push_back(line, t);
 }
 
 static void add_to_lookahead(struct token t)
@@ -244,13 +240,21 @@ static void rewind_lookahead_buffer(void)
  */
 static void preprocess_line(void)
 {
-    struct token t;
-    struct token *line, *expanded;
+    static TokenArray line;
+
+    unsigned i;
+    struct token t, u;
 
     ensure_initialized();
     rewind_lookahead_buffer();
     do {
         t = get_token();
+        if (t.token == END) {
+            array_clear(&line);
+            break;
+        }
+
+        line.length = 0;
         if (t.token == '#') {
             t = get_token();
             if (in_active_block() || (
@@ -261,32 +265,28 @@ static void preprocess_line(void)
                 !tok_cmp(t, ident__endif) ||
                 t.token == ELSE))
             {
-                line = read_complete_line(t, 1);
-                preprocess_directive(line);
+                read_complete_line(&line, t, 1);
+                preprocess_directive(&line);
             } else {
                 line_buffer = NULL;
             }
         } else {
             assert(in_active_block());
-            line = read_complete_line(t, 0);
-            expanded = expand(line);
-            line = expanded;
-            while (line->token != END) {
-                if (line->token != NEWLINE || preserve_whitespace) {
-                    if (line->token != NEWLINE)
-                        t = *line;
-                    add_to_lookahead(*line);
+            read_complete_line(&line, t, 0);
+            expand(&line);
+            for (i = 0; i < array_len(&line); ++i) {
+                u = array_get(&line, i);
+                if (u.token != NEWLINE || preserve_whitespace) {
+                    if (u.token != NEWLINE)
+                        t = u;
+                    add_to_lookahead(u);
                 }
-                line++;
             }
-            free(expanded);
         }
-    } while (
-        (array_len(&lookahead) < K || t.token == STRING) && t.token != END);
+    } while (array_len(&lookahead) < K || t.token == STRING);
 
     while (array_len(&lookahead) < K) {
-        assert(t.token == END);
-        add_to_lookahead(t);
+        add_to_lookahead(basic_token[END]);
     }
 }
 
