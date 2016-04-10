@@ -476,10 +476,18 @@ int tok_cmp(struct token a, struct token b)
  */
 struct token stringify(const TokenArray *list)
 {
-    int i, len = 0;
+    int i;
     struct token t;
     struct string strval;
-    char *buf = calloc(1, sizeof(*buf));
+    char *buf;
+    size_t cap, len, ptr;
+
+    /* Estimate 7 characters per token, trying to avoid unnecessary
+     * reallocations. */
+    cap = array_len(list) * 7 + 1;
+    buf = malloc(cap);
+    len = ptr = 0;
+    buf[0] = '\0';
 
     for (i = 0; i < array_len(list); ++i) {
         t = array_get(list, i);
@@ -496,13 +504,15 @@ struct token stringify(const TokenArray *list)
          * tokens in the list. */
         strval = tokstr(t);
         len += strval.len + (t.leading_whitespace && i);
-        buf = realloc(buf, (len + 1) * sizeof(*buf));
-        if (i && t.leading_whitespace) {
-            buf[len - strval.len - 1] = ' ';
-            buf[len - strval.len] = '\0';
+        if (len >= cap) {
+            cap = len + array_len(list) + 1;
+            buf = realloc(buf, cap);
         }
-
-        buf = strncat(buf, strval.str, len);
+        if (t.leading_whitespace && i) {
+            buf[ptr++] = ' ';
+        }
+        memcpy(buf + ptr, strval.str, strval.len);
+        ptr += strval.len;
     }
 
     t.token = STRING;
