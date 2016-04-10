@@ -843,15 +843,15 @@ static void compile_op(const struct op *op)
         store(AX, op->a);
         break;
     case IR_OP_ADD:
-        load(op->b, AX);
-        load(op->c, CX);
+        load_value(op->b, AX, size_of(op->a.type));
+        load_value(op->c, CX, size_of(op->a.type));
         emit(INSTR_ADD, OPT_REG_REG,
             reg(CX, size_of(op->a.type)), reg(AX, size_of(op->a.type)));
         store(AX, op->a);
         break;
     case IR_OP_SUB:
-        load(op->b, AX);
-        load(op->c, CX);
+        load_value(op->b, AX, size_of(op->a.type));
+        load_value(op->c, CX, size_of(op->a.type));
         emit(INSTR_SUB, OPT_REG_REG,
             reg(CX, size_of(op->a.type)), reg(AX, size_of(op->a.type)));
         store(AX, op->a);
