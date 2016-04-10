@@ -24,6 +24,10 @@ static int fp_offset;
 static int overflow_arg_area_offset;
 static int reg_save_area_offset;
 
+/* Store incoming PARAM operations before CALL.
+ */
+static array_of(struct var) func_args;
+
 static void compile_block(struct block *block, const enum param_class *res);
 
 static void emit(enum opcode opcode, enum instr_optype optype, ...)
@@ -768,8 +772,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
 
 static void compile_op(const struct op *op)
 {
-    static int n_args, w;
-    static struct var *args;
+    static int w;
 
     switch (op->type) {
     case IR_ASSIGN:
@@ -822,16 +825,11 @@ static void compile_op(const struct op *op)
         store(AX, op->a);
         break;
     case IR_PARAM:
-        args = realloc(args, ++n_args * sizeof(*args));
-        args[n_args - 1] = op->a;
+        array_push_back(&func_args, op->a);
         break;
     case IR_CALL:
-        call(n_args, args, op->a, op->b);
-        if (args) {
-            free(args);
-            args = NULL;
-            n_args = 0;
-        }
+        call(array_len(&func_args), func_args.data, op->a, op->b);
+        array_empty(&func_args);
         break;
     case IR_ADDR:
         load_address(op->b, AX);
@@ -1220,6 +1218,8 @@ int declare(const struct symbol *sym)
 
 void flush(void)
 {
-    if (flush_backend)
+    array_clear(&func_args);
+    if (flush_backend) {
         flush_backend();
+    }
 }

@@ -71,6 +71,11 @@
 #define array_len(arr) \
     (arr)->length
 
+/* Reset element count to 0, but keep the capacity already allocated.
+ */
+#define array_empty(arr) \
+    (arr)->length = 0
+
 /* Free allocated memory, making the array empty. Expands to a block
  * statement.
  */
