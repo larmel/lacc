@@ -28,7 +28,7 @@ static int reg_save_area_offset;
  */
 static array_of(struct var) func_args;
 
-static void compile_block(struct block *block, const enum param_class *res);
+static void compile_block(struct block *block);
 
 static void emit(enum opcode opcode, enum instr_optype optype, ...)
 {
@@ -165,16 +165,17 @@ static struct immediate constant(int n, int w)
     return value_of(var_int(n), w);
 }
 
-/* Load variable v to register r, sign extended to fit register size. Width must
- * be either 4 (as in %eax) or 8 (as in %rax).
+/* Load variable v to register r, sign extended to fit register size.
+ * Width must be either 4 (as in %eax) or 8 (as in %rax).
  */
 static enum reg load_value(struct var v, enum reg r, int w)
 {
     enum opcode opcode = INSTR_MOV;
     int s = size_of(v.type);
 
-    /* We operate only with 32 or 64 bit register values, but variables can be
-     * stored with byte or short width. Promote to 32 bit if required. */
+    /* We operate only with 32 or 64 bit register values, but variables
+     * can be stored with byte or short width. Promote to 32 bit if
+     * required. */
     assert(w == 4 || w == 8);
     assert(s <= w);
 
@@ -184,8 +185,8 @@ static enum reg load_value(struct var v, enum reg r, int w)
     } else if (s != w)
         opcode = INSTR_MOVSX;
 
-    /* Special case for unsigned extension from 32 to 64 bit, for which there
-     * is no instruction 'movzlq', but rather just 'movl'. */
+    /* Special case for unsigned extension from 32 to 64 bit, for which
+     * there is no instruction 'movzlq', but rather just 'movl'. */
     if (s == 4 && is_unsigned(v.type) && w == 8) {
         opcode = INSTR_MOV;
         w = 4;
@@ -209,8 +210,8 @@ static enum reg load_value(struct var v, enum reg r, int w)
     return r;
 }
 
-/* Load variable to register, automatically sign/width extended to either 32 or
- * 64 bit.
+/* Load variable to register, automatically sign/width extended to
+ * either 32 or 64 bit.
  */
 static enum reg load(struct var v, enum reg r)
 {
@@ -279,57 +280,103 @@ static void push(struct var v)
     }
 }
 
-/* Compile a function call. For now this assumes only integer arguments passed
- * in %rdi, %rsi, %rdx, %rcx, %r8 and %r9, and arguments passed on stack.
+/* Used for computing argument types for parameter passing in function
+ * calls. Re-use buffers to save allocations.
  */
-static void call(int n, const struct var *args, struct var res, struct var func)
+static ParamClass function_param_class;
+static ParamClass result_param_class;
+static ParamClass *argument_param_classes;
+static const struct typetree **argument_types;
+static unsigned call_arg_count, call_max_count;
+
+static void prepare_argument(const struct typetree *arg)
 {
-    int i,
-        mem_used = 0,
-        next_integer_reg = 0;
-
-    enum param_class
-        *res_pc,
-        **arg_pc;
-
-    const struct typetree
-        **arg_types,
-        *type;
-
-    /* Classify function arguments and return value. */
-    arg_types = calloc(n, sizeof(*arg_types));
-    for (i = 0; i < n; ++i) {
-        arg_types[i] = args[i].type;
+    if (call_max_count <= call_arg_count + 1) {
+        call_max_count = call_arg_count + 8;
+        argument_param_classes =
+            realloc(
+                argument_param_classes,
+                call_max_count * sizeof(ParamClass));
+        argument_types =
+            realloc(
+                argument_types,
+                call_max_count * sizeof(*argument_types));
+        memset(
+            argument_param_classes + call_arg_count,
+            0,
+            (call_max_count - call_arg_count) * sizeof(ParamClass));
     }
 
-    /* Handle both function call by direct reference and pointer. The former is
-     * a special case. */
-    type = is_pointer(func.type) ? func.type->next : func.type;
-    assert(is_function(type));
+    argument_types[call_arg_count++] = arg;
+}
 
-    arg_pc = classify_call(arg_types, type->next, n, &res_pc);
-    free(arg_types);
+static void classify_function_call(const struct typetree *func)
+{
+    int i;
+    assert(is_function(func));
+    assert(
+        call_arg_count == nmembers(func) ||
+        (is_vararg(func) && call_arg_count > nmembers(func)));
 
-    /* Pass arguments on stack from right to left. Do this before populating
-     * registers, because %rdi, %rsi etc will be used to do the pushing. */
-    for (i = n - 1; i >= 0; --i) {
-        if (*arg_pc[i] == PC_MEMORY) {
+    array_empty(&result_param_class);
+    for (i = 0; i < call_arg_count; ++i) {
+        array_empty(&argument_param_classes[i]);
+    }
+
+    classify_call(
+        argument_types,
+        func->next,
+        call_arg_count,
+        argument_param_classes,
+        &result_param_class);
+
+    call_arg_count = 0;
+}
+
+/* Compile a function call. For now this assumes only integer arguments
+ * passed in %rdi, %rsi, %rdx, %rcx, %r8 and %r9, and arguments passed
+ * on stack.
+ */
+static void call(
+    int n_args,
+    const struct var *args,
+    struct var res,
+    struct var func)
+{
+    int i, mem_used = 0, next_integer_reg = 0;
+    const struct typetree *function;
+
+    /* Handle both function call by direct reference and pointer. The
+     * former is a special case. */
+    function = is_pointer(func.type) ? func.type->next : func.type;
+
+    /* Populate argument_param_classes and result_param_class. */
+    for (i = 0; i < n_args; ++i)
+        prepare_argument(args[i].type);
+    classify_function_call(function);
+
+    /* Pass arguments on stack from right to left. Do this before
+     * populating registers, because %rdi, %rsi etc will be used to do
+     * the pushing. */
+    for (i = n_args - 1; i >= 0; --i) {
+        if (array_get(&argument_param_classes[i], 0) == PC_MEMORY) {
             mem_used += N_EIGHTBYTES(args[i].type) * 8;
             push(args[i]);
         }
     }
 
-    /* When return value is MEMORY, pass a pointer to stack as hidden first
-     * argument. */
-    if (*res_pc == PC_MEMORY) {
+    /* When return value is MEMORY, pass a pointer to stack as hidden
+     * first argument. */
+    if (array_get(&result_param_class, 0) == PC_MEMORY) {
         next_integer_reg = 1;
         load_address(res, param_int_reg[0]);
     }
 
-    /* Pass arguments in registers from left to right. Partition arguments into
-     * eightbyte slices and load into appropriate registers. */
-    for (i = 0; i < n; ++i) {
-        enum param_class *eightbyte = arg_pc[i];
+    /* Pass arguments in registers from left to right. Partition
+     * arguments into eightbyte slices and load into appropriate
+     * registers. */
+    for (i = 0; i < n_args; ++i) {
+        enum param_class *eightbyte = argument_param_classes[i].data;
 
         if (*eightbyte != PC_MEMORY) {
             if (is_struct_or_union(args[i].type)) {
@@ -357,10 +404,11 @@ static void call(int n, const struct var *args, struct var res, struct var func)
         }
     }
 
-    /* For variable argument lists, %al contains the number of vector registers
-     * used. */
-    if (is_vararg(type))
+    /* For variable argument lists, %al contains the number of vector
+     * registers used. */
+    if (is_vararg(function)) {
         emit(INSTR_MOV, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
+    }
 
     /* Call. */
     if (is_pointer(func.type)) {
@@ -377,15 +425,15 @@ static void call(int n, const struct var *args, struct var res, struct var func)
     }
 
     /* Reset stack pointer from overflow arguments. */
-    if (mem_used)
+    if (mem_used) {
         emit(INSTR_ADD, OPT_IMM_REG, constant(mem_used, 8), reg(SP, 8));
+    }
 
-    /* Move return value from register(s) to memory. Return values with class
-     * MEMORY have already been written by callee. */
-    if (*res_pc != PC_MEMORY) {
+    /* Move return value from register(s) to memory. Return values with
+     * class MEMORY have already been written by callee. */
+    if (array_get(&result_param_class, 0) != PC_MEMORY) {
         struct var slice = res;
-        int n = N_EIGHTBYTES(res.type),
-            size = size_of(res.type);
+        int n = N_EIGHTBYTES(res.type), size = size_of(res.type);
 
         /* Only have INTEGER class for now. */
         assert(n <= 2);
@@ -395,7 +443,7 @@ static void call(int n, const struct var *args, struct var res, struct var func)
             int width = (size < 8) ? size % 8 : 8;
 
             size -= width;
-            assert(res_pc[i] == PC_INTEGER);
+            assert(array_get(&result_param_class, i) == PC_INTEGER);
 
             slice.type = BASIC_TYPE_UNSIGNED(width);
             slice.offset = i * 8;
@@ -404,16 +452,8 @@ static void call(int n, const struct var *args, struct var res, struct var func)
 
         assert(!size);
     }
-
-    for (i = 0; i < n; ++i)
-        free(arg_pc[i]);
-
-    free(arg_pc);
-    free(res_pc);
 }
 
-/* Assign storage to local variables.
- */
 static int assign_locals_storage(struct list *locals, int offset)
 {
     int i;
@@ -431,9 +471,6 @@ static int assign_locals_storage(struct list *locals, int offset)
     return offset;
 }
 
-/* Load parameters into call frame on entering a function. Return parameter
- * class of return value.
- */
 static enum param_class *enter(
     const struct typetree *type,
     struct list *params,
@@ -442,30 +479,32 @@ static enum param_class *enter(
     int i,
         next_integer_reg = 0,
         mem_offset = 16,    /* Offset of PC_MEMORY parameters. */
-        stack_offset = 0;   /* Offset of %rsp to keep local variables. */
+        stack_offset = 0;   /* Offset of %rsp to for local variables. */
 
-    enum param_class
-        **params_pc,
-        *ret_pc;
+    /* Get classification of function arguments and return value. Keep
+     * this as a copy, or it will be overwritten by function calls
+     * inside the function. */
+    for (i = 0; i < nmembers(type); ++i) {
+        prepare_argument(get_member(type, i)->type);
+    }
+    classify_function_call(type);
+    array_clear(&function_param_class);
+    array_concat(&function_param_class, &result_param_class);
 
-    assert(is_function(type));
-
-    /* Get classification of function arguments and return value. */
-    params_pc = classify_signature(type, &ret_pc);
-
-    /* Address of return value is passed as first integer argument. If return
-     * value is MEMORY, store the address at stack offset -8. */
-    if (*ret_pc == PC_MEMORY) {
+    /* Address of return value is passed as first integer argument. If
+     * return value is MEMORY, store the address at stack offset -8. */
+    if (array_get(&function_param_class, 0) == PC_MEMORY) {
         stack_offset = -8;
         next_integer_reg = 1;
     }
 
-    /* For functions with variable argument list, reserve a fixed area at the
-     * beginning of the stack fram for register values. In total there are 8
-     * bytes for each of the 6 integer registers, and 16 bytes for each of the 8
-     * SSE registers, for a total of 176 bytes. We want to keep the register
-     * save area fixed regardless of parameter class of return value, so skip
-     * the first 8 bytes used for return value address. */
+    /* For functions with variable argument list, reserve a fixed area
+     * at the beginning of the stack fram for register values. In total
+     * there are 8 bytes for each of the 6 integer registers, and 16
+     * bytes for each of the 8 SSE registers, for a total of 176 bytes.
+     * We want to keep the register save area fixed regardless of
+     * parameter class of return value, so skip the first 8 bytes used
+     * for return value address. */
     if (is_vararg(type)) {
         stack_offset = -176 - 8;
     }
@@ -477,10 +516,11 @@ static enum param_class *enter(
         assert(!sym->stack_offset);
         assert(sym->linkage == LINK_NONE);
 
-        /* Guarantee that parameters are 8-byte aligned also for those passed by
-         * register, which makes it easier to store in local frame after
-         * entering function. Might want to revisit this and make it compact. */
-        if (*params_pc[i] == PC_MEMORY) {
+        /* Guarantee that parameters are 8-byte aligned also for those
+         * passed by register, which makes it easier to store in local
+         * frame after entering function. Might want to revisit this
+         * and make it compact. */
+        if (array_get(&argument_param_classes[i], 0) == PC_MEMORY) {
             sym->stack_offset = mem_offset;
             mem_offset += N_EIGHTBYTES(&sym->type) * 8;
         } else {
@@ -495,18 +535,20 @@ static enum param_class *enter(
         emit(INSTR_SUB, OPT_IMM_REG, constant(-stack_offset, 8), reg(SP, 8));
 
     /* Store return address to well known stack offset. */
-    if (*ret_pc == PC_MEMORY)
+    if (array_get(&function_param_class, 0) == PC_MEMORY)
         emit(INSTR_MOV, OPT_REG_MEM,
             reg(param_int_reg[0], 8), location(address(-8, BP, 0, 0), 8));
 
-    /* Store all potential parameters to register save area. This includes
-     * parameters that are known to be passed as registers, that will anyway be
-     * stored to another stack location. Maybe potential for optimization. */
+    /* Store all potential parameters to register save area. This
+     * includes parameters that are known to be passed as registers,
+     * that will anyway be stored to another stack location. Maybe
+     * potential for optimization. */
     if (is_vararg(type)) {
         const struct symbol *lbl = sym_create_label();
 
-        /* It is desireable to skip touching floating point unit if possible,
-         * %al holds the number of floating point registers passed. */
+        /* It is desireable to skip touching floating point unit if
+         * possible, %al holds the number of floating point registers
+         * passed. */
         emit(INSTR_TEST, OPT_REG_REG, reg(AX, 1), reg(AX, 1));
         emit(INSTR_JZ, OPT_IMM, addr(lbl));
         reg_save_area_offset = -8; /* Skip address of return value. */
@@ -528,10 +570,10 @@ static enum param_class *enter(
 
     /* Move arguments from register to stack. */
     for (i = 0; i < list_len(params); ++i) {
-        enum param_class *eightbyte = params_pc[i];
+        enum param_class *eightbyte = argument_param_classes[i].data;
 
-        /* Here it is ok to not separate between object and other types. Data in
-         * registers can always be treated as integer type. */
+        /* Here it is ok to not separate between object and other types.
+         * Data in registers can always be treated as integer type. */
         if (*eightbyte != PC_MEMORY) {
             struct var ref = {NULL, NULL, DIRECT};
             int n = N_EIGHTBYTES(get_member(type, i)->type),
@@ -550,48 +592,47 @@ static enum param_class *enter(
         }
     }
 
-    /* After loading parameters we know how many registers have been used for
-     * fixed parameters. Update offsets to be used in va_start. */
+    /* After loading parameters we know how many registers have been
+     * used for fixed parameters. Update offsets to be used in
+     * va_start. */
     if (is_vararg(type)) {
         gp_offset = 8 * next_integer_reg;
         fp_offset = 0;
         overflow_arg_area_offset = mem_offset;
     }
 
-    for (i = 0; i < list_len(params); ++i)
-        free(params_pc[i]);
-    free(params_pc);
-
-    return ret_pc;
+    return function_param_class.data;
 }
 
-/* Return value from function, placing it in register(s) or writing it to stack
- * based on parameter class.
+/* Return value from function, placing it in register(s) or writing it
+ * to stack based on parameter class.
  */
-static void ret(struct var val, const enum param_class *pc)
+static void ret(struct var val)
 {
-    assert(pc && *pc != PC_NO_CLASS);
+    assert(array_len(&function_param_class));
+    assert(array_get(&function_param_class, 0) != PC_NO_CLASS);
 
-    /* NB: This might break down for non-object values, in particular string
-     * constants that cannot be interpreted as integers. */
-    if (*pc != PC_MEMORY) {
+    /* NB: This might break down for non-object values, in particular
+     * string constants that cannot be interpreted as integers. */
+    if (array_get(&function_param_class, 0) != PC_MEMORY) {
         int i,
             n = N_EIGHTBYTES(val.type),
             size = size_of(val.type);
         struct var slice = val;
 
-        /* As we only support integer class, limit to two registers. Note that
-         * the classification algorithm will never allocate more than two
-         * integer registers for a single type. */
+        /* As we only support integer class, limit to two registers.
+         * Note that the classification algorithm will never allocate
+         * more than two integer registers for a single type. */
         assert(n <= 2);
+        assert(n == array_len(&function_param_class));
 
-        /* This has a lot in common with call and enter, and could probably be
-         * refactored. */
+        /* This has a lot in common with call and enter, and could
+         * probably be refactored. */
         for (i = 0; i < n; ++i) {
             int width = (size < 8) ? size % 8 : 8;
 
             size -= width;
-            assert(pc[i] == PC_INTEGER);
+            assert(array_get(&function_param_class, i) == PC_INTEGER);
             assert(width == 1 || width == 2 || width == 4 || width == 8);
 
             slice.type = BASIC_TYPE_UNSIGNED(width);
@@ -601,7 +642,8 @@ static void ret(struct var val, const enum param_class *pc)
 
         assert(!size);
     } else {
-        /* Load return address from magic stack offset and copy result. */
+        /* Load return address from magic stack offset and copy
+         * result. */
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(-8, BP, 0, 0), 8), reg(DI, 8));
         load_address(val, SI);
@@ -609,14 +651,15 @@ static void ret(struct var val, const enum param_class *pc)
             constant(size_of(val.type), 8), reg(DX, 4));
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
 
-        /* The ABI specifies that the address should be in %rax on return. */
+        /* The ABI specifies that the address should be in %rax on
+         * return. */
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(-8, BP, 0, 0), 8), reg(AX, 8));
     }
 }
 
-/* Execute call to va_start, initializing the provided va_list object. Values
- * are taken from static context set during enter().
+/* Execute call to va_start, initializing the provided va_list object.
+ * Values are taken from static context set during enter().
  */
 static void compile__builtin_va_start(struct var args)
 {
@@ -643,7 +686,8 @@ static void compile__builtin_va_start(struct var args)
 static void compile__builtin_va_arg(struct var res, struct var args)
 {
     const int w = size_of(res.type);
-    enum param_class *pc = classify(res.type);
+    const enum param_class *pc;
+
     struct var
         var_gp_offset = args,
         var_fp_offset = args,
@@ -659,6 +703,10 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     assert(res.kind == DIRECT);
     assert(args.kind == DIRECT);
 
+    array_empty(&result_param_class);
+    classify(res.type, &result_param_class);
+    pc = result_param_class.data;
+
     /* References into va_list object. */
     var_gp_offset.type = &basic_type__unsigned_int;
     var_fp_offset.offset += 4;
@@ -668,14 +716,14 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     var_reg_save_area.offset += 16;
     var_reg_save_area.type = &basic_type__unsigned_long;
 
-    /* Integer or SSE parameters are read from registers, if there are enough of
-     * them left. Otherwise read from overflow area. */
+    /* Integer or SSE parameters are read from registers, if there are
+     * enough of them left. Otherwise read from overflow area. */
     if (*pc != PC_MEMORY) {
         struct var slice = res;
         int i,
             size = w,
-            num_gp = 0, /* Number of general purpose registers needed. */
-            num_fp = 0; /* Number of floating point registers needed. */
+            num_gp = 0, /* general purpose registers needed */
+            num_fp = 0; /* floating point registers needed */
 
         for (i = 0; i < N_EIGHTBYTES(res.type); ++i) {
             if (pc[i] == PC_INTEGER) {
@@ -686,12 +734,13 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             }
         }
 
-        /* Keep reg_save_area in register for the remainder, a pointer to stack
-         * where registers are stored. This value does not change. */
+        /* Keep reg_save_area in register for the remainder, a pointer
+         * to stack where registers are stored. This value does not
+         * change. */
         load(var_reg_save_area, SI);
 
-        /* Check whether there are enough registers left for the argument to be
-         * passed in. */
+        /* Check whether there are enough registers left for the
+         * argument to be passed in. */
         if (num_gp) {
             load(var_gp_offset, CX);
             emit(INSTR_CMP, OPT_IMM_REG,
@@ -706,8 +755,9 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             emit(INSTR_JA, OPT_IMM, addr(memory));
         }
 
-        /* Load argument, one eightbyte at a time. This code has a lot in common
-         * with enter, ret etc, potential for refactoring probably. */
+        /* Load argument, one eightbyte at a time. This code has a lot
+         * in common with enter, ret etc, potential for refactoring
+         * probably. */
         for (i = 0; i < N_EIGHTBYTES(res.type); ++i) {
             int width = (size < 8) ? size : 8;
 
@@ -718,10 +768,11 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             slice.type = BASIC_TYPE_UNSIGNED(width);
             slice.offset = res.offset + i * 8;
 
-            /* Advanced addressing, loading (%rsi + 8*i + (%rcx * 1)) into %rax.
-             * Base of registers are stored in %rsi, first pending register is
-             * at offset %rcx, and i counts number of registers done. In GNU
-             * assembly it is {i*8}(%rsi, %rcx, 1). */
+            /* Advanced addressing, loading (%rsi + 8*i + (%rcx * 1))
+             * into %rax. Base of registers are stored in %rsi, first
+             * pending register is at offset %rcx, and i counts number
+             * of registers done. In GNU assembly it is
+             * {i*8}(%rsi, %rcx, 1). */
             emit(INSTR_MOV, OPT_MEM_REG,
                 location(address(i*8, SI, CX, 1), width), reg(AX, width));
             store(AX, slice);
@@ -744,10 +795,10 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         enter_context(memory);
     }
 
-    /* Parameters that are passed on stack will be read from overflow_arg_area.
-     * This is also the fallback when arguments do not fit in remaining
-     * registers. */
-    load(var_overflow_arg_area, SI); /* Align overflow area before load? */
+    /* Parameters that are passed on stack will be read from
+     * overflow_arg_area. This is also the fallback when arguments
+     * do not fit in remaining registers. */
+    load(var_overflow_arg_area, SI);
     if (w <= 8) {
         assert(res.kind == DIRECT);
         emit(INSTR_MOV, OPT_MEM_REG,
@@ -759,15 +810,15 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
     }
 
-    /* Move overflow_arg_area pointer to position of next memory argument, 
-     * aligning to 8 byte. */
+    /* Move overflow_arg_area pointer to position of next memory
+     * argument,  aligning to 8 byte. */
     emit(INSTR_ADD, OPT_IMM_MEM,
         constant(N_EIGHTBYTES(res.type) * 8, 4),
         location_of(var_overflow_arg_area, 4));
 
-    if (*pc != PC_MEMORY)
+    if (*pc != PC_MEMORY) {
         enter_context(done);
-    free(pc);
+    }
 }
 
 static void compile_op(const struct op *op)
@@ -776,11 +827,12 @@ static void compile_op(const struct op *op)
 
     switch (op->type) {
     case IR_ASSIGN:
-        /* Handle special case of char [] = string literal. This will only occur
-         * as part of initializer, at block scope. External definitions are
-         * handled before this. At no other point should array types be seen in
-         * assembly backend. We handle these assignments with memcpy, other
-         * compilers load the string into register as ascii numbers. */
+        /* Handle special case of char [] = string literal. This will
+         * only occur as part of initializer, at block scope. External
+         * definitions are handled before this. At no other point should
+         * array types be seen in assembly backend. We handle these
+         * assignments with memcpy, other compilers load the string into
+         * register as ascii numbers. */
         if (is_array(op->a.type) || is_array(op->b.type)) {
             int size = size_of(op->a.type);
 
@@ -794,8 +846,8 @@ static void compile_op(const struct op *op)
             emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
             break;
         }
-        /* Struct or union assignment, values that cannot be loaded into a
-         * single register. */
+        /* Struct or union assignment, values that cannot be loaded into
+         * a single register. */
         else if (size_of(op->a.type) > 8) {
             int size = size_of(op->a.type);
             assert(size_of(op->a.type) == size_of(op->b.type));
@@ -807,8 +859,8 @@ static void compile_op(const struct op *op)
             emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
             break;
         }
-        /* Fallthrough, assignment has implicit cast for convenience and to make
-         * static initialization work without explicit casts. */
+        /* Fallthrough, assignment has implicit cast for convenience and
+         * to make static initialization work without explicit casts. */
     case IR_CAST:
         w = (size_of(op->a.type) > size_of(op->b.type)) ?
             size_of(op->a.type) : size_of(op->b.type);
@@ -896,10 +948,10 @@ static void compile_op(const struct op *op)
         store(AX, op->a);
         break;
     case IR_OP_SHL:
-        /* Shift instruction encoding is either by immediate, or implicit %cl
-         * register. Encode as if something other than %cl could be chosen.
-         * Behavior is undefined if shift is greater than integer width, so
-         * don't care about overflow or sign. */
+        /* Shift instruction encoding is either by immediate, or
+         * implicit %cl register. Encode as if something other than %cl
+         * could be chosen. Behavior is undefined if shift is greater
+         * than integer width, so don't care about overflow or sign. */
         load(op->b, AX);
         load(op->c, CX);
         emit(INSTR_SHL, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(op->a.type)));
@@ -966,13 +1018,13 @@ static void compile_op(const struct op *op)
     }
 }
 
-static void tail_cmp_jump(struct block *block, const enum param_class *res)
+static void tail_cmp_jump(struct block *block)
 {
     struct instruction instr = {0};
     struct op *cmp = &array_get(&block->code, array_len(&block->code) - 1);
 
-    /* Target of assignment should be temporary, thus we do not lose any side
-     * effects from not storing the value to stack. */
+    /* Target of assignment should be temporary, thus we do not lose any
+     * side effects from not storing the value to stack. */
     assert(!cmp->a.lvalue);
 
     load(cmp->c, CX);
@@ -1000,17 +1052,19 @@ static void tail_cmp_jump(struct block *block, const enum param_class *res)
     if (block->jump[0]->color == BLACK)
         emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
     else
-        compile_block(block->jump[0], res);
+        compile_block(block->jump[0]);
 
-    compile_block(block->jump[1], res);
+    compile_block(block->jump[1]);
 }
 
-static void tail_generic(struct block *block, const enum param_class *res)
+static void tail_generic(struct block *block)
 {
     if (!block->jump[0] && !block->jump[1]) {
-        if (*res != PC_NO_CLASS && block->has_return_value) {
+        if (array_get(&function_param_class, 0) != PC_NO_CLASS &&
+            block->has_return_value)
+        {
             assert(block->expr.type && !is_void(block->expr.type));
-            ret(block->expr, res);
+            ret(block->expr);
         }
 
         emit(INSTR_LEAVE, OPT_NONE);
@@ -1019,7 +1073,7 @@ static void tail_generic(struct block *block, const enum param_class *res)
         if (block->jump[0]->color == BLACK)
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
         else
-            compile_block(block->jump[0], res);
+            compile_block(block->jump[0]);
     } else {
         load(block->expr, AX);
         emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
@@ -1027,12 +1081,12 @@ static void tail_generic(struct block *block, const enum param_class *res)
         if (block->jump[1]->color == BLACK)
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
         else
-            compile_block(block->jump[1], res);
-        compile_block(block->jump[0], res);
+            compile_block(block->jump[1]);
+        compile_block(block->jump[0]);
     }
 }
 
-static void compile_block(struct block *block, const enum param_class *res)
+static void compile_block(struct block *block)
 {
     int i, length;
     struct op *op = NULL;
@@ -1053,11 +1107,11 @@ static void compile_block(struct block *block, const enum param_class *res)
          * writing the result of comparison (always a temporary). */
         if (op && IS_COMPARISON(op->type) && block->jump[1]) {
             assert(block->jump[0]);
-            tail_cmp_jump(block, res);
+            tail_cmp_jump(block);
         } else {
             if (op)
                 compile_op(op);
-            tail_generic(block, res);
+            tail_generic(block);
         }
     }
 }
@@ -1140,8 +1194,6 @@ static void compile_data(struct definition *def)
 
 static void compile_function(struct definition *def)
 {
-    enum param_class *result_class;
-
     assert(is_function(&def->symbol->type));
     enter_context(def->symbol);
     emit(INSTR_PUSH, OPT_REG, reg(BP, 8));
@@ -1150,12 +1202,10 @@ static void compile_function(struct definition *def)
     /* Make sure parameters and local variables are placed on stack.
      * Keep parameter class of return value for later assembling return
      * statement. */
-    result_class = enter(&def->symbol->type, &def->params, &def->locals);
+    enter(&def->symbol->type, &def->params, &def->locals);
 
     /* Recursively assemble body. */
-    compile_block(def->body, result_class);
-
-    free(result_class);
+    compile_block(def->body);
 }
 
 void set_compile_target(FILE *stream, enum compile_target target)
@@ -1218,7 +1268,16 @@ int declare(const struct symbol *sym)
 
 void flush(void)
 {
+    int i;
+
     array_clear(&func_args);
+    array_clear(&result_param_class);
+    array_clear(&function_param_class);
+    for (i = 0; i < call_max_count; ++i) {
+        array_clear(&argument_param_classes[i]);
+    }
+    free(argument_types);
+    free(argument_param_classes);
     if (flush_backend) {
         flush_backend();
     }

@@ -35,8 +35,8 @@ static enum param_class combine(enum param_class a, enum param_class b)
     return PC_SSE;
 }
 
-/* Traverse type tree depth first, calculating parameter classification to use
- * for each eightbyte.
+/* Traverse type tree depth first, calculating parameter classification
+ * to use for each eightbyte.
  */
 static void flatten(enum param_class *l, const struct typetree *t, int offset)
 {
@@ -87,108 +87,76 @@ static int merge(enum param_class *l, int n)
     return 0;
 }
 
-/* Parameter classification as described in System V ABI (3.2.3), with some
- * simplifications.
- * Classify parameter as a series of eightbytes used for parameter passing and
- * return value. If the first element is not PC_MEMORY, the number of elements
- * in the list can be determined by N_EIGHTBYTES(t). 
- */
-enum param_class *classify(const struct typetree *t)
+void classify(const struct typetree *t, ParamClass *pc)
 {
-    enum param_class *eb = calloc(1, sizeof(*eb));
-
+    int i, n;
     assert(t->type != T_FUNCTION);
     assert(t->type != T_VOID);
+    assert(!array_len(pc));
 
     if (is_integer(t) || is_pointer(t)) {
-        *eb = PC_INTEGER;
+        array_push_back(pc, PC_INTEGER);
     } else if (N_EIGHTBYTES(t) > 4 || has_unaligned_fields(t)) {
-        *eb = PC_MEMORY;
+        array_push_back(pc, PC_MEMORY);
     } else if (is_struct_or_union(t)) {
-        int n = N_EIGHTBYTES(t);
-
-        eb = realloc(eb, n * sizeof(*eb));
-        memset(eb, 0, n * sizeof(*eb)); /* Initialize to NO_CLASS. */
-        flatten(eb, t, 0);
-        if (merge(eb, n)) {
-            eb = realloc(eb, sizeof(*eb));
-            *eb = PC_MEMORY;
+        n = N_EIGHTBYTES(t);
+        assert(n);
+        for (i = 0; i < n; ++i) {
+            array_push_back(pc, PC_NO_CLASS);
+        }
+        flatten(pc->data, t, 0);
+        if (merge(pc->data, n)) {
+            pc->length = 1;
+            pc->data[0] = PC_MEMORY;
         }
     } else {
-        *eb = PC_MEMORY;
+        array_push_back(pc, PC_MEMORY);
     }
-
-    return eb;
 }
 
-enum param_class **classify_call(
+void classify_call(
     const struct typetree **args,
     const struct typetree *ret,
-    int n_args,
-    enum param_class **res)
+    unsigned n_args,
+    ParamClass *params,
+    ParamClass *res)
 {
-    int i, next_integer_reg = 0;
-    enum param_class **params;
+    int i, chunks, next_integer_reg = 0;
+    assert(!array_len(res));
 
-    assert(res);
-
-    /* Classify parameters and return value. */
-    params = calloc(n_args, sizeof(*params));
     for (i = 0; i < n_args; ++i) {
-        params[i] = classify(args[i]);
+        classify(args[i], &params[i]);
     }
 
     if (ret->type != T_VOID) {
-        *res = classify(ret);
+        classify(ret, res);
 
-        /* When return value is MEMORY, pass a pointer to stack as hidden first
-         * argument. */
-        if (**res == PC_MEMORY) {
+        /* When return value is MEMORY, pass a pointer to stack as
+         * hidden first argument. Therefore do this before assigning
+         * registers to parameters. */
+        if (array_get(res, 0) == PC_MEMORY) {
             next_integer_reg = 1;
         }
     } else {
-        *res = calloc(1, sizeof(**res));
+        array_push_back(res, PC_NO_CLASS);
     }
 
-    /* Place arguments in registers from left to right, partitioned into
-     * eightbyte slices. */
+    /* Place arguments in registers from left to right, partitioned
+     * into eightbyte slices. */
     for (i = 0; i < n_args; ++i) {
-        if (*params[i] != PC_MEMORY) {
-            int chunks = N_EIGHTBYTES(args[i]);
+        if (array_get(&params[i], 0) != PC_MEMORY) {
+            chunks = N_EIGHTBYTES(args[i]);
 
-            /* Arguments are not partially passed on stack, so check that there
-             * are enough registers available. */
+            /* Arguments are not partially passed on stack, so check
+             * that there are enough registers available. */
             if (next_integer_reg + chunks <= 6) {
                 next_integer_reg += chunks;
             } else {
-                *params[i] = PC_MEMORY;
+                params[i].data[0] = PC_MEMORY;
+                params[i].length = 1;
             }
         }
     }
-
-    return params;
-}
-
-enum param_class **classify_signature(
-    const struct typetree *func,
-    enum param_class **res)
-{
-    int i, n;
-    enum param_class **params;
-    const struct typetree **args;
-
-    assert(is_function(func));
-
-    n = nmembers(func);
-    args = calloc(n, sizeof(*args));
-    for (i = 0; i < n; ++i) {
-        args[i] = get_member(func, i)->type;
-    }
-
-    params = classify_call(args, func->next, n, res);
-    free(args);
-
-    return params;
 }
 
 int sym_alignment(const struct symbol *sym)
@@ -203,7 +171,8 @@ int sym_alignment(const struct symbol *sym)
     return align;
 }
 
-void dump_classification(const enum param_class *c, const struct typetree *t) {
+void dump_classification(const enum param_class *c, const struct typetree *t)
+{
     int i;
 
     printf("TYPE: %s\n", typetostr(t));
