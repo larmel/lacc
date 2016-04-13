@@ -1,7 +1,8 @@
 #include "declaration.h"
-#include "statement.h"
 #include "eval.h"
 #include "expression.h"
+#include "parse.h"
+#include "statement.h"
 #include "symtab.h"
 #include "type.h"
 #include <lacc/cli.h>
@@ -12,18 +13,8 @@
 
 static struct block *initializer(struct block *block, struct var target);
 
-static struct var var_zero(int size)
-{
-    struct var var = {0};
-
-    var.kind = IMMEDIATE;
-    var.type = BASIC_TYPE_SIGNED(size);
-    var.imm.i = 0;
-    return var;
-}
-
-/* FOLLOW(parameter-list) = { ')' }, peek to return empty list; even though K&R
- * require at least specifier: (void)
+/* FOLLOW(parameter-list) = { ')' }, peek to return empty list; even
+ * though K&R require at least specifier: (void)
  * Set parameter-type-list = parameter-list, including the , ...
  */
 static struct typetree *parameter_list(const struct typetree *base)
@@ -65,11 +56,12 @@ static struct typetree *parameter_list(const struct typetree *base)
     return func;
 }
 
-/* Parse array declarations of the form [s0][s1]..[sn], resulting in type
- * [s0] [s1] .. [sn] (base).
+/* Parse array declarations of the form [s0][s1]..[sn], resulting in
+ * type [s0] [s1] .. [sn] (base).
  *
- * Only the first dimension s0 can be unspecified, yielding an incomplete type.
- * Incomplete types are represented by having size of zero.
+ * Only the first dimension s0 can be unspecified, yielding an
+ * incomplete type. Incomplete types are represented by having size of
+ * zero.
  */
 static struct typetree *direct_declarator_array(struct typetree *base)
 {
@@ -100,10 +92,10 @@ static struct typetree *direct_declarator_array(struct typetree *base)
     return base;
 }
 
-/* Parse function and array declarators. Some trickery is needed to handle
- * declarations like `void (*foo)(int)`, where the inner *foo has to be 
- * traversed first, and prepended on the outer type `* (int) -> void` 
- * afterwards making it `* (int) -> void`.
+/* Parse function and array declarators. Some trickery is needed to
+ * handle declarations like `void (*foo)(int)`, where the inner *foo
+ * has to be  traversed first, and prepended on the outer type
+ * `* (int) -> void` afterwards making it `* (int) -> void`.
  * The type returned from declarator has to be either array, function or
  * pointer, thus only need to check for type->next to find inner tail.
  */
@@ -254,9 +246,10 @@ static struct typetree *struct_or_union_declaration(void)
             exit(1);
         }
 
-        /* Retrieve type from existing symbol, possibly providing a complete
-         * definition that will be available for later declarations. Overwrites
-         * existing type information from symbol table. */
+        /* Retrieve type from existing symbol, possibly providing a
+         * complete definition that will be available for later
+         * declarations. Overwrites existing type information from
+         * symbol table. */
         type = &sym->type;
         if (peek().token == '{' && type->size) {
             error("Redefiniton of '%s'.", sym->name);
@@ -277,8 +270,9 @@ static struct typetree *struct_or_union_declaration(void)
         consume('}');
     }
 
-    /* Return to the caller a copy of the root node, which can be overwritten
-     * with new type qualifiers without altering the tag registration. */
+    /* Return to the caller a copy of the root node, which can be
+     * overwritten with new type qualifiers without altering the tag
+     * registration. */
     return (sym) ? type_tagged_copy(&sym->type, sym->name) : type;
 }
 
@@ -334,8 +328,8 @@ static struct typetree *enum_declaration(void)
             exit(1);
         }
 
-        /* Use enum_value as a sentinel to represent definition, checked on 
-         * lookup to detect duplicate definitions. */
+        /* Use enum_value as a sentinel to represent definition,
+         * checked on  lookup to detect duplicate definitions. */
         if (peek().token == '{') {
             if (tag->enum_value) {
                 error("Redefiniton of enum '%s'.", tag->name);
@@ -347,8 +341,8 @@ static struct typetree *enum_declaration(void)
         enumerator_list();
     }
 
-    /* Result is always integer. Do not care about the actual enum definition,
-     * all enums are ints and no type checking is done. */
+    /* Result is always integer. Do not care about the actual enum
+     * definition, all enums are ints and no type checking is done. */
     return type;
 }
 
@@ -401,10 +395,10 @@ static struct typetree get_basic_type_from_specifier(unsigned short spec)
     }
 }
 
-/* Parse type, qualifiers and storage class. Do not assume int by default, but
- * require at least one type specifier. Storage class is returned as token
- * value, unless the provided pointer is NULL, in which case the input is parsed
- * as specifier-qualifier-list.
+/* Parse type, qualifiers and storage class. Do not assume int by
+ * default, but require at least one type specifier. Storage class is
+ * returned as token value, unless the provided pointer is NULL, in
+ * which case the input is parsed as specifier-qualifier-list.
  */
 struct typetree *declaration_specifiers(int *stc)
 {
@@ -516,6 +510,15 @@ struct typetree *declaration_specifiers(int *stc)
 
     type->qualifier |= qual;
     return type;
+}
+
+static struct var var_zero(int size)
+{
+    struct var var = {0};
+    var.kind = IMMEDIATE;
+    var.type = BASIC_TYPE_SIGNED(size);
+    var.imm.i = 0;
+    return var;
 }
 
 /* Set var = 0, using simple assignment on members for composite types.
@@ -710,111 +713,15 @@ static void define_builtin__func__(const char *name)
     struct symbol *sym;
     assert(current_scope_depth(&ns_ident) == 1);
 
-    /* Just add the symbol directly as a special string value. No explicit
-     * assignment reflected in the IR. */
+    /* Just add the symbol directly as a special string value. No
+     * explicit assignment reflected in the IR. */
     type = type_init(T_ARRAY, &basic_type__char, strlen(name) + 1);
     sym = sym_add(&ns_ident, "__func__", type, SYM_STRING_VALUE, LINK_INTERN);
     sym->string_value = str_init(name);
 }
 
-/* Parser consumes whole declaration statements, which can include
- * multiple definitions. For example 'int foo = 1, bar = 2;'. These are
- * buffered and returned one by one on calls to parse().
- */
-static struct list
-    definitions;
-
-/* A list of blocks kept for housekeeping when parsing declarations that
- * do not have a full definition object associated. For example, the
- * following constant expression would be evaluated by a dummy block
- * holding the immediate value:
- *
- *  enum { A = 1 };
- *
- */
-static struct list
-    expr_blocks;
-
-static void free_block(void *elem)
-{
-    struct block *block = (struct block *) elem;
-    array_clear(&block->code);
-    free(block);
-}
-
-struct block *cfg_block_init(void)
-{
-    struct definition *def;
-    struct block *block;
-
-    block = calloc(1, sizeof(*block));
-    if (list_len(&definitions)) {
-        block->label = sym_create_label();
-
-        /* Block is owned by last added definition, also when they are
-         * not functions. */
-        def = list_get(&definitions, list_len(&definitions) - 1);
-        list_push_back(&def->nodes, block);
-    } else {
-        list_push_back(&expr_blocks, block);
-    }
-
-    return block;
-}
-
-static struct definition *create_definition(const struct symbol *sym)
-{
-    struct definition *def;
-    assert(sym->symtype == SYM_DEFINITION);
-
-    def = calloc(1, sizeof(*def));
-    def->symbol = sym;
-
-    /* A bit tricky: need to add definition to list before creating
-     * block, otherwise block will have wrong owner. */
-    def = list_push_back(&definitions, def);
-    def->body = cfg_block_init();
-
-    return def;
-}
-
-static void free_definition(struct definition *def)
-{
-    list_clear(&def->params, NULL);
-    list_clear(&def->locals, NULL);
-    list_clear(&def->nodes, &free_block);
-    free(def);
-}
-
-struct definition *current_func(void)
-{
-    int i;
-    struct definition *def;
-
-    for (i = list_len(&definitions); i > 0; --i) {
-        def = (struct definition *) list_get(&definitions, i - 1);
-        assert(def);
-        if (is_function(&def->symbol->type))
-            return def;
-    }
-
-    assert(0);
-    return NULL;
-}
-
-struct var create_var(const struct typetree *type)
-{
-    struct definition *def = current_func();
-    struct symbol *temp = sym_create_tmp(type);
-    struct var res = var_direct(temp);
-
-    list_push_back(&def->locals, temp);
-    res.lvalue = 1;
-    return res;
-}
-
-/* Cover both external declarations, functions, and local declarations (with
- * optional initialization code) inside functions.
+/* Cover both external declarations, functions, and local declarations
+ * (with optional initialization code) inside functions.
  */
 struct block *declaration(struct block *parent)
 {
@@ -931,33 +838,4 @@ struct block *declaration(struct block *parent)
         }
         consume(',');
     }
-}
-
-struct definition *parse(void)
-{
-    static struct definition *def;
-
-    /* Clear memory allocated for previous result. Parse is called until
-     * no more input can be consumed. */
-    if (def) {
-        free_definition(def);
-    }
-
-    /* Parse a declaration, which can include definitions that will fill
-     * up the buffer. Tentative declarations will only affect the symbol
-     * table. */
-    while (!list_len(&definitions) && peek().token != END) {
-        declaration(NULL);
-    }
-
-    /* The next definition is taken from queue. Free memory in case we
-     * reach end of input. */
-    def = list_pop(&definitions);
-    if (peek().token == END && !def) {
-        assert(!list_len(&definitions));
-        list_clear(&definitions, NULL);
-        list_clear(&expr_blocks, &free_block);
-    }
-
-    return def;
 }

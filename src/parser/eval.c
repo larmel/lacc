@@ -1,5 +1,6 @@
 #include "eval.h"
 #include "declaration.h"
+#include "parse.h"
 #include "type.h"
 #include <lacc/cli.h>
 #include <lacc/ir.h>

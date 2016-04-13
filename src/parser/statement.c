@@ -2,6 +2,7 @@
 #include "declaration.h"
 #include "eval.h"
 #include "expression.h"
+#include "parse.h"
 #include "symtab.h"
 #include "type.h"
 #include <lacc/array.h>
@@ -24,8 +25,8 @@
 #define restore_continue_target(old) \
     continue_target = old;
 
-/* Store reference to top of loop, for resolving break and continue. Use call
- * stack to keep track of depth, backtracking to the old value.
+/* Store reference to top of loop, for resolving break and continue.
+ * Use call stack to keep track of depth, backtracking to the old value.
  */
 static struct block
     *break_target,
@@ -317,8 +318,8 @@ struct block *statement(struct block *parent)
         parent->jump[0] =
             (tok.token == CONTINUE) ? continue_target : break_target;
         consume(';');
-        /* Return orphan node, which is dead code unless there is a label and a
-         * goto statement. */
+        /* Return orphan node, which is dead code unless there is a
+         * label and a goto statement. */
         parent = cfg_block_init(); 
         break;
     case RETURN:
@@ -385,8 +386,8 @@ struct block *statement(struct block *parent)
     return parent;
 }
 
-/* Treat statements and declarations equally, allowing declarations in between
- * statements as in modern C. Called compound-statement in K&R.
+/* Treat statements and declarations equally, allowing declarations in
+ * between statements as in modern C. Called compound-statement in K&R.
  */
 struct block *block(struct block *parent)
 {

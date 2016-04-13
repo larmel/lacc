@@ -2,6 +2,7 @@
 #  define _XOPEN_SOURCE 500 /* getopt */
 #endif
 #include "backend/compile.h"
+#include "parser/parse.h"
 #include "parser/symtab.h"
 #include "preprocessor/preprocess.h"
 #include "preprocessor/input.h"

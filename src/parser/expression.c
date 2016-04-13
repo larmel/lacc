@@ -1,6 +1,7 @@
 #include "expression.h"
 #include "declaration.h"
 #include "eval.h"
+#include "parse.h"
 #include "symtab.h"
 #include "type.h"
 #include <lacc/token.h>
@@ -23,8 +24,9 @@
 
 static struct block *cast_expression(struct block *block);
 
-/* Parse call to builtin symbol __builtin_va_start, which is the result of
- * calling va_start(arg, s). Return type depends on second input argument.
+/* Parse call to builtin symbol __builtin_va_start, which is the result
+ * of calling va_start(arg, s). Return type depends on second input
+ * argument.
  */
 static struct block *parse__builtin_va_start(struct block *block)
 {
@@ -54,8 +56,8 @@ static struct block *parse__builtin_va_start(struct block *block)
     return block;
 }
 
-/* Parse call to builtin symbol __builtin_va_arg, which is the result of calling
- * va_arg(arg, T). Return type depends on second input argument.
+/* Parse call to builtin symbol __builtin_va_arg, which is the result of
+ * calling va_arg(arg, T). Return type depends on second input argument.
  */
 static struct block *parse__builtin_va_arg(struct block *block)
 {
@@ -85,10 +87,10 @@ static struct block *primary_expression(struct block *block)
             error("Undefined symbol '%s'.", tok.d.string.str);
             exit(1);
         }
-        /* Special handling for builtin pseudo functions. These are expected to
-         * behave as macros, thus should be no problem parsing as function call
-         * in primary expression. Constructs like (va_arg)(args, int) will not
-         * work with this scheme. */
+        /* Special handling for builtin pseudo functions. These are
+         * expected to behave as macros, thus should be no problem
+         * parsing as function call in primary expression. Constructs
+         * like (va_arg)(args, int) will not work with this scheme. */
         if (!strcmp("__builtin_va_start", sym->name)) {
             block = parse__builtin_va_start(block);
         } else if (!strcmp("__builtin_va_arg", sym->name)) {
@@ -112,14 +114,14 @@ static struct block *primary_expression(struct block *block)
                 SYM_STRING_VALUE,
                 LINK_INTERN);
 
-        /* Store string value directly on symbol, memory ownership is in string
-         * table from previously called str_register. The symbol now exists as
-         * if it was declared static char .LC[] = "...". */
+        /* Store string value directly on symbol, memory ownership is in
+         * string table from previously called str_register. The symbol
+         * now exists as if declared static char .LC[] = "...". */
         ((struct symbol *) sym)->string_value = tok.d.string;
 
-        /* Result is an IMMEDIATE of type [] char, with a reference to the new
-         * symbol containing the string literal. Will decay into char * on
-         * evaluation. */
+        /* Result is an IMMEDIATE of type [] char, with a reference to
+         * the new symbol containing the string literal. Will decay into
+         * char * on evaluation. */
         block->expr = var_direct(sym);
         assert(block->expr.kind == IMMEDIATE);
         break;
@@ -149,8 +151,9 @@ static struct block *postfix_expression(struct block *block)
         switch ((tok = peek()).token) {
         case '[':
             do {
-                /* Evaluate a[b] = *(a + b). The semantics of pointer arithmetic
-                 * takes care of multiplying b with the correct width. */
+                /* Evaluate a[b] = *(a + b). The semantics of pointer
+                 * arithmetic takes care of multiplying b with the
+                 * correct width. */
                 consume('[');
                 block = expression(block);
                 root = eval_expr(block, IR_OP_ADD, root, block->expr);
@@ -218,8 +221,8 @@ static struct block *postfix_expression(struct block *block)
                     exit(1);
                 }
 
-                /* Make it look like a pointer to the field type, then perform
-                 * normal dereferencing. */
+                /* Make it look like a pointer to the field type, then
+                 * perform normal dereferencing. */
                 root.type = type_init(T_POINTER, field->type);
                 root = eval_deref(block, root);
                 root.offset = field->offset;
@@ -346,8 +349,8 @@ static struct block *cast_expression(struct block *block)
     struct token tok;
     struct symbol *sym;
 
-    /* This rule needs two lookahead; to see beyond the initial parenthesis if
-     * it is actually a cast or an expression. */
+    /* This rule needs two lookahead; to see beyond the initial
+     * parenthesis if it is actually a cast or an expression. */
     if (peek().token == '(') {
         tok = peekn(2);
         switch (tok.token) {

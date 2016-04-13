@@ -169,11 +169,6 @@ struct definition {
     struct list nodes;
 };
 
-/* Parse input for the next function or object definition, or NULL on
- * end of input. Borrows memory.
- */
-struct definition *parse(void);
-
 /* A direct reference to given symbol, with two exceptions:
  * SYM_ENUM_VALUE and SYM_STRING_VALUE reduce to IMMEDIATE values.
  */
