@@ -19,8 +19,12 @@ static struct list
  *  enum { A = 1 };
  *
  */
-static struct list
-    expr_blocks;
+static struct list expr_blocks;
+
+/* Holds blocks that are allocated and free to use (not bound to any
+ * definition).
+ */
+static struct list blocks;
 
 static void free_block(void *elem)
 {
@@ -29,12 +33,31 @@ static void free_block(void *elem)
     free(block);
 }
 
+void cfg_block_release(void *elem)
+{
+    struct block *block = (struct block *) elem;
+    struct var value = {0};
+
+    array_empty(&block->code);
+    block->label = NULL;
+    block->expr = value;
+    block->has_return_value = 0;
+    block->jump[0] = block->jump[1] = NULL;
+    block->color = WHITE;
+    list_push(&blocks, elem);
+}
+
 struct block *cfg_block_init(void)
 {
     struct definition *def;
     struct block *block;
 
-    block = calloc(1, sizeof(*block));
+    if (list_len(&blocks)) {
+        block = list_pop(&blocks);
+    } else {
+        block = calloc(1, sizeof(*block));
+    }
+
     if (list_len(&definitions)) {
         block->label = sym_create_label();
 
@@ -69,7 +92,7 @@ static void free_definition(struct definition *def)
 {
     list_clear(&def->params, NULL);
     list_clear(&def->locals, NULL);
-    list_clear(&def->nodes, &free_block);
+    list_clear(&def->nodes, &cfg_block_release);
     free(def);
 }
 
@@ -124,6 +147,7 @@ struct definition *parse(void)
         assert(!list_len(&definitions));
         list_clear(&definitions, NULL);
         list_clear(&expr_blocks, &free_block);
+        list_clear(&blocks, &free_block);
     }
 
     return def;
