@@ -8,18 +8,19 @@
  */
 struct definition *parse(void);
 
-/* Create basic block associated with control flow graph of current
- * function. Parser must be in a function context.
+/* Initialize a definition and empty control flow graph for symbol,
+ * which must be of type SYM_DEFINITION.
  */
-struct block *cfg_block_init(void);
+struct definition *cfg_init(const struct symbol *sym);
+
+/* Create basic block associated with control flow graph of given
+ * definition.
+ */
+struct block *cfg_block_init(struct definition *def);
 
 /* Create temporary variable for evaluation. Added to current function
  * definition context, can only be called while parsing a function.
  */
-struct var create_var(const struct typetree *type);
-
-struct definition *create_definition(const struct symbol *sym);
-
-struct definition *current_func(void);
+struct var create_var(struct definition *def, const struct typetree *type);
 
 #endif

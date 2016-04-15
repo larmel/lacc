@@ -11,7 +11,10 @@
 
 #include <assert.h>
 
-static struct block *initializer(struct block *block, struct var target);
+static struct block *initializer(
+    struct definition *def,
+    struct block *block,
+    struct var target);
 
 /* FOLLOW(parameter-list) = { ')' }, peek to return empty list; even
  * though K&R require at least specifier: (void)
@@ -527,7 +530,10 @@ static struct var var_zero(int size)
  * initialize using normal simple assignment rules, although IR can
  * become verbose for large structures.
  */
-static void zero_initialize(struct block *block, struct var target)
+static void zero_initialize(
+    struct definition *def,
+    struct block *block,
+    struct var target)
 {
     int i;
     struct var var;
@@ -542,7 +548,7 @@ static void zero_initialize(struct block *block, struct var target)
             member = get_member(var.type, i);
             target.type = member->type;
             target.offset = var.offset + member->offset;
-            zero_initialize(block, target);
+            zero_initialize(def, block, target);
         }
         break;
     case T_UNION:
@@ -552,7 +558,7 @@ static void zero_initialize(struct block *block, struct var target)
             (size_of(target.type) % 8) ?
                 type_init(T_ARRAY, &basic_type__char, size_of(target.type)) :
                 type_init(T_ARRAY, &basic_type__long, size_of(target.type) / 8);
-        zero_initialize(block, target);
+        zero_initialize(def, block, target);
         break;
     case T_ARRAY:
         assert(target.type->size);
@@ -561,18 +567,18 @@ static void zero_initialize(struct block *block, struct var target)
         assert(is_struct(target.type) || !target.type->next);
         for (i = 0; i < var.type->size / var.type->next->size; ++i) {
             target.offset = var.offset + i * var.type->next->size;
-            zero_initialize(block, target);
+            zero_initialize(def, block, target);
         }
         break;
     case T_POINTER:
         var = var_zero(8);
         var.type = type_init(T_POINTER, &basic_type__void);
-        eval_assign(block, target, var);
+        eval_assign(def, block, target, var);
         break;
     case T_UNSIGNED:
     case T_SIGNED:
         var = var_zero(target.type->size);
-        eval_assign(block, target, var);
+        eval_assign(def, block, target, var);
         break;
     default:
         error("Invalid type to zero-initialize, was '%t'.", target.type);
@@ -580,7 +586,10 @@ static void zero_initialize(struct block *block, struct var target)
     }
 }
 
-static struct block *object_initializer(struct block *block, struct var target)
+static struct block *object_initializer(
+    struct definition *def,
+    struct block *block,
+    struct var target)
 {
     int i, filled = target.offset;
     const struct typetree *type = target.type;
@@ -594,7 +603,7 @@ static struct block *object_initializer(struct block *block, struct var target)
     case T_UNION:
         member = get_member(type, 0);
         target.type = member->type;
-        block = initializer(block, target);
+        block = initializer(def, block, target);
         if (size_of(member->type) < type->size) {
             /* Only the first element of a union can be initialized.
              * Zero the remaining memory if there is padding, or the
@@ -605,7 +614,7 @@ static struct block *object_initializer(struct block *block, struct var target)
                     &basic_type__char,
                     type->size - size_of(member->type));
             target.offset += size_of(member->type);
-            zero_initialize(block, target);
+            zero_initialize(def, block, target);
         }
         if (peek().token != '}') {
             error("Excess elements in union initializer.");
@@ -617,7 +626,7 @@ static struct block *object_initializer(struct block *block, struct var target)
             member = get_member(type, i);
             target.type = member->type;
             target.offset = filled + member->offset;
-            block = initializer(block, target);
+            block = initializer(def, block, target);
             if (peek().token == ',') {
                 consume(',');
             } else break;
@@ -629,14 +638,14 @@ static struct block *object_initializer(struct block *block, struct var target)
             member = get_member(type, i);
             target.type = member->type;
             target.offset = filled + member->offset;
-            zero_initialize(block, target);
+            zero_initialize(def, block, target);
         }
         break;
     case T_ARRAY:
         target.type = type->next;
         for (i = 0; !type->size || i < type->size / size_of(type->next); ++i) {
             target.offset = filled + i * size_of(type->next);
-            block = initializer(block, target);
+            block = initializer(def, block, target);
             if (peek().token == ',') {
                 consume(',');
             } else break;
@@ -655,7 +664,7 @@ static struct block *object_initializer(struct block *block, struct var target)
         } else {
             while (++i < type->size / size_of(type->next)) {
                 target.offset = filled + i * size_of(type->next);
-                zero_initialize(block, target);
+                zero_initialize(def, block, target);
             }
         }
         break;
@@ -672,7 +681,10 @@ static struct block *object_initializer(struct block *block, struct var target)
  * such as int b[] = {0, 1, 2, 3}. Generate a series of assignment
  * operations on references to target variable.
  */
-static struct block *initializer(struct block *block, struct var target)
+static struct block *initializer(
+    struct definition *def,
+    struct block *block,
+    struct var target)
 {
     assert(target.kind == DIRECT);
 
@@ -680,9 +692,9 @@ static struct block *initializer(struct block *block, struct var target)
     target.type = unwrapped(target.type);
 
     if (peek().token == '{') {
-        block = object_initializer(block, target);
+        block = object_initializer(def, block, target);
     } else {
-        block = assignment_expression(block);
+        block = assignment_expression(def, block);
         if (!target.symbol->depth && block->expr.kind != IMMEDIATE) {
             error("Initializer must be computable at load time.");
             exit(1);
@@ -699,7 +711,7 @@ static struct block *initializer(struct block *block, struct var target)
                 block->expr.type->size;
             target.type = block->expr.type;
         }
-        eval_assign(block, target, block->expr);
+        eval_assign(def, block, target, block->expr);
     }
 
     return block;
@@ -723,7 +735,7 @@ static void define_builtin__func__(const char *name)
 /* Cover both external declarations, functions, and local declarations
  * (with optional initialization code) inside functions.
  */
-struct block *declaration(struct block *parent)
+struct block *declaration(struct definition *def, struct block *parent)
 {
     struct typetree *base;
     enum symtype symtype;
@@ -756,7 +768,6 @@ struct block *declaration(struct block *parent)
     }
 
     while (1) {
-        struct definition *def;
         const char *name = NULL;
         const struct typetree *type;
         struct symbol *sym;
@@ -767,12 +778,14 @@ struct block *declaration(struct block *parent)
             return parent;
         }
 
-        if (is_function(type))
+        if (is_function(type)) {
             symtype = SYM_DECLARATION;
+        }
+
         sym = sym_add(&ns_ident, name, type, symtype, linkage);
         if (current_scope_depth(&ns_ident)) {
             assert(current_scope_depth(&ns_ident) > 1);
-            def = current_func();
+            assert(def);
             list_push_back(&def->locals, sym);
         }
 
@@ -792,12 +805,13 @@ struct block *declaration(struct block *parent)
             consume('=');
             sym->symtype = SYM_DEFINITION;
             if (sym->linkage == LINK_NONE) {
+                assert(def);
                 assert(parent);
-                parent = initializer(parent, var_direct(sym));
+                parent = initializer(def, parent, var_direct(sym));
             } else {
                 assert(sym->depth || !parent);
-                def = create_definition(sym);
-                initializer(def->body, var_direct(sym));
+                def = cfg_init(sym);
+                initializer(def, def->body, var_direct(sym));
             }
             assert(size_of(&sym->type) > 0);
             if (peek().token != ',') {
@@ -814,7 +828,7 @@ struct block *declaration(struct block *parent)
             assert(!parent);
             assert(sym->linkage != LINK_NONE);
             sym->symtype = SYM_DEFINITION;
-            def = create_definition(sym);
+            def = cfg_init(sym);
             push_scope(&ns_ident);
             define_builtin__func__(sym->name);
             for (i = 0; i < nmembers(&sym->type); ++i) {
@@ -829,7 +843,7 @@ struct block *declaration(struct block *parent)
                 list_push_back(&def->params,
                     sym_add(&ns_ident, name, type, symtype, linkage));
             }
-            parent = block(def->body);
+            parent = block(def, def->body);
             pop_scope(&ns_ident);
             return parent;
         }

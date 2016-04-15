@@ -85,6 +85,7 @@ struct var var_numeric(struct number n)
 }
 
 static struct var evaluate(
+    struct definition *def,
     struct block *block,
     enum optype op,
     const struct typetree *t, ...)
@@ -93,25 +94,23 @@ static struct var evaluate(
     struct op ir = {0};
 
     ir.type = op;
-    ir.a = create_var(t);
+    ir.a = create_var(def, t);
     ir.a.lvalue = 0;
     va_start(args, t);
     ir.b = va_arg(args, struct var);
     if (NOPERANDS(op) == 2) {
         ir.c = va_arg(args, struct var);
     }
-
     va_end(args);
     ir_append(block, ir);
-
     return ir.a;
 }
 
-/* 
- * 6.5.5 Multiplicative Operators
- */
-
-static struct var eval_mul(struct block *block, struct var l, struct var r)
+static struct var eval_mul(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
 
@@ -119,10 +118,14 @@ static struct var eval_mul(struct block *block, struct var l, struct var r)
         return var_int(l.imm.i * r.imm.i);
     }
 
-    return evaluate(block, IR_OP_MUL, type, l, r);
+    return evaluate(def, block, IR_OP_MUL, type, l, r);
 }
 
-static struct var eval_div(struct block *block, struct var l, struct var r)
+static struct var eval_div(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
 
@@ -130,10 +133,14 @@ static struct var eval_div(struct block *block, struct var l, struct var r)
         return var_int(l.imm.i / r.imm.i);
     }
 
-    return evaluate(block, IR_OP_DIV, type, l, r);
+    return evaluate(def, block, IR_OP_DIV, type, l, r);
 }
 
-static struct var eval_mod(struct block *block, struct var l, struct var r)
+static struct var eval_mod(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
     if (!is_integer(type)) {
@@ -145,43 +152,43 @@ static struct var eval_mod(struct block *block, struct var l, struct var r)
         return var_int(l.imm.i % r.imm.i);
     }
 
-    return evaluate(block, IR_OP_MOD, type, l, r);
+    return evaluate(def, block, IR_OP_MOD, type, l, r);
 }
 
-/*
- * 6.5.6 Additive Operators
- */
-
-static struct var eval_add(struct block *block, struct var l, struct var r)
+static struct var eval_add(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     const struct typetree *type;
 
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
         type = usual_arithmetic_conversion(l.type, r.type);
-        l = eval_cast(block, l, type);
-        r = eval_cast(block, r, type);
+        l = eval_cast(def, block, l, type);
+        r = eval_cast(def, block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l = var_int(l.imm.i + r.imm.i);
         } else {
-            l = evaluate(block, IR_OP_ADD, type, l, r);
+            l = evaluate(def, block, IR_OP_ADD, type, l, r);
         }
     } else if (is_integer(l.type) && is_pointer(r.type)) {
         /* Make sure pointer is left, and integer right. */
-        l = eval_add(block, r, l);
+        l = eval_add(def, block, r, l);
     } else if (is_pointer(l.type) && is_integer(r.type)) {
         if (!size_of(l.type->next)) {
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
-        /* Special case for string literal + constant. This is represented as
-         * an immediate with offset. */
+        /* Special case for string literal + constant. This is
+         * represented as an immediate with offset. */
         if (is_string(l) && r.kind == IMMEDIATE && is_integer(r.type)) {
             l.offset += r.imm.i;
         }
         /* Evaluate unless r is immediate zero. */
         else if (r.kind != IMMEDIATE || r.imm.i) {
-            r = eval_expr(block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
-            l = evaluate(block, IR_OP_ADD, l.type, l, r);
+            r = eval_expr(def, block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
+            l = evaluate(def, block, IR_OP_ADD, l.type, l, r);
         }
     } else {
         error("Incompatible arguments to addition operator, was '%t' and '%t'.",
@@ -192,7 +199,11 @@ static struct var eval_add(struct block *block, struct var l, struct var r)
     return l;
 }
 
-static struct var eval_sub(struct block *block, struct var l, struct var r)
+static struct var eval_sub(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
@@ -200,24 +211,24 @@ static struct var eval_sub(struct block *block, struct var l, struct var r)
         } else {
             const struct typetree *type
                 = usual_arithmetic_conversion(l.type, r.type);
-            l = eval_cast(block, l, type);
-            r = eval_cast(block, r, type);
-            l = evaluate(block, IR_OP_SUB, type, l, r);
+            l = eval_cast(def, block, l, type);
+            r = eval_cast(def, block, r, type);
+            l = evaluate(def, block, IR_OP_SUB, type, l, r);
         }
     } else if (is_pointer(l.type) && is_integer(r.type)) {
         if (!size_of(l.type->next)) {
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
-        /* Special case for string literal - constant. This is represented as an
-         * immediate with offset. */
+        /* Special case for string literal - constant. This is
+         * represented as an immediate with offset. */
         if (is_string(l) && r.kind == IMMEDIATE && is_integer(r.type)) {
             l.offset -= r.imm.i;
         }
         /* Evaluate unless r is immediate zero. */
         else if (r.kind != IMMEDIATE || r.imm.i) {
-            r = eval_expr(block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
-            l = evaluate(block, IR_OP_SUB, l.type, l, r);
+            r = eval_expr(def, block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
+            l = evaluate(def, block, IR_OP_SUB, l.type, l, r);
         }
     } else if (is_pointer(l.type) && is_pointer(r.type)) {
         size_t elem_size = size_of(r.type->next);
@@ -229,13 +240,14 @@ static struct var eval_sub(struct block *block, struct var l, struct var r)
             exit(1);
         }
 
-        /* Result is ptrdiff_t, which will be signed 64 bit integer. Reinterpret
-         * cast both pointers to unsigned long (no codegen), and store result as
-         * signed long. Then divide by element size to get diff. */
-        l = eval_cast(block, l, &basic_type__unsigned_long);
-        r = eval_cast(block, r, &basic_type__unsigned_long);
-        l = eval_expr(block, IR_OP_SUB, l, r);
-        l = eval_expr(block, IR_OP_DIV, l, var_int(elem_size));
+        /* Result is ptrdiff_t, which will be signed 64 bit integer.
+         * Reinterpret cast both pointers to unsigned long (no codegen),
+         * and store result as signed long. Then divide by element size
+         * to get diff. */
+        l = eval_cast(def, block, l, &basic_type__unsigned_long);
+        r = eval_cast(def, block, r, &basic_type__unsigned_long);
+        l = eval_expr(def, block, IR_OP_SUB, l, r);
+        l = eval_expr(def, block, IR_OP_DIV, l, var_int(elem_size));
     } else {
         error("Incompatible arguments to subtraction operator, was %t and %t.",
             l.type, r.type);
@@ -245,11 +257,11 @@ static struct var eval_sub(struct block *block, struct var l, struct var r)
     return l;
 }
 
-/*
- * 6.5.9 Equality operators
- */
-
-static struct var eval_eq(struct block *block, struct var l, struct var r)
+static struct var eval_eq(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     if (!is_pointer(l.type)) {
         struct var tmp = l;
@@ -260,8 +272,8 @@ static struct var eval_eq(struct block *block, struct var l, struct var r)
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
         const struct typetree *type =
             usual_arithmetic_conversion(l.type, r.type);
-        l = eval_cast(block, l, type);
-        r = eval_cast(block, r, type);
+        l = eval_cast(def, block, l, type);
+        r = eval_cast(def, block, r, type);
     } else if (is_pointer(l.type)) {
         /* Covers pointer to compatible types, including (void *, void *), 
          * pointer to object type and void *, pointer and null constant. */
@@ -290,24 +302,21 @@ static struct var eval_eq(struct block *block, struct var l, struct var r)
         return var_int(l.imm.i == r.imm.i);
     }
 
-    return evaluate(block, IR_OP_EQ, &basic_type__int, l, r);
+    return evaluate(def, block, IR_OP_EQ, &basic_type__int, l, r);
 }
 
-/* 
- * 6.5.8 Relational operators
- *
- * Intermediate language is simplified to handle only greater than (>) and
- * greater than or equal (>=).
- */
-
-static int validate_cmp_args(struct block *block, struct var *l, struct var *r)
+static int validate_cmp_args(
+    struct definition *def,
+    struct block *block,
+    struct var *l,
+    struct var *r)
 {
     if (is_arithmetic(l->type) && is_arithmetic(r->type)) {
         const struct typetree *type =
             usual_arithmetic_conversion(l->type, r->type);
 
-        *l = eval_cast(block, *l, type);
-        *r = eval_cast(block, *r, type);
+        *l = eval_cast(def, block, *l, type);
+        *r = eval_cast(def, block, *r, type);
         return 0;
     }
 
@@ -317,27 +326,42 @@ static int validate_cmp_args(struct block *block, struct var *l, struct var *r)
             size_of(l->type->next) == size_of(r->type->next));
 }
 
-static struct var eval_cmp_ge(struct block *block, struct var l, struct var r)
+/* Intermediate language is simplified to handle only greater than (>)
+ * and greater than or equal (>=).
+ */
+static struct var eval_cmp_ge(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
-    if (validate_cmp_args(block, &l, &r)) {
+    if (validate_cmp_args(def, block, &l, &r)) {
         error("Invalid operands in relational expression.");
         exit(1);
     }
 
-    return evaluate(block, IR_OP_GE, &basic_type__int, l, r);
+    return evaluate(def, block, IR_OP_GE, &basic_type__int, l, r);
 }
 
-static struct var eval_cmp_gt(struct block *block, struct var l, struct var r)
+static struct var eval_cmp_gt(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
-    if (validate_cmp_args(block, &l, &r)) {
+    if (validate_cmp_args(def, block, &l, &r)) {
         error("Invalid operands in relational expression.");
         exit(1);
     }
 
-    return evaluate(block, IR_OP_GT, &basic_type__int, l, r);
+    return evaluate(def, block, IR_OP_GT, &basic_type__int, l, r);
 }
 
-static struct var eval_or(struct block *block, struct var l, struct var r)
+static struct var eval_or(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Operands to bitwise or must have integer type.");
@@ -347,11 +371,15 @@ static struct var eval_or(struct block *block, struct var l, struct var r)
     return
         (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
             ? var_int(l.imm.i | r.imm.i)
-            : evaluate(block, IR_OP_OR,
+            : evaluate(def, block, IR_OP_OR,
                 usual_arithmetic_conversion(l.type, r.type), l, r);
 }
 
-static struct var eval_xor(struct block *block, struct var l, struct var r)
+static struct var eval_xor(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Operands to bitwise xor must have integer type.");
@@ -361,11 +389,15 @@ static struct var eval_xor(struct block *block, struct var l, struct var r)
     return
         (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
             ? var_int(l.imm.i ^ r.imm.i)
-            : evaluate(block, IR_OP_XOR,
+            : evaluate(def, block, IR_OP_XOR,
                 usual_arithmetic_conversion(l.type, r.type), l, r);
 }
 
-static struct var eval_and(struct block *block, struct var l, struct var r)
+static struct var eval_and(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Operands to bitwise and must have integer type.");
@@ -375,11 +407,15 @@ static struct var eval_and(struct block *block, struct var l, struct var r)
     return
         (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
             ? var_int(l.imm.i & r.imm.i)
-            : evaluate(block, IR_OP_AND,
+            : evaluate(def, block, IR_OP_AND,
                 usual_arithmetic_conversion(l.type, r.type), l, r);
 }
 
-static struct var eval_shiftl(struct block *block, struct var l, struct var r)
+static struct var eval_shiftl(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Shift operands must have integer type.");
@@ -389,10 +425,14 @@ static struct var eval_shiftl(struct block *block, struct var l, struct var r)
     return
         (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
             ? var_int(l.imm.i << r.imm.i)
-            : evaluate(block, IR_OP_SHL, promote_integer(l.type), l, r);
+            : evaluate(def, block, IR_OP_SHL, promote_integer(l.type), l, r);
 }
 
-static struct var eval_shiftr(struct block *block, struct var l, struct var r)
+static struct var eval_shiftr(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
 {
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Shift operands must have integer type.");
@@ -402,10 +442,13 @@ static struct var eval_shiftr(struct block *block, struct var l, struct var r)
     return
         (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
             ? var_int(l.imm.i >> r.imm.i)
-            : evaluate(block, IR_OP_SHR, promote_integer(l.type), l, r);
+            : evaluate(def, block, IR_OP_SHR, promote_integer(l.type), l, r);
 }
 
-static struct var eval_not(struct block *block, struct var var)
+static struct var eval_not(
+    struct definition *def,
+    struct block *block,
+    struct var var)
 {
     if (!is_integer(var.type)) {
         error("Bitwise complement operand must have integer type.");
@@ -415,77 +458,86 @@ static struct var eval_not(struct block *block, struct var var)
     return
         (var.kind == IMMEDIATE)
             ? var_int(~var.imm.i)
-            : evaluate(block, IR_NOT, promote_integer(var.type), var);
+            : evaluate(def, block, IR_NOT, promote_integer(var.type), var);
 }
 
 /* Convert variables of type ARRAY or FUNCTION to addresses when used in
- * expressions. 'array of T' is converted (decay) to pointer to T. Not the same
- * as taking the address of an array, which would give 'pointer to array of T'.
+ * expressions. 'array of T' is converted (decay) to pointer to T. Not
+ * the same as taking the address of an array, which would give 'pointer
+ * to array of T'.
  */
-static struct var array_or_func_to_addr(struct block *block, struct var var)
+static struct var array_or_func_to_addr(
+    struct definition *def,
+    struct block *block,
+    struct var var)
 {
     if (is_array(var.type)) {
         if (var.kind == IMMEDIATE) {
             assert(var.symbol);
             assert(var.symbol->symtype == SYM_STRING_VALUE);
 
-            /* Immediate references to strings retain the same representation,
-             * only changing type from array to pointer. */
+            /* Immediate references to strings retain the same
+             * representation, only changing type from array to
+             * pointer. */
             var.type = type_init(T_POINTER, var.type->next);
         } else {
-            /* References to arrays decay into pointer to the first element.
-             * Change type before doing regular address evaluation, this way
-             * backend does not need to handle address of array in any special
-             * way. The memory location represented by var can also be seen as
-             * the first element. */
+            /* References to arrays decay into pointer to the first
+             * element. Change type before doing regular address
+             * evaluation, this way backend does not need to handle
+             * address of array in any special way. The memory location
+             * represented by var can also be seen as the first
+             * element. */
             var.type = var.type->next;
-            var = eval_addr(block, var);
+            var = eval_addr(def, block, var);
         }
     } else if (is_function(var.type)) {
-        var = eval_addr(block, var);
+        var = eval_addr(def, block, var);
     }
 
     return var;
 }
 
-struct var eval_expr(struct block *block, enum optype op, ...)
+struct var eval_expr(
+    struct definition *def,
+    struct block *block,
+    enum optype op, ...)
 {
     va_list args;
     struct var l, r;
 
     va_start(args, op);
     l = va_arg(args, struct var);
-    l = array_or_func_to_addr(block, l);
+    l = array_or_func_to_addr(def, block, l);
     if (NOPERANDS(op) == 2) {
         r = va_arg(args, struct var);
-        r = array_or_func_to_addr(block, r);
+        r = array_or_func_to_addr(def, block, r);
     }
     va_end(args);
 
     switch (op) {
-    case IR_NOT:    l = eval_not(block, l);         break;
-    case IR_OP_MOD: l = eval_mod(block, l, r);      break;
-    case IR_OP_MUL: l = eval_mul(block, l, r);      break;
-    case IR_OP_DIV: l = eval_div(block, l, r);      break;
-    case IR_OP_ADD: l = eval_add(block, l, r);      break;
-    case IR_OP_SUB: l = eval_sub(block, l, r);      break;
-    case IR_OP_EQ:  l = eval_eq(block, l, r);       break;
-    case IR_OP_GE:  l = eval_cmp_ge(block, l, r);   break;
-    case IR_OP_GT:  l = eval_cmp_gt(block, l, r);   break;
-    case IR_OP_AND: l = eval_and(block, l, r);      break;
-    case IR_OP_XOR: l = eval_xor(block, l, r);      break;
-    case IR_OP_OR:  l = eval_or(block, l, r);       break;
-    case IR_OP_SHL: l = eval_shiftl(block, l, r);   break;
-    case IR_OP_SHR: l = eval_shiftr(block, l, r);   break;
+    case IR_NOT:    return eval_not(def, block, l);
+    case IR_OP_MOD: return eval_mod(def, block, l, r);
+    case IR_OP_MUL: return eval_mul(def, block, l, r);
+    case IR_OP_DIV: return eval_div(def, block, l, r);
+    case IR_OP_ADD: return eval_add(def, block, l, r);
+    case IR_OP_SUB: return eval_sub(def, block, l, r);
+    case IR_OP_EQ:  return eval_eq(def, block, l, r);
+    case IR_OP_GE:  return eval_cmp_ge(def, block, l, r);
+    case IR_OP_GT:  return eval_cmp_gt(def, block, l, r);
+    case IR_OP_AND: return eval_and(def, block, l, r);
+    case IR_OP_XOR: return eval_xor(def, block, l, r);
+    case IR_OP_OR:  return eval_or(def, block, l, r);
+    case IR_OP_SHL: return eval_shiftl(def, block, l, r);
     default:
-        assert(0);
-        break;
+        assert(op == IR_OP_SHR);
+        return eval_shiftr(def, block, l, r);
     }
-
-    return l;
 }
 
-struct var eval_addr(struct block *block, struct var var)
+struct var eval_addr(
+    struct definition *def,
+    struct block *block,
+    struct var var)
 {
     struct var tmp;
 
@@ -495,25 +547,27 @@ struct var eval_addr(struct block *block, struct var var)
             error("Cannot take address of immediate of type '%t'.", var.type);
             exit(1);
         }
-        /* Address of string literal can be done without evaluation, just decay
-         * the variable to pointer. */
+        /* Address of string literal can be done without evaluation,
+         * just decay the variable to pointer. */
         if (is_array(var.type))
-            var = array_or_func_to_addr(block, var);
+            var = array_or_func_to_addr(def, block, var);
         assert(is_pointer(var.type));
         break;
     case DIRECT:
-        var = evaluate(block, IR_ADDR, type_init(T_POINTER, var.type), var);
+        var =
+            evaluate(def, block, IR_ADDR, type_init(T_POINTER, var.type), var);
         break;
     case DEREF:
         assert(is_pointer(&var.symbol->type));
         tmp = var_direct(var.symbol);
         if (var.offset) {
-            /* Address of *(sym + offset) is (sym + offset), but without pointer
-             * arithmetic applied in addition. Cast to char pointer temporarily
-             * to avoid trouble calling eval_expr. */
-            tmp = eval_cast(block, tmp,
+            /* Address of *(sym + offset) is (sym + offset), but
+             * without pointer arithmetic applied in addition. Cast to
+             * char pointer temporarily to avoid trouble calling
+             * eval_expr. */
+            tmp = eval_cast(def, block, tmp,
                 type_init(T_POINTER, &basic_type__char));
-            tmp = eval_expr(block, IR_OP_ADD, tmp, var_int(var.offset));
+            tmp = eval_expr(def, block, IR_OP_ADD, tmp, var_int(var.offset));
         }
         tmp.type = type_init(T_POINTER, var.type);
         var = tmp;
@@ -523,31 +577,34 @@ struct var eval_addr(struct block *block, struct var var)
     return var;
 }
 
-struct var eval_deref(struct block *block, struct var var)
+struct var eval_deref(
+    struct definition *def,
+    struct block *block,
+    struct var var)
 {
     struct var ptr;
 
-    var = array_or_func_to_addr(block, var);
+    var = array_or_func_to_addr(def, block, var);
     if (var.kind == DEREF) {
         assert(is_pointer(&var.symbol->type));
 
-        /* Cast to char pointer temporarily to avoid pointer arithmetic calling
-         * eval_expr. No actual evaluation is performed by this. */
+        /* Cast to char pointer temporarily to avoid pointer arithmetic
+         * calling eval_expr. No actual evaluation is performed. */
         ptr = var_direct(var.symbol);
-        ptr = eval_cast(block, ptr, type_init(T_POINTER, &basic_type__char));
-        ptr = eval_expr(block, IR_OP_ADD, ptr, var_int(var.offset));
+        ptr = eval_cast(def, block, ptr, type_init(T_POINTER, &basic_type__char));
+        ptr = eval_expr(def, block, IR_OP_ADD, ptr, var_int(var.offset));
         ptr.type = &var.symbol->type;
 
-        var = evaluate(block, IR_DEREF, var.type, ptr);
+        var = evaluate(def, block, IR_DEREF, var.type, ptr);
     } else if (
         var.kind == DIRECT &&
         (var.offset || !is_pointer(&var.symbol->type)))
     {
-        /* Cannot immediately dereference a pointer which is at a direct offset
-         * from another symbol. Also, pointers that are the result of indexing
-         * into a structure must be evaluated, as DEREF variables assume symbol
-         * to be of pointer type. */
-        var = eval_assign(block, create_var(var.type), var);
+        /* Cannot immediately dereference a pointer which is at a direct
+         * offset from another symbol. Also, pointers that are the
+         * result of indexing into a structure must be evaluated, as
+         * DEREF variables assume symbol to be of pointer type. */
+        var = eval_assign(def, block, create_var(def, var.type), var);
     }
 
     assert(var.kind == DIRECT && !var.offset);
@@ -559,7 +616,11 @@ struct var eval_deref(struct block *block, struct var var)
     return var;
 }
 
-struct var eval_assign(struct block *block, struct var target, struct var var)
+struct var eval_assign(
+    struct definition *def,
+    struct block *block,
+    struct var target,
+    struct var var)
 {
     struct op op = {0};
 
@@ -569,12 +630,12 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
     }
 
     if (!is_array(target.type)) {
-        var = array_or_func_to_addr(block, var);
+        var = array_or_func_to_addr(def, block, var);
     }
 
     if (is_array(target.type)) {
-        /* Special case char [] = string in initializers. In this case we do
-         * nothing here, but handle it in backend. */
+        /* Special case char [] = string in initializers. In this case
+         * we do nothing here, but handle it in backend. */
         if (!type_equal(target.type, var.type) || var.kind != IMMEDIATE) {
             error("Invalid initializer assignment, was %s :: %t = %t.",
                 target.symbol->name,
@@ -586,35 +647,38 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
         assert(var.symbol);
         assert(var.symbol->symtype == SYM_STRING_VALUE);
     } else if (
-        /* The left operand has atomic, qualified, or unqualified arithmetic
-         * type, and the right has arithmetic type. */
+        /* The left operand has atomic, qualified, or unqualified
+         * arithmetic type, and the right has arithmetic type. */
         !(is_arithmetic(target.type) && is_arithmetic(var.type)) &&
-        /* The left operand has an atomic, qualified, or unqualified version of
-         * a structure or union type compatible with the type of the right. */
+        /* The left operand has an atomic, qualified, or unqualified
+         * version of a structure or union type compatible with the
+         * type of the right. */
         !(is_struct_or_union(target.type)
             && is_compatible(target.type, var.type)) &&
-        /* The left operand has atomic, qualified, or unqualified pointer type,
-         * and (considering the type the left operand would have after lvalue
-         * conversion) both operands are pointers to qualified or unqualified
-         * versions of compatible types, and the type pointed to by the left has
-         * all the qualifiers of the type pointed to by the right. */
+        /* The left operand has atomic, qualified, or unqualified
+         * pointer type, and (considering the type the left operand
+         * would have after lvalue conversion) both operands are
+         * pointers to qualified or unqualified versions of compatible
+         * types, and the type pointed to by the left has all the
+         * qualifiers of the type pointed to by the right. */
         !(is_pointer(target.type) && is_pointer(var.type)
             && is_compatible(target.type->next, var.type->next)
             && (target.type->next->qualifier | var.type->next->qualifier)
                 == target.type->next->qualifier) &&
-        /* The left operand has atomic, qualified, or unqualified pointer type,
-         * and (considering the type the left operand would have after lvalue
-         * conversion) one operand is a pointer to an object type, and the other
-         * is a pointer to a qualified or unqualified version of void, and the
-         * type pointed to by the left has all the qualifiers of the type
-         * pointed to by the right. */
+        /* The left operand has atomic, qualified, or unqualified
+         * pointer type, and (considering the type the left operand
+         * would have after lvalue conversion) one operand is a pointer
+         * to an object type, and the other is a pointer to a qualified
+         * or unqualified version of void, and the type pointed to by
+         * the left has all the qualifiers of the type pointed to by
+         * the right. */
         !(is_pointer(target.type) && is_pointer(var.type)
             && ((is_void(target.type->next) && is_object(var.type->next))
                 || (is_object(target.type->next) && is_void(var.type->next)))
             && (target.type->next->qualifier | var.type->next->qualifier)
                 == target.type->next->qualifier) &&
-        /* The left operand is an atomic, qualified, or unqualified pointer, and
-         * the right is a null pointer constant. */
+        /* The left operand is an atomic, qualified, or unqualified
+         * pointer, and the right is a null pointer constant. */
         !(is_pointer(target.type) && is_nullptr(var)))
     {
         error("Incompatible operands to assignment expression, %s :: %t = %t.",
@@ -622,8 +686,9 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
         exit(1);
     }
 
-    /* Assignment has implicit conversion for basic types when evaluating the IR
-     * operation, meaning var will be sign extended to size of target.type. */
+    /* Assignment has implicit conversion for basic types when
+     * evaluating the IR operation, meaning var will be sign extended
+     * to size of target.type. */
     op.type = IR_ASSIGN;
     op.a = target;
     op.b = var;
@@ -633,16 +698,19 @@ struct var eval_assign(struct block *block, struct var target, struct var var)
     return target;
 }
 
-struct var eval_call(struct block *block, struct var var)
+struct var eval_call(
+    struct definition *def,
+    struct block *block,
+    struct var var)
 {
     struct op op;
     struct var res;
     const struct typetree *type = var.type;
 
-    /* In principle, the type of the expression being called should always be
-     * pointer to function. Accept call also to direct reference of function
-     * type, to avoid a lot of explicit address evaluations. This special case
-     * must be handled in backend. */
+    /* In principle, the type of the expression being called should
+     * always be pointer to function. Accept call also to direct
+     * reference of function type, to avoid a lot of explicit address
+     * evaluations. This special case must be handled in backend. */
     if (!is_function(var.type)) {
         assert(is_pointer(var.type) && is_function(var.type->next));
         type = var.type->next;
@@ -652,52 +720,60 @@ struct var eval_call(struct block *block, struct var var)
     if (is_void(type->next)) {
         res = var_void();
     } else {
-        res = create_var(type->next);
+        res = create_var(def, type->next);
     }
 
     op.type = IR_CALL;
     op.a = res;
     op.b = var;
     ir_append(block, op);
-
     return res;
 }
 
-struct var eval_return(struct block *block, const struct typetree *type)
+struct var eval_return(struct definition *def, struct block *block)
 {
+    const struct typetree *type = def->symbol->type.next;
     assert(!is_void(type));
 
     if (!type_equal(type, block->expr.type)) {
-        block->expr = eval_assign(block, create_var(type), block->expr);
+        block->expr =
+            eval_assign(def, block, create_var(def, type), block->expr);
     }
 
     block->has_return_value = 1;
-
     return block->expr;
 }
 
-struct var eval_cast(struct block *b, struct var v, const struct typetree *t)
+struct var eval_cast(
+    struct definition *def,
+    struct block *block,
+    struct var var,
+    const struct typetree *type)
 {
-    if (is_void(t)) {
-        v = var_void();
-    } else if (is_scalar(v.type) && is_scalar(t)) {
-        if (v.kind == IMMEDIATE || size_of(v.type) == size_of(t)) {
-            v.type = t;
+    if (is_void(type)) {
+        var = var_void();
+    } else if (is_scalar(var.type) && is_scalar(type)) {
+        if (var.kind == IMMEDIATE || size_of(var.type) == size_of(type)) {
+            var.type = type;
         } else {
-            v = evaluate(b, IR_CAST, t, v);
+            var = evaluate(def, block, IR_CAST, type, var);
         }
     } else {
         error(
             "Invalid type parameters to cast expression, "
-            "cannot convert %t to %t.",
-            v.type, t);
+            "cannot convert from %t to %t.",
+            var.type, type);
         exit(1);
     }
 
-    return v;
+    return var;
 }
 
-struct var eval_conditional(struct var a, struct block *b, struct block *c)
+struct var eval_conditional(
+    struct definition *def,
+    struct var a,
+    struct block *b,
+    struct block *c)
 {
     struct var result;
     const struct typetree *t1, *t2, *type = NULL;
@@ -706,8 +782,8 @@ struct var eval_conditional(struct var a, struct block *b, struct block *c)
         error("Conditional must be of scalar type.");
     }
 
-    b->expr = array_or_func_to_addr(b, b->expr);
-    c->expr = array_or_func_to_addr(c, c->expr);
+    b->expr = array_or_func_to_addr(def, b, b->expr);
+    c->expr = array_or_func_to_addr(def, c, c->expr);
 
     t1 = b->expr.type;
     t2 = c->expr.type;
@@ -729,32 +805,34 @@ struct var eval_conditional(struct var a, struct block *b, struct block *c)
         exit(1);
     }
 
-    result = create_var(type);
-    b->expr = eval_assign(b, result, b->expr);
-    c->expr = eval_assign(c, result, c->expr);
+    result = create_var(def, type);
+    b->expr = eval_assign(def, b, result, b->expr);
+    c->expr = eval_assign(def, c, result, c->expr);
     result.lvalue = 0;
 
     if (a.kind == IMMEDIATE) {
         return (a.imm.i) ? b->expr : c->expr;
     }
+
     return result;
 }
 
 static struct block *eval_logical_expression(
+    struct definition *def,
     int is_and,
     struct block *left,
     struct block *right_top,
     struct block *right)
 {
     struct block
-        *t = cfg_block_init(),
-        *f = cfg_block_init(),
-        *r = cfg_block_init();
+        *t = cfg_block_init(def),
+        *f = cfg_block_init(def),
+        *r = cfg_block_init(def);
 
-    /* Result is integer type, assigned in true and false branches to numeric
-     * constant 1 or 0. */
-    r->expr = create_var(&basic_type__int);
-    left->expr = eval_expr(left, IR_OP_EQ, left->expr, var_int(0));
+    /* Result is integer type, assigned in true and false branches to
+     * numeric constant 1 or 0. */
+    r->expr = create_var(def, &basic_type__int);
+    left->expr = eval_expr(def, left, IR_OP_EQ, left->expr, var_int(0));
     if (is_and) {
         left->jump[0] = right_top;
         left->jump[1] = f;
@@ -763,13 +841,13 @@ static struct block *eval_logical_expression(
         left->jump[1] = right_top;
     }
 
-    right->expr = eval_expr(right, IR_OP_EQ, right->expr, var_int(0));
+    right->expr = eval_expr(def, right, IR_OP_EQ, right->expr, var_int(0));
     right->jump[0] = t;
     right->jump[1] = f;
 
     r->expr.lvalue = 1;
-    eval_assign(t, r->expr, var_int(1));
-    eval_assign(f, r->expr, var_int(0));
+    eval_assign(def, t, r->expr, var_int(1));
+    eval_assign(def, f, r->expr, var_int(0));
     r->expr.lvalue = 0;
 
     t->jump[0] = r;
@@ -778,6 +856,7 @@ static struct block *eval_logical_expression(
 }
 
 struct block *eval_logical_or(
+    struct definition *def,
     struct block *left,
     struct block *right_top,
     struct block *right)
@@ -787,13 +866,14 @@ struct block *eval_logical_or(
     } else if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
         left->expr = var_int(left->expr.imm.i || right->expr.imm.i);
     } else {
-        left = eval_logical_expression(0, left, right_top, right);
+        left = eval_logical_expression(def, 0, left, right_top, right);
     }
 
     return left;
 }
 
 struct block *eval_logical_and(
+    struct definition *def,
     struct block *left,
     struct block *right_top,
     struct block *right)
@@ -803,33 +883,32 @@ struct block *eval_logical_and(
     } else if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
         left->expr = var_int(left->expr.imm.i && right->expr.imm.i);
     } else {
-        left = eval_logical_expression(1, left, right_top, right);
+        left = eval_logical_expression(def, 1, left, right_top, right);
     }
 
     return left;
 }
 
-void param(struct block *block, struct var p)
+void param(struct definition *def, struct block *block, struct var arg)
 {
     struct op op = {IR_PARAM};
-
-    op.a = array_or_func_to_addr(block, p);
+    op.a = array_or_func_to_addr(def, block, arg);
     ir_append(block, op);
 }
 
 struct var eval__builtin_va_start(struct block *block, struct var arg)
 {
     struct op op = {IR_VA_START};
-
     op.a = arg;
     ir_append(block, op);
     return var_void();
 }
 
 struct var eval__builtin_va_arg(
+    struct definition *def,
     struct block *block,
     struct var arg,
     const struct typetree *type)
 {
-    return evaluate(block, IR_VA_ARG, type, arg);
+    return evaluate(def, block, IR_VA_ARG, type, arg);
 }
