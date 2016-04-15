@@ -47,6 +47,13 @@ struct var eval_call(
     struct block *block,
     struct var var);
 
+/* Create and return a copy of var.
+ */
+struct var eval_copy(
+    struct definition *def,
+    struct block *block,
+    struct var var);
+
 /* Evaluate (T) a.
  */
 struct var eval_cast(

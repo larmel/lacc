@@ -243,16 +243,14 @@ static struct block *postfix_expression(
             break;
         case INCREMENT:
             consume(INCREMENT);
-            copy = create_var(def, root.type);
-            eval_assign(def, block, copy, root);
+            copy = eval_copy(def, block, root);
             expr = eval_expr(def, block, IR_OP_ADD, root, var_int(1));
             eval_assign(def, block, root, expr);
             root = copy;
             break;
         case DECREMENT:
             consume(DECREMENT);
-            copy = create_var(def, root.type);
-            eval_assign(def, block, copy, root);
+            copy = eval_copy(def, block, root);
             expr = eval_expr(def, block, IR_OP_SUB, root, var_int(1));
             eval_assign(def, block, root, expr);
             root = copy;

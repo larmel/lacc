@@ -1,6 +1,7 @@
 #include "eval.h"
 #include "declaration.h"
 #include "parse.h"
+#include "symtab.h"
 #include "type.h"
 #include <lacc/cli.h>
 #include <lacc/ir.h>
@@ -39,6 +40,18 @@ static struct var var_void(void)
     var.kind = IMMEDIATE;
     var.type = &basic_type__void;
     return var;
+}
+
+static struct var create_var(
+    struct definition *def,
+    const struct typetree *type)
+{
+    struct symbol *temp = sym_create_tmp(type);
+    struct var res = var_direct(temp);
+
+    list_push_back(&def->locals, temp);
+    res.lvalue = 1;
+    return res;
 }
 
 struct var var_direct(const struct symbol *sym)
@@ -728,6 +741,15 @@ struct var eval_call(
     op.b = var;
     ir_append(block, op);
     return res;
+}
+
+struct var eval_copy(
+    struct definition *def,
+    struct block *block,
+    struct var var)
+{
+    struct var copy = create_var(def, var.type);
+    return eval_assign(def, block, copy, var);
 }
 
 struct var eval_return(struct definition *def, struct block *block)

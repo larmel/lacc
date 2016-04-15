@@ -18,9 +18,4 @@ struct definition *cfg_init(const struct symbol *sym);
  */
 struct block *cfg_block_init(struct definition *def);
 
-/* Create temporary variable for evaluation. Added to current function
- * definition context, can only be called while parsing a function.
- */
-struct var create_var(struct definition *def, const struct typetree *type);
-
 #endif
