@@ -8,49 +8,46 @@
 
 #include <stddef.h>
 
-/* Find the number of operands to a given operation type, using the fact
- * that enumeration constants are sorted by operand count. 
- */
-#define NOPERANDS(t) ((t) > IR_CAST ? 2 : (t) > IR_PARAM)
-#define IS_COMPARISON(t) ((t) == IR_OP_EQ || (t) == IR_OP_GE || (t) == IR_OP_GT)
-
 /* Three address code operation types.
  */
 enum optype {
-    IR_PARAM,    /* param a    */
+    IR_PARAM = 0x10,    /* param a    */
 
-    IR_ASSIGN,   /* a = b      */
-    IR_DEREF,    /* a = *b     */
-    IR_ADDR,     /* a = &b     */
-    IR_NOT,      /* a = ~b     */
-    IR_CALL,     /* a = b()    */
-    IR_CAST,     /* a = (T) b  */
+    IR_ASSIGN = 0x20,   /* a = b      */
+    IR_DEREF = 0x21,    /* a = *b     */
+    IR_ADDR = 0x22,     /* a = &b     */
+    IR_NOT = 0x23,      /* a = ~b     */
+    IR_CALL = 0x24,     /* a = b()    */
+    IR_CAST = 0x25,     /* a = (T) b  */
 
-    IR_OP_ADD,   /* a = b + c  */
-    IR_OP_SUB,   /* a = b - c  */
-    IR_OP_MUL,   /* a = b * c  */
-    IR_OP_DIV,   /* a = b / c  */
-    IR_OP_MOD,   /* a = b % c  */
-    IR_OP_AND,   /* a = b & c  */
-    IR_OP_OR,    /* a = b | c  */
-    IR_OP_XOR,   /* a = b ^ c  */
-    IR_OP_SHL,   /* a = b << c */
-    IR_OP_SHR,   /* a = b >> c */
+    IR_OP_ADD = 0x30,   /* a = b + c  */
+    IR_OP_SUB = 0x31,   /* a = b - c  */
+    IR_OP_MUL = 0x32,   /* a = b * c  */
+    IR_OP_DIV = 0x33,   /* a = b / c  */
+    IR_OP_MOD = 0x34,   /* a = b % c  */
+    IR_OP_AND = 0x35,   /* a = b & c  */
+    IR_OP_OR = 0x36,    /* a = b | c  */
+    IR_OP_XOR = 0x37,   /* a = b ^ c  */
+    IR_OP_SHL = 0x38,   /* a = b << c */
+    IR_OP_SHR = 0x39,   /* a = b >> c */
 
-    IR_OP_EQ,    /* a = b == c */
-    IR_OP_GE,    /* a = b >= c */
-    IR_OP_GT,    /* a = b > c  */
+    IR_OP_EQ = 0x3A,    /* a = b == c */
+    IR_OP_GE = 0x3B,    /* a = b >= c */
+    IR_OP_GT = 0x3C,    /* a = b > c  */
 
     /* Call va_start(a), setting reg_save_area and overflow_arg_area.
      * This, together with va_arg assumes some details about memory
      * layout that can only be known by backend, thus the need for these
      * operations. */
-    IR_VA_START,
+    IR_VA_START = 0x11,
 
     /* Call a = va_arg(b, T), with type T taken from a. Intercepted as
      * call to __builtin_va_arg in parser. */
-    IR_VA_ARG
+    IR_VA_ARG = 0x26
 };
+
+#define OPERAND_COUNT(optype) ((optype) >> 4)
+#define IS_COMPARISON(optype) (((optype) & 0x0F) > 9)
 
 /* A reference to some storage location or direct value, used in
  * intermediate representation of expressions.

@@ -24,15 +24,6 @@ static int is_string(struct var val)
         val.symbol->symtype == SYM_STRING_VALUE;
 }
 
-static void ir_append(struct block *block, struct op op)
-{
-    /* Current block can be NULL when parsing an expression that should
-     * not be evaluated, for example argument to sizeof. */
-    if (block) {
-        array_push_back(&block->code, op);
-    }
-}
-
 static struct var var_void(void)
 {
     struct var var = {0};
@@ -97,26 +88,49 @@ struct var var_numeric(struct number n)
     return var;
 }
 
+static void emit_ir(struct block *block, enum optype optype, struct var a, ...)
+{
+    va_list args;
+    struct op op;
+
+    /* Current block can be NULL when parsing an expression that should
+     * not be evaluated, for example argument to sizeof. */
+    if (block) {
+        op.type = optype;
+        op.a = a;
+        if (OPERAND_COUNT(optype) > 1) {
+            va_start(args, a);
+            op.b = va_arg(args, struct var);
+            if (OPERAND_COUNT(optype) == 3) {
+                op.c = va_arg(args, struct var);
+            }
+            va_end(args);
+        }
+        array_push_back(&block->code, op);
+    }
+}
+
 static struct var evaluate(
     struct definition *def,
     struct block *block,
-    enum optype op,
-    const struct typetree *t, ...)
+    enum optype optype,
+    const struct typetree *type,
+    struct var left, ...)
 {
     va_list args;
-    struct op ir = {0};
+    struct var result;
 
-    ir.type = op;
-    ir.a = create_var(def, t);
-    ir.a.lvalue = 0;
-    va_start(args, t);
-    ir.b = va_arg(args, struct var);
-    if (NOPERANDS(op) == 2) {
-        ir.c = va_arg(args, struct var);
+    result = create_var(def, type);
+    result.lvalue = 0;
+    if (OPERAND_COUNT(optype) == 3) {
+        va_start(args, left);
+        emit_ir(block, optype, result, left, va_arg(args, struct var));
+        va_end(args);
+    } else {
+        emit_ir(block, optype, result, left);
     }
-    va_end(args);
-    ir_append(block, ir);
-    return ir.a;
+
+    return result;
 }
 
 static struct var eval_mul(
@@ -513,21 +527,21 @@ static struct var array_or_func_to_addr(
 struct var eval_expr(
     struct definition *def,
     struct block *block,
-    enum optype op, ...)
+    enum optype optype,
+    struct var l, ...)
 {
     va_list args;
-    struct var l, r;
+    struct var r;
 
-    va_start(args, op);
-    l = va_arg(args, struct var);
     l = array_or_func_to_addr(def, block, l);
-    if (NOPERANDS(op) == 2) {
+    if (OPERAND_COUNT(optype) == 3) {
+        va_start(args, l);
         r = va_arg(args, struct var);
         r = array_or_func_to_addr(def, block, r);
+        va_end(args);
     }
-    va_end(args);
 
-    switch (op) {
+    switch (optype) {
     case IR_NOT:    return eval_not(def, block, l);
     case IR_OP_MOD: return eval_mod(def, block, l, r);
     case IR_OP_MUL: return eval_mul(def, block, l, r);
@@ -542,7 +556,7 @@ struct var eval_expr(
     case IR_OP_OR:  return eval_or(def, block, l, r);
     case IR_OP_SHL: return eval_shiftl(def, block, l, r);
     default:
-        assert(op == IR_OP_SHR);
+        assert(optype == IR_OP_SHR);
         return eval_shiftr(def, block, l, r);
     }
 }
@@ -635,8 +649,6 @@ struct var eval_assign(
     struct var target,
     struct var var)
 {
-    struct op op = {0};
-
     if (!target.lvalue) {
         error("Target of assignment must be l-value.");
         exit(1);
@@ -702,10 +714,7 @@ struct var eval_assign(
     /* Assignment has implicit conversion for basic types when
      * evaluating the IR operation, meaning var will be sign extended
      * to size of target.type. */
-    op.type = IR_ASSIGN;
-    op.a = target;
-    op.b = var;
-    ir_append(block, op);
+    emit_ir(block, IR_ASSIGN, target, var);
     target.lvalue = 0;
 
     return target;
@@ -716,7 +725,6 @@ struct var eval_call(
     struct block *block,
     struct var var)
 {
-    struct op op;
     struct var res;
     const struct typetree *type = var.type;
 
@@ -736,10 +744,7 @@ struct var eval_call(
         res = create_var(def, type->next);
     }
 
-    op.type = IR_CALL;
-    op.a = res;
-    op.b = var;
-    ir_append(block, op);
+    emit_ir(block, IR_CALL, res, var);
     return res;
 }
 
@@ -913,16 +918,12 @@ struct block *eval_logical_and(
 
 void param(struct definition *def, struct block *block, struct var arg)
 {
-    struct op op = {IR_PARAM};
-    op.a = array_or_func_to_addr(def, block, arg);
-    ir_append(block, op);
+    emit_ir(block, IR_PARAM, array_or_func_to_addr(def, block, arg));
 }
 
 struct var eval__builtin_va_start(struct block *block, struct var arg)
 {
-    struct op op = {IR_VA_START};
-    op.a = arg;
-    ir_append(block, op);
+    emit_ir(block, IR_VA_START, arg);
     return var_void();
 }
 

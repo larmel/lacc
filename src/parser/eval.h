@@ -10,7 +10,8 @@
 struct var eval_expr(
     struct definition *def,
     struct block *block,
-    enum optype op, ...);
+    enum optype optype,
+    struct var l, ...);
 
 /* Evaluate &a.
  */
