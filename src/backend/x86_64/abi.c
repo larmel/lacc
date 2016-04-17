@@ -1,31 +1,27 @@
 #include "abi.h"
-#include <lacc/cli.h>
 
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
 
-enum reg param_int_reg[] = {DI, SI, DX, CX, R8, R9};
-enum reg ret_int_reg[] = {AX, DX};
-
-static int has_unaligned_fields(const struct typetree *t)
+static int has_unaligned_fields(const struct typetree *type)
 {
-    const struct member *member;
     int i;
+    const struct member *mem;
+    assert(is_struct_or_union(type));
 
-    if (is_struct_or_union(t)) {
-        t = unwrapped(t);
-        for (i = 0; i < nmembers(t); ++i) {
-            member = get_member(t, i);
-            if (member->offset % size_of(member->type))
-                return 1;
+    type = unwrapped(type);
+    for (i = 0; i < nmembers(type); ++i) {
+        mem = get_member(type, i);
+        if (mem->offset % size_of(mem->type)) {
+            return 1;
         }
     }
 
     return 0;
 }
 
-static enum param_class combine(enum param_class a, enum param_class b)
+static unsigned char combine(unsigned char a, unsigned char b)
 {
     if (a == b) return a;
     if (a == PC_NO_CLASS) return b;
@@ -35,151 +31,113 @@ static enum param_class combine(enum param_class a, enum param_class b)
     return PC_SSE;
 }
 
-/* Traverse type tree depth first, calculating parameter classification
- * to use for each eightbyte.
- */
-static void flatten(enum param_class *l, const struct typetree *t, int offset)
+static struct param_class flatten(
+    struct param_class pc,
+    const struct typetree *type,
+    int offset)
 {
-    int i;
-    const struct member *member;
+    int i = offset / 8;
+    const struct member *mb;
 
-    switch (t->type) {
+    switch (type->type) {
     case T_REAL:
+        pc.eightbyte[i] = combine(pc.eightbyte[i], PC_SSE);
+        break;
     case T_UNSIGNED:
     case T_SIGNED:
     case T_POINTER:
-        i = offset / 8;
-        l[i] = combine(l[i], t->type == T_REAL ? PC_SSE : PC_INTEGER);
+        pc.eightbyte[i] = combine(pc.eightbyte[i], PC_INTEGER);
         break;
     case T_STRUCT:
     case T_UNION:
-        t = unwrapped(t);
-        for (i = 0; i < nmembers(t); ++i) {
-            member = get_member(t, i);
-            flatten(l, member->type, member->offset + offset);
+        type = unwrapped(type);
+        for (i = 0; i < nmembers(type); ++i) {
+            mb = get_member(type, i);
+            pc = flatten(pc, mb->type, mb->offset + offset);
         }
-        break;
-    case T_ARRAY:
-        for (i = 0; i < t->size / size_of(t->next); ++i)
-            flatten(l, t->next, i * size_of(t->next) + offset);
         break;
     default:
-        assert(0);
+        assert(type->type == T_ARRAY);
+        for (i = 0; i < type->size / size_of(type->next); ++i) {
+            pc = flatten(pc, type->next, i * size_of(type->next) + offset);
+        }
+        break;
     }
+
+    return pc;
 }
 
-static int merge(enum param_class *l, int n)
+static struct param_class merge(struct param_class pc)
 {
-    int i, has_sseup = 0;
+    int i, sseup = 0, memory = 0;
 
-    for (i = 0; i < n; ++i) {
-        if (l[i] == PC_MEMORY) {
-            return 1;
-        } else if (l[i] == PC_SSEUP) {
-            has_sseup = 1;
+    for (i = 0; i < 4 && pc.eightbyte[i] != PC_NO_CLASS; ++i) {
+        switch (pc.eightbyte[i]) {
+        case PC_X87UP:
+            if (i && pc.eightbyte[i - 1] == PC_X87)
+                break;
+        case PC_MEMORY:
+            memory = 1;
+            break;
+        case PC_SSEUP:
+            sseup = 1;
+        default:
+            break;
         }
     }
 
-    if (n > 2 && (l[0] != PC_SSE || !has_sseup)) {
-        return 1;
+    memory = memory || (i > 2 && (pc.eightbyte[0] != PC_SSE || !sseup));
+    if (memory) {
+        pc.eightbyte[0] = PC_MEMORY;
     }
 
-    return 0;
+    return pc;
 }
 
-void classify(const struct typetree *t, ParamClass *pc)
+struct param_class classify(const struct typetree *type)
 {
-    int i, n;
-    assert(t->type != T_FUNCTION);
-    assert(t->type != T_VOID);
-    assert(!array_len(pc));
+    struct param_class pc = {{PC_NO_CLASS}};
+    assert(type->type != T_FUNCTION);
 
-    if (is_integer(t) || is_pointer(t)) {
-        array_push_back(pc, PC_INTEGER);
-    } else if (N_EIGHTBYTES(t) > 4 || has_unaligned_fields(t)) {
-        array_push_back(pc, PC_MEMORY);
-    } else if (is_struct_or_union(t)) {
-        n = N_EIGHTBYTES(t);
-        assert(n);
-        for (i = 0; i < n; ++i) {
-            array_push_back(pc, PC_NO_CLASS);
-        }
-        flatten(pc->data, t, 0);
-        if (merge(pc->data, n)) {
-            pc->length = 1;
-            pc->data[0] = PC_MEMORY;
-        }
-    } else {
-        array_push_back(pc, PC_MEMORY);
-    }
-}
-
-void classify_call(
-    const struct typetree **args,
-    const struct typetree *ret,
-    unsigned n_args,
-    ParamClass *params,
-    ParamClass *res)
-{
-    int i, chunks, next_integer_reg = 0;
-    assert(!array_len(res));
-
-    for (i = 0; i < n_args; ++i) {
-        classify(args[i], &params[i]);
+    if (is_integer(type) || is_pointer(type)) {
+        pc.eightbyte[0] = PC_INTEGER;
+    } else if (
+        EIGHTBYTES(type) <= 4 &&
+        is_struct_or_union(type) &&
+        !has_unaligned_fields(type))
+    {
+        pc = flatten(pc, type, 0);
+        pc = merge(pc);
+    } else if (!is_void(type)) {
+        pc.eightbyte[0] = PC_MEMORY;
     }
 
-    if (ret->type != T_VOID) {
-        classify(ret, res);
-
-        /* When return value is MEMORY, pass a pointer to stack as
-         * hidden first argument. Therefore do this before assigning
-         * registers to parameters. */
-        if (array_get(res, 0) == PC_MEMORY) {
-            next_integer_reg = 1;
-        }
-    } else {
-        array_push_back(res, PC_NO_CLASS);
-    }
-
-    /* Place arguments in registers from left to right, partitioned
-     * into eightbyte slices. */
-    for (i = 0; i < n_args; ++i) {
-        if (array_get(&params[i], 0) != PC_MEMORY) {
-            chunks = N_EIGHTBYTES(args[i]);
-
-            /* Arguments are not partially passed on stack, so check
-             * that there are enough registers available. */
-            if (next_integer_reg + chunks <= 6) {
-                next_integer_reg += chunks;
-            } else {
-                params[i].data[0] = PC_MEMORY;
-                params[i].length = 1;
-            }
-        }
-    }
+    return pc;
 }
 
 int sym_alignment(const struct symbol *sym)
 {
     int align = type_alignment(&sym->type);
     if (is_array(&sym->type) && align < 16) {
-        /* A local or global array variable of at least 16 bytes should have
-         * alignment of 16. */
+        /* A local or global array variable of at least 16 bytes should
+         * have alignment of 16. */
         align = 16;
     }
 
     return align;
 }
 
-void dump_classification(const enum param_class *c, const struct typetree *t)
+void dump_classification(struct param_class pc, const struct typetree *type)
 {
     int i;
-
-    printf("TYPE: %s\n", typetostr(t));
-    printf("CLASS: %d eightbytes\n", N_EIGHTBYTES(t));
-    for (i = 0; i < N_EIGHTBYTES(t) && (*c != PC_MEMORY || i < 1); ++i) {
-        printf("\t%s\n", 
-            c[i] == PC_INTEGER ? "INTEGER" :
-            c[i] == PC_MEMORY ? "MEMORY" : "UNKNOWN");
+    printf("TYPE: %s\n", typetostr(type));
+    printf("CLASS: %d eightbytes\n", EIGHTBYTES(type));
+    if (pc.eightbyte[0] == PC_MEMORY) {
+        printf("\tMEMORY\n");
+    } else {
+        for (i = 0; i < EIGHTBYTES(type); ++i) {
+            assert(pc.eightbyte[i] == PC_INTEGER);
+            printf("\tINTEGER\n");
+        }
     }
 }

@@ -1,85 +1,41 @@
 #ifndef ABI_H
 #define ABI_H
 
-#include <lacc/array.h>
 #include <lacc/symbol.h>
 
-/* Start with %rax = 1 to make sure 0 is invalid. This is used in
- * address representation, but unfortunately crashes with instruction
- * encoding using 0b000 for AX.
+#define MAX_INTEGER_ARGS 6
+#define MAX_SSE_ARGS 8
+#define MAX_REGISTER_ARGS (MAX_INTEGER_ARGS + MAX_SSE_ARGS)
+
+/* Parameter class of an 8-byte slice of an object. Objects which take
+ * up more than 4 eightbytes automatically get class PC_MEMORY.
  */
-enum reg {
-    AX  = 1, /* 0b000 */
-    CX  = 2, /* 0b001 */
-    DX  = 3, /* 0b010 */
-    BX  = 4, /* 0b011 */
-    SP  = 5, /* 0b100 */
-    BP  = 6, /* 0b101 */
-    SI  = 7, /* 0b110 */
-    DI  = 8, /* 0b111 */
-    R8  = 9,
-    R9  = 10,
-    R10 = 11,
-    R11 = 12,
-    R12 = 13,
-    R13 = 14,
-    R14 = 15,
-    R15 = 16,
-
-    /* Instruction pointer. */
-    IP,
-
-    /* Floating point registers. */
-    XMM0, XMM1,  XMM2,  XMM3,  XMM4,  XMM5,  XMM6,  XMM7,
-    XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15
+struct param_class {
+    unsigned char eightbyte[4];
 };
 
-/* Registers used for passing INTEGER parameters.
- */
-extern enum reg param_int_reg[6];
+#define PC_NO_CLASS     0x00
+#define PC_INTEGER      0x01
+#define PC_SSE          0x02
+#define PC_SSEUP        0x04
+#define PC_X87          0x08
+#define PC_X87UP        0x10
+#define PC_COMPLEX_X87  0x20
+#define PC_MEMORY       0x40
 
-/* Registers used for returning INTEGER retult.
+/* Calculate how many eightbytes is necessary to pass an object of the
+ * given type as a parameter or return value.
  */
-extern enum reg ret_int_reg[2];
-
-/* Number of eightbytes required for a given type.
- */
-#define N_EIGHTBYTES(t) ((size_of(t) + 7) / 8)
-
-/* Parameter class of an 8-byte slice of an object.
- */
-enum param_class {
-    PC_NO_CLASS = 0,
-    PC_INTEGER,
-    PC_SSE,
-    PC_SSEUP,
-    PC_MEMORY
-};
-
-typedef array_of(enum param_class) ParamClass;
+#define EIGHTBYTES(t) ((size_of(t) + 7) / 8)
 
 /* Parameter classification as described in System V ABI (3.2.3), with
  * some simplifications. Classify parameter as a series of eightbytes
  * used for parameter passing and return value.
  */
-void classify(const struct typetree *t, ParamClass *pc);
-
-/* Classify function call, computing parameter class of arguments and
- * return value.
- */
-void classify_call(
-    const struct typetree **args,
-    const struct typetree *ret,
-    unsigned n_args,
-    ParamClass *params,
-    ParamClass *res);
+struct param_class classify(const struct typetree *type);
 
 /* Alignment of symbol in bytes.
  */
 int sym_alignment(const struct symbol *sym);
-
-/* DEBUG
- */
-void dump_classification(const enum param_class *c, const struct typetree *t);
 
 #endif

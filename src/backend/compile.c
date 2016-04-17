@@ -19,10 +19,17 @@ static int (*flush_backend)(void);
 
 /* Values from va_list initialization.
  */
-static int gp_offset;
-static int fp_offset;
-static int overflow_arg_area_offset;
-static int reg_save_area_offset;
+static struct {
+    int gp_offset;
+    int fp_offset;
+    int overflow_arg_area_offset;
+    int reg_save_area_offset;
+} vararg;
+
+/* Registers used for parameter passing and return value.
+ */
+static enum reg param_int_reg[] = {DI, SI, DX, CX, R8, R9};
+static enum reg ret_int_reg[] = {AX, DX};
 
 /* Store incoming PARAM operations before CALL.
  */
@@ -257,11 +264,12 @@ static void store(enum reg r, struct var v)
     }
 }
 
-/* Push value to stack, rounded up to always be 8 byte aligned.
+/* Push value to stack, rounded up to always be 8 byte aligned. Return
+ * number of bytes written.
  */
-static void push(struct var v)
+static int push(struct var v)
 {
-    int slices;
+    int eightbytes = 1;
 
     if (is_scalar(v.type)) {
         if (v.kind == IMMEDIATE && size_of(v.type) == 8)
@@ -271,66 +279,15 @@ static void push(struct var v)
             emit(INSTR_PUSH, OPT_REG, reg(AX, 8));
         }
     } else {
-        slices = N_EIGHTBYTES(v.type);
-        emit(INSTR_SUB, OPT_IMM_REG, constant(slices * 8, 8), reg(SP, 8));
-        emit(INSTR_MOV, OPT_IMM_REG, constant(slices, 4), reg(CX, 4));
+        eightbytes = EIGHTBYTES(v.type);
+        emit(INSTR_SUB, OPT_IMM_REG, constant(eightbytes * 8, 8), reg(SP, 8));
+        emit(INSTR_MOV, OPT_IMM_REG, constant(eightbytes, 4), reg(CX, 4));
         emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(DI, 8));
         load_address(v, SI);
         emit(INSTR_REP_MOVSQ, OPT_NONE);
     }
-}
 
-/* Used for computing argument types for parameter passing in function
- * calls. Re-use buffers to save allocations.
- */
-static ParamClass function_param_class;
-static ParamClass result_param_class;
-static ParamClass *argument_param_classes;
-static const struct typetree **argument_types;
-static unsigned call_arg_count, call_max_count;
-
-static void prepare_argument(const struct typetree *arg)
-{
-    if (call_max_count <= call_arg_count + 1) {
-        call_max_count = call_arg_count + 8;
-        argument_param_classes =
-            realloc(
-                argument_param_classes,
-                call_max_count * sizeof(ParamClass));
-        argument_types =
-            realloc(
-                argument_types,
-                call_max_count * sizeof(*argument_types));
-        memset(
-            argument_param_classes + call_arg_count,
-            0,
-            (call_max_count - call_arg_count) * sizeof(ParamClass));
-    }
-
-    argument_types[call_arg_count++] = arg;
-}
-
-static void classify_function_call(const struct typetree *func)
-{
-    int i;
-    assert(is_function(func));
-    assert(
-        call_arg_count == nmembers(func) ||
-        (is_vararg(func) && call_arg_count > nmembers(func)));
-
-    array_empty(&result_param_class);
-    for (i = 0; i < call_arg_count; ++i) {
-        array_empty(&argument_param_classes[i]);
-    }
-
-    classify_call(
-        argument_types,
-        func->next,
-        call_arg_count,
-        argument_param_classes,
-        &result_param_class);
-
-    call_arg_count = 0;
+    return eightbytes * 8;
 }
 
 /* Compile a function call. For now this assumes only integer arguments
@@ -343,70 +300,86 @@ static void call(
     struct var res,
     struct var func)
 {
-    int i, mem_used = 0, next_integer_reg = 0;
-    const struct typetree *function;
+    int i, j, n,
+        register_args = 0,
+        mem_used = 0,
+        next_integer_reg = 0;
+    const struct typetree *type;
+    struct var var;
+    struct param_class respc, arg;
+    struct {
+        struct param_class pc;
+        int i;
+    } argpc[MAX_REGISTER_ARGS];
 
     /* Handle both function call by direct reference and pointer. The
      * former is a special case. */
-    function = is_pointer(func.type) ? func.type->next : func.type;
+    type = is_pointer(func.type) ? func.type->next : func.type;
+    respc = classify(type->next);
+    if (respc.eightbyte[0] == PC_MEMORY) {
+        next_integer_reg = 1;
+    }
 
-    /* Populate argument_param_classes and result_param_class. */
-    for (i = 0; i < n_args; ++i)
-        prepare_argument(args[i].type);
-    classify_function_call(function);
+    /* Classify parameters, handing out register slots on first come,
+     * first serve basis. */
+    for (i = 0; i < n_args; ++i) {
+        arg = classify(args[i].type);
+        n = EIGHTBYTES(args[i].type);
+        if (arg.eightbyte[0] != PC_MEMORY &&
+            next_integer_reg + n <= MAX_INTEGER_ARGS)
+        {
+            assert(register_args < MAX_INTEGER_ARGS);
+            argpc[register_args].pc = arg;
+            argpc[register_args].i = i;
+            register_args++;
+            next_integer_reg += n;
+        }
+    }
 
     /* Pass arguments on stack from right to left. Do this before
      * populating registers, because %rdi, %rsi etc will be used to do
-     * the pushing. */
-    for (i = n_args - 1; i >= 0; --i) {
-        if (array_get(&argument_param_classes[i], 0) == PC_MEMORY) {
-            mem_used += N_EIGHTBYTES(args[i].type) * 8;
-            push(args[i]);
+     * the pushing. Reverse traversal in register class list to filter
+     * out non-memory arguments. */
+    for (i = n_args - 1, n = register_args - 1; i >= 0; --i) {
+        if (n >= 0 && argpc[n].i == i) {
+            n--;
+        } else {
+            mem_used += push(args[i]);
         }
     }
 
     /* When return value is MEMORY, pass a pointer to stack as hidden
      * first argument. */
-    if (array_get(&result_param_class, 0) == PC_MEMORY) {
+    if (respc.eightbyte[0] == PC_MEMORY) {
         next_integer_reg = 1;
         load_address(res, param_int_reg[0]);
+    } else {
+        next_integer_reg = 0;
     }
 
     /* Pass arguments in registers from left to right. Partition
      * arguments into eightbyte slices and load into appropriate
      * registers. */
-    for (i = 0; i < n_args; ++i) {
-        enum param_class *eightbyte = argument_param_classes[i].data;
-
-        if (*eightbyte != PC_MEMORY) {
-            if (is_struct_or_union(args[i].type)) {
-                int chunks = N_EIGHTBYTES(args[i].type),
-                    size = size_of(args[i].type),
-                    j;
-                struct var slice = args[i];
-
-                for (j = 0; j < chunks; ++j) {
-                    int w = (size < 8) ? size % 8 : 8;
-
-                    size -= w;
-                    assert(eightbyte[j] == PC_INTEGER);
-                    assert(w == 1 || w == 2 || w == 4 || w == 8);
-
-                    slice.type = BASIC_TYPE_UNSIGNED(w);
-                    slice.offset = args[i].offset + j * 8;
-                    load(slice, param_int_reg[next_integer_reg++]);
-                }
-                assert(!size);
-            } else {
-                assert(size_of(args[i].type) <= 8);
-                load(args[i], param_int_reg[next_integer_reg++]);
+    for (i = 0; i < register_args; ++i) {
+        var = args[argpc[i].i];
+        n = EIGHTBYTES(var.type);
+        if (is_struct_or_union(var.type)) {
+            for (j = 0; j < n; ++j) {
+                var.type = (j < n - 1) ?
+                    &basic_type__unsigned_long :
+                    BASIC_TYPE_UNSIGNED(size_of(args[argpc[i].i].type) % 8);
+                load(var, param_int_reg[next_integer_reg++]);
+                var.offset += size_of(var.type);
             }
+        } else {
+            assert(size_of(args[argpc[i].i].type) <= 8);
+            load(var, param_int_reg[next_integer_reg++]);
         }
     }
 
     /* For variable argument lists, %al contains the number of vector
      * registers used. */
-    if (is_vararg(function)) {
+    if (is_vararg(type)) {
         emit(INSTR_MOV, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
     }
 
@@ -431,69 +404,43 @@ static void call(
 
     /* Move return value from register(s) to memory. Return values with
      * class MEMORY have already been written by callee. */
-    if (array_get(&result_param_class, 0) != PC_MEMORY) {
-        struct var slice = res;
-        int n = N_EIGHTBYTES(res.type), size = size_of(res.type);
-
-        /* Only have INTEGER class for now. */
+    if (respc.eightbyte[0] != PC_MEMORY) {
+        n = EIGHTBYTES(res.type);
         assert(n <= 2);
-
-        next_integer_reg = 0;
+        var = res;
         for (i = 0; i < n; ++i) {
-            int width = (size < 8) ? size % 8 : 8;
-
-            size -= width;
-            assert(array_get(&result_param_class, i) == PC_INTEGER);
-
-            slice.type = BASIC_TYPE_UNSIGNED(width);
-            slice.offset = i * 8;
-            store(ret_int_reg[next_integer_reg++], slice);
+            var.type = (i < n - 1) ?
+                &basic_type__unsigned_long :
+                BASIC_TYPE_UNSIGNED(size_of(res.type) % 8);
+            store(ret_int_reg[i], var);
+            var.offset += size_of(var.type);
         }
-
-        assert(!size);
     }
 }
 
-static int assign_locals_storage(struct list *locals, int offset)
-{
-    int i;
-
-    for (i = 0; i < list_len(locals); ++i) {
-        struct symbol *sym = (struct symbol *) list_get(locals, i);
-        assert(!sym->stack_offset);
-
-        if (sym->linkage == LINK_NONE) {
-            offset -= size_of(&sym->type);
-            sym->stack_offset = offset;
-        }
-    }
-
-    return offset;
-}
-
-static enum param_class *enter(
+static void enter(
     const struct typetree *type,
     struct list *params,
     struct list *locals)
 {
-    int i,
+    int i, j, n,
+        register_args = 0,  /* Arguments passed in registers. */
         next_integer_reg = 0,
         mem_offset = 16,    /* Offset of PC_MEMORY parameters. */
         stack_offset = 0;   /* Offset of %rsp to for local variables. */
-
-    /* Get classification of function arguments and return value. Keep
-     * this as a copy, or it will be overwritten by function calls
-     * inside the function. */
-    for (i = 0; i < nmembers(type); ++i) {
-        prepare_argument(get_member(type, i)->type);
-    }
-    classify_function_call(type);
-    array_clear(&function_param_class);
-    array_concat(&function_param_class, &result_param_class);
+    struct var ref;
+    struct symbol *sym;
+    struct param_class res, arg;
+    struct {
+        struct param_class pc;
+        int i;
+    } argpc[MAX_REGISTER_ARGS];
+    assert(is_function(type));
 
     /* Address of return value is passed as first integer argument. If
      * return value is MEMORY, store the address at stack offset -8. */
-    if (array_get(&function_param_class, 0) == PC_MEMORY) {
+    res = classify(type->next);
+    if (res.eightbyte[0] == PC_MEMORY) {
         stack_offset = -8;
         next_integer_reg = 1;
     }
@@ -509,138 +456,130 @@ static enum param_class *enter(
         stack_offset = -176 - 8;
     }
 
-    /* Assign storage to parameters. */
+    /* Assign storage to parameters. Guarantee that parameters are 8-
+     * byte aligned also for those passed by register, which makes it
+     * easier to store in local frame after entering function. Assumes
+     * only integer or memory classification. */
     for (i = 0; i < list_len(params); ++i) {
-        struct symbol *sym = (struct symbol *) list_get(params, i);
-
+        sym = (struct symbol *) list_get(params, i);
+        arg = classify(&sym->type);
+        n = EIGHTBYTES(&sym->type);
         assert(!sym->stack_offset);
         assert(sym->linkage == LINK_NONE);
+        if (arg.eightbyte[0] != PC_MEMORY) {
+            if (next_integer_reg + n <= 6) {
+                next_integer_reg += n;
+            } else {
+                arg.eightbyte[0] = PC_MEMORY;
+            }
+        }
 
-        /* Guarantee that parameters are 8-byte aligned also for those
-         * passed by register, which makes it easier to store in local
-         * frame after entering function. Might want to revisit this
-         * and make it compact. */
-        if (array_get(&argument_param_classes[i], 0) == PC_MEMORY) {
+        if (arg.eightbyte[0] == PC_MEMORY) {
             sym->stack_offset = mem_offset;
-            mem_offset += N_EIGHTBYTES(&sym->type) * 8;
+            mem_offset += n * 8;
         } else {
-            stack_offset -= N_EIGHTBYTES(&sym->type) * 8;
+            assert(register_args < MAX_REGISTER_ARGS);
+            argpc[register_args].pc = arg;
+            argpc[register_args].i = i;
+            register_args++;
+            stack_offset -= n * 8;
             sym->stack_offset = stack_offset;
         }
     }
 
     /* Assign storage to locals. */
-    stack_offset = assign_locals_storage(locals, stack_offset);
-    if (stack_offset < 0)
-        emit(INSTR_SUB, OPT_IMM_REG, constant(-stack_offset, 8), reg(SP, 8));
+    for (i = 0; i < list_len(locals); ++i) {
+        sym = (struct symbol *) list_get(locals, i);
+        assert(!sym->stack_offset);
+        if (sym->linkage == LINK_NONE) {
+            stack_offset -= size_of(&sym->type);
+            sym->stack_offset = stack_offset;
+        }
+    }
 
-    /* Store return address to well known stack offset. */
-    if (array_get(&function_param_class, 0) == PC_MEMORY)
-        emit(INSTR_MOV, OPT_REG_MEM,
-            reg(param_int_reg[0], 8), location(address(-8, BP, 0, 0), 8));
+    /* All computation of where variables belong in memory is done, time
+     * to allocate space in the call frame. Store return address to well
+     * known stack offset, at -8(%rbp). */
+    if (stack_offset < 0) {
+        emit(INSTR_SUB, OPT_IMM_REG, constant(-stack_offset, 8), reg(SP, 8));
+        if (res.eightbyte[0] == PC_MEMORY) {
+            emit(INSTR_MOV, OPT_REG_MEM,
+                reg(param_int_reg[0], 8), location(address(-8, BP, 0, 0), 8));
+        }
+    }
 
     /* Store all potential parameters to register save area. This
      * includes parameters that are known to be passed as registers,
-     * that will anyway be stored to another stack location. Maybe
-     * potential for optimization. */
+     * that will anyway be stored to another stack location. It is
+     * desireable to skip touching floating point unit if possible,
+     * %al holds the number of registers passed. */
     if (is_vararg(type)) {
-        const struct symbol *lbl = sym_create_label();
-
-        /* It is desireable to skip touching floating point unit if
-         * possible, %al holds the number of floating point registers
-         * passed. */
+        sym = sym_create_label();
+        vararg.gp_offset = 8 * next_integer_reg;
+        vararg.fp_offset = 0;
+        vararg.overflow_arg_area_offset = mem_offset;
+        vararg.reg_save_area_offset = -8;
         emit(INSTR_TEST, OPT_REG_REG, reg(AX, 1), reg(AX, 1));
-        emit(INSTR_JZ, OPT_IMM, addr(lbl));
-        reg_save_area_offset = -8; /* Skip address of return value. */
+        emit(INSTR_JZ, OPT_IMM, addr(sym));
         for (i = 0; i < 8; ++i) {
-            reg_save_area_offset -= 16;
+            vararg.reg_save_area_offset -= 16;
             emit(INSTR_MOVAPS, OPT_REG_MEM,
                 reg(XMM0 + (7 - i), 16),
-                location(address(reg_save_area_offset, BP, 0, 0), 16));
+                location(address(vararg.reg_save_area_offset, BP, 0, 0), 16));
         }
 
-        enter_context(lbl);
+        enter_context(sym);
         for (i = 0; i < 6; ++i) {
-            reg_save_area_offset -= 8;
+            vararg.reg_save_area_offset -= 8;
             emit(INSTR_MOV, OPT_REG_MEM,
                 reg(param_int_reg[5 - i], 8),
-                location(address(reg_save_area_offset, BP, 0, 0), 8));
+                location(address(vararg.reg_save_area_offset, BP, 0, 0), 8));
         }
     }
 
-    /* Move arguments from register to stack. */
-    for (i = 0; i < list_len(params); ++i) {
-        enum param_class *eightbyte = argument_param_classes[i].data;
+    /* Move arguments from register to stack, looking only in array of
+     * stored classifications that are not memory. Remember not to load
+     * from the first register if used for return address. */
+    next_integer_reg = (res.eightbyte[0] == PC_MEMORY);
+    for (i = 0; i < register_args; ++i) {
+        assert(argpc[i].pc.eightbyte[0] != PC_MEMORY);
+        assert(argpc[i].i < list_len(params));
 
-        /* Here it is ok to not separate between object and other types.
-         * Data in registers can always be treated as integer type. */
-        if (*eightbyte != PC_MEMORY) {
-            struct var ref = {NULL, NULL, DIRECT};
-            int n = N_EIGHTBYTES(get_member(type, i)->type),
-                size = size_of(get_member(type, i)->type),
-                j;
-
-            ref.symbol = (struct symbol *) list_get(params, i);
-            for (j = 0; j < n; ++j) {
-                int width = (size < 8) ? size : 8;
-                ref.type = BASIC_TYPE_UNSIGNED(width);
-                ref.offset = j * 8;
-                store(param_int_reg[next_integer_reg++], ref);
-                size -= width;
-            }
-            assert(!size);
+        sym = (struct symbol *) list_get(params, argpc[i].i);
+        ref = var_direct(sym);
+        n = EIGHTBYTES(&sym->type);
+        for (j = 0; j < n; ++j) {
+            assert(argpc[i].pc.eightbyte[j] == PC_INTEGER);
+            ref.type = (j < n - 1) ?
+                &basic_type__unsigned_long :
+                BASIC_TYPE_UNSIGNED(size_of(&sym->type) % 8);
+            store(param_int_reg[next_integer_reg++], ref);
+            ref.offset += size_of(ref.type);
         }
     }
-
-    /* After loading parameters we know how many registers have been
-     * used for fixed parameters. Update offsets to be used in
-     * va_start. */
-    if (is_vararg(type)) {
-        gp_offset = 8 * next_integer_reg;
-        fp_offset = 0;
-        overflow_arg_area_offset = mem_offset;
-    }
-
-    return function_param_class.data;
 }
 
 /* Return value from function, placing it in register(s) or writing it
- * to stack based on parameter class.
+ * to stack, based on parameter class.
  */
 static void ret(struct var val)
 {
-    assert(array_len(&function_param_class));
-    assert(array_get(&function_param_class, 0) != PC_NO_CLASS);
+    int i, n;
+    struct var var;
+    struct param_class pc;
 
-    /* NB: This might break down for non-object values, in particular
-     * string constants that cannot be interpreted as integers. */
-    if (array_get(&function_param_class, 0) != PC_MEMORY) {
-        int i,
-            n = N_EIGHTBYTES(val.type),
-            size = size_of(val.type);
-        struct var slice = val;
-
-        /* As we only support integer class, limit to two registers.
-         * Note that the classification algorithm will never allocate
-         * more than two integer registers for a single type. */
-        assert(n <= 2);
-        assert(n == array_len(&function_param_class));
-
-        /* This has a lot in common with call and enter, and could
-         * probably be refactored. */
+    pc = classify(val.type);
+    if (pc.eightbyte[0] != PC_MEMORY) {
+        n = EIGHTBYTES(val.type);
+        var = val;
         for (i = 0; i < n; ++i) {
-            int width = (size < 8) ? size % 8 : 8;
-
-            size -= width;
-            assert(array_get(&function_param_class, i) == PC_INTEGER);
-            assert(width == 1 || width == 2 || width == 4 || width == 8);
-
-            slice.type = BASIC_TYPE_UNSIGNED(width);
-            slice.offset = val.offset + i * 8;
-            load(slice, ret_int_reg[i]);
+            assert(pc.eightbyte[i] == PC_INTEGER);
+            var.type = (i < n - 1) ?
+                &basic_type__unsigned_long :
+                BASIC_TYPE_UNSIGNED(size_of(val.type) % 8);
+            load(var, ret_int_reg[i]);
+            var.offset += size_of(var.type);
         }
-
-        assert(!size);
     } else {
         /* Load return address from magic stack offset and copy
          * result. */
@@ -665,20 +604,27 @@ static void compile__builtin_va_start(struct var args)
 {
     assert(args.kind == DIRECT);
 
-    emit(INSTR_MOV, OPT_IMM_MEM, constant(gp_offset, 4), location_of(args, 4));
-
+    emit(INSTR_MOV, OPT_IMM_MEM,
+        constant(vararg.gp_offset, 4),
+        location_of(args, 4));
     args.offset += 4;
-    emit(INSTR_MOV, OPT_IMM_MEM, constant(fp_offset, 4), location_of(args, 4));
-
+    emit(INSTR_MOV, OPT_IMM_MEM,
+        constant(vararg.fp_offset, 4),
+        location_of(args, 4));
     args.offset += 4;
     emit(INSTR_LEA, OPT_MEM_REG,
-        location(address(overflow_arg_area_offset, BP, 0, 0), 8), reg(AX, 8));
-    emit(INSTR_MOV, OPT_REG_MEM, reg(AX, 8), location_of(args, 8));
-
+        location(address(vararg.overflow_arg_area_offset, BP, 0, 0), 8),
+        reg(AX, 8));
+    emit(INSTR_MOV, OPT_REG_MEM,
+        reg(AX, 8),
+        location_of(args, 8));
     args.offset += 8;
     emit(INSTR_LEA, OPT_MEM_REG,
-        location(address(reg_save_area_offset, BP, 0, 0), 8), reg(AX, 8));
-    emit(INSTR_MOV, OPT_REG_MEM, reg(AX, 8), location_of(args, 8));
+        location(address(vararg.reg_save_area_offset, BP, 0, 0), 8),
+        reg(AX, 8));
+    emit(INSTR_MOV, OPT_REG_MEM,
+        reg(AX, 8),
+        location_of(args, 8));
 }
 
 /* Output logic for fetching a parameter from calling va_arg(args, T).
@@ -686,7 +632,7 @@ static void compile__builtin_va_start(struct var args)
 static void compile__builtin_va_arg(struct var res, struct var args)
 {
     const int w = size_of(res.type);
-    const enum param_class *pc;
+    struct param_class pc;
 
     struct var
         var_gp_offset = args,
@@ -703,9 +649,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     assert(res.kind == DIRECT);
     assert(args.kind == DIRECT);
 
-    array_empty(&result_param_class);
-    classify(res.type, &result_param_class);
-    pc = result_param_class.data;
+    pc = classify(res.type);
 
     /* References into va_list object. */
     var_gp_offset.type = &basic_type__unsigned_int;
@@ -718,18 +662,18 @@ static void compile__builtin_va_arg(struct var res, struct var args)
 
     /* Integer or SSE parameters are read from registers, if there are
      * enough of them left. Otherwise read from overflow area. */
-    if (*pc != PC_MEMORY) {
+    if (pc.eightbyte[0] != PC_MEMORY) {
         struct var slice = res;
         int i,
             size = w,
             num_gp = 0, /* general purpose registers needed */
             num_fp = 0; /* floating point registers needed */
 
-        for (i = 0; i < N_EIGHTBYTES(res.type); ++i) {
-            if (pc[i] == PC_INTEGER) {
+        for (i = 0; i < EIGHTBYTES(res.type); ++i) {
+            if (pc.eightbyte[i] == PC_INTEGER) {
                 num_gp++;
             } else {
-                assert(pc[i] == PC_SSE);
+                assert(pc.eightbyte[i] == PC_SSE);
                 num_fp++;
             }
         }
@@ -758,11 +702,11 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         /* Load argument, one eightbyte at a time. This code has a lot
          * in common with enter, ret etc, potential for refactoring
          * probably. */
-        for (i = 0; i < N_EIGHTBYTES(res.type); ++i) {
+        for (i = 0; i < EIGHTBYTES(res.type); ++i) {
             int width = (size < 8) ? size : 8;
 
             size -= width;
-            assert(pc[i] == PC_INTEGER);
+            assert(pc.eightbyte[i] == PC_INTEGER);
             assert(width == 1 || width == 2 || width == 4 || width == 8);
 
             slice.type = BASIC_TYPE_UNSIGNED(width);
@@ -811,12 +755,12 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     }
 
     /* Move overflow_arg_area pointer to position of next memory
-     * argument,  aligning to 8 byte. */
+     * argument, aligning to 8 byte. */
     emit(INSTR_ADD, OPT_IMM_MEM,
-        constant(N_EIGHTBYTES(res.type) * 8, 4),
+        constant(EIGHTBYTES(res.type) * 8, 4),
         location_of(var_overflow_arg_area, 4));
 
-    if (*pc != PC_MEMORY) {
+    if (pc.eightbyte[0] != PC_MEMORY) {
         enter_context(done);
     }
 }
@@ -1060,10 +1004,11 @@ static void tail_cmp_jump(struct block *block)
 static void tail_generic(struct block *block)
 {
     if (!block->jump[0] && !block->jump[1]) {
-        if (array_get(&function_param_class, 0) != PC_NO_CLASS &&
-            block->has_return_value)
-        {
-            assert(block->expr.type && !is_void(block->expr.type));
+        /* Don't actually check if the function should return what we
+         * have, assume that is done before. */
+        if (block->has_return_value) {
+            assert(block->expr.type);
+            assert(!is_void(block->expr.type));
             ret(block->expr);
         }
 
@@ -1268,16 +1213,7 @@ int declare(const struct symbol *sym)
 
 void flush(void)
 {
-    int i;
-
     array_clear(&func_args);
-    array_clear(&result_param_class);
-    array_clear(&function_param_class);
-    for (i = 0; i < call_max_count; ++i) {
-        array_clear(&argument_param_classes[i]);
-    }
-    free(argument_types);
-    free(argument_param_classes);
     if (flush_backend) {
         flush_backend();
     }
