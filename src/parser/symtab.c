@@ -32,6 +32,16 @@ static struct string sym_hash_key(void *ref)
     return str_init(((const struct symbol *) ref)->name);
 }
 
+static void free_label(void *ref)
+{
+    struct symbol *sym = (struct symbol *) ref;
+    if (sym->symtype == SYM_TENTATIVE) {
+        error("Undefined label '%s'.", sym_name(sym));
+    }
+
+    free(ref);
+}
+
 void push_scope(struct namespace *ns)
 {
     unsigned cap;
@@ -56,11 +66,15 @@ void pop_scope(struct namespace *ns)
     free(scope);
 
     /* Popping last scope frees the whole symbol table, including the
-     * symbols themselves. This only happens once, after reaching the
-     * end of the translation unit. */
+     * symbols themselves. For label scope, which is per function, make
+     * sure there are no tentative definitions. */
     if (!list_len(&ns->scope_list)) {
         list_clear(&ns->scope_list, NULL);
-        list_clear(&ns->symbol_list, &free);
+        if (ns == &ns_label) {
+            list_clear(&ns->symbol_list, &free_label);
+        } else {
+            list_clear(&ns->symbol_list, &free);
+        }
     }
 }
 
@@ -172,8 +186,7 @@ struct symbol *sym_add(
         {
             apply_type(sym, type);
             return sym;
-        }
-        if (sym->depth == current_scope_depth(ns) && !sym->depth) {
+        } else if (sym->depth == current_scope_depth(ns) && !sym->depth) {
             if (sym->linkage == linkage
                 && ((sym->symtype == SYM_TENTATIVE
                         && symtype == SYM_DEFINITION)
@@ -260,16 +273,18 @@ struct symbol *sym_create_tmp(const struct typetree *type)
 
 struct symbol *sym_create_label(void)
 {
+    static int n;
+
     struct symbol *sym = calloc(1, sizeof(*sym));
     sym->type = basic_type__void;
     sym->symtype = SYM_LABEL;
     sym->linkage = LINK_INTERN;
     sym->name = ".L";
-    sym->n = list_len(&ns_label.symbol_list) + 1;
+    sym->n = ++n;
 
-    /* Construct symbol in label namespace, but do not add it to any
-     * scope. No need or use for searching in labels. */
-    list_push_back(&ns_label.symbol_list, sym);
+    /* Construct symbol in normal namespace, but do not add it to any
+     * scope. No need or use for searching labels. */
+    list_push_back(&ns_ident.symbol_list, sym);
     return sym;
 }
 

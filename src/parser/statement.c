@@ -294,7 +294,7 @@ static struct block *switch_statement(
 
 struct block *statement(struct definition *def, struct block *parent)
 {
-    const struct symbol *sym;
+    struct symbol *sym;
     struct token tok;
 
     switch ((tok = peek()).token) {
@@ -318,8 +318,18 @@ struct block *statement(struct definition *def, struct block *parent)
         break;
     case GOTO:
         consume(GOTO);
-        consume(IDENTIFIER);
-        /* todo */
+        tok = consume(IDENTIFIER);
+        sym = sym_add(
+            &ns_label,
+            tok.d.string.str,
+            &basic_type__void,
+            SYM_TENTATIVE,
+            LINK_INTERN);
+        if (!sym->label_value) {
+            sym->label_value = cfg_block_init(def);
+        }
+        parent->jump[0] = sym->label_value;
+        parent = cfg_block_init(def); /* orphan, unless labeled */
         consume(';');
         break;
     case CONTINUE:
@@ -328,9 +338,7 @@ struct block *statement(struct definition *def, struct block *parent)
         parent->jump[0] =
             (tok.token == CONTINUE) ? continue_target : break_target;
         consume(';');
-        /* Return orphan node, which is dead code unless there is a
-         * label and a goto statement. */
-        parent = cfg_block_init(def); 
+        parent = cfg_block_init(def); /* orphan, unless labeled */
         break;
     case RETURN:
         consume(RETURN);
@@ -339,7 +347,7 @@ struct block *statement(struct definition *def, struct block *parent)
             parent->expr = eval_return(def, parent);
         }
         consume(';');
-        parent = cfg_block_init(def); /* orphan */
+        parent = cfg_block_init(def); /* orphan, unless labeled */
         break;
     case SWITCH:
         parent = switch_statement(def, parent);
@@ -374,10 +382,33 @@ struct block *statement(struct definition *def, struct block *parent)
         }
         break;
     case IDENTIFIER:
-        sym = sym_lookup(&ns_ident, tok.d.string.str);
-        if (sym && sym->symtype == SYM_TYPEDEF) {
-            parent = declaration(def, parent);
+        if (peekn(2).token == ':') {
+            consume(IDENTIFIER);
+            sym = sym_lookup(&ns_label, tok.d.string.str);
+            if (sym && sym->symtype == SYM_DEFINITION) {
+                error("Duplicate label '%s'.", tok.d.string.str);
+            } else {
+                sym = sym_add(
+                    &ns_label,
+                    tok.d.string.str,
+                    &basic_type__void,
+                    SYM_DEFINITION,
+                    LINK_INTERN);
+                if (!sym->label_value) {
+                    assert(!sym->referenced);
+                    sym->label_value = cfg_block_init(def);
+                }
+                parent->jump[0] = sym->label_value;
+                parent = sym->label_value;
+            }
+            consume(':');
             break;
+        } else {
+            sym = sym_lookup(&ns_ident, tok.d.string.str);
+            if (sym && sym->symtype == SYM_TYPEDEF) {
+                parent = declaration(def, parent);
+                break;
+            }
         }
         /* fallthrough */
     case NUMBER:

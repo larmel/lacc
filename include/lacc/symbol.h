@@ -6,6 +6,8 @@
 
 #include <stdio.h>
 
+struct block;
+
 /* A symbol represents declarations that may have a storage location at
  * runtime, such as functions, static and local variables. Store offset
  * to base pointer for automatic variables and function arguments.
@@ -48,6 +50,10 @@ struct symbol {
      * char. Denoted by symtype SYM_STRING_VALUE. Free string constants
      * are always named '.LC', disambiguated with n. */ 
     struct string string_value;
+
+    /* Symbols in label namespace hold a pointer to the block they
+     * represent. */
+    struct block *label_value;
 
     /* Parameter or local variable offset to base pointer. This is kept
      * as 0 during parsing, but assigned when passed to back-end. */

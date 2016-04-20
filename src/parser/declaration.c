@@ -830,6 +830,7 @@ struct block *declaration(struct definition *def, struct block *parent)
             sym->symtype = SYM_DEFINITION;
             def = cfg_init(sym);
             push_scope(&ns_ident);
+            push_scope(&ns_label);
             define_builtin__func__(sym->name);
             for (i = 0; i < nmembers(&sym->type); ++i) {
                 name = get_member(&sym->type, i)->name;
@@ -844,6 +845,7 @@ struct block *declaration(struct definition *def, struct block *parent)
                     sym_add(&ns_ident, name, type, symtype, linkage));
             }
             parent = block(def, def->body);
+            pop_scope(&ns_label);
             pop_scope(&ns_ident);
             return parent;
         }
