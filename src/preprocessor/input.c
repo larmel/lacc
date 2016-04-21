@@ -54,21 +54,15 @@ static array_of(const char *) search_path_list;
  */
 static array_of(struct source) source_stack;
 
+/* Expose for diagnostics.
+ */
+const char *current_file_path;
+int current_file_line;
+
 static struct source *current_file(void)
 {
-    unsigned len = array_len(&source_stack);
-    assert(len);
-    return &array_get(&source_stack, len - 1);
-}
-
-const char *current_file_path(void)
-{
-    return current_file()->path;
-}
-
-int current_file_line(void)
-{
-    return current_file()->line;
+    assert(array_len(&source_stack));
+    return &array_get(&source_stack, array_len(&source_stack) - 1);
 }
 
 static void push(struct source source)
@@ -76,6 +70,8 @@ static void push(struct source source)
     assert(source.file);
     assert(source.path);
 
+    current_file_line = 0;
+    current_file_path = source.path;
     source.buffer = malloc(FILE_BUFFER_SIZE);
     source.size = FILE_BUFFER_SIZE;
     array_push_back(&source_stack, source);
@@ -391,6 +387,8 @@ char *getprepline(void)
         }
     } while (!line);
 
+    current_file_path = source->path;
+    current_file_line = source->line;
     verbose("(%s, %d): `%s`", source->path, source->line, line);
     return line;
 }
