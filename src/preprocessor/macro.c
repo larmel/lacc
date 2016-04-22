@@ -312,6 +312,7 @@ static const struct token *skip(const struct token *list, enum token_type token)
         assert(basic_token[token].d.string.str);
         error("Expected '%s', but got '%s'.",
             basic_token[token].d.string.str, list->d.string.str);
+        exit(1);
     }
 
     list++;

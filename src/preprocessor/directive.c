@@ -60,6 +60,7 @@ static void expect(const struct token *list, int token)
         assert(basic_token[token].d.string.str);
         error("Expected '%s', but got '%s'.",
             basic_token[token].d.string.str, list->d.string.str);
+        exit(1);
     }
 }
 
@@ -295,7 +296,7 @@ static int expression(const struct token *list, const struct token **endptr)
         b = expression(list + 1, &list);
         expect(list, ':');
         c = expression(list + 1, &list);
-        return a ? b : c;
+        a = a ? b : c;
     }
 
     *endptr = list;
