@@ -318,12 +318,11 @@ static void preprocess_include(const struct token line[])
             t = pastetok(t, *line++);
         }
 
-        if (!t.d.string.len) {
+        if (!t.d.string.len || line->token != '>') {
             error("Invalid include directive.");
             exit(1);
         }
 
-        assert(line->token == '>');
         include_system_file(t.d.string.str);
     }
 }

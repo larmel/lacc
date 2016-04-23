@@ -211,7 +211,7 @@ static void add_to_lookahead(struct token t)
         array_push_back(&lookahead, t);
     }
 
-    verbose("   token( %s )", t.d.string.str);
+    verbose("   token( %s )", tokstr(t));
 }
 
 /* Break array abstraction to move data after cursor to the front, as we
