@@ -250,6 +250,11 @@ static void store(enum reg r, struct var v)
     const int w = size_of(v.type);
     assert(is_scalar(v.type) || w <= 8);
 
+    if (v.width) {
+        assert(w == size_of(&basic_type__int));
+        emit(INSTR_AND, OPT_IMM_REG, constant((1 << v.width) - 1, w), reg(r, w));
+    }
+
     if (v.kind == DIRECT) {
         assert(!is_array(v.type));
 
@@ -571,14 +576,20 @@ static void ret(struct var val)
     pc = classify(val.type);
     if (pc.eightbyte[0] != PC_MEMORY) {
         n = EIGHTBYTES(val.type);
-        var = val;
-        for (i = 0; i < n; ++i) {
-            assert(pc.eightbyte[i] == PC_INTEGER);
-            var.type = (i < n - 1) ?
-                &basic_type__unsigned_long :
-                BASIC_TYPE_UNSIGNED(size_of(val.type) % 8);
-            load(var, ret_int_reg[i]);
-            var.offset += size_of(var.type);
+        if (n > 1) {
+            var = val;
+            for (i = 0; i < n; ++i) {
+                assert(pc.eightbyte[i] == PC_INTEGER);
+                var.type = (i < n - 1) ?
+                    &basic_type__unsigned_long :
+                    BASIC_TYPE_UNSIGNED(size_of(val.type) % 8);
+                load(var, ret_int_reg[i]);
+                var.offset += size_of(var.type);
+            }
+        } else {
+            assert(n == 1);
+            assert(pc.eightbyte[0] == PC_INTEGER);
+            load(val, ret_int_reg[0]);
         }
     } else {
         /* Load return address from magic stack offset and copy

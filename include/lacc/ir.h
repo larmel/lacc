@@ -76,6 +76,12 @@ struct var {
 
     int offset;
     int lvalue;
+
+    /* Width in bits of bitfield access. Direct or deref references to
+     * fields in a struct are restricted to a number of bits, which is
+     * used for masking evaluation of assignment. Normal references have
+     * default value of 0. */
+    int width;
 };
 
 /* Three-address code, specifying a target (a), left and right operand

@@ -24,6 +24,11 @@ static int is_string(struct var val)
         val.symbol->symtype == SYM_STRING_VALUE;
 }
 
+static int is_field(struct var val)
+{
+    return val.width;
+}
+
 static struct var var_void(void)
 {
     struct var var = {0};
@@ -488,17 +493,22 @@ static struct var eval_not(
             : evaluate(def, block, IR_NOT, promote_integer(var.type), var);
 }
 
-/* Convert variables of type ARRAY or FUNCTION to addresses when used in
- * expressions. 'array of T' is converted (decay) to pointer to T. Not
- * the same as taking the address of an array, which would give 'pointer
- * to array of T'.
+/* Convert variables of type ARRAY or FUNCTION to addresses when used
+ * in expressions, and normalize bit-field values to whole integers.
+ * 'array of T' is converted (decay) to pointer to T. Not the same as
+ * taking the address of an array, which would give 'pointer to array
+ * of T'.
  */
-static struct var array_or_func_to_addr(
+static struct var rvalue(
     struct definition *def,
     struct block *block,
     struct var var)
 {
-    if (is_array(var.type)) {
+    int bits;
+
+    if (is_function(var.type)) {
+        var = eval_addr(def, block, var);
+    } else if (is_array(var.type)) {
         if (var.kind == IMMEDIATE) {
             assert(var.symbol);
             assert(var.symbol->symtype == SYM_STRING_VALUE);
@@ -517,10 +527,27 @@ static struct var array_or_func_to_addr(
             var.type = var.type->next;
             var = eval_addr(def, block, var);
         }
-    } else if (is_function(var.type)) {
-        var = eval_addr(def, block, var);
+    } else if (is_field(var)) {
+        assert(
+            type_equal(var.type, &basic_type__int) ||
+            type_equal(var.type, &basic_type__unsigned_int));
+
+        /* Bit field is loaded, and if needed sign extended, into a full
+         * width integer value. */
+        if (var.width < size_of(&basic_type__int) * 8) {
+            bits = var.width;
+            var = eval_and(def, block, var, var_int((1 << bits) - 1));
+            if (is_signed(var.type)) {
+                bits = size_of(var.type) * 8 - bits;
+                var = eval_shiftl(def, block, var, var_int(bits));
+                var = eval_shiftr(def, block, var, var_int(bits));
+            }
+        } else {
+            assert(var.width == size_of(&basic_type__int) * 8);
+        }
     }
 
+    assert(!var.width);
     return var;
 }
 
@@ -533,11 +560,11 @@ struct var eval_expr(
     va_list args;
     struct var r;
 
-    l = array_or_func_to_addr(def, block, l);
+    l = rvalue(def, block, l);
     if (OPERAND_COUNT(optype) == 3) {
         va_start(args, l);
         r = va_arg(args, struct var);
-        r = array_or_func_to_addr(def, block, r);
+        r = rvalue(def, block, r);
         va_end(args);
     }
 
@@ -568,6 +595,11 @@ struct var eval_addr(
 {
     struct var tmp;
 
+    if (is_field(var)) {
+        error("Cannot take address of bit-field.");
+        exit(1);
+    }
+
     switch (var.kind) {
     case IMMEDIATE:
         if (!var.symbol || var.symbol->symtype != SYM_STRING_VALUE) {
@@ -576,8 +608,9 @@ struct var eval_addr(
         }
         /* Address of string literal can be done without evaluation,
          * just decay the variable to pointer. */
-        if (is_array(var.type))
-            var = array_or_func_to_addr(def, block, var);
+        if (is_array(var.type)) {
+            var = rvalue(def, block, var);
+        }
         assert(is_pointer(var.type));
         break;
     case DIRECT:
@@ -611,7 +644,12 @@ struct var eval_deref(
 {
     struct var ptr;
 
-    var = array_or_func_to_addr(def, block, var);
+    var = rvalue(def, block, var);
+    if (!is_pointer(var.type)) {
+        error("Dereferencing non-pointer type '%t'.", var.type);
+        exit(1);
+    }
+
     if (var.kind == DEREF) {
         assert(is_pointer(&var.symbol->type));
 
@@ -655,7 +693,7 @@ struct var eval_assign(
     }
 
     if (!is_array(target.type)) {
-        var = array_or_func_to_addr(def, block, var);
+        var = rvalue(def, block, var);
     }
 
     if (is_array(target.type)) {
@@ -753,15 +791,23 @@ struct var eval_copy(
     struct block *block,
     struct var var)
 {
-    struct var copy = create_var(def, var.type);
-    return eval_assign(def, block, copy, var);
+    struct var cpy;
+    assert(!is_function(var.type));
+    assert(!is_array(var.type));
+
+    var = rvalue(def, block, var);
+    cpy = create_var(def, var.type);
+    return eval_assign(def, block, cpy, var);
 }
 
 struct var eval_return(struct definition *def, struct block *block)
 {
     const struct typetree *type = def->symbol->type.next;
+    assert(!is_function(type));
+    assert(!is_array(type));
     assert(!is_void(type));
 
+    block->expr = rvalue(def, block, block->expr);
     if (!type_equal(type, block->expr.type)) {
         block->expr =
             eval_assign(def, block, create_var(def, type), block->expr);
@@ -809,8 +855,8 @@ struct var eval_conditional(
         error("Conditional must be of scalar type.");
     }
 
-    b->expr = array_or_func_to_addr(def, b, b->expr);
-    c->expr = array_or_func_to_addr(def, c, c->expr);
+    b->expr = rvalue(def, b, b->expr);
+    c->expr = rvalue(def, c, c->expr);
 
     t1 = b->expr.type;
     t2 = c->expr.type;
@@ -918,7 +964,7 @@ struct block *eval_logical_and(
 
 void param(struct definition *def, struct block *block, struct var arg)
 {
-    emit_ir(block, IR_PARAM, array_or_func_to_addr(def, block, arg));
+    emit_ir(block, IR_PARAM, rvalue(def, block, arg));
 }
 
 struct var eval__builtin_va_start(struct block *block, struct var arg)

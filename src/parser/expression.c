@@ -152,7 +152,7 @@ static struct block *postfix_expression(
     root = block->expr;
 
     while (1) {
-        const struct member *field;
+        const struct member *mbr;
         const struct typetree *type;
         struct var expr, copy, *arg;
         struct token tok;
@@ -211,33 +211,35 @@ static struct block *postfix_expression(
         case '.':
             consume('.');
             tok = consume(IDENTIFIER);
-            field = find_type_member(root.type, tok.d.string.str);
-            if (!field) {
-                error("Invalid field access, no member named '%s'.",
+            mbr = find_type_member(root.type, tok.d.string.str);
+            if (!mbr) {
+                error("Invalid access, no member named '%s'.",
                     tok.d.string.str);
                 exit(1);
             }
-            root.type = field->type;
-            root.offset += field->offset;
+            root.type = mbr->type;
+            root.width = mbr->width;
+            root.offset += mbr->offset;
             break;
         case ARROW:
             consume(ARROW);
             tok = consume(IDENTIFIER);
             if (is_pointer(root.type) && is_struct_or_union(root.type->next)) {
-                field = find_type_member(type_deref(root.type), tok.d.string.str);
-                if (!field) {
-                    error("Invalid field access, no member named '%s'.",
+                mbr = find_type_member(type_deref(root.type), tok.d.string.str);
+                if (!mbr) {
+                    error("Invalid access, no member named '%s'.",
                         tok.d.string.str);
                     exit(1);
                 }
 
-                /* Make it look like a pointer to the field type, then
+                /* Make it look like a pointer to the member type, then
                  * perform normal dereferencing. */
-                root.type = type_init(T_POINTER, field->type);
+                root.type = type_init(T_POINTER, mbr->type);
                 root = eval_deref(def, block, root);
-                root.offset = field->offset;
+                root.offset = mbr->offset;
+                root.width = mbr->width;
             } else {
-                error("Invalid field access.");
+                error("Invalid member access.");
                 exit(1);
             }
             break;

@@ -620,8 +620,25 @@ static struct code and(
     union operand a,
     union operand b)
 {
-    assert(optype == OPT_REG_REG);
-    return basic_register_only_encode(0x20, a.reg, b.reg);
+    struct code c = {{0}};
+
+    if (optype == OPT_REG_REG) {
+        c = basic_register_only_encode(0x20, a.reg, b.reg);
+    } else {
+        assert(optype == OPT_IMM_REG);
+        assert(a.imm.w == b.reg.w);
+        assert(a.imm.w == 4);
+
+        if (b.reg.r == AX) {
+            c.val[c.len++] = 0x24 | w(a.imm);
+            memcpy(&c.val[c.len], &a.imm.d.dword, a.imm.w);
+            c.len += a.imm.w;
+        } else {
+            assert(0);
+        }
+    }
+
+    return c;
 }
 
 static struct code or(

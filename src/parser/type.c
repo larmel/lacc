@@ -150,7 +150,7 @@ void type_add_member(
     const struct typetree *member_type)
 {
     struct signature *sig;
-    struct member member;
+    struct member mbr = {0};
 
     assert(is_struct_or_union(type) || is_function(type));
     assert(!is_function(type) || !is_vararg(type));
@@ -159,10 +159,8 @@ void type_add_member(
     if (!type->signature) {
         type->signature = mksignature();
     }
-    sig = (struct signature *) type->signature;
 
-    /* Adding function parameters have special case for "..." meaning
-     * variable argument list, and array types decaying to pointer. */
+    sig = (struct signature *) type->signature;
     if (is_function(type)) {
         if (member_name && !strcmp(member_name, "...")) {
             sig->is_vararg = 1;
@@ -173,21 +171,45 @@ void type_add_member(
         }
     }
 
-    member.name = member_name;
-    member.type = member_type;
-    member.offset = 0;
-    array_push_back(&sig->members, member);
-
-    /* Align new struct members immediately. */
+    mbr.name = member_name;
+    mbr.type = member_type;
+    array_push_back(&sig->members, mbr);
     if (is_struct(type)) {
         type->size = align_struct_members(sig);
     }
 
-    /* Size of union is the largest of the fields. */
     if (is_union(type)) {
         if (type->size < size_of(member_type)) {
             type->size = size_of(member_type);
         }
+    }
+}
+
+void type_add_field(
+    struct typetree *type,
+    const char *mname,
+    const struct typetree *mtype,
+    int width)
+{
+    struct signature *sig;
+    struct member mbr = {0};
+
+    assert(is_struct(type));
+    assert(!is_tagged(type));
+    assert(type_equal(mtype, &basic_type__int) ||
+        type_equal(mtype, &basic_type__unsigned_int));
+
+    if (mname && width) {
+        if (!type->signature) {
+            type->signature = mksignature();
+        }
+
+        sig = (struct signature *) type->signature;
+        mbr.name = mname;
+        mbr.type = mtype;
+        mbr.width = width;
+        array_push_back(&sig->members, mbr);
+        type->size = align_struct_members(sig);
     }
 }
 

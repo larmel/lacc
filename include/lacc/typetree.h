@@ -19,7 +19,8 @@
 #define is_object(t) (!is_function(t))
 #define is_function(t) ((t)->type == T_FUNCTION)
 #define is_struct_or_union(t) ((t)->type == T_STRUCT || (t)->type == T_UNION)
-#define is_integer(t) ((t)->type == T_SIGNED || is_unsigned(t))
+#define is_integer(t) (is_signed(t) || is_unsigned(t))
+#define is_signed(t) ((t)->type == T_SIGNED)
 #define is_unsigned(t) ((t)->type == T_UNSIGNED)
 #define is_pointer(t) ((t)->type == T_POINTER)
 #define is_arithmetic(t) (is_integer(t) || (t)->type == T_REAL)
@@ -76,7 +77,13 @@ struct typetree {
 struct member {
     const char *name;
     const struct typetree *type;
+
+    /* Member offset into aggregate, in bytes. */
     int offset;
+
+    /* Field width in bits, for bitfield member of type int or unsigned
+     * int. */
+    int width;
 };
 
 /* Get the number of struct or union members, or function parameters.

@@ -188,29 +188,43 @@ struct typetree *declarator(struct typetree *base, const char **symbol)
     return direct_declarator(base, symbol);
 }
 
-
 static void member_declaration_list(struct typetree *type)
 {
     struct namespace ns = {0};
+    struct var expr;
     struct typetree *decl_base, *decl_type;
     const char *name;
 
     push_scope(&ns);
-
     do {
         decl_base = declaration_specifiers(NULL);
-
         do {
             name = NULL;
             decl_type = declarator(decl_base, &name);
-
-            if (!name) {
-                error("Missing name in member declarator.");
-                exit(1);
-            } else if (!size_of(decl_type)) {
-                error("Field '%s' has incomplete type '%t'.", name, decl_type);
-                exit(1);
+            if (is_struct(type) && peek().token == ':') {
+                if (!is_integer(decl_type) || decl_type->size != 4) {
+                    error("Unsupported type '%t' for bit-field.", decl_type);
+                    exit(1);
+                }
+                consume(':');
+                expr = constant_expression();
+                if (is_signed(expr.type) && expr.imm.i < 0) {
+                    error("Negative width in bit-field.");
+                    exit(1);
+                }
+                if (name) {
+                    sym_add(&ns, name, decl_type, SYM_DECLARATION, LINK_NONE);
+                }
+                type_add_field(type, name, decl_type, expr.imm.i);
             } else {
+                if (!name) {
+                    error("Missing name in member declarator.");
+                    exit(1);
+                } else if (!size_of(decl_type)) {
+                    error("Member '%s' has incomplete type '%t'.",
+                        name, decl_type);
+                    exit(1);
+                }
                 sym_add(&ns, name, decl_type, SYM_DECLARATION, LINK_NONE);
                 type_add_member(type, name, decl_type);
             }
@@ -220,10 +234,8 @@ static void member_declaration_list(struct typetree *type)
                 continue;
             }
         } while (peek().token != ';');
-
         consume(';');
     } while (peek().token != '}');
-
     pop_scope(&ns);
 }
 
