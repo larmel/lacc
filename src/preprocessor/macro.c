@@ -416,12 +416,12 @@ static void array_replace_slice(
 void expand(TokenArray *list)
 {
     struct token t;
-    unsigned i, size;
+    unsigned i = 0, size;
     const struct macro *def;
     const struct token *endptr;
     TokenArray *args, expn;
 
-    for (i = 0; i < array_len(list); ++i) {
+    while (i < array_len(list)) {
         t = array_get(list, i);
         if (t.token == IDENTIFIER) {
             def = definition(t);
@@ -444,10 +444,12 @@ void expand(TokenArray *list)
                 /* Squeeze in expn in list, starting from index i and
                  * extending size elements. */
                 array_replace_slice(list, i, size, &expn);
+                i += array_len(&expn);
                 array_clear(&expn);
-                i += size;
+                continue;
             }
         }
+        i++;
     }
 }
 
