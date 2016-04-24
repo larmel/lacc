@@ -878,13 +878,17 @@ struct var eval_conditional(
         exit(1);
     }
 
-    result = create_var(def, type);
-    b->expr = eval_assign(def, b, result, b->expr);
-    c->expr = eval_assign(def, c, result, c->expr);
-    result.lvalue = 0;
+    if (is_void(type)) {
+        result = var_void();
+    } else {
+        result = create_var(def, type);
+        b->expr = eval_assign(def, b, result, b->expr);
+        c->expr = eval_assign(def, c, result, c->expr);
+        result.lvalue = 0;
 
-    if (a.kind == IMMEDIATE) {
-        return (a.imm.i) ? b->expr : c->expr;
+        if (a.kind == IMMEDIATE) {
+            return (a.imm.i) ? b->expr : c->expr;
+        }
     }
 
     return result;
