@@ -587,6 +587,11 @@ void register_builtin_definitions(void)
         0, /* parameters */
     };
 
+    /* Required by GNU features.h. */
+    macro.name.d.string = str_init("__STRICT_ANSI__");
+    macro.replacement = parse("");
+    define(macro);
+
     macro.name.d.string = str_init("__STDC_VERSION__");
     macro.replacement = parse("199409L");
     define(macro);
