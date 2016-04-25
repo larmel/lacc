@@ -387,10 +387,11 @@ static struct typetree get_basic_type_from_specifier(unsigned short spec)
     case 0x0028: /* unsigned int */
         return basic_type__unsigned_int;
     case 0x0040: /* long */
-    case 0x0050: /* signed long */
     case 0x0048: /* long int */
-    case 0x0058: /* signed long int */
     case 0x00C0: /* long long */
+    case 0x00C8: /* long long int */
+    case 0x0050: /* signed long */
+    case 0x0058: /* signed long int */
     case 0x00D0: /* signed long long */
     case 0x00D8: /* signed long long int */
         return basic_type__long;
