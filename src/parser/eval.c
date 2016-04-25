@@ -42,10 +42,13 @@ static struct var create_var(
     struct definition *def,
     const struct typetree *type)
 {
-    struct symbol *temp = sym_create_tmp(type);
-    struct var res = var_direct(temp);
+    struct symbol *tmp;
+    struct var res;
+    assert(def);
 
-    list_push_back(&def->locals, temp);
+    tmp = sym_create_tmp(type);
+    res = var_direct(tmp);
+    list_push_back(&def->locals, tmp);
     res.lvalue = 1;
     return res;
 }
@@ -352,10 +355,9 @@ static int validate_cmp_args(
         return 0;
     }
 
-    return 
-        !(is_pointer(l->type) && is_pointer(r->type) &&
-            size_of(l->type->next) &&
-            size_of(l->type->next) == size_of(r->type->next));
+    return !(is_pointer(l->type) && is_pointer(r->type) &&
+        size_of(l->type->next) &&
+        size_of(l->type->next) == size_of(r->type->next));
 }
 
 /* Intermediate language is simplified to handle only greater than (>)
@@ -372,7 +374,9 @@ static struct var eval_cmp_ge(
         exit(1);
     }
 
-    return evaluate(def, block, IR_OP_GE, &basic_type__int, l, r);
+    return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+        ? var_int(l.imm.i >= r.imm.i)
+        : evaluate(def, block, IR_OP_GE, &basic_type__int, l, r);
 }
 
 static struct var eval_cmp_gt(
@@ -386,7 +390,9 @@ static struct var eval_cmp_gt(
         exit(1);
     }
 
-    return evaluate(def, block, IR_OP_GT, &basic_type__int, l, r);
+    return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+        ? var_int(l.imm.i > r.imm.i)
+        : evaluate(def, block, IR_OP_GT, &basic_type__int, l, r);
 }
 
 static struct var eval_or(
@@ -400,11 +406,10 @@ static struct var eval_or(
         exit(1);
     }
 
-    return
-        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-            ? var_int(l.imm.i | r.imm.i)
-            : evaluate(def, block, IR_OP_OR,
-                usual_arithmetic_conversion(l.type, r.type), l, r);
+    return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+        ? var_int(l.imm.i | r.imm.i)
+        : evaluate(def, block, IR_OP_OR,
+            usual_arithmetic_conversion(l.type, r.type), l, r);
 }
 
 static struct var eval_xor(
@@ -418,11 +423,10 @@ static struct var eval_xor(
         exit(1);
     }
 
-    return
-        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-            ? var_int(l.imm.i ^ r.imm.i)
-            : evaluate(def, block, IR_OP_XOR,
-                usual_arithmetic_conversion(l.type, r.type), l, r);
+    return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+        ? var_int(l.imm.i ^ r.imm.i)
+        : evaluate(def, block, IR_OP_XOR,
+            usual_arithmetic_conversion(l.type, r.type), l, r);
 }
 
 static struct var eval_and(
@@ -436,11 +440,10 @@ static struct var eval_and(
         exit(1);
     }
 
-    return
-        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-            ? var_int(l.imm.i & r.imm.i)
-            : evaluate(def, block, IR_OP_AND,
-                usual_arithmetic_conversion(l.type, r.type), l, r);
+    return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+        ? var_int(l.imm.i & r.imm.i)
+        : evaluate(def, block, IR_OP_AND,
+            usual_arithmetic_conversion(l.type, r.type), l, r);
 }
 
 static struct var eval_shiftl(
@@ -454,10 +457,9 @@ static struct var eval_shiftl(
         exit(1);
     }
 
-    return
-        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-            ? var_int(l.imm.i << r.imm.i)
-            : evaluate(def, block, IR_OP_SHL, promote_integer(l.type), l, r);
+    return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+        ? var_int(l.imm.i << r.imm.i)
+        : evaluate(def, block, IR_OP_SHL, promote_integer(l.type), l, r);
 }
 
 static struct var eval_shiftr(
@@ -471,10 +473,9 @@ static struct var eval_shiftr(
         exit(1);
     }
 
-    return
-        (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-            ? var_int(l.imm.i >> r.imm.i)
-            : evaluate(def, block, IR_OP_SHR, promote_integer(l.type), l, r);
+    return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+        ? var_int(l.imm.i >> r.imm.i)
+        : evaluate(def, block, IR_OP_SHR, promote_integer(l.type), l, r);
 }
 
 static struct var eval_not(
@@ -487,10 +488,9 @@ static struct var eval_not(
         exit(1);
     }
 
-    return
-        (var.kind == IMMEDIATE)
-            ? var_int(~var.imm.i)
-            : evaluate(def, block, IR_NOT, promote_integer(var.type), var);
+    return (var.kind == IMMEDIATE)
+        ? var_int(~var.imm.i)
+        : evaluate(def, block, IR_NOT, promote_integer(var.type), var);
 }
 
 /* Convert variables of type ARRAY or FUNCTION to addresses when used
@@ -881,13 +881,13 @@ struct var eval_conditional(
     if (is_void(type)) {
         result = var_void();
     } else {
-        result = create_var(def, type);
-        b->expr = eval_assign(def, b, result, b->expr);
-        c->expr = eval_assign(def, c, result, c->expr);
-        result.lvalue = 0;
-
         if (a.kind == IMMEDIATE) {
-            return (a.imm.i) ? b->expr : c->expr;
+            result = (a.imm.i) ? b->expr : c->expr;
+        } else {
+            result = create_var(def, type);
+            b->expr = eval_assign(def, b, result, b->expr);
+            c->expr = eval_assign(def, c, result, c->expr);
+            result.lvalue = 0;
         }
     }
 

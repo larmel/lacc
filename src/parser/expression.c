@@ -633,7 +633,13 @@ static struct block *conditional_expression(
         f->jump[0] = next;
 
         next->expr = eval_conditional(def, condition, t, f);
-        block = next;
+        if (next->expr.kind == IMMEDIATE && !is_void(next->expr.type)) {
+            block->expr = next->expr;
+            block->jump[0] = NULL;
+            block->jump[1] = NULL;
+        } else {
+            block = next;
+        }
     }
 
     return block;
