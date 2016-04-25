@@ -20,19 +20,35 @@ struct token
     ident__endif = IDENT("endif"),
     ident__error = IDENT("error");
 
-/* Keep stack of branch conditions for #if, #elif and #endif. Push and
- * pop results of evaluating expressions.
- */
-static array_of(int) branch_stack;
+enum state {
+    /* Default state, inside an active #if, #elif, #else, #ifdef, or
+     * #ifndef directive. */
+    BRANCH_LIVE,
 
-static void push(int c)
+    /* A Previous branch in #if, #elif chain was taken. Everything
+     * up until #endif is dead code, and new #elif directives will not
+     * be computed. */
+    BRANCH_DISABLED,
+
+    /* Dead code. New #else or #elif directives become live if evaluated
+     * to true. */
+    BRANCH_DEAD
+};
+
+/* Keep stack of branch conditions for #if, #elif and #endif. Push and
+ * pop according to current and parent state, and result of evaluating
+ * expressions.
+ */
+static array_of(enum state) branch_stack;
+
+static void push(enum state c)
 {
     array_push_back(&branch_stack, c);
 }
 
-static int pop(void)
+static enum state pop(void)
 {
-    int val;
+    enum state val;
 
     if (!array_len(&branch_stack)) {
         error("Unmatched #endif directive.");
@@ -49,9 +65,12 @@ static int pop(void)
 
 int in_active_block(void)
 {
-    return array_len(&branch_stack) ?
-        array_get(&branch_stack, array_len(&branch_stack) - 1) :
-        1;
+    enum state s = BRANCH_LIVE;
+    if (array_len(&branch_stack)) {
+        s = array_get(&branch_stack, array_len(&branch_stack) - 1);
+    }
+
+    return s == BRANCH_LIVE;
 }
 
 static void expect(const struct token *list, int token)
@@ -387,6 +406,8 @@ static struct macro preprocess_define(
 
 void preprocess_directive(TokenArray *array)
 {
+    int expr;
+    enum state state;
     const struct token *line = array->data;
 
     if (line->token == IF || !tok_cmp(*line, ident__elif)) {
@@ -400,26 +421,50 @@ void preprocess_directive(TokenArray *array)
         /* Expressions are not necessarily valid in dead blocks, for
          * example can function-like macros be undefined. */
         if (in_active_block()) {
-            push(expression(line + 1, &line));
+            expr = expression(line + 1, &line);
+            push(expr ? BRANCH_LIVE : BRANCH_DEAD);
         } else {
-            push(0);
+            push(BRANCH_DISABLED);
         }
     } else if (line->token == ELSE) {
-        push(!pop() && in_active_block());
-    } else if (!tok_cmp(*line, ident__elif)) {
-        if (!pop() && in_active_block()) {
-            push(expression(line + 1, &line));
+        state = pop();
+        if (in_active_block()) {
+            push(state == BRANCH_DEAD ? BRANCH_LIVE : BRANCH_DISABLED);
         } else {
-            push(0);
+            assert(state == BRANCH_DISABLED);
+            push(BRANCH_DISABLED);
+        }
+    } else if (!tok_cmp(*line, ident__elif)) {
+        state = pop();
+        if (in_active_block()) {
+            if (state == BRANCH_DEAD) {
+                expr = expression(line + 1, &line);
+                push(expr ? BRANCH_LIVE : BRANCH_DEAD);
+            } else {
+                push(BRANCH_DISABLED);
+            }
+        } else {
+            assert(state == BRANCH_DISABLED);
+            push(BRANCH_DISABLED);
         }
     } else if (!tok_cmp(*line, ident__endif)) {
         pop();
     } else if (!tok_cmp(*line, ident__ifndef)) {
-        expect(++line, IDENTIFIER);
-        push(!definition(*line) && in_active_block());
+        if (in_active_block()) {
+            expect(++line, IDENTIFIER);
+            expr = definition(*line) == NULL;
+            push(expr ? BRANCH_LIVE : BRANCH_DEAD);
+        } else {
+            push(BRANCH_DISABLED);
+        }
     } else if (!tok_cmp(*line, ident__ifdef)) {
-        expect(++line, IDENTIFIER);
-        push(definition(*line) && in_active_block());
+        if (in_active_block()) {
+            expect(++line, IDENTIFIER);
+            expr = definition(*line) != NULL;
+            push(expr ? BRANCH_LIVE : BRANCH_DEAD);
+        } else {
+            push(BRANCH_DISABLED);
+        }
     } else if (in_active_block()) {
         if (!tok_cmp(*line, ident__define)) {
             define(preprocess_define(line + 1, &line));
