@@ -273,6 +273,9 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
         for (i = 0; i < def->params; ++i) {
             stringified[i] = stringify(&args[i]);
             expand(&args[i]);
+            if (!args[i].data[0].leading_whitespace) {
+                args[i].data[0].leading_whitespace = 1;
+            }
         }
     }
 
