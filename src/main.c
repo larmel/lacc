@@ -75,11 +75,13 @@ int main(int argc, char *argv[])
     const struct symbol *sym;
     enum compile_target target = parse_args(argc, argv);
 
-    /* Add default search paths last, with lowest priority. These are searched
-     * after anything specified with -I. */
-    add_include_search_path("/usr/include/x86_64-linux-musl");
-    add_include_search_path("/usr/include");
+    /* Add default search paths last, with lowest priority. These are
+     * searched after anything specified with -I, and in the order
+     * listed here. */
     add_include_search_path("/usr/local/include");
+    add_include_search_path("/usr/lib/gcc/x86_64-linux-gnu/5/include");
+    add_include_search_path("/usr/include/x86_64-linux-gnu");
+    add_include_search_path("/usr/include");
 
     init(input);
     register_builtin_definitions();

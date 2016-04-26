@@ -7,8 +7,6 @@ in C, which is able to compile itself.
 Most language constructs from C89 are supported, in addition to some elements
 from later standards.
 The most important thing still missing is floating point numbers.
-Not all features used in glibc headers are supported, so to build non-trivial
-programs you need an alternative like [musl](http://www.musl-libc.org/).
 
 Implementation is entirelly C89, using only the standard headers and some POSIX
 extensions. There are no external dependencies.
