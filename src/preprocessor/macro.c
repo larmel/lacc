@@ -483,48 +483,60 @@ int tok_cmp(struct token a, struct token b)
 struct token stringify(const TokenArray *list)
 {
     int i;
-    struct token t;
+    struct token str, tok;
     struct string strval;
     char *buf;
     size_t cap, len, ptr;
 
-    /* Estimate 7 characters per token, trying to avoid unnecessary
-     * reallocations. */
-    cap = array_len(list) * 7 + 1;
-    buf = malloc(cap);
-    len = ptr = 0;
-    buf[0] = '\0';
+    if (array_len(list) == 0) {
+        str.d.string = str_init("");
+    } else if (array_len(list) == 1) {
+        tok = array_get(list, 0);
+        str.d.string = tokstr(tok);
+        if (tok.token == NUMBER) {
+            str.d.string = str_register(str.d.string.str, str.d.string.len);
+        }
+    } else {
+        /* Estimate 7 characters per token, trying to avoid unnecessary
+         * reallocations. */
+        cap = array_len(list) * 7 + 1;
+        buf = malloc(cap);
+        len = ptr = 0;
+        buf[0] = '\0';
 
-    for (i = 0; i < array_len(list); ++i) {
-        t = array_get(list, i);
-        assert(t.token != END);
+        for (i = 0; i < array_len(list); ++i) {
+            tok = array_get(list, i);
+            assert(tok.token != END);
 
-        /* Do not include trailing space of line. This case hits when
-         * producing message for #error directives. */
-        if (t.token == NEWLINE) {
-            assert(i == array_len(list) - 1);
-            break;
+            /* Do not include trailing space of line. This case hits
+             * when producing message for #error directives. */
+            if (tok.token == NEWLINE) {
+                assert(i == array_len(list) - 1);
+                break;
+            }
+
+            /* Reduce to a single space, and only insert between other
+             * tokens in the list. */
+            strval = tokstr(tok);
+            len += strval.len + (tok.leading_whitespace && i);
+            if (len >= cap) {
+                cap = len + array_len(list) + 1;
+                buf = realloc(buf, cap);
+            }
+            if (tok.leading_whitespace && i) {
+                buf[ptr++] = ' ';
+            }
+            memcpy(buf + ptr, strval.str, strval.len);
+            ptr += strval.len;
         }
 
-        /* Reduce to a single space, and only insert between other
-         * tokens in the list. */
-        strval = tokstr(t);
-        len += strval.len + (t.leading_whitespace && i);
-        if (len >= cap) {
-            cap = len + array_len(list) + 1;
-            buf = realloc(buf, cap);
-        }
-        if (t.leading_whitespace && i) {
-            buf[ptr++] = ' ';
-        }
-        memcpy(buf + ptr, strval.str, strval.len);
-        ptr += strval.len;
+        str.d.string = str_register(buf, len);
+        free(buf);
     }
 
-    t.token = STRING;
-    t.d.string = str_register(buf, len);
-    free(buf);
-    return t;
+    str.token = STRING;
+    str.leading_whitespace = 0;
+    return str;
 }
 
 static TokenArray parse(char *str)
