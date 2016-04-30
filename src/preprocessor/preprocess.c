@@ -324,9 +324,9 @@ struct token consume(enum token_type type)
     if (t.token != type) {
         if (basic_token[type].d.string.str)
             error("Unexpected token '%s', expected '%s'.",
-                t.d.string.str, basic_token[type].d.string.str);
+                tokstr(t).str, basic_token[type].d.string.str);
         else
-            error("Unexpected token '%s', expected %s.", t.d.string.str,
+            error("Unexpected token '%s', expected %s.", tokstr(t).str,
                 (type == IDENTIFIER) ? "identifier" :
                 (type == NUMBER) ? "number" : "string");
         exit(1);

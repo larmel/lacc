@@ -76,9 +76,8 @@ int in_active_block(void)
 static void expect(const struct token *list, int token)
 {
     if (list->token != token) {
-        assert(basic_token[token].d.string.str);
         error("Expected '%s', but got '%s'.",
-            basic_token[token].d.string.str, list->d.string.str);
+            tokstr(basic_token[token]).str, tokstr(*list).str);
         exit(1);
     }
 }
@@ -105,7 +104,7 @@ static int eval_primary(
         expect(list, ')');
         break;
     default:
-        error("Invalid primary expression '%s'.", list->d.string.str);
+        error("Invalid primary expression '%s'.", tokstr(*list).str);
         break;
     }
     *endptr = list + 1;

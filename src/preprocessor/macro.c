@@ -202,24 +202,25 @@ void print_token_array(const TokenArray *list)
 
 static struct token paste(struct token left, struct token right)
 {
-    struct token result;
-    size_t length;
-    char *data, *endptr;
+    struct token res;
+    char *buf, *endptr;
+    struct string ls, rs;
 
-    length = left.d.string.len + right.d.string.len;
-    data   = calloc(length + 1, sizeof(*data));
-    data   = strcpy(data, left.d.string.str);
-    data   = strcat(data, right.d.string.str);
-    result = tokenize(data, &endptr);
-    if (endptr != data + length) {
+    ls = tokstr(left);
+    rs = tokstr(right);
+    buf = calloc(ls.len + rs.len + 1, sizeof(*buf));
+    buf = strcpy(buf, ls.str);
+    buf = strcat(buf, rs.str);
+    res = tokenize(buf, &endptr);
+    if (endptr != buf + ls.len + rs.len) {
         error("Invalid token resulting from pasting '%s' and '%s'.",
-            left.d.string.str, right.d.string.str);
+            ls.str, rs.str);
         exit(1);
     }
 
-    result.leading_whitespace = left.leading_whitespace;
-    free(data);
-    return result;
+    res.leading_whitespace = left.leading_whitespace;
+    free(buf);
+    return res;
 }
 
 static void expand_paste_operators(TokenArray *list)
@@ -244,12 +245,12 @@ static void expand_paste_operators(TokenArray *list)
                 assert(i < len);
                 t = array_get(list, j);
                 if (t.token == TOKEN_PASTE) {
-                    array_get(list, i) = paste(
-                        array_get(list, i), array_get(list, j + 1));
+                    array_get(list, i) =
+                        paste(array_get(list, i), array_get(list, j + 1));
                     j++;
                 } else if (i < j - 1) {
-                    array_get(list, i) = array_get(list, j);
                     i++;
+                    array_get(list, i) = array_get(list, j);
                 } else {
                     i++;
                 }
@@ -312,9 +313,8 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
 static const struct token *skip(const struct token *list, enum token_type token)
 {
     if (list->token != token) {
-        assert(basic_token[token].d.string.str);
         error("Expected '%s', but got '%s'.",
-            basic_token[token].d.string.str, list->d.string.str);
+            tokstr(basic_token[token]).str, tokstr(*list).str);
         exit(1);
     }
 

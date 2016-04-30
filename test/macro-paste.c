@@ -1,11 +1,15 @@
-#define name(s) s ## _f ## u ## nc
+#define FOO(s) s ## _f ## u ## nc
+#define STR(s) #s
+#define CAT(a, b) STR(a ## b)
 
-int foo_func()
+int puts(const char *);
+
+int foo_func(void)
 {
-	return 1;
+	return puts(CAT(foo, 5));
 }
 
-int main()
+int main(void)
 {
-	return name(foo)();
+	return FOO(foo)();
 }

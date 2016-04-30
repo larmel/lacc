@@ -439,8 +439,8 @@ struct string tokstr(struct token tok)
 {
     static char buf[64];
     int w = 0;
-
     assert(tok.token != PARAM);
+
     if (tok.token == NUMBER) {
         /* The string representation is lost during tokenization, so we
          * cannot reconstruct necessarily the same suffixes. */
