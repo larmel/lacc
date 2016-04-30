@@ -293,13 +293,14 @@ static struct typetree *struct_or_union_declaration(void)
 
 static void enumerator_list(void)
 {
+    const char *name;
     struct var val;
     struct symbol *sym;
-    int enum_value = 0;
+    int count = 0;
 
     consume('{');
     do {
-        const char *name = consume(IDENTIFIER).d.string.str;
+        name = consume(IDENTIFIER).d.string.str;
 
         if (peek().token == '=') {
             consume('=');
@@ -307,19 +308,20 @@ static void enumerator_list(void)
             if (!is_integer(val.type)) {
                 error("Implicit conversion from non-integer type in enum.");
             }
-            enum_value = val.imm.i;
+            count = val.imm.i;
         }
 
         sym = sym_add(
             &ns_ident,
             name,
             &basic_type__int,
-            SYM_ENUM_VALUE,
+            SYM_CONSTANT,
             LINK_NONE);
-        sym->enum_value = enum_value++;
 
+        sym->constant_value.i = count++;
         if (peek().token != ',')
             break;
+
         consume(',');
     } while (peek().token != '}');
     consume('}');
@@ -343,14 +345,14 @@ static struct typetree *enum_declaration(void)
             exit(1);
         }
 
-        /* Use enum_value as a sentinel to represent definition,
+        /* Use constant_value as a sentinel to represent definition,
          * checked on  lookup to detect duplicate definitions. */
         if (peek().token == '{') {
-            if (tag->enum_value) {
+            if (tag->constant_value.i) {
                 error("Redefiniton of enum '%s'.", tag->name);
             }
             enumerator_list();
-            tag->enum_value = 1;
+            tag->constant_value.i = 1;
         }
     } else {
         enumerator_list();

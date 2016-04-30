@@ -26,12 +26,13 @@ enum reg {
     R14 = 15,
     R15 = 16,
 
-    /* Instruction pointer. */
-    IP,
-
-    /* Floating point registers. */
+    /* Floating point registers. REX prefix needed for XMM8 through 15,
+     * which are index 24 (11000) through 31 (0b11111). */
     XMM0, XMM1,  XMM2,  XMM3,  XMM4,  XMM5,  XMM6,  XMM7,
-    XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15
+    XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15,
+
+    /* Instruction pointer. */
+    IP
 };
 
 /* Register and width, which is 1, 2, 4 or 8.
@@ -83,11 +84,22 @@ struct immediate {
 
 enum opcode {
     INSTR_ADD,
+    INSTR_ADDSD,        /* Add scalar double-precision. */
+    INSTR_ADDSS,        /* Add scalar single-precision. */
+    INSTR_CVTSI2SS,     /* Convert int to float. */
+    INSTR_CVTSI2SD,     /* Convert int to double. */
+    INSTR_CVTSS2SD,     /* Convert float to double. */
+    INSTR_CVTSD2SS,     /* Convert double to float. */
+    INSTR_CVTTSD2SI,    /* Convert double to int. */
+    INSTR_CVTTSS2SI,    /* Convert float to int. */
     INSTR_SUB,
+    INSTR_SUBSD,        /* Subtract scalar double-precision. */
+    INSTR_SUBSS,        /* Subtract scalar single-precision. */
     INSTR_NOT,
-    INSTR_MUL,
     INSTR_XOR,
     INSTR_DIV,
+    INSTR_DIVSD,
+    INSTR_DIVSS,
     INSTR_AND,
     INSTR_OR,
     INSTR_SHL,
@@ -98,6 +110,11 @@ enum opcode {
     INSTR_MOVZX,
     INSTR_MOVSX,
     INSTR_MOVAPS,
+    INSTR_MOVSD,        /* Move double. */
+    INSTR_MOVSS,        /* Move float. */
+    INSTR_MUL,
+    INSTR_MULSD,        /* Multiply scalar double-precision. */
+    INSTR_MULSS,        /* Multiply scalar double-precision. */
     INSTR_SETZ,
     INSTR_SETA,
     INSTR_SETG,

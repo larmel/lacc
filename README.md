@@ -6,7 +6,7 @@ in C, which is able to compile itself.
 
 Most language constructs from C89 are supported, in addition to some elements
 from later standards.
-The most important thing still missing is floating point numbers.
+Rudimentary support for floating point numbers.
 
 Implementation is entirelly C89, using only the standard headers and some POSIX
 extensions. There are no external dependencies.

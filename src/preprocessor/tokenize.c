@@ -121,35 +121,53 @@ static struct token strtonum(char *in, char **endptr)
     errno = 0;
     tok.d.number.type = &basic_type__int;
     tok.d.number.val.u = strtoul(in, endptr, 0);
-    if (errno == ERANGE) {
-        error("Integer literal out of range.");
+    if (errno || in == *endptr) {
+        error(errno == ERANGE ?
+            "Integer literal out of range." :
+            "Invalid integer literal.");
         exit(1);
     }
 
-    if (**endptr == 'u' || **endptr == 'U') {
-        tok.d.number.type = &basic_type__unsigned_int;
-        (*endptr)++;
-    }
-    if (**endptr == 'l' || **endptr == 'L') {
-        tok.d.number.type = 
-            (tok.d.number.type->type == T_UNSIGNED) ?
-                &basic_type__unsigned_long :
-                &basic_type__long;
-        (*endptr)++;
-
-        /* Also consider additional suffix for long long, not part
-         * of C89. */
-        if (**endptr == *(*endptr - 1)) {
+    if (**endptr == '.' || **endptr == 'e' || **endptr == 'f') {
+        tok.d.number.type = &basic_type__double;
+        tok.d.number.val.d = strtod(in, endptr);
+        if (errno || in == *endptr) {
+            error(errno == ERANGE ?
+                "Floating point literal out of range." :
+                "Invalid floating point literal.");
+            exit(1);
+        }
+        if (**endptr == 'f') {
+            tok.d.number.type = &basic_type__float;
+            tok.d.number.val.f = (float) tok.d.number.val.d;
             (*endptr)++;
         }
-    }
-    if (tok.d.number.type->type != T_UNSIGNED) {
+    } else {
         if (**endptr == 'u' || **endptr == 'U') {
-            tok.d.number.type =
-                (tok.d.number.type->size == 4) ?
-                    &basic_type__unsigned_int :
-                    &basic_type__unsigned_long;
+            tok.d.number.type = &basic_type__unsigned_int;
             (*endptr)++;
+        }
+        if (**endptr == 'l' || **endptr == 'L') {
+            tok.d.number.type = 
+                (tok.d.number.type->type == T_UNSIGNED) ?
+                    &basic_type__unsigned_long :
+                    &basic_type__long;
+            (*endptr)++;
+
+            /* Also consider additional suffix for long long, not part
+             * of C89. */
+            if (**endptr == *(*endptr - 1)) {
+                (*endptr)++;
+            }
+        }
+        if (tok.d.number.type->type != T_UNSIGNED) {
+            if (**endptr == 'u' || **endptr == 'U') {
+                tok.d.number.type =
+                    (tok.d.number.type->size == 4) ?
+                        &basic_type__unsigned_int :
+                        &basic_type__unsigned_long;
+                (*endptr)++;
+            }
         }
     }
 
@@ -438,21 +456,38 @@ static int skip_spaces(char *in, char **endptr)
 struct string tokstr(struct token tok)
 {
     static char buf[64];
+    struct number num;
     int w = 0;
     assert(tok.token != PARAM);
 
     if (tok.token == NUMBER) {
         /* The string representation is lost during tokenization, so we
-         * cannot reconstruct necessarily the same suffixes. */
-        if (tok.d.number.type->type == T_UNSIGNED) {
-            w += snprintf(buf + w, sizeof(buf) - w, "%luu", tok.d.number.val.u);
-        } else {
-            w += snprintf(buf + w, sizeof(buf) - w, "%ld", tok.d.number.val.i);
-        }
-        if (tok.d.number.type->size == 8) {
-            w += snprintf(buf + w, sizeof(buf) - w, "l");
-        } else {
-            assert(tok.d.number.type->size == 4);
+         * cannot necessarily reconstruct the same suffixes. */
+        num = tok.d.number;
+        switch (num.type->type) {
+        case T_UNSIGNED:
+            w += snprintf(buf + w, sizeof(buf) - w, "%luu", num.val.u);
+            if (num.type->size == 8) {
+                w += snprintf(buf + w, sizeof(buf) - w, "l");
+            }
+            break;
+        case T_SIGNED:
+            w += snprintf(buf + w, sizeof(buf) - w, "%ld", num.val.i);
+            if (num.type->size == 8) {
+                w += snprintf(buf + w, sizeof(buf) - w, "l");
+            }
+            break;
+        case T_REAL:
+            if (is_float(num.type)) {
+                w += snprintf(buf + w, sizeof(buf) - w, "%f", num.val.f);
+                w += snprintf(buf + w, sizeof(buf) - w, "f");
+            } else {
+                w += snprintf(buf + w, sizeof(buf) - w, "%f", num.val.d);                
+            }
+            break;
+        default:
+            assert(0);
+            break;
         }
         return str_init(buf);
     }

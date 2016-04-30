@@ -173,7 +173,7 @@ struct definition {
 };
 
 /* A direct reference to given symbol, with two exceptions:
- * SYM_ENUM_VALUE and SYM_STRING_VALUE reduce to IMMEDIATE values.
+ * SYM_CONSTANT and SYM_STRING_VALUE reduce to IMMEDIATE values.
  */
 struct var var_direct(const struct symbol *sym);
 

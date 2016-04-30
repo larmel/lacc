@@ -280,7 +280,6 @@ int type_equal(const struct typetree *a, const struct typetree *b)
     if (a->type == b->type
         && a->size == b->size
         && nmembers(a) == nmembers(b)
-        && is_unsigned(a) == is_unsigned(b)
         && type_equal(a->next, b->next))
     {
         int i;
@@ -331,21 +330,28 @@ const struct typetree *usual_arithmetic_conversion(
     const struct typetree *t1,
     const struct typetree *t2)
 {
+    const struct typetree *res;
     assert(is_arithmetic(t1) && is_arithmetic(t2));
 
-    /* Skip everything dealing with floating point types. */
+    if (is_double(t1) || is_double(t2)) {
+        res = &basic_type__double;
+    } else if (is_float(t1) || is_float(t2)) {
+        res = &basic_type__float;
+    } else {
+        assert(is_integer(t1) && is_integer(t2));
 
-    assert(is_integer(t1) && is_integer(t2));
-    t1 = promote_integer(t1);
-    t2 = promote_integer(t2);
+        t1 = promote_integer(t1);
+        t2 = promote_integer(t2);
+        if (t1->size > t2->size) {
+            res = t1;
+        } else if (t2->size > t1->size) {
+            res = t2;
+        } else {
+            res = is_unsigned(t1) ? t1 : t2;
+        }
+    }
 
-    if (t1->size > t2->size)
-        /* TODO: This can be done without extra copies. */
-        return remove_qualifiers(t1);
-    else if (t2->size > t1->size)
-        return remove_qualifiers(t2);
-
-    return is_unsigned(t1) ? remove_qualifiers(t1) : remove_qualifiers(t2);
+    return remove_qualifiers(res);
 }
 
 /* 6.2.7 Compatible types. Simplified rules.

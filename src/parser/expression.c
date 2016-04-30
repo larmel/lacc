@@ -200,6 +200,11 @@ static struct block *postfix_expression(
                 arg = realloc(arg, (i + 1) * sizeof(*arg));
                 block = assignment_expression(def, block);
                 arg[i] = block->expr;
+                if (is_float(arg[i].type)) {
+                    /* Single-precision arguments to vararg function are
+                     * automatically promoted to double. */
+                    arg[i] = eval_cast(def, block, arg[i], &basic_type__double);
+                }
                 i++;
             }
             consume(')');

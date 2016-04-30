@@ -538,16 +538,24 @@ int elf_symbol(const struct symbol *sym)
         entry.st_size = size_of(&sym->type);
         entry.st_value = shdr[SHID_DATA].sh_size;
         entry.st_info |= STT_OBJECT;
-    } else if (sym->symtype == SYM_STRING_VALUE) {
+    } else if (
+        sym->symtype == SYM_STRING_VALUE ||
+        sym->symtype == SYM_CONSTANT)
+    {
         elf_section_align(SHID_RODATA, sym_alignment(sym));
         entry.st_shndx = SHID_RODATA;
         entry.st_size = size_of(&sym->type);
         entry.st_value = shdr[SHID_RODATA].sh_size;
         entry.st_info |= STT_OBJECT;
 
-        /* String value symbols contain the actual string value; write
-         * to .rodata immediately. */
-        elf_section_write(SHID_RODATA, sym->string_value.str, entry.st_size);
+        /* Strings and constant symbols carry their actual string value;
+         * write to .rodata immediately. */
+        if (sym->symtype == SYM_STRING_VALUE) {
+            elf_section_write(SHID_RODATA,
+                sym->string_value.str, entry.st_size);
+        } else {
+            elf_section_write(SHID_RODATA, &sym->constant_value, entry.st_size);
+        }
     } else if (sym->linkage == LINK_INTERN) {
         elf_section_align(SHID_BSS, sym_alignment(sym));
         entry.st_shndx = SHID_BSS;

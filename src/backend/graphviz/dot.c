@@ -54,6 +54,13 @@ static char *vartostr(const struct var var)
         case T_SIGNED:
             sprintf(buffer, "%ld", var.imm.i);
             break;
+        case T_REAL:
+            if (is_float(var.type)) {
+                sprintf(buffer, "%ff", var.imm.f);
+            } else {
+                sprintf(buffer, "%f", var.imm.d);
+            }
+            break;
         case T_ARRAY:
             assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
             sprintf(buffer, "\\\"%s\\\"", var.symbol->string_value.str);

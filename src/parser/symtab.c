@@ -243,7 +243,7 @@ struct symbol *sym_add(
             sym->symtype == SYM_TENTATIVE ? "tentative" :
             sym->symtype == SYM_DECLARATION ? "declaration" :
             sym->symtype == SYM_TYPEDEF ? "typedef" :
-            sym->symtype == SYM_ENUM_VALUE ? "enum" : "string"),
+            sym->symtype == SYM_CONSTANT ? "number" : "string"),
         (sym->linkage == LINK_INTERN ? "intern" :
             sym->linkage == LINK_EXTERN ? "extern" : "none"),
         sym_name(sym),
@@ -288,6 +288,25 @@ struct symbol *sym_create_label(void)
     return sym;
 }
 
+struct symbol *sym_create_constant(const struct typetree *type, union value val)
+{
+    static struct symbol data = {
+        ".C",
+        {0},
+        SYM_CONSTANT,
+        LINK_INTERN
+    };
+
+    struct symbol *sym = malloc(sizeof(*sym));
+    list_push_back(&ns_ident.symbol_list, sym);
+    data.n++;
+    *sym = data;
+    sym->type = *type;
+    sym->constant_value = val;
+    sym->referenced = 1;
+    return sym;
+}
+
 void register_builtin_types(struct namespace *ns)
 {
     struct typetree *type;
@@ -329,6 +348,7 @@ const struct symbol *yield_declaration(struct namespace *ns)
         ns->cursor++;
         if (sym->symtype == SYM_TENTATIVE ||
             sym->symtype == SYM_STRING_VALUE ||
+            (sym->symtype == SYM_CONSTANT && is_real(&sym->type)) ||
             (sym->symtype == SYM_DECLARATION &&
                 sym->linkage == LINK_EXTERN &&
                 (sym->referenced || sym == decl_memcpy)))
@@ -362,7 +382,7 @@ void output_symbols(FILE *stream, struct namespace *ns)
             (sym->symtype == SYM_DEFINITION) ? "definition" :
             (sym->symtype == SYM_DECLARATION) ? "declaration" :
             (sym->symtype == SYM_TYPEDEF) ? "typedef" :
-            (sym->symtype == SYM_ENUM_VALUE) ? "enum" :
+            (sym->symtype == SYM_CONSTANT) ? "number" :
             (sym->symtype == SYM_STRING_VALUE) ? "string" : "label");
 
         fprintf(stream, "%s :: ", sym_name(sym));
@@ -374,8 +394,15 @@ void output_symbols(FILE *stream, struct namespace *ns)
         if (sym->stack_offset)
             fprintf(stream, " (stack_offset: %d)", sym->stack_offset);
 
-        if (sym->symtype == SYM_ENUM_VALUE)
-            fprintf(stream, ", value=%d", sym->enum_value);
+        if (sym->symtype == SYM_CONSTANT) {
+            if (is_signed(&sym->type)) {
+                fprintf(stream, ", value=%ld", sym->constant_value.i);
+            } else if (is_unsigned(&sym->type)) {
+                fprintf(stream, ", value=%lu", sym->constant_value.u);
+            } else {
+                fprintf(stream, ", value=%f", sym->constant_value.d);
+            }
+        }
 
         fprintf(stream, "\n");
     }

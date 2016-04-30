@@ -12,9 +12,9 @@
 #define SUFFIX(w) ((w) == 1 ? 'b' : (w) == 2 ? 'w' : (w) == 4 ? 'l' : 'q')
 
 #define I0(instr)           out("\t%s\n", instr)
-#define I1(instr, op)       out("\t%s\t%s\n", instr, op)
+#define I1(instr, a)        out("\t%s\t%s\n", instr, a)
 #define I2(instr, a, b)     out("\t%s\t%s, %s\n", instr, a, b)
-#define S1(instr, w, op)    out("\t%s%c\t%s\n", instr, SUFFIX(w), op)
+#define S1(instr, w, a)     out("\t%s%c\t%s\n", instr, SUFFIX(w), a)
 #define S2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
 
 #define MAX_OPERAND_TEXT_LENGTH 256
@@ -41,13 +41,14 @@ static const char *reg_name[] = {
     "%r12b", "%r12w", "%r12d", "%r12",
     "%r13b", "%r13w", "%r13d", "%r13",
     "%r14b", "%r14w", "%r14d", "%r14",
-    "%r15b", "%r15w", "%r15d", "%r15",
-    "%ip",   "%ipw",  "%eip",  "%rip"
+    "%r15b", "%r15w", "%r15d", "%r15"
 };
 
 static const char *xmm_name[] = {
-    "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7",
-    "%xmm8", "%xmm9", "%xmm10", "%xmm11", "%xmm12", "%xmm13", "%xmm14", "%xmm15"
+    "%xmm0",  "%xmm1",  "%xmm2",  "%xmm3",
+    "%xmm4",  "%xmm5",  "%xmm6",  "%xmm7",
+    "%xmm8",  "%xmm9",  "%xmm10", "%xmm11",
+    "%xmm12", "%xmm13", "%xmm14", "%xmm15"
 };
 
 static void out(const char *s, ...)
@@ -63,8 +64,11 @@ static const char *mnemonic(struct registr reg)
 {
     int i, j;
 
-    if (reg.r < XMM0) {
-        i = 4 * ((int) reg.r - 1);
+    if (reg.r == IP) {
+        assert(reg.w == 8);
+        return "%rip";
+    } else if (reg.r < XMM0) {
+        i = 4 * (reg.r - 1);
         j = reg.w - 1;
 
         if (j == 3) j = 2;
@@ -72,10 +76,7 @@ static const char *mnemonic(struct registr reg)
 
         return reg_name[i + j];
     } else {
-        i = (int) reg.r - XMM0;
-        assert(reg.w == 16);
-        assert(i >= 0 && i < 16);
-        return xmm_name[i];
+        return xmm_name[reg.r - XMM0];
     }
 }
 
@@ -198,6 +199,19 @@ int asm_symbol(const struct symbol *sym)
         fprintstr(asm_output, sym->string_value);
         out("\n");
         break;
+    case SYM_CONSTANT:
+        I0(".section\t.rodata");
+        out("\t.align\t%d\n", sym_alignment(sym));
+        out("%s:\n", sym_name(sym));
+        if (is_float(&sym->type)) {
+            out("\t.long\t%ld\n", sym->constant_value.i & 0xFFFFFFFF);
+        } else if (is_double(&sym->type)) {
+            out("\t.long\t%ld\n", sym->constant_value.i & 0xFFFFFFFF);
+            out("\t.long\t%ld\n", sym->constant_value.i >> 32);
+        } else {
+            assert(0);
+        }
+        break;
     case SYM_LABEL:
         out("%s:\n", sym_name(sym));
         break;
@@ -255,10 +269,22 @@ int asm_text(struct instruction instr)
 
     switch (instr.opcode) {
     case INSTR_ADD:      S2("add", wd, source, destin); break;
+    case INSTR_ADDSD:    I2("addsd", source, destin); break;
+    case INSTR_ADDSS:    I2("addss", source, destin); break;
+    case INSTR_CVTSS2SD: I2("cvtss2sd", source, destin); break;
+    case INSTR_CVTSD2SS: I2("cvtsd2ss", source, destin); break;
+    case INSTR_CVTSI2SS: S2("cvtsi2ss", ws, source, destin); break;
+    case INSTR_CVTSI2SD: S2("cvtsi2sd", ws, source, destin); break;
+    case INSTR_CVTTSD2SI:S2("cvttsd2si", wd, source, destin); break;
+    case INSTR_CVTTSS2SI:S2("cvttss2si", wd, source, destin); break;
+    case INSTR_DIV:      S1("div", ws, source); break;
+    case INSTR_DIVSD:    I2("divsd", source, destin); break;
+    case INSTR_DIVSS:    I2("divss", source, destin); break;
     case INSTR_SUB:      S2("sub", wd, source, destin); break;
+    case INSTR_SUBSD:    I2("subsd", source, destin); break;
+    case INSTR_SUBSS:    I2("subss", source, destin); break;
     case INSTR_NOT:      S1("not", ws, source); break;
     case INSTR_MUL:      S1("mul", ws, source); break;
-    case INSTR_DIV:      S1("div", ws, source); break;
     case INSTR_XOR:      S2("xor", wd, source, destin); break;
     case INSTR_AND:      S2("and", wd, source, destin); break;
     case INSTR_OR:       S2("or", wd, source, destin); break;
@@ -280,6 +306,10 @@ int asm_text(struct instruction instr)
     case INSTR_MOVAPS:
         I2("movaps", source, destin);
         break;
+    case INSTR_MOVSS:    I2("movss", source, destin); break;
+    case INSTR_MOVSD:    I2("movsd", source, destin); break;
+    case INSTR_MULSD:    I2("mulsd", source, destin); break;
+    case INSTR_MULSS:    I2("mulss", source, destin); break;
     case INSTR_SETZ:     I1("setz", source); break;
     case INSTR_SETA:     I1("seta", source); break;
     case INSTR_SETG:     I1("setg", source); break;

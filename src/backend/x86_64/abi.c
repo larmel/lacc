@@ -101,6 +101,8 @@ struct param_class classify(const struct typetree *type)
 
     if (is_integer(type) || is_pointer(type)) {
         pc.eightbyte[0] = PC_INTEGER;
+    } else if (is_double(type) || is_float(type)) {
+        pc.eightbyte[0] = PC_SSE;
     } else if (
         EIGHTBYTES(type) <= 4 &&
         is_struct_or_union(type) &&
@@ -131,13 +133,12 @@ void dump_classification(struct param_class pc, const struct typetree *type)
 {
     int i;
     printf("TYPE: %s\n", typetostr(type));
-    printf("CLASS: %d eightbytes\n", EIGHTBYTES(type));
+    printf("CLASS: %d eightbyte\n", EIGHTBYTES(type));
     if (pc.eightbyte[0] == PC_MEMORY) {
         printf("\tMEMORY\n");
     } else {
         for (i = 0; i < EIGHTBYTES(type); ++i) {
-            assert(pc.eightbyte[i] == PC_INTEGER);
-            printf("\tINTEGER\n");
+            printf("\t%s\n", pc.eightbyte[i] == PC_INTEGER ? "INTEGER" : "SSE");
         }
     }
 }

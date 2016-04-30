@@ -6,6 +6,8 @@
 #define MAX_INTEGER_ARGS 6
 #define MAX_SSE_ARGS 8
 #define MAX_REGISTER_ARGS (MAX_INTEGER_ARGS + MAX_SSE_ARGS)
+#define MAX_INTEGER_RET 2
+#define MAX_SSE_RET 2
 
 /* Parameter class of an 8-byte slice of an object. Objects which take
  * up more than 4 eightbytes automatically get class PC_MEMORY.

@@ -118,6 +118,8 @@ struct number {
     union value {
         unsigned long u;
         signed long i;
+        double d;
+        float f;
     } val;
 };
 

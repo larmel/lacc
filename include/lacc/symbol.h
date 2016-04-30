@@ -2,6 +2,7 @@
 #define SYMBOL_H
 
 #include "string.h"
+#include "token.h"
 #include "typetree.h"
 
 #include <stdio.h>
@@ -25,8 +26,8 @@ struct symbol {
         SYM_TENTATIVE,
         SYM_DECLARATION,
         SYM_TYPEDEF,
-        SYM_ENUM_VALUE,
         SYM_STRING_VALUE,
+        SYM_CONSTANT,
         SYM_LABEL
     } symtype;
 
@@ -42,9 +43,10 @@ struct symbol {
      * same name. */
     int n;
 
-    /* Enumeration constants live in the normal symbol table, and always
-     * have integer type. Denoted by symtype SYM_ENUM_VALUE. */
-    int enum_value;
+    /* Hold a constant integral or floating point value. Used for
+     * enumeration members and numbers which must be loaded from memory
+     * in assembly code. Denoted by symtype SYM_CONSTANT. */
+    union value constant_value;
 
     /* String literals are also handled as symbols, having type [] const
      * char. Denoted by symtype SYM_STRING_VALUE. Free string constants
@@ -77,5 +79,11 @@ const char *sym_name(const struct symbol *sym);
 /* Create a jump label symbol, of type void.
  */
 struct symbol *sym_create_label(void);
+
+/* Create a floating point constant, which can be stored and loaded from
+ * memory. */
+struct symbol *sym_create_constant(
+    const struct typetree *type,
+    union value val);
 
 #endif

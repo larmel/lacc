@@ -61,9 +61,9 @@ struct var var_direct(const struct symbol *sym)
     var.symbol = sym;
 
     switch (sym->symtype) {
-    case SYM_ENUM_VALUE:
+    case SYM_CONSTANT:
         var.kind = IMMEDIATE;
-        var.imm.i = sym->enum_value;
+        var.imm = sym->constant_value;
         break;
     case SYM_STRING_VALUE:
         var.kind = IMMEDIATE;
@@ -95,6 +95,51 @@ struct var var_numeric(struct number n)
     var.imm = n.val;
     return var;
 }
+
+static struct var imm_signed(const struct typetree *type, long val)
+{
+    struct number num = {0};
+    assert(is_signed(type));
+    num.type = type;
+    num.val.i = val;
+    return var_numeric(num);
+}
+
+static struct var imm_unsigned(const struct typetree *type, unsigned long val)
+{
+    struct number num = {0};
+    assert(is_unsigned(type));
+    num.type = type;
+    num.val.u = val;
+    return var_numeric(num);
+}
+
+static struct var imm_float(float val)
+{
+    struct number num = {0};
+    num.type = &basic_type__float;
+    num.val.f = val;
+    return var_numeric(num);
+}
+
+static struct var imm_double(double val)
+{
+    struct number num = {0};
+    num.type = &basic_type__double;
+    num.val.f = val;
+    return var_numeric(num);
+}
+
+#define eval_arithmetic_immediate(t, l, op, r) (                               \
+    is_signed(t) ? imm_signed(t, (l).imm.i op (r).imm.i) :                     \
+    is_unsigned(t) ? imm_unsigned(t, (l).imm.u op (r).imm.u) :                 \
+    is_float(t) ? imm_float((l).imm.f op (r).imm.f) :                          \
+        imm_double((l).imm.d op (r).imm.d))
+
+#define eval_integer_immediate(t, l, op, r) (                                  \
+    is_signed(t) ?                                                             \
+        imm_signed(t, (l).imm.i op (r).imm.i) :                                \
+        imm_unsigned(t, (l).imm.u op (r).imm.u))
 
 static void emit_ir(struct block *block, enum optype optype, struct var a, ...)
 {
@@ -150,9 +195,8 @@ static struct var eval_mul(
     const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
 
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return var_int(l.imm.i * r.imm.i);
+        return eval_arithmetic_immediate(type, l, *, r);
     }
-
     return evaluate(def, block, IR_OP_MUL, type, l, r);
 }
 
@@ -165,9 +209,8 @@ static struct var eval_div(
     const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
 
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return var_int(l.imm.i / r.imm.i);
+        return eval_arithmetic_immediate(type, l, /, r);
     }
-
     return evaluate(def, block, IR_OP_DIV, type, l, r);
 }
 
@@ -184,9 +227,8 @@ static struct var eval_mod(
     }
 
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return var_int(l.imm.i % r.imm.i);
+        return eval_integer_immediate(type, l, %, r);
     }
-
     return evaluate(def, block, IR_OP_MOD, type, l, r);
 }
 
@@ -203,7 +245,7 @@ static struct var eval_add(
         l = eval_cast(def, block, l, type);
         r = eval_cast(def, block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-            l = var_int(l.imm.i + r.imm.i);
+            l = eval_arithmetic_immediate(type, l, +, r);
         } else {
             l = evaluate(def, block, IR_OP_ADD, type, l, r);
         }
@@ -222,7 +264,8 @@ static struct var eval_add(
         }
         /* Evaluate unless r is immediate zero. */
         else if (r.kind != IMMEDIATE || r.imm.i) {
-            r = eval_expr(def, block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
+            r = eval_expr(def, block, IR_OP_MUL,
+                    var_int(size_of(l.type->next)), r);
             l = evaluate(def, block, IR_OP_ADD, l.type, l, r);
         }
     } else {
@@ -240,14 +283,15 @@ static struct var eval_sub(
     struct var l,
     struct var r)
 {
+    const struct typetree *type;
+
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
+        type = usual_arithmetic_conversion(l.type, r.type);
+        l = eval_cast(def, block, l, type);
+        r = eval_cast(def, block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-            l = var_int(l.imm.i - r.imm.i);
+            l = eval_arithmetic_immediate(type, l, -, r);
         } else {
-            const struct typetree *type
-                = usual_arithmetic_conversion(l.type, r.type);
-            l = eval_cast(def, block, l, type);
-            r = eval_cast(def, block, r, type);
             l = evaluate(def, block, IR_OP_SUB, type, l, r);
         }
     } else if (is_pointer(l.type) && is_integer(r.type)) {
@@ -262,7 +306,8 @@ static struct var eval_sub(
         }
         /* Evaluate unless r is immediate zero. */
         else if (r.kind != IMMEDIATE || r.imm.i) {
-            r = eval_expr(def, block, IR_OP_MUL, var_int(size_of(l.type->next)), r);
+            r = eval_expr(def, block, IR_OP_MUL,
+                    var_int(size_of(l.type->next)), r);
             l = evaluate(def, block, IR_OP_SUB, l.type, l, r);
         }
     } else if (is_pointer(l.type) && is_pointer(r.type)) {
@@ -401,15 +446,17 @@ static struct var eval_or(
     struct var l,
     struct var r)
 {
+    const struct typetree *type;
+
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Operands to bitwise or must have integer type.");
         exit(1);
     }
 
+    type = usual_arithmetic_conversion(l.type, r.type);
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-        ? var_int(l.imm.i | r.imm.i)
-        : evaluate(def, block, IR_OP_OR,
-            usual_arithmetic_conversion(l.type, r.type), l, r);
+        ? eval_integer_immediate(type, l, |, r)
+        : evaluate(def, block, IR_OP_OR, type, l, r);
 }
 
 static struct var eval_xor(
@@ -418,15 +465,17 @@ static struct var eval_xor(
     struct var l,
     struct var r)
 {
+    const struct typetree *type;
+
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Operands to bitwise xor must have integer type.");
         exit(1);
     }
 
+    type = usual_arithmetic_conversion(l.type, r.type);
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-        ? var_int(l.imm.i ^ r.imm.i)
-        : evaluate(def, block, IR_OP_XOR,
-            usual_arithmetic_conversion(l.type, r.type), l, r);
+        ? eval_integer_immediate(type, l, ^, r)
+        : evaluate(def, block, IR_OP_XOR, type, l, r);
 }
 
 static struct var eval_and(
@@ -435,15 +484,17 @@ static struct var eval_and(
     struct var l,
     struct var r)
 {
+    const struct typetree *type;
+
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Operands to bitwise and must have integer type.");
         exit(1);
     }
 
+    type = usual_arithmetic_conversion(l.type, r.type);
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-        ? var_int(l.imm.i & r.imm.i)
-        : evaluate(def, block, IR_OP_AND,
-            usual_arithmetic_conversion(l.type, r.type), l, r);
+        ? eval_integer_immediate(type, l, &, r)
+        : evaluate(def, block, IR_OP_AND, type, l, r);
 }
 
 static struct var eval_shiftl(
@@ -452,14 +503,17 @@ static struct var eval_shiftl(
     struct var l,
     struct var r)
 {
+    const struct typetree *type;
+
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Shift operands must have integer type.");
         exit(1);
     }
 
+    type = promote_integer(l.type);
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-        ? var_int(l.imm.i << r.imm.i)
-        : evaluate(def, block, IR_OP_SHL, promote_integer(l.type), l, r);
+        ? eval_integer_immediate(type, l, <<, r)
+        : evaluate(def, block, IR_OP_SHL, type, l, r);
 }
 
 static struct var eval_shiftr(
@@ -468,14 +522,17 @@ static struct var eval_shiftr(
     struct var l,
     struct var r)
 {
+    const struct typetree *type;
+
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Shift operands must have integer type.");
         exit(1);
     }
 
+    type = promote_integer(l.type);
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-        ? var_int(l.imm.i >> r.imm.i)
-        : evaluate(def, block, IR_OP_SHR, promote_integer(l.type), l, r);
+        ? eval_integer_immediate(type, l, >>, r)
+        : evaluate(def, block, IR_OP_SHR, type, l, r);
 }
 
 static struct var eval_not(
@@ -483,14 +540,26 @@ static struct var eval_not(
     struct block *block,
     struct var var)
 {
+    const struct typetree *type;
+
     if (!is_integer(var.type)) {
         error("Bitwise complement operand must have integer type.");
         exit(1);
     }
 
-    return (var.kind == IMMEDIATE)
-        ? var_int(~var.imm.i)
-        : evaluate(def, block, IR_NOT, promote_integer(var.type), var);
+    type = promote_integer(var.type);
+    if (var.kind == IMMEDIATE) {
+        if (is_signed(type)) {
+            var = imm_signed(type, ~var.imm.i);
+        } else {
+            assert(is_unsigned(type));
+            var = imm_unsigned(type, ~var.imm.u);
+        }
+    } else {
+        var = evaluate(def, block, IR_NOT, type, var);
+    }
+
+    return var;
 }
 
 /* Convert variables of type ARRAY or FUNCTION to addresses when used
@@ -656,7 +725,8 @@ struct var eval_deref(
         /* Cast to char pointer temporarily to avoid pointer arithmetic
          * calling eval_expr. No actual evaluation is performed. */
         ptr = var_direct(var.symbol);
-        ptr = eval_cast(def, block, ptr, type_init(T_POINTER, &basic_type__char));
+        ptr = eval_cast(def, block, ptr,
+            type_init(T_POINTER, &basic_type__char));
         ptr = eval_expr(def, block, IR_OP_ADD, ptr, var_int(var.offset));
         ptr.type = &var.symbol->type;
 
@@ -824,14 +894,8 @@ struct var eval_cast(
     const struct typetree *type)
 {
     if (is_void(type)) {
-        var = var_void();
-    } else if (is_scalar(var.type) && is_scalar(type)) {
-        if (var.kind == IMMEDIATE || size_of(var.type) == size_of(type)) {
-            var.type = type;
-        } else {
-            var = evaluate(def, block, IR_CAST, type, var);
-        }
-    } else {
+        return var_void();
+    } else if (!is_scalar(var.type) || !is_scalar(type)) {
         error(
             "Invalid type parameters to cast expression, "
             "cannot convert from %t to %t.",
@@ -839,6 +903,45 @@ struct var eval_cast(
         exit(1);
     }
 
+    /* All immediate conversions must be evaluated compile time. Also
+     * handle conversion which can be done by simply reinterpreting the
+     * memory. */
+    if (size_of(var.type) == size_of(type) && (
+        (is_pointer(var.type) || is_pointer(type))))
+    {
+        var.type = type;
+    } else if (var.kind == IMMEDIATE) {
+        if (is_float(type)) {
+            var.imm.f =
+                (is_float(var.type)) ? (float) var.imm.f :
+                (is_double(var.type)) ? (float) var.imm.d :
+                (is_unsigned(var.type)) ? (float) var.imm.u :
+                    (float) var.imm.i;
+        } else if (is_double(type)) {
+            var.imm.d =
+                (is_float(var.type)) ? (double) var.imm.f :
+                (is_double(var.type)) ? (double) var.imm.d :
+                (is_unsigned(var.type)) ? (double) var.imm.u :
+                    (double) var.imm.i;
+        } else if (is_unsigned(type) || is_pointer(type)) {
+            var.imm.u =
+                (is_float(var.type)) ? (unsigned long) var.imm.f :
+                (is_double(var.type)) ? (unsigned long) var.imm.d :
+                (is_unsigned(var.type)) ? (unsigned long) var.imm.u :
+                    (unsigned long) var.imm.i;
+        } else if (is_signed(type)) {
+            var.imm.i =
+                (is_float(var.type)) ? (long) var.imm.f :
+                (is_double(var.type)) ? (long) var.imm.d :
+                (is_unsigned(var.type)) ? (long) var.imm.u :
+                    (long) var.imm.i;
+        }
+        var.type = type;
+    } else if (!type_equal(var.type, type)) {
+        var = evaluate(def, block, IR_CAST, type, var);
+    }
+
+    assert(type_equal(var.type, type));
     return var;
 }
 
