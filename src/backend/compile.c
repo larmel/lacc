@@ -35,7 +35,7 @@ static enum reg ret_int_reg[] = {AX, DX};
  */
 static array_of(struct var) func_args;
 
-static void compile_block(struct block *block);
+static void compile_block(struct block *block, const struct typetree *type);
 
 static void emit(enum opcode opcode, enum instr_optype optype, ...)
 {
@@ -269,12 +269,11 @@ static void store(enum reg r, struct var v)
     }
 }
 
-/* Push value to stack, rounded up to always be 8 byte aligned. Return
- * number of bytes written.
+/* Push value to stack, rounded up to always be 8 byte aligned.
  */
-static int push(struct var v)
+static void push(struct var v)
 {
-    int eightbytes = 1;
+    int eb;
 
     if (is_scalar(v.type)) {
         if (v.kind == IMMEDIATE && size_of(v.type) == 8)
@@ -284,15 +283,13 @@ static int push(struct var v)
             emit(INSTR_PUSH, OPT_REG, reg(AX, 8));
         }
     } else {
-        eightbytes = EIGHTBYTES(v.type);
-        emit(INSTR_SUB, OPT_IMM_REG, constant(eightbytes * 8, 8), reg(SP, 8));
-        emit(INSTR_MOV, OPT_IMM_REG, constant(eightbytes, 4), reg(CX, 4));
+        eb = EIGHTBYTES(v.type);
+        emit(INSTR_SUB, OPT_IMM_REG, constant(eb * 8, 8), reg(SP, 8));
+        emit(INSTR_MOV, OPT_IMM_REG, constant(eb, 4), reg(CX, 4));
         emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(DI, 8));
         load_address(v, SI);
         emit(INSTR_REP_MOVSQ, OPT_NONE);
     }
-
-    return eightbytes * 8;
 }
 
 /* Compile a function call. For now this assumes only integer arguments
@@ -338,7 +335,17 @@ static void call(
             argpc[register_args].i = i;
             register_args++;
             next_integer_reg += n;
+        } else {
+            mem_used += 8*EIGHTBYTES(args[i].type);
         }
+    }
+
+    /* Make sure stack is aligned to 16 byte after pushing all memory
+     * arguments. Insert padding if necessary. */
+    if (mem_used % 16) {
+        mem_used += 8;
+        assert((mem_used % 16) == 0);
+        emit(INSTR_SUB, OPT_IMM_REG, constant(8, 8), reg(SP, 8));
     }
 
     /* Pass arguments on stack from right to left. Do this before
@@ -349,7 +356,7 @@ static void call(
         if (n >= 0 && argpc[n].i == i) {
             n--;
         } else {
-            mem_used += push(args[i]);
+            push(args[i]);
         }
     }
 
@@ -454,11 +461,10 @@ static void enter(
      * at the beginning of the stack fram for register values. In total
      * there are 8 bytes for each of the 6 integer registers, and 16
      * bytes for each of the 8 SSE registers, for a total of 176 bytes.
-     * We want to keep the register save area fixed regardless of
-     * parameter class of return value, so skip the first 8 bytes used
-     * for return value address. */
+     * If return type is MEMORY, the return address is automatically
+     * included in register spill area. */
     if (is_vararg(type)) {
-        stack_offset = -176 - 8;
+        stack_offset = -176;
     }
 
     /* Assign storage to parameters. Guarantee that parameters are 8-
@@ -502,9 +508,18 @@ static void enter(
         }
     }
 
-    /* All computation of where variables belong in memory is done, time
-     * to allocate space in the call frame. Store return address to well
-     * known stack offset, at -8(%rbp). */
+    /* Make invariant to have %rsp aligned to 0x10, which is mandatory
+     * according to the ABI for function calls. On entry, (%rsp + 8) is
+     * a multiple of 16, and after pushing %rbp we have alignment at
+     * this point. Alignment must also be considered when calling other
+     * functions, to push memory divisible by 16. */
+    if (stack_offset < 0) {
+        i = (-stack_offset) % 16;
+        stack_offset -= 16 - i;
+    }
+
+    /* Allocate space in the call frame to hold local variables. Store
+     * return address to well known location -8(%rbp). */
     if (stack_offset < 0) {
         emit(INSTR_SUB, OPT_IMM_REG, constant(-stack_offset, 8), reg(SP, 8));
         if (res.eightbyte[0] == PC_MEMORY) {
@@ -523,7 +538,7 @@ static void enter(
         vararg.gp_offset = 8 * next_integer_reg;
         vararg.fp_offset = 0;
         vararg.overflow_arg_area_offset = mem_offset;
-        vararg.reg_save_area_offset = -8;
+        vararg.reg_save_area_offset = 0;
         emit(INSTR_TEST, OPT_REG_REG, reg(AX, 1), reg(AX, 1));
         emit(INSTR_JZ, OPT_IMM, addr(sym));
         for (i = 0; i < 8; ++i) {
@@ -567,7 +582,7 @@ static void enter(
 /* Return value from function, placing it in register(s) or writing it
  * to stack, based on parameter class.
  */
-static void ret(struct var val)
+static void ret(struct var val, const struct typetree *type)
 {
     int i, n;
     struct var var;
@@ -592,10 +607,18 @@ static void ret(struct var val)
             load(val, ret_int_reg[0]);
         }
     } else {
-        /* Load return address from magic stack offset and copy
-         * result. */
-        emit(INSTR_MOV, OPT_MEM_REG,
-            location(address(-8, BP, 0, 0), 8), reg(DI, 8));
+        /* Load return address from magic stack offset and copy result.
+         * Return address is stored in -8(%rbp), unless the function
+         * takes variable argument lists, in which case it is read
+         * from register spill area. */
+        if (is_vararg(type)) {
+            emit(INSTR_MOV, OPT_MEM_REG,
+                location(address(-176, BP, 0, 0), 8), reg(DI, 8));
+        } else {
+            emit(INSTR_MOV, OPT_MEM_REG,
+                location(address(-8, BP, 0, 0), 8), reg(DI, 8));
+        }
+
         load_address(val, SI);
         emit(INSTR_MOV, OPT_IMM_REG,
             constant(size_of(val.type), 8), reg(DX, 4));
@@ -973,7 +996,7 @@ static void compile_op(const struct op *op)
     }
 }
 
-static void tail_cmp_jump(struct block *block)
+static void tail_cmp_jump(struct block *block, const struct typetree *type)
 {
     struct instruction instr = {0};
     struct op *cmp = &array_get(&block->code, array_len(&block->code) - 1);
@@ -1007,12 +1030,12 @@ static void tail_cmp_jump(struct block *block)
     if (block->jump[0]->color == BLACK)
         emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
     else
-        compile_block(block->jump[0]);
+        compile_block(block->jump[0], type);
 
-    compile_block(block->jump[1]);
+    compile_block(block->jump[1], type);
 }
 
-static void tail_generic(struct block *block)
+static void tail_generic(struct block *block, const struct typetree *type)
 {
     if (!block->jump[0] && !block->jump[1]) {
         /* Don't actually check if the function should return what we
@@ -1020,7 +1043,7 @@ static void tail_generic(struct block *block)
         if (block->has_return_value) {
             assert(block->expr.type);
             assert(!is_void(block->expr.type));
-            ret(block->expr);
+            ret(block->expr, type);
         }
 
         emit(INSTR_LEAVE, OPT_NONE);
@@ -1029,7 +1052,7 @@ static void tail_generic(struct block *block)
         if (block->jump[0]->color == BLACK)
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
         else
-            compile_block(block->jump[0]);
+            compile_block(block->jump[0], type);
     } else {
         load(block->expr, AX);
         emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
@@ -1037,12 +1060,12 @@ static void tail_generic(struct block *block)
         if (block->jump[1]->color == BLACK)
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
         else
-            compile_block(block->jump[1]);
-        compile_block(block->jump[0]);
+            compile_block(block->jump[1], type);
+        compile_block(block->jump[0], type);
     }
 }
 
-static void compile_block(struct block *block)
+static void compile_block(struct block *block, const struct typetree *type)
 {
     int i, length;
     struct op *op = NULL;
@@ -1063,11 +1086,11 @@ static void compile_block(struct block *block)
          * writing the result of comparison (always a temporary). */
         if (op && IS_COMPARISON(op->type) && block->jump[1]) {
             assert(block->jump[0]);
-            tail_cmp_jump(block);
+            tail_cmp_jump(block, type);
         } else {
             if (op)
                 compile_op(op);
-            tail_generic(block);
+            tail_generic(block, type);
         }
     }
 }
@@ -1161,7 +1184,7 @@ static void compile_function(struct definition *def)
     enter(&def->symbol->type, &def->params, &def->locals);
 
     /* Recursively assemble body. */
-    compile_block(def->body);
+    compile_block(def->body, &def->symbol->type);
 }
 
 void set_compile_target(FILE *stream, enum compile_target target)
