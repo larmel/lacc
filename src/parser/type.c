@@ -146,11 +146,11 @@ const struct member *get_member(const struct typetree *type, int n)
 
 void type_add_member(
     struct typetree *type,
-    const char *member_name,
+    struct string member_name,
     const struct typetree *member_type)
 {
     struct signature *sig;
-    struct member mbr = {0};
+    struct member mbr = {{0}};
 
     assert(is_struct_or_union(type) || is_function(type));
     assert(!is_function(type) || !is_vararg(type));
@@ -162,7 +162,7 @@ void type_add_member(
 
     sig = (struct signature *) type->signature;
     if (is_function(type)) {
-        if (member_name && !strcmp(member_name, "...")) {
+        if (member_name.len && !str_cmp(member_name, str_init("..."))) {
             sig->is_vararg = 1;
             return;
         }
@@ -187,19 +187,19 @@ void type_add_member(
 
 void type_add_field(
     struct typetree *type,
-    const char *mname,
+    struct string mname,
     const struct typetree *mtype,
     int width)
 {
     struct signature *sig;
-    struct member mbr = {0};
+    struct member mbr = {{0}};
 
     assert(is_struct(type));
     assert(!is_tagged(type));
     assert(type_equal(mtype, &basic_type__int) ||
         type_equal(mtype, &basic_type__unsigned_int));
 
-    if (mname && width) {
+    if (mname.len && width) {
         if (!type->signature) {
             type->signature = mksignature();
         }
@@ -250,7 +250,9 @@ const struct typetree *unwrapped(const struct typetree *type)
     return is_tagged(type) ? type->next : type;
 }
 
-struct typetree *type_tagged_copy(const struct typetree *type, const char *name)
+struct typetree *type_tagged_copy(
+    const struct typetree *type,
+    struct string name)
 {
     struct typetree *tag;
 
@@ -259,7 +261,7 @@ struct typetree *type_tagged_copy(const struct typetree *type, const char *name)
 
     tag = mktype();
     tag->type = type->type;
-    tag->tag_name = name;
+    tag->tag = name;
     tag->next = type;
     return tag;
 }
@@ -288,7 +290,7 @@ int type_equal(const struct typetree *a, const struct typetree *b)
                 return 0;
             }
             if (is_struct_or_union(a)
-                && strcmp(get_member(a, i)->name, get_member(b, i)->name))
+                && str_cmp(get_member(a, i)->name, get_member(b, i)->name))
             {
                 return 0;
             }
@@ -374,17 +376,16 @@ const struct typetree *type_deref(const struct typetree *type)
 
 const struct member *find_type_member(
     const struct typetree *type,
-    const char *name)
+    struct string name)
 {
     int i;
     const struct member *member;
-
     assert(is_struct_or_union(type));
 
     type = unwrapped(type);
     for (i = 0; i < nmembers(type); ++i) {
         member = get_member(type, i);
-        if (!strcmp(name, member->name)) {
+        if (!str_cmp(name, member->name)) {
             return member;
         }
     }
@@ -406,7 +407,7 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
 
     if (is_tagged(tree)) {
         w += snprintf(s + w, size - w, "%s %s",
-            (is_union(tree)) ? "union" : "struct", tree->tag_name);
+            (is_union(tree)) ? "union" : "struct", tree->tag.str);
         return w;
     }
 
@@ -474,7 +475,7 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
         w += snprintf(s + w, size - w, "{");
         for (i = 0; i < nmembers(tree); ++i) {
             const struct member *member = get_member(tree, i);
-            w += snprintf(s + w, size - w, ".%s::", member->name);
+            w += snprintf(s + w, size - w, ".%s::", member->name.str);
             w += snprinttype(member->type, s + w, size - w);
             w += snprintf(s + w, size - w, " (+%d)", member->offset);
             if (i < nmembers(tree) - 1) {

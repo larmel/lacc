@@ -43,12 +43,12 @@ static struct block *parse__builtin_va_start(
     block = assignment_expression(def, block);
     consume(',');
     param = consume(IDENTIFIER);
-    sym = sym_lookup(&ns_ident, param.d.string.str);
+    sym = sym_lookup(&ns_ident, param.d.string);
 
     type = &def->symbol->type;
     is_invalid = !sym || sym->depth != 1 || !is_function(type);
-    is_invalid = is_invalid || !nmembers(type) || strcmp(
-        get_member(type, nmembers(type) - 1)->name, param.d.string.str);
+    is_invalid = is_invalid || !nmembers(type) || str_cmp(
+        get_member(type, nmembers(type) - 1)->name, param.d.string);
 
     if (is_invalid) {
         error("Second parameter of va_start must be last function argument.");
@@ -90,7 +90,7 @@ static struct block *primary_expression(
 
     switch ((tok = next()).token) {
     case IDENTIFIER:
-        sym = sym_lookup(&ns_ident, tok.d.string.str);
+        sym = sym_lookup(&ns_ident, tok.d.string);
         if (!sym) {
             error("Undefined symbol '%s'.", tok.d.string.str);
             exit(1);
@@ -99,9 +99,9 @@ static struct block *primary_expression(
          * expected to behave as macros, thus should be no problem
          * parsing as function call in primary expression. Constructs
          * like (va_arg)(args, int) will not work with this scheme. */
-        if (!strcmp("__builtin_va_start", sym->name)) {
+        if (!strcmp("__builtin_va_start", sym->name.str)) {
             block = parse__builtin_va_start(def, block);
-        } else if (!strcmp("__builtin_va_arg", sym->name)) {
+        } else if (!strcmp("__builtin_va_arg", sym->name.str)) {
             block = parse__builtin_va_arg(def, block);
         } else {
             block->expr = var_direct(sym);
@@ -117,7 +117,7 @@ static struct block *primary_expression(
     case STRING:
         sym =
             sym_add(&ns_ident,
-                ".LC",
+                str_init(".LC"),
                 type_init(T_ARRAY, &basic_type__char, tok.d.string.len + 1),
                 SYM_STRING_VALUE,
                 LINK_INTERN);
@@ -216,7 +216,7 @@ static struct block *postfix_expression(
         case '.':
             consume('.');
             tok = consume(IDENTIFIER);
-            mbr = find_type_member(root.type, tok.d.string.str);
+            mbr = find_type_member(root.type, tok.d.string);
             if (!mbr) {
                 error("Invalid access, no member named '%s'.",
                     tok.d.string.str);
@@ -230,7 +230,7 @@ static struct block *postfix_expression(
             consume(ARROW);
             tok = consume(IDENTIFIER);
             if (is_pointer(root.type) && is_struct_or_union(root.type->next)) {
-                mbr = find_type_member(type_deref(root.type), tok.d.string.str);
+                mbr = find_type_member(type_deref(root.type), tok.d.string);
                 if (!mbr) {
                     error("Invalid access, no member named '%s'.",
                         tok.d.string.str);
@@ -374,7 +374,7 @@ static struct block *cast_expression(
         tok = peekn(2);
         switch (tok.token) {
         case IDENTIFIER:
-            sym = sym_lookup(&ns_ident, tok.d.string.str);
+            sym = sym_lookup(&ns_ident, tok.d.string);
             if (!sym || sym->symtype != SYM_TYPEDEF)
                 break;
         case FIRST(type_name):

@@ -230,7 +230,7 @@ void fdotgen(FILE *stream, struct definition *def)
     fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,"
                     "style=\"setlinewidth(0.1)\"];\n");
     if (is_function(&def->symbol->type)) {
-        fprintf(stream, "\tlabel=\"%s\"\n", def->symbol->name);
+        fprintf(stream, "\tlabel=\"%s\"\n", sym_name(def->symbol));
         fprintf(stream, "\tlabelloc=\"t\"\n");
     }
     foutputnode(stream, def->body);

@@ -26,9 +26,10 @@ static struct typetree *parameter_list(const struct typetree *base)
     func->next = base;
 
     while (peek().token != ')') {
-        const char *name = NULL;
+        struct string name;
         struct typetree *type;
 
+        name.len = 0;
         type = declaration_specifiers(NULL);
         type = declarator(type, &name);
         if (is_void(type)) {
@@ -50,7 +51,7 @@ static struct typetree *parameter_list(const struct typetree *base)
         } else if (peek().token == DOTS) {
             consume(DOTS);
             assert(!is_vararg(func));
-            type_add_member(func, "...", NULL);
+            type_add_member(func, str_init("..."), NULL);
             assert(is_vararg(func));
             break;
         }
@@ -104,7 +105,7 @@ static struct typetree *direct_declarator_array(struct typetree *base)
  */
 static struct typetree *direct_declarator(
     struct typetree *base,
-    const char **symbol)
+    struct string *name)
 {
     struct typetree *type = base;
     struct typetree *head = NULL, *tail = NULL;
@@ -113,15 +114,15 @@ static struct typetree *direct_declarator(
     switch (peek().token) {
     case IDENTIFIER:
         ident = consume(IDENTIFIER);
-        if (!symbol) {
+        if (!name) {
             error("Unexpected identifier in abstract declarator.");
             exit(1);
         }
-        *symbol = ident.d.string.str;
+        *name = ident.d.string;
         break;
     case '(':
         consume('(');
-        type = head = tail = declarator(NULL, symbol);
+        type = head = tail = declarator(NULL, name);
         while (tail->next) {
             tail = (struct typetree *) tail->next;
         }
@@ -179,27 +180,27 @@ static struct typetree *pointer(const struct typetree *base)
     return type;
 }
 
-struct typetree *declarator(struct typetree *base, const char **symbol)
+struct typetree *declarator(struct typetree *base, struct string *name)
 {
     while (peek().token == '*') {
         base = pointer(base);
     }
 
-    return direct_declarator(base, symbol);
+    return direct_declarator(base, name);
 }
 
 static void member_declaration_list(struct typetree *type)
 {
     struct namespace ns = {0};
+    struct string name;
     struct var expr;
     struct typetree *decl_base, *decl_type;
-    const char *name;
 
     push_scope(&ns);
     do {
         decl_base = declaration_specifiers(NULL);
         do {
-            name = NULL;
+            name.len = 0;
             decl_type = declarator(decl_base, &name);
             if (is_struct(type) && peek().token == ':') {
                 if (!is_integer(decl_type) || decl_type->size != 4) {
@@ -212,17 +213,17 @@ static void member_declaration_list(struct typetree *type)
                     error("Negative width in bit-field.");
                     exit(1);
                 }
-                if (name) {
+                if (name.len) {
                     sym_add(&ns, name, decl_type, SYM_DECLARATION, LINK_NONE);
                 }
                 type_add_field(type, name, decl_type, expr.imm.i);
             } else {
-                if (!name) {
+                if (!name.len) {
                     error("Missing name in member declarator.");
                     exit(1);
                 } else if (!size_of(decl_type)) {
                     error("Member '%s' has incomplete type '%t'.",
-                        name, decl_type);
+                        name.len, decl_type);
                     exit(1);
                 }
                 sym_add(&ns, name, decl_type, SYM_DECLARATION, LINK_NONE);
@@ -243,21 +244,22 @@ static struct typetree *struct_or_union_declaration(void)
 {
     struct symbol *sym = NULL;
     struct typetree *type = NULL;
+    struct string name;
     enum type kind =
         (next().token == STRUCT) ? T_STRUCT : T_UNION;
 
     if (peek().token == IDENTIFIER) {
-        const char *name = consume(IDENTIFIER).d.string.str;
+        name = consume(IDENTIFIER).d.string;
         sym = sym_lookup(&ns_tag, name);
         if (!sym) {
             type = type_init(kind);
             sym = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
         } else if (is_integer(&sym->type)) {
-            error("Tag '%s' was previously declared as enum.", sym->name);
+            error("Tag '%s' was previously declared as enum.", sym->name.str);
             exit(1);
         } else if (sym->type.type != kind) {
             error("Tag '%s' was previously declared as %s.",
-                sym->name, (sym->type.type == T_STRUCT) ? "struct" : "union");
+                sym->name.str, (is_struct(&sym->type)) ? "struct" : "union");
             exit(1);
         }
 
@@ -267,7 +269,7 @@ static struct typetree *struct_or_union_declaration(void)
          * symbol table. */
         type = &sym->type;
         if (peek().token == '{' && type->size) {
-            error("Redefiniton of '%s'.", sym->name);
+            error("Redefiniton of '%s'.", sym->name.str);
             exit(1);
         }
     }
@@ -293,14 +295,14 @@ static struct typetree *struct_or_union_declaration(void)
 
 static void enumerator_list(void)
 {
-    const char *name;
+    struct string name;
     struct var val;
     struct symbol *sym;
     int count = 0;
 
     consume('{');
     do {
-        name = consume(IDENTIFIER).d.string.str;
+        name = consume(IDENTIFIER).d.string;
 
         if (peek().token == '=') {
             consume('=');
@@ -329,19 +331,19 @@ static void enumerator_list(void)
 
 static struct typetree *enum_declaration(void)
 {
+    struct string name;
+    struct symbol *tag;
     struct typetree *type = type_init(T_SIGNED, 4);
 
     consume(ENUM);
     if (peek().token == IDENTIFIER) {
-        struct symbol *tag = NULL;
-        const char *name = consume(IDENTIFIER).d.string.str;
-
+        name = consume(IDENTIFIER).d.string;
         tag = sym_lookup(&ns_tag, name);
         if (!tag || tag->depth < current_scope_depth(&ns_tag)) {
             tag = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
         } else if (!is_integer(&tag->type)) {
             error("Tag '%s' was previously defined as aggregate type.",
-                tag->name);
+                tag->name.str);
             exit(1);
         }
 
@@ -349,7 +351,7 @@ static struct typetree *enum_declaration(void)
          * checked on  lookup to detect duplicate definitions. */
         if (peek().token == '{') {
             if (tag->constant_value.i) {
-                error("Redefiniton of enum '%s'.", tag->name);
+                error("Redefiniton of enum '%s'.", tag->name.str);
             }
             enumerator_list();
             tag->constant_value.i = 1;
@@ -465,7 +467,7 @@ struct typetree *declaration_specifiers(int *stc)
         case CONST:     set_qualifier(Q_CONST); break;
         case VOLATILE:  set_qualifier(Q_VOLATILE); break;
         case IDENTIFIER: {
-            struct symbol *tag = sym_lookup(&ns_ident, tok.d.string.str);
+            struct symbol *tag = sym_lookup(&ns_ident, tok.d.string);
             if (tag && tag->symtype == SYM_TYPEDEF && !type) {
                 consume(IDENTIFIER);
                 type = type_init(T_STRUCT);
@@ -734,7 +736,7 @@ static struct block *initializer(
 
 /* C99: Define __func__ as static const char __func__[] = sym->name;
  */
-static void define_builtin__func__(const char *name)
+static void define_builtin__func__(struct string name)
 {
     struct typetree *type;
     struct symbol *sym;
@@ -742,9 +744,14 @@ static void define_builtin__func__(const char *name)
 
     /* Just add the symbol directly as a special string value. No
      * explicit assignment reflected in the IR. */
-    type = type_init(T_ARRAY, &basic_type__char, strlen(name) + 1);
-    sym = sym_add(&ns_ident, "__func__", type, SYM_STRING_VALUE, LINK_INTERN);
-    sym->string_value = str_init(name);
+    type = type_init(T_ARRAY, &basic_type__char, name.len + 1);
+    sym = sym_add(
+        &ns_ident,
+        str_init("__func__"),
+        type,
+        SYM_STRING_VALUE,
+        LINK_INTERN);
+    sym->string_value = name;
 }
 
 /* Cover both external declarations, functions, and local declarations
@@ -783,12 +790,13 @@ struct block *declaration(struct definition *def, struct block *parent)
     }
 
     while (1) {
-        const char *name = NULL;
+        struct string name;
         const struct typetree *type;
         struct symbol *sym;
 
+        name.len = 0;
         type = declarator(base, &name);
-        if (!name) {
+        if (!name.len) {
             consume(';');
             return parent;
         }
@@ -810,11 +818,12 @@ struct block *declaration(struct definition *def, struct block *parent)
             return parent;
         case '=':
             if (sym->symtype == SYM_DECLARATION) {
-                error("Extern symbol '%s' cannot be initialized.", sym->name);
+                error("Extern symbol '%s' cannot be initialized.",
+                    sym->name.str);
                 exit(1);
             }
             if (!sym->depth && sym->symtype == SYM_DEFINITION) {
-                error("Symbol '%s' was already defined.", sym->name);
+                error("Symbol '%s' was already defined.", sym->name.str);
                 exit(1);
             }
             consume('=');
@@ -852,7 +861,7 @@ struct block *declaration(struct definition *def, struct block *parent)
                 type = get_member(&sym->type, i)->type;
                 symtype = SYM_DEFINITION;
                 linkage = LINK_NONE;
-                if (!name) {
+                if (!name.len) {
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
                 }

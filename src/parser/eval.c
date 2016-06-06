@@ -71,7 +71,7 @@ struct var var_direct(const struct symbol *sym)
     default:
         assert(sym->symtype != SYM_LABEL);
         var.kind = DIRECT;
-        var.lvalue = sym->name[0] != '.';
+        var.lvalue = sym->name.str[0] != '.';
         break;
     }
 
@@ -771,7 +771,7 @@ struct var eval_assign(
          * we do nothing here, but handle it in backend. */
         if (!type_equal(target.type, var.type) || var.kind != IMMEDIATE) {
             error("Invalid initializer assignment, was %s :: %t = %t.",
-                target.symbol->name,
+                target.symbol->name.str,
                 target.type,
                 var.type);
             exit(1);
@@ -815,7 +815,7 @@ struct var eval_assign(
         !(is_pointer(target.type) && is_nullptr(var)))
     {
         error("Incompatible operands to assignment expression, %s :: %t = %t.",
-            target.symbol->name, target.type, var.type);
+            target.symbol->name.str, target.type, var.type);
         exit(1);
     }
 

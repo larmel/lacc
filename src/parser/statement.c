@@ -321,7 +321,7 @@ struct block *statement(struct definition *def, struct block *parent)
         tok = consume(IDENTIFIER);
         sym = sym_add(
             &ns_label,
-            tok.d.string.str,
+            tok.d.string,
             &basic_type__void,
             SYM_TENTATIVE,
             LINK_INTERN);
@@ -384,13 +384,13 @@ struct block *statement(struct definition *def, struct block *parent)
     case IDENTIFIER:
         if (peekn(2).token == ':') {
             consume(IDENTIFIER);
-            sym = sym_lookup(&ns_label, tok.d.string.str);
+            sym = sym_lookup(&ns_label, tok.d.string);
             if (sym && sym->symtype == SYM_DEFINITION) {
                 error("Duplicate label '%s'.", tok.d.string.str);
             } else {
                 sym = sym_add(
                     &ns_label,
-                    tok.d.string.str,
+                    tok.d.string,
                     &basic_type__void,
                     SYM_DEFINITION,
                     LINK_INTERN);
@@ -404,7 +404,7 @@ struct block *statement(struct definition *def, struct block *parent)
             consume(':');
             break;
         } else {
-            sym = sym_lookup(&ns_ident, tok.d.string.str);
+            sym = sym_lookup(&ns_ident, tok.d.string);
             if (sym && sym->symtype == SYM_TYPEDEF) {
                 parent = declaration(def, parent);
                 break;

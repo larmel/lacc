@@ -1,6 +1,8 @@
 #ifndef TYPETREE_H
 #define TYPETREE_H
 
+#include "string.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -72,13 +74,13 @@ struct typetree {
      * loops in type trees. */
     const struct typetree *next;
 
-    /* Struct or union tag name, taken from symbol table in order to be
-     * able to print the reference. */
-    const char *tag_name;
+    /* Struct or union typedef, reference to symbol table in order to be
+     * able to print the name. */
+    struct string tag;
 };
 
 struct member {
-    const char *name;
+    struct string name;
     const struct typetree *type;
 
     /* Member offset into aggregate, in bytes. */

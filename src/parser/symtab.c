@@ -29,7 +29,7 @@ static unsigned hash_cap_default = 8;
 
 static struct string sym_hash_key(void *ref)
 {
-    return str_init(((const struct symbol *) ref)->name);
+    return ((const struct symbol *) ref)->name;
 }
 
 static void free_label(void *ref)
@@ -85,17 +85,15 @@ unsigned current_scope_depth(struct namespace *ns)
     return depth - 1;
 }
 
-struct symbol *sym_lookup(struct namespace *ns, const char *name)
+struct symbol *sym_lookup(struct namespace *ns, struct string name)
 {
     int i;
     struct hash_table *scope;
-    struct string key;
     struct symbol *sym;
 
-    key = str_init(name);
     for (i = 0; i < list_len(&ns->scope_list); ++i) {
         scope = list_get(&ns->scope_list, i);
-        sym = hash_lookup(scope, key);
+        sym = hash_lookup(scope, name);
         if (sym) {
             sym->referenced += 1;
             return sym;
@@ -110,16 +108,16 @@ const char *sym_name(const struct symbol *sym)
     static char name[128];
 
     if (!sym->n)
-        return sym->name;
+        return sym->name.str;
 
     /* Temporary variables and string literals are named '.t' and '.LC',
      * respectively. For those, append the numeral without anything in
      * between. For other variables, which are disambiguated statics,
      * insert a period between the name and the number. */
-    if (sym->name[0] == '.')
-        snprintf(name, sizeof(name), "%s%d", sym->name, sym->n);
+    if (sym->name.str[0] == '.')
+        snprintf(name, sizeof(name), "%s%d", sym->name.str, sym->n);
     else
-        snprintf(name, sizeof(name), "%s.%d", sym->name, sym->n);
+        snprintf(name, sizeof(name), "%s.%d", sym->name.str, sym->n);
 
     return name;
 }
@@ -170,7 +168,7 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
 
 struct symbol *sym_add(
     struct namespace *ns,
-    const char *name,
+    struct string name,
     const struct typetree *type,
     enum symtype symtype,
     enum linkage linkage)
@@ -204,14 +202,14 @@ struct symbol *sym_add(
                 sym->symtype = SYM_TENTATIVE;
             } else if (sym->symtype != symtype || sym->linkage != linkage) {
                 error("Declaration of '%s' does not match prior declaration.",
-                    name);
+                    name.str);
                 exit(1);
             } else {
                 apply_type(sym, type);
             }
             return sym;
         } else if (sym->depth == current_scope_depth(ns) && sym->depth) {
-            error("Duplicate definition of symbol '%s'.", name);
+            error("Duplicate definition of symbol '%s'.", name.str);
             exit(1);
         }
     }
@@ -261,7 +259,7 @@ struct symbol *sym_create_tmp(const struct typetree *type)
     struct symbol *sym = calloc(1, sizeof(*sym));
     sym->symtype = SYM_DEFINITION;
     sym->linkage = LINK_NONE;
-    sym->name = ".t";
+    sym->name = str_init(".t");
     sym->n = ++n;
     sym->type = *type;
 
@@ -279,7 +277,7 @@ struct symbol *sym_create_label(void)
     sym->type = basic_type__void;
     sym->symtype = SYM_LABEL;
     sym->linkage = LINK_INTERN;
-    sym->name = ".L";
+    sym->name = str_init(".L");
     sym->n = ++n;
 
     /* Construct symbol in normal namespace, but do not add it to any
@@ -291,7 +289,7 @@ struct symbol *sym_create_label(void)
 struct symbol *sym_create_constant(const struct typetree *type, union value val)
 {
     static struct symbol data = {
-        ".C",
+        {".C", 2},
         {0},
         SYM_CONSTANT,
         LINK_INTERN
@@ -316,27 +314,29 @@ void register_builtin_types(struct namespace *ns)
         *constvoidptr = type_init(T_POINTER, &basic_type__const_void);
 
     type = type_init(T_STRUCT);
-    type_add_member(type, "gp_offset", &basic_type__unsigned_int);
-    type_add_member(type, "fp_offset", &basic_type__unsigned_int);
-    type_add_member(type, "overflow_arg_area", voidptr);
-    type_add_member(type, "reg_save_area", voidptr);
+    type_add_member(type, str_init("gp_offset"), &basic_type__unsigned_int);
+    type_add_member(type, str_init("fp_offset"), &basic_type__unsigned_int);
+    type_add_member(type, str_init("overflow_arg_area"), voidptr);
+    type_add_member(type, str_init("reg_save_area"), voidptr);
     type = type_init(T_ARRAY, type, 1);
 
     /* Define va_list as described in System V ABI. */
-    sym_add(ns, "__builtin_va_list", type, SYM_TYPEDEF, LINK_NONE);
+    sym_add(ns, str_init("__builtin_va_list"), type, SYM_TYPEDEF, LINK_NONE);
 
     /* Add symbols with dummy types just to reserve them, and make them
      * resolve during parsing. These are implemented as compiler
      * intrinsics. */
-    sym_add(ns, "__builtin_va_start", none, SYM_DECLARATION, LINK_NONE);
-    sym_add(ns, "__builtin_va_arg", none, SYM_DECLARATION, LINK_NONE);
+    sym_add(ns, str_init("__builtin_va_start"), none,
+        SYM_DECLARATION, LINK_NONE);
+    sym_add(ns, str_init("__builtin_va_arg"), none, SYM_DECLARATION, LINK_NONE);
 
     type = type_init(T_FUNCTION);
     type->next = voidptr;
-    type_add_member(type, "dest", voidptr);
-    type_add_member(type, "src", constvoidptr);
-    type_add_member(type, "n", &basic_type__unsigned_long);
-    decl_memcpy = sym_add(ns, "memcpy", type, SYM_DECLARATION, LINK_EXTERN);
+    type_add_member(type, str_init("dest"), voidptr);
+    type_add_member(type, str_init("src"), constvoidptr);
+    type_add_member(type, str_init("n"), &basic_type__unsigned_long);
+    decl_memcpy = sym_add(ns, str_init("memcpy"), type, SYM_DECLARATION,
+        LINK_EXTERN);
 }
 
 const struct symbol *yield_declaration(struct namespace *ns)

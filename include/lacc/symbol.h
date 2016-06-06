@@ -14,7 +14,7 @@ struct block;
  * to base pointer for automatic variables and function arguments.
  */
 struct symbol {
-    const char *name;
+    struct string name;
 
     /* Top-level type is inlined in the symbol. Partial declarations are
      * updated by writing directly to this object. Members are still

@@ -43,14 +43,14 @@ unsigned current_scope_depth(struct namespace *ns);
 /* Retrieve a symbol based on identifier name, or NULL of not registered
  * or visible from current scope.
  */
-struct symbol *sym_lookup(struct namespace *ns, const char *name);
+struct symbol *sym_lookup(struct namespace *ns, struct string name);
 
 /* Add symbol to current scope, or resolve to or complete existing
  * symbols when they occur repeatedly.
  */
 struct symbol *sym_add(
     struct namespace *ns,
-    const char *name,
+    struct string name,
     const struct typetree *type,
     enum symtype symtype,
     enum linkage linkage);

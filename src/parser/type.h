@@ -12,7 +12,7 @@
  */
 void type_add_member(
     struct typetree *type,
-    const char *mname,
+    struct string name,
     const struct typetree *mtype);
 
 /* Add bitfield to struct. Type must be either signed or unsigned int.
@@ -21,7 +21,7 @@ void type_add_member(
  */
 void type_add_field(
     struct typetree *type,
-    const char *mname,
+    struct string name,
     const struct typetree *mtype,
     int width);
 
@@ -30,7 +30,7 @@ void type_add_field(
  */
 const struct member *find_type_member(
     const struct typetree *type,
-    const char *name);
+    struct string name);
 
 /* Allocate and initialize a new type. Take additional parameters for
  * initializing integer, pointer and array types, otherwise all-zero
@@ -42,7 +42,7 @@ const struct member *find_type_member(
  */
 struct typetree *type_init(enum type tt, ...);
 
-/* Create a tag type pointing to the provided object. Input type must be
+/* Create a tag type pointing to the provided object. Input must be
  * of struct or union type.
  *
  * Usage of this is to avoid circular typetree graphs, and to let tagged
@@ -50,7 +50,7 @@ struct typetree *type_init(enum type tt, ...);
  */
 struct typetree *type_tagged_copy(
     const struct typetree *type,
-    const char *name);
+    struct string name);
 
 int is_compatible(const struct typetree *l, const struct typetree *r);
 
