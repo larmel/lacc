@@ -694,6 +694,70 @@ static struct block *object_initializer(
     return block;
 }
 
+static int is_string(struct var val)
+{
+    return
+        val.kind == IMMEDIATE && val.symbol &&
+        val.symbol->symtype == SYM_STRING_VALUE;
+}
+
+/* Assignment between array and string literal. Handle special case of
+ * incomplete array type, and assignment to arrays which are longer than
+ * the string itself. In that case, the rest of the array is initialized
+ * to zero.
+ *
+ *      int foo[4] = "Hi"
+ *
+ * This will generates the following IR assignments:
+ *
+ *      foo = "Hi"
+ *      foo[3] = 0
+ *      foo[4] = 0
+ */
+static struct block *string_initializer(
+    struct definition *def,
+    struct block *block,
+    struct var target)
+{
+    const struct typetree *type;
+    assert(target.kind == DIRECT);
+    assert(is_array(target.type));
+    assert(is_string(block->expr));
+
+    if (type_equal(target.type->next, block->expr.type->next) &&
+        size_of(target.type) > size_of(block->expr.type))
+    {
+        type = target.type;
+        target.type = type_init(
+            T_ARRAY,
+            target.type->next,
+            size_of(block->expr.type) / size_of(type->next));
+        eval_assign(def, block, target, block->expr);
+
+        assert(size_of(type) > size_of(target.type));
+        target.offset += size_of(target.type);
+        target.type = type_init(
+            T_ARRAY,
+            target.type->next,
+            (size_of(type) - size_of(target.type)) / size_of(type->next));
+        zero_initialize(def, block, target);
+    } else {
+        if (!target.type->size) {
+            assert(!target.offset);
+
+            /* Complete type based on string literal. Evaluation does
+             * not have the required context to do this logic. */
+            ((struct symbol *) target.symbol)->type.size =
+                block->expr.type->size;
+            target.type = block->expr.type;
+        }
+
+        eval_assign(def, block, target, block->expr);
+    }
+
+    return block;
+}
+
 /* Parse and emit initializer code for target variable in statements
  * such as int b[] = {0, 1, 2, 3}. Generate a series of assignment
  * operations on references to target variable.
@@ -716,19 +780,12 @@ static struct block *initializer(
             error("Initializer must be computable at load time.");
             exit(1);
         }
-        if (target.kind == DIRECT && !target.type->size) {
-            assert(!target.offset);
-            assert(block->expr.kind == IMMEDIATE && block->expr.symbol);
-            assert(block->expr.symbol->symtype == SYM_STRING_VALUE);
-            assert(is_array(block->expr.type));
 
-            /* Complete type based on string literal. Evaluation does
-             * not have the required context to do this logic. */
-            ((struct symbol *) target.symbol)->type.size =
-                block->expr.type->size;
-            target.type = block->expr.type;
+        if (is_array(target.type) && is_string(block->expr)) {
+            block = string_initializer(def, block, target);
+        } else {
+            eval_assign(def, block, target, block->expr);
         }
-        eval_assign(def, block, target, block->expr);
     }
 
     return block;

@@ -233,7 +233,9 @@ static array_of(struct pending_displacement) pending_displacement_list;
  */
 static int elf_section_write(int shid, const void *data, size_t n)
 {
-    static unsigned scap[SHNUM];
+    /* Section data buffer capacity, in bytes. Buffer is kept in sbuf,
+     * indexed by section id. */
+    static size_t scap[SHNUM];
 
     size_t offset;
     assert(0 < shid && shid < SHNUM);
@@ -246,6 +248,7 @@ static int elf_section_write(int shid, const void *data, size_t n)
     offset = shdr[shid].sh_size;
     if (shdr[shid].sh_type != SHT_NOBITS) {
         if (offset + n >= scap[shid]) {
+            assert(n > 0);
             if (!scap[shid]) {
                 assert(!offset);
                 assert(!sbuf[shid].data);
