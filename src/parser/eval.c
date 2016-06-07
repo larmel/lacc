@@ -893,6 +893,7 @@ struct var eval_cast(
     struct var var,
     const struct typetree *type)
 {
+    var = rvalue(def, block, var);
     if (is_void(type)) {
         return var_void();
     } else if (!is_scalar(var.type) || !is_scalar(type)) {
