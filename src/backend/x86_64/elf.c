@@ -555,7 +555,7 @@ int elf_symbol(const struct symbol *sym)
          * write to .rodata immediately. */
         if (sym->symtype == SYM_STRING_VALUE) {
             elf_section_write(SHID_RODATA,
-                sym->string_value.str, entry.st_size);
+                str_raw(sym->string_value), entry.st_size);
         } else {
             elf_section_write(SHID_RODATA, &sym->constant_value, entry.st_size);
         }
@@ -612,7 +612,7 @@ int elf_data(struct immediate imm)
         break;
     case IMM_STRING:
         assert(w == imm.d.string.len + 1);
-        ptr = imm.d.string.str;
+        ptr = str_raw(imm.d.string);
         break;
     }
 

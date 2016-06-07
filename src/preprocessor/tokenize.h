@@ -11,7 +11,7 @@ extern const struct token basic_token[128];
 
 /* String representation of token.
  */
-struct string tokstr(struct token tok);
+String tokstr(struct token tok);
 
 /* Concatenate two tokens to produce a new string token.
  */

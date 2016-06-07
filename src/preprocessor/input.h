@@ -1,6 +1,8 @@
 #ifndef INPUT_H
 #define INPUT_H
 
+#include <lacc/string.h>
+
 /* Initialize with root file name, and store relative path to resolve
  * later includes. Passing NULL defaults to taking input from stdin.
  */
@@ -24,7 +26,7 @@ char *getprepline(void);
 
 /* Path of file and line number that was last read.
  */
-const char *current_file_path;
+String current_file_path;
 int current_file_line;
 
 #endif

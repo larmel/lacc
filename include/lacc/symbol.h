@@ -14,7 +14,7 @@ struct block;
  * to base pointer for automatic variables and function arguments.
  */
 struct symbol {
-    struct string name;
+    String name;
 
     /* Top-level type is inlined in the symbol. Partial declarations are
      * updated by writing directly to this object. Members are still
@@ -51,7 +51,7 @@ struct symbol {
     /* String literals are also handled as symbols, having type [] const
      * char. Denoted by symtype SYM_STRING_VALUE. Free string constants
      * are always named '.LC', disambiguated with n. */ 
-    struct string string_value;
+    String string_value;
 
     /* Symbols in label namespace hold a pointer to the block they
      * represent. */

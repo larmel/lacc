@@ -40,7 +40,7 @@ static int macrocmp(const struct macro *a, const struct macro *b)
     return 0;
 }
 
-static struct string macro_hash_key(void *ref)
+static String macro_hash_key(void *ref)
 {
     return ((struct macro *) ref)->name.d.string;
 }
@@ -117,7 +117,7 @@ void define(struct macro macro)
     ref = hash_insert(&macro_hash_table, &macro);
     if (macrocmp(ref, &macro)) {
         error("Redefinition of macro '%s' with different substitution.",
-            macro.name.d.string.str);
+            str_raw(macro.name.d.string));
         exit(1);
     }
 
@@ -173,6 +173,7 @@ static void pop_expand_stack(void)
 void print_token_array(const TokenArray *list)
 {
     int i;
+    String s;
     struct token t;
 
     putchar('[');
@@ -191,7 +192,8 @@ void print_token_array(const TokenArray *list)
             if (t.token == NEWLINE) {
                 printf("\\n");
             } else {
-                printf("%s", tokstr(t).str);
+                s = tokstr(t);
+                printf("%s", str_raw(s));
             }
             putchar('\'');
         }
@@ -204,17 +206,17 @@ static struct token paste(struct token left, struct token right)
 {
     struct token res;
     char *buf, *endptr;
-    struct string ls, rs;
+    String ls, rs;
 
     ls = tokstr(left);
     rs = tokstr(right);
     buf = calloc(ls.len + rs.len + 1, sizeof(*buf));
-    buf = strcpy(buf, ls.str);
-    buf = strcat(buf, rs.str);
+    buf = strcpy(buf, str_raw(ls));
+    buf = strcat(buf, str_raw(rs));
     res = tokenize(buf, &endptr);
     if (endptr != buf + ls.len + rs.len) {
         error("Invalid token resulting from pasting '%s' and '%s'.",
-            ls.str, rs.str);
+            str_raw(ls), str_raw(rs));
         exit(1);
     }
 
@@ -312,9 +314,11 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
 
 static const struct token *skip(const struct token *list, enum token_type token)
 {
+    String a, b;
     if (list->token != token) {
-        error("Expected '%s', but got '%s'.",
-            tokstr(basic_token[token]).str, tokstr(*list).str);
+        a = tokstr(basic_token[token]);
+        b = tokstr(*list);
+        error("Expected '%s', but got '%s'.", str_raw(a), str_raw(b));
         exit(1);
     }
 
@@ -484,7 +488,7 @@ struct token stringify(const TokenArray *list)
 {
     int i;
     struct token str, tok;
-    struct string strval;
+    String strval;
     char *buf;
     size_t cap, len, ptr;
 
@@ -494,7 +498,8 @@ struct token stringify(const TokenArray *list)
         tok = array_get(list, 0);
         str.d.string = tokstr(tok);
         if (tok.token == NUMBER) {
-            str.d.string = str_register(str.d.string.str, str.d.string.len);
+            str.d.string =
+                str_register(str_raw(str.d.string), str.d.string.len);
         }
     } else {
         /* Estimate 7 characters per token, trying to avoid unnecessary
@@ -526,7 +531,7 @@ struct token stringify(const TokenArray *list)
             if (tok.leading_whitespace && i) {
                 buf[ptr++] = ' ';
             }
-            memcpy(buf + ptr, strval.str, strval.len);
+            memcpy(buf + ptr, str_raw(strval), strval.len);
             ptr += strval.len;
         }
 
@@ -587,7 +592,7 @@ static void register__builtin__FILE__(void)
         0, /* parameters */
     };
 
-    file.d.string = str_init(current_file_path);
+    file.d.string = current_file_path;
     array_push_back(&macro.replacement, file);
 
     macro.name.d.string = str_init("__FILE__");

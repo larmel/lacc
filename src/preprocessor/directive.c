@@ -7,7 +7,7 @@
 
 #include <assert.h>
 
-#define IDENT(s) {IDENTIFIER, 0, {{s, sizeof(s) - 1}}}
+#define IDENT(s) {IDENTIFIER, 0, {SHORT_STRING_INIT(s)}}
 
 struct token
     ident__include = IDENT("include"),
@@ -75,9 +75,11 @@ int in_active_block(void)
 
 static void expect(const struct token *list, int token)
 {
+    String a, b;
     if (list->token != token) {
-        error("Expected '%s', but got '%s'.",
-            tokstr(basic_token[token]).str, tokstr(*list).str);
+        a = tokstr(basic_token[token]);
+        b = tokstr(*list);
+        error("Expected '%s', but got '%s'.", str_raw(a), str_raw(b));
         exit(1);
     }
 }
@@ -88,6 +90,7 @@ static int eval_primary(
     const struct token *list,
     const struct token **endptr)
 {
+    String s;
     int value = 0;
 
     switch (list->token) {
@@ -104,7 +107,8 @@ static int eval_primary(
         expect(list, ')');
         break;
     default:
-        error("Invalid primary expression '%s'.", tokstr(*list).str);
+        s = tokstr(*list);
+        error("Invalid primary expression '%s'.", str_raw(s));
         break;
     }
     *endptr = list + 1;
@@ -323,10 +327,10 @@ static int expression(const struct token *list, const struct token **endptr)
 
 static void preprocess_include(const struct token line[])
 {
-    struct token t = {STRING, 0, {{""}}};
+    struct token t = {STRING, 0, {SHORT_STRING_INIT("")}};
 
     if (line->token == STRING) {
-        include_file(line->d.string.str);
+        include_file(str_raw(line->d.string));
     } else if (line->token == '<') {
         line++;
         while (line->token != NEWLINE) {
@@ -341,7 +345,7 @@ static void preprocess_include(const struct token line[])
             exit(1);
         }
 
-        include_system_file(t.d.string.str);
+        include_system_file(str_raw(t.d.string));
     }
 }
 
@@ -407,6 +411,7 @@ void preprocess_directive(TokenArray *array)
 {
     int expr;
     enum state state;
+    String s;
     const struct token *line = array->data;
 
     if (line->token == IF || !tok_cmp(*line, ident__elif)) {
@@ -475,7 +480,8 @@ void preprocess_directive(TokenArray *array)
         } else if (!tok_cmp(*line, ident__error)) {
             array->data++;
             array->length--;
-            error("%s", stringify(array).d.string.str);
+            s = stringify(array).d.string;
+            error("%s", str_raw(s));
             exit(1);
         }
     }

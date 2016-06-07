@@ -12,7 +12,7 @@
  */
 void type_add_member(
     struct typetree *type,
-    struct string name,
+    String name,
     const struct typetree *mtype);
 
 /* Add bitfield to struct. Type must be either signed or unsigned int.
@@ -21,7 +21,7 @@ void type_add_member(
  */
 void type_add_field(
     struct typetree *type,
-    struct string name,
+    String name,
     const struct typetree *mtype,
     int width);
 
@@ -30,7 +30,7 @@ void type_add_field(
  */
 const struct member *find_type_member(
     const struct typetree *type,
-    struct string name);
+    String name);
 
 /* Allocate and initialize a new type. Take additional parameters for
  * initializing integer, pointer and array types, otherwise all-zero
@@ -50,7 +50,7 @@ struct typetree *type_init(enum type tt, ...);
  */
 struct typetree *type_tagged_copy(
     const struct typetree *type,
-    struct string name);
+    String name);
 
 int is_compatible(const struct typetree *l, const struct typetree *r);
 

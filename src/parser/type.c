@@ -146,11 +146,11 @@ const struct member *get_member(const struct typetree *type, int n)
 
 void type_add_member(
     struct typetree *type,
-    struct string member_name,
+    String member_name,
     const struct typetree *member_type)
 {
     struct signature *sig;
-    struct member mbr = {{0}};
+    struct member mbr = {{{0}}};
 
     assert(is_struct_or_union(type) || is_function(type));
     assert(!is_function(type) || !is_vararg(type));
@@ -187,12 +187,12 @@ void type_add_member(
 
 void type_add_field(
     struct typetree *type,
-    struct string mname,
+    String mname,
     const struct typetree *mtype,
     int width)
 {
     struct signature *sig;
-    struct member mbr = {{0}};
+    struct member mbr = {{{0}}};
 
     assert(is_struct(type));
     assert(!is_tagged(type));
@@ -252,7 +252,7 @@ const struct typetree *unwrapped(const struct typetree *type)
 
 struct typetree *type_tagged_copy(
     const struct typetree *type,
-    struct string name)
+    String name)
 {
     struct typetree *tag;
 
@@ -376,7 +376,7 @@ const struct typetree *type_deref(const struct typetree *type)
 
 const struct member *find_type_member(
     const struct typetree *type,
-    struct string name)
+    String name)
 {
     int i;
     const struct member *member;
@@ -407,7 +407,7 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
 
     if (is_tagged(tree)) {
         w += snprintf(s + w, size - w, "%s %s",
-            (is_union(tree)) ? "union" : "struct", tree->tag.str);
+            (is_union(tree)) ? "union" : "struct", str_raw(tree->tag));
         return w;
     }
 
@@ -475,7 +475,7 @@ int snprinttype(const struct typetree *tree, char *s, size_t size)
         w += snprintf(s + w, size - w, "{");
         for (i = 0; i < nmembers(tree); ++i) {
             const struct member *member = get_member(tree, i);
-            w += snprintf(s + w, size - w, ".%s::", member->name.str);
+            w += snprintf(s + w, size - w, ".%s::", str_raw(member->name));
             w += snprinttype(member->type, s + w, size - w);
             w += snprintf(s + w, size - w, " (+%d)", member->offset);
             if (i < nmembers(tree) - 1) {

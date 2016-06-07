@@ -92,16 +92,16 @@ static struct block *primary_expression(
     case IDENTIFIER:
         sym = sym_lookup(&ns_ident, tok.d.string);
         if (!sym) {
-            error("Undefined symbol '%s'.", tok.d.string.str);
+            error("Undefined symbol '%s'.", str_raw(tok.d.string));
             exit(1);
         }
         /* Special handling for builtin pseudo functions. These are
          * expected to behave as macros, thus should be no problem
          * parsing as function call in primary expression. Constructs
          * like (va_arg)(args, int) will not work with this scheme. */
-        if (!strcmp("__builtin_va_start", sym->name.str)) {
+        if (!strcmp("__builtin_va_start", str_raw(sym->name))) {
             block = parse__builtin_va_start(def, block);
-        } else if (!strcmp("__builtin_va_arg", sym->name.str)) {
+        } else if (!strcmp("__builtin_va_arg", str_raw(sym->name))) {
             block = parse__builtin_va_arg(def, block);
         } else {
             block->expr = var_direct(sym);
@@ -135,7 +135,7 @@ static struct block *primary_expression(
         break;
     default:
         error("Unexpected '%s', not a valid primary expression.",
-            tok.d.string.str);
+            str_raw(tok.d.string));
         exit(1);
     }
 
@@ -219,7 +219,7 @@ static struct block *postfix_expression(
             mbr = find_type_member(root.type, tok.d.string);
             if (!mbr) {
                 error("Invalid access, no member named '%s'.",
-                    tok.d.string.str);
+                    str_raw(tok.d.string));
                 exit(1);
             }
             root.type = mbr->type;
@@ -233,7 +233,7 @@ static struct block *postfix_expression(
                 mbr = find_type_member(type_deref(root.type), tok.d.string);
                 if (!mbr) {
                     error("Invalid access, no member named '%s'.",
-                        tok.d.string.str);
+                        str_raw(tok.d.string));
                     exit(1);
                 }
 

@@ -102,7 +102,8 @@ void error(const char *format, ...)
 
     errors++;
     va_start(args, format);
-    fprintf(stderr, "(%s, %d) error: ", current_file_path, current_file_line);
+    fprintf(stderr, "(%s, %d) error: ",
+        str_raw(current_file_path), current_file_line);
     vfprintf_cc(stderr, format, args);
     fputc('\n', stderr);
     va_end(args);

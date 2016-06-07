@@ -30,28 +30,43 @@ static int printchar(FILE *stream, char c)
     }
 }
 
-int fprintstr(FILE *stream, struct string str)
+int fprintstr(FILE *stream, String str)
 {
     int n, i;
 
     putc('"', stream);
     for (n = 0, i = 0; i < str.len; ++i)
-        n += printchar(stream, str.str[i]);
+        n += printchar(stream, str_raw(str)[i]);
 
     putc('"', stream);
 
     return n + 2;
 }
 
-struct string str_init(const char *str)
+String str_init(const char *str)
 {
-    struct string s = {0};
-    s.str = str;
+    String s;
+
     s.len = strlen(str);
+    if (s.len < SHORT_STRING_LEN) {
+        memcpy(s.a.str, str, s.len);
+        s.a.str[s.len] = '\0';
+    } else {
+        s.p.str = str;
+    }
+
     return s;
 }
 
-int str_cmp(struct string s1, struct string s2)
+int str_cmp(String s1, String s2)
 {
-    return (s1.len != s2.len) || memcmp(s1.str, s2.str, s1.len);
+    if (s1.len != s2.len) {
+        return 1;
+    }
+
+    if (s1.len < SHORT_STRING_LEN) {
+        return memcmp(s1.a.str, s2.a.str, s1.len);
+    }
+
+    return memcmp(s1.p.str, s2.p.str, s1.len);
 }

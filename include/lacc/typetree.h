@@ -76,11 +76,11 @@ struct typetree {
 
     /* Struct or union typedef, reference to symbol table in order to be
      * able to print the name. */
-    struct string tag;
+    String tag;
 };
 
 struct member {
-    struct string name;
+    String name;
     const struct typetree *type;
 
     /* Member offset into aggregate, in bytes. */

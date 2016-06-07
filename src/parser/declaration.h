@@ -5,7 +5,7 @@
 
 struct block *declaration(struct definition *def, struct block *parent);
 
-struct typetree *declarator(struct typetree *base, struct string *name);
+struct typetree *declarator(struct typetree *base, String *name);
 
 struct typetree *declaration_specifiers(int *stc);
 

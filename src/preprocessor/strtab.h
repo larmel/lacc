@@ -5,9 +5,10 @@
 
 #include <stddef.h>
 
-/* Register a string and store it internally, allocating a new copy if needed.
- * Manages memory ownership for all string constants used at runtime.
+/* Register a string and store it internally, allocating a new copy if
+ * needed. Manages memory ownership for all string constants used at
+ * runtime.
  */
-struct string str_register(const char *str, size_t len);
+String str_register(const char *str, size_t len);
 
 #endif

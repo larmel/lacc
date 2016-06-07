@@ -26,7 +26,7 @@ static struct typetree *parameter_list(const struct typetree *base)
     func->next = base;
 
     while (peek().token != ')') {
-        struct string name;
+        String name;
         struct typetree *type;
 
         name.len = 0;
@@ -105,7 +105,7 @@ static struct typetree *direct_declarator_array(struct typetree *base)
  */
 static struct typetree *direct_declarator(
     struct typetree *base,
-    struct string *name)
+    String *name)
 {
     struct typetree *type = base;
     struct typetree *head = NULL, *tail = NULL;
@@ -158,15 +158,17 @@ static struct typetree *direct_declarator(
 
 static struct typetree *pointer(const struct typetree *base)
 {
+    String s;
     struct typetree *type = type_init(T_POINTER, base);
 
     #define set_qualifier(arg) \
         if (type->qualifier & arg) \
-            error("Duplicate type qualifier '%s'.", peek().d.string.str); \
+            error("Duplicate type qualifier '%s'.", str_raw(s)); \
         type->qualifier |= arg;
 
     consume('*');
     while (1) {
+        s = peek().d.string;
         if (peek().token == CONST) {
             set_qualifier(Q_CONST);
         } else if (peek().token == VOLATILE) {
@@ -180,7 +182,7 @@ static struct typetree *pointer(const struct typetree *base)
     return type;
 }
 
-struct typetree *declarator(struct typetree *base, struct string *name)
+struct typetree *declarator(struct typetree *base, String *name)
 {
     while (peek().token == '*') {
         base = pointer(base);
@@ -192,7 +194,7 @@ struct typetree *declarator(struct typetree *base, struct string *name)
 static void member_declaration_list(struct typetree *type)
 {
     struct namespace ns = {0};
-    struct string name;
+    String name;
     struct var expr;
     struct typetree *decl_base, *decl_type;
 
@@ -244,7 +246,7 @@ static struct typetree *struct_or_union_declaration(void)
 {
     struct symbol *sym = NULL;
     struct typetree *type = NULL;
-    struct string name;
+    String name;
     enum type kind =
         (next().token == STRUCT) ? T_STRUCT : T_UNION;
 
@@ -255,11 +257,11 @@ static struct typetree *struct_or_union_declaration(void)
             type = type_init(kind);
             sym = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
         } else if (is_integer(&sym->type)) {
-            error("Tag '%s' was previously declared as enum.", sym->name.str);
+            error("Tag '%s' was previously declared as enum.", str_raw(sym->name));
             exit(1);
         } else if (sym->type.type != kind) {
             error("Tag '%s' was previously declared as %s.",
-                sym->name.str, (is_struct(&sym->type)) ? "struct" : "union");
+                str_raw(sym->name), (is_struct(&sym->type)) ? "struct" : "union");
             exit(1);
         }
 
@@ -269,7 +271,7 @@ static struct typetree *struct_or_union_declaration(void)
          * symbol table. */
         type = &sym->type;
         if (peek().token == '{' && type->size) {
-            error("Redefiniton of '%s'.", sym->name.str);
+            error("Redefiniton of '%s'.", str_raw(sym->name));
             exit(1);
         }
     }
@@ -295,7 +297,7 @@ static struct typetree *struct_or_union_declaration(void)
 
 static void enumerator_list(void)
 {
-    struct string name;
+    String name;
     struct var val;
     struct symbol *sym;
     int count = 0;
@@ -331,7 +333,7 @@ static void enumerator_list(void)
 
 static struct typetree *enum_declaration(void)
 {
-    struct string name;
+    String name;
     struct symbol *tag;
     struct typetree *type = type_init(T_SIGNED, 4);
 
@@ -343,7 +345,7 @@ static struct typetree *enum_declaration(void)
             tag = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
         } else if (!is_integer(&tag->type)) {
             error("Tag '%s' was previously defined as aggregate type.",
-                tag->name.str);
+                str_raw(tag->name));
             exit(1);
         }
 
@@ -351,7 +353,7 @@ static struct typetree *enum_declaration(void)
          * checked on  lookup to detect duplicate definitions. */
         if (peek().token == '{') {
             if (tag->constant_value.i) {
-                error("Redefiniton of enum '%s'.", tag->name.str);
+                error("Redefiniton of enum '%s'.", str_raw(tag->name));
             }
             enumerator_list();
             tag->constant_value.i = 1;
@@ -434,12 +436,12 @@ struct typetree *declaration_specifiers(int *stc)
 
     #define set_specifier(arg) \
         if (spec & arg)                                                        \
-            error("Duplicate type specifier '%s'.", tok.d.string.str);         \
+            error("Duplicate type specifier '%s'.", str_raw(tok.d.string));    \
         next(); spec |= arg;
 
     #define set_qualifier(arg) \
         if (qual & arg)                                                        \
-            error("Duplicate type qualifier '%s'.", tok.d.string.str);         \
+            error("Duplicate type qualifier '%s'.", str_raw(tok.d.string));    \
         next(); qual |= arg;
 
     #define set_storage_class(t) \
@@ -793,7 +795,7 @@ static struct block *initializer(
 
 /* C99: Define __func__ as static const char __func__[] = sym->name;
  */
-static void define_builtin__func__(struct string name)
+static void define_builtin__func__(String name)
 {
     struct typetree *type;
     struct symbol *sym;
@@ -847,7 +849,7 @@ struct block *declaration(struct definition *def, struct block *parent)
     }
 
     while (1) {
-        struct string name;
+        String name;
         const struct typetree *type;
         struct symbol *sym;
 
@@ -876,11 +878,11 @@ struct block *declaration(struct definition *def, struct block *parent)
         case '=':
             if (sym->symtype == SYM_DECLARATION) {
                 error("Extern symbol '%s' cannot be initialized.",
-                    sym->name.str);
+                    str_raw(sym->name));
                 exit(1);
             }
             if (!sym->depth && sym->symtype == SYM_DEFINITION) {
-                error("Symbol '%s' was already defined.", sym->name.str);
+                error("Symbol '%s' was already defined.", str_raw(sym->name));
                 exit(1);
             }
             consume('=');

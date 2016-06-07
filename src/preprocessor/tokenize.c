@@ -14,8 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define S(s) {(s), sizeof(s) - 1}
-#define T(t, s) {(t), 0, {S(s)}}
+/*#define S(s) {(s), sizeof(s) - 1}*/
+#define T(t, s) {(t), 0, {SHORT_STRING_INIT(s)}}
 
 const struct token basic_token[] = {
 /* 0x00 */  T(END, "$"),                T(AUTO, "auto"),
@@ -453,7 +453,7 @@ static int skip_spaces(char *in, char **endptr)
     return in - start;
 }
 
-struct string tokstr(struct token tok)
+String tokstr(struct token tok)
 {
     static char buf[64];
     struct number num;
@@ -499,13 +499,13 @@ struct token pastetok(struct token a, struct token b)
 {
     char *str;
     size_t len;
-    struct string as = tokstr(a), bs = tokstr(b);
+    String as = tokstr(a), bs = tokstr(b);
     struct token tok = {STRING};
 
     len = as.len + bs.len;
     str = calloc(len + 1, sizeof(*str));
-    memcpy(str, as.str, as.len);
-    memcpy(str + as.len, bs.str, bs.len);
+    memcpy(str, str_raw(as), as.len);
+    memcpy(str + as.len, str_raw(bs), bs.len);
 
     tok.d.string = str_register(str, len);
     free(str);

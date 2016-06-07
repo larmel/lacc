@@ -78,7 +78,7 @@ struct immediate {
         int dword;
         long qword;
         struct address addr;
-        struct string string;
+        String string;
     } d;
 };
 

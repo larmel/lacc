@@ -27,7 +27,7 @@ const struct symbol
 static unsigned hash_cap[] = {256, 16, 128, 64, 32, 16};
 static unsigned hash_cap_default = 8;
 
-static struct string sym_hash_key(void *ref)
+static String sym_hash_key(void *ref)
 {
     return ((const struct symbol *) ref)->name;
 }
@@ -85,7 +85,7 @@ unsigned current_scope_depth(struct namespace *ns)
     return depth - 1;
 }
 
-struct symbol *sym_lookup(struct namespace *ns, struct string name)
+struct symbol *sym_lookup(struct namespace *ns, String name)
 {
     int i;
     struct hash_table *scope;
@@ -108,16 +108,16 @@ const char *sym_name(const struct symbol *sym)
     static char name[128];
 
     if (!sym->n)
-        return sym->name.str;
+        return str_raw(sym->name);
 
     /* Temporary variables and string literals are named '.t' and '.LC',
      * respectively. For those, append the numeral without anything in
      * between. For other variables, which are disambiguated statics,
      * insert a period between the name and the number. */
-    if (sym->name.str[0] == '.')
-        snprintf(name, sizeof(name), "%s%d", sym->name.str, sym->n);
+    if (str_raw(sym->name)[0] == '.')
+        snprintf(name, sizeof(name), "%s%d", str_raw(sym->name), sym->n);
     else
-        snprintf(name, sizeof(name), "%s.%d", sym->name.str, sym->n);
+        snprintf(name, sizeof(name), "%s.%d", str_raw(sym->name), sym->n);
 
     return name;
 }
@@ -168,7 +168,7 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
 
 struct symbol *sym_add(
     struct namespace *ns,
-    struct string name,
+    String name,
     const struct typetree *type,
     enum symtype symtype,
     enum linkage linkage)
@@ -202,14 +202,14 @@ struct symbol *sym_add(
                 sym->symtype = SYM_TENTATIVE;
             } else if (sym->symtype != symtype || sym->linkage != linkage) {
                 error("Declaration of '%s' does not match prior declaration.",
-                    name.str);
+                    str_raw(name));
                 exit(1);
             } else {
                 apply_type(sym, type);
             }
             return sym;
         } else if (sym->depth == current_scope_depth(ns) && sym->depth) {
-            error("Duplicate definition of symbol '%s'.", name.str);
+            error("Duplicate definition of symbol '%s'.", str_raw(name));
             exit(1);
         }
     }
@@ -289,7 +289,7 @@ struct symbol *sym_create_label(void)
 struct symbol *sym_create_constant(const struct typetree *type, union value val)
 {
     static struct symbol data = {
-        {".C", 2},
+        SHORT_STRING_INIT(".C"),
         {0},
         SYM_CONSTANT,
         LINK_INTERN

@@ -130,7 +130,7 @@ struct token {
     enum token_type token;
     int leading_whitespace;
     union {
-        struct string string;
+        String string;
         struct number number;
     } d;
 };

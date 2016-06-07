@@ -107,7 +107,8 @@ static void read_macro_invocation(TokenArray *line, const struct macro *macro)
         array_push_back(line, t);
     }
     if (nesting) {
-        error("Unbalanced invocation of macro '%s'.", macro->name.d.string.str);
+        error("Unbalanced invocation of macro '%s'.",
+            str_raw(macro->name.d.string));
         exit(1);
     }
 }
@@ -127,7 +128,7 @@ static void read_defined_operator(TokenArray *line)
 
     if (t.token != IDENTIFIER) {
         error("Expected identifier in 'defined' clause, but got '%s'",
-            t.d.string.str);
+            str_raw(t.d.string));
         exit(1);
     }
 
@@ -192,6 +193,7 @@ static void read_complete_line(TokenArray *line, struct token t, int directive)
 static void add_to_lookahead(struct token t)
 {
     unsigned i = array_len(&lookahead);
+    String s;
     struct token prev;
     int added = 0;
 
@@ -211,7 +213,10 @@ static void add_to_lookahead(struct token t)
         array_push_back(&lookahead, t);
     }
 
-    verbose("   token( %s )", tokstr(t));
+    if (verbose_level) {
+        s = tokstr(t);
+        verbose("   token( %s )", str_raw(s));
+    }
 }
 
 /* Break array abstraction to move data after cursor to the front, as we
@@ -319,16 +324,25 @@ struct token peekn(unsigned n)
 
 struct token consume(enum token_type type)
 {
+    String s;
     struct token t = next();
 
     if (t.token != type) {
-        if (basic_token[type].d.string.str)
-            error("Unexpected token '%s', expected '%s'.",
-                tokstr(t).str, basic_token[type].d.string.str);
-        else
-            error("Unexpected token '%s', expected %s.", tokstr(t).str,
+        s = tokstr(t);
+        switch (type) {
+        case IDENTIFIER:
+        case NUMBER:
+        case STRING:
+            error("Unexpected token '%s', expected %s.",
+                str_raw(s),
                 (type == IDENTIFIER) ? "identifier" :
                 (type == NUMBER) ? "number" : "string");
+            break;
+        default:
+            error("Unexpected token '%s', expected '%s'.",
+                str_raw(s), str_raw(basic_token[type].d.string));
+            break;
+        }
         exit(1);
     }
 
@@ -338,7 +352,7 @@ struct token consume(enum token_type type)
 void preprocess(FILE *output)
 {
     struct token t;
-    struct string s;
+    String s;
 
     preserve_whitespace = 1;
     while ((t = next()).token != END) {
@@ -349,7 +363,7 @@ void preprocess(FILE *output)
             fprintstr(output, t.d.string); 
         } else {
             s = tokstr(t);
-            fprintf(output, "%s", s.str);
+            fprintf(output, "%s", str_raw(s));
         }
     }
 }

@@ -176,13 +176,13 @@ int asm_symbol(const struct symbol *sym)
         if (is_function(&sym->type)) {
             I0(".text");
             if (sym->linkage == LINK_EXTERN)
-                I1(".globl", sym->name.str);
-            I2(".type", sym->name.str, "@function");
-            out("%s:\n", sym->name.str);
+                I1(".globl", sym_name(sym));
+            I2(".type", sym_name(sym), "@function");
+            out("%s:\n", sym_name(sym));
         } else {
             I0(".data");
             if (sym->linkage == LINK_EXTERN)
-                I1(".globl", sym->name.str);
+                I1(".globl", sym_name(sym));
             out("\t.align\t%d\n", sym_alignment(sym));
             out("\t.type\t%s, @object\n", sym_name(sym));
             out("\t.size\t%s, %d\n", sym_name(sym), size_of(&sym->type));
@@ -376,7 +376,7 @@ int asm_flush(void)
         if (is_function(&current_symbol->type) &&
                 current_symbol->symtype == SYM_DEFINITION)
             out("\t.size\t%s, .-%s\n",
-                current_symbol->name.str, current_symbol->name.str);
+                sym_name(current_symbol), sym_name(current_symbol));
         current_symbol = NULL;
     }
     return 0;

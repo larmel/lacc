@@ -386,7 +386,7 @@ struct block *statement(struct definition *def, struct block *parent)
             consume(IDENTIFIER);
             sym = sym_lookup(&ns_label, tok.d.string);
             if (sym && sym->symtype == SYM_DEFINITION) {
-                error("Duplicate label '%s'.", tok.d.string.str);
+                error("Duplicate label '%s'.", str_raw(tok.d.string));
             } else {
                 sym = sym_add(
                     &ns_label,

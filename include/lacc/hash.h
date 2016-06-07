@@ -10,7 +10,7 @@ struct hash_table {
     /* Retrieve string representing the key we are hashing on. Keys are
      * unique identifiers of the elements, meaning they can be compared
      * for equality. */
-    struct string (*key)(void *);
+    String (*key)(void *);
 
     /* Element initializer, called when data is added to table. New data
      * is only inserted on hash_insert if it does not exist already,
@@ -38,7 +38,7 @@ struct hash_table {
 struct hash_table *hash_init(
     struct hash_table *tab,
     unsigned cap,
-    struct string (*key)(void *),
+    String (*key)(void *),
     void *(*add)(void *),
     void (*del)(void *));
 
@@ -52,10 +52,10 @@ void *hash_insert(struct hash_table *tab, void *val);
 
 /* Retrieve element matching key, or NULL if not found.
  */
-void *hash_lookup(struct hash_table *tab, struct string key);
+void *hash_lookup(struct hash_table *tab, String key);
 
 /* Remove element matching key.
  */
-void hash_remove(struct hash_table *tab, struct string key);
+void hash_remove(struct hash_table *tab, String key);
 
 #endif

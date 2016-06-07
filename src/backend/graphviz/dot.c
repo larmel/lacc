@@ -63,7 +63,7 @@ static char *vartostr(const struct var var)
             break;
         case T_ARRAY:
             assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
-            sprintf(buffer, "\\\"%s\\\"", var.symbol->string_value.str);
+            sprintf(buffer, "\\\"%s\\\"", str_raw(var.symbol->string_value));
             break;
         default:
             assert(0);

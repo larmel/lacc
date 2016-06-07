@@ -21,12 +21,12 @@ enum hash_op {
 
 /* Hash algorithm is adapted from http://www.cse.yorku.ca/~oz/hash.html.
  */
-static unsigned long djb2_hash(struct string str)
+static unsigned long djb2_hash(String str)
 {
     int c;
     unsigned long hash = 5381;
     const char
-        *p = str.str,
+        *p = str_raw(str),
         *q = p + str.len;
 
     while (p < q) {
@@ -40,7 +40,7 @@ static unsigned long djb2_hash(struct string str)
 static struct hash_entry *hash_walk(
     struct hash_table *tab,
     enum hash_op op,
-    struct string key)
+    String key)
 {
     /* Sentinel to hold return value from deleted entries, as we want to
      * have the same interface for all invocations. */
@@ -112,7 +112,7 @@ static void hash_del_noop(void *elem)
 struct hash_table *hash_init(
     struct hash_table *tab,
     unsigned cap,
-    struct string (*key)(void *),
+    String (*key)(void *),
     void *(*add)(void *),
     void (*del)(void *))
 {
@@ -171,7 +171,7 @@ void *hash_insert(struct hash_table *tab, void *val)
     return ref->data;
 }
 
-void *hash_lookup(struct hash_table *tab, struct string key)
+void *hash_lookup(struct hash_table *tab, String key)
 {
     struct hash_entry *ref;
 
@@ -179,7 +179,7 @@ void *hash_lookup(struct hash_table *tab, struct string key)
     return ref ? ref->data : NULL;
 }
 
-void hash_remove(struct hash_table *tab, struct string key)
+void hash_remove(struct hash_table *tab, String key)
 {
     struct hash_entry *ref;
 

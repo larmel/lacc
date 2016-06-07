@@ -31,7 +31,7 @@ struct source {
     size_t size, processed, read;
 
     /* Full path, or relative to invocation directory. */
-    const char *path;
+    String path;
 
     /* Number of characters into path occupied by directory, not
      * including the last slash. */
@@ -56,7 +56,7 @@ static array_of(struct source) source_stack;
 
 /* Expose for diagnostics.
  */
-const char *current_file_path;
+String current_file_path;
 int current_file_line;
 
 static struct source *current_file(void)
@@ -68,7 +68,7 @@ static struct source *current_file(void)
 static void push(struct source source)
 {
     assert(source.file);
-    assert(source.path);
+    assert(source.path.len);
 
     current_file_line = 0;
     current_file_path = source.path;
@@ -134,14 +134,14 @@ void include_file(const char *name)
      * which itself can include folders. */
     file = current_file();
     if (file->dirlen) {
-        path = create_path(file->path, file->dirlen, name);
+        path = create_path(str_raw(file->path), file->dirlen, name);
     } else {
         path = name;
     }
 
     source.file = fopen(path, "r");
     if (source.file) {
-        source.path = str_register(path, strlen(path)).str;
+        source.path = str_register(path, strlen(path));
         source.dirlen = strrchr(path, '/') - path;
         push(source);
     } else {
@@ -166,7 +166,7 @@ void include_system_file(const char *name)
         path = create_path(path, dirlen, name);
         source.file = fopen(path, "r");
         if (source.file) {
-            source.path = str_register(path, strlen(path)).str;
+            source.path = str_register(path, strlen(path));
             source.dirlen = strrchr(path, '/') - path;
             break;
         }
@@ -187,11 +187,12 @@ void add_include_search_path(const char *path)
 
 void init(const char *path)
 {
+    const char *sep;
     struct source source = {0};
 
     if (path) {
-        const char *sep = strrchr(path, '/');
-        source.path = path;
+        sep = strrchr(path, '/');
+        source.path = str_init(path);
         source.file = fopen(path, "r");
         if (sep) {
             source.dirlen = sep - path;
@@ -202,7 +203,7 @@ void init(const char *path)
         }
     } else {
         source.file = stdin;
-        source.path = "<stdin>";
+        source.path = str_init("<stdin>");
     }
 
     push(source);
@@ -389,6 +390,6 @@ char *getprepline(void)
 
     current_file_path = source->path;
     current_file_line = source->line;
-    verbose("(%s, %d): `%s`", source->path, source->line, line);
+    verbose("(%s, %d): `%s`", str_raw(source->path), source->line, line);
     return line;
 }
