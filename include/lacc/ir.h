@@ -72,16 +72,16 @@ struct var {
         IMMEDIATE
     } kind;
 
-    union value imm;
-
-    int offset;
-    int lvalue;
-
     /* Width in bits of bitfield access. Direct or deref references to
      * fields in a struct are restricted to a number of bits, which is
      * used for masking evaluation of assignment. Normal references have
      * default value of 0. */
     int width;
+
+    union value imm;
+
+    int offset;
+    int lvalue;
 };
 
 /* Three-address code, specifying a target (a), left and right operand
@@ -104,12 +104,6 @@ struct block {
     /* Contiguous block of three-address code operations. */
     array_of(struct op) code;
 
-    /* Toggle last statement was return, meaning expr is valid. There
-     * are cases where we reach end of control in a non-void function,
-     * but not wanting to return a value. For example when exit has been
-     * called. */
-    int has_return_value;
-
     /* Value to evaluate in branch conditions, or return value. Also
      * used for return value from expression parsing rules, as a
      * convenience. The decision on whether this block is a branch or
@@ -121,6 +115,12 @@ struct block {
      * - (x, NULL)   : Unconditional jump; break, continue, goto, loop.
      * - (x, y)      : False and true branch targets, respectively. */
     struct block *jump[2];
+
+    /* Toggle last statement was return, meaning expr is valid. There
+     * are cases where we reach end of control in a non-void function,
+     * but not wanting to return a value. For example when exit has been
+     * called. */
+    int has_return_value;
 
     /* Used to mark nodes as visited during graph traversal. */
     enum color {

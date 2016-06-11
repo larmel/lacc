@@ -39,10 +39,6 @@ struct symbol {
         LINK_EXTERN
     } linkage;
 
-    /* Tag to disambiguate differently scoped static variables with the
-     * same name. */
-    int n;
-
     /* Hold a constant integral or floating point value. Used for
      * enumeration members and numbers which must be loaded from memory
      * in assembly code. Denoted by symtype SYM_CONSTANT. */
@@ -56,6 +52,10 @@ struct symbol {
     /* Symbols in label namespace hold a pointer to the block they
      * represent. */
     struct block *label_value;
+
+    /* Tag to disambiguate differently scoped static variables with the
+     * same name. */
+    int n;
 
     /* Parameter or local variable offset to base pointer. This is kept
      * as 0 during parsing, but assigned when passed to back-end. */
