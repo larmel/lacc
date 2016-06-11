@@ -1,6 +1,7 @@
 #ifndef SYMTAB_H
 #define SYMTAB_H
 
+#include <lacc/array.h>
 #include <lacc/hash.h>
 #include <lacc/list.h>
 #include <lacc/symbol.h>
@@ -17,10 +18,12 @@ struct namespace {
      * Must not be affected by reallocation, so store pointers. */
     struct list symbol_list;
 
-    /* Hold a list of 'struct hash_table *', per scope depth, optimizing
-     * lookup. The hash table stores pointers to symbols in the symbol
-     * list. */
-    struct list scope_list;
+    /* Use hash table per scope, storing pointers to symbols in the
+     * namespace symbol list. */
+    array_of(struct hash_table) scope;
+
+    /* Maximum number of scopes pushed. */
+    int max_scope_depth;
 
     /* Iterator for successive calls to yield. */
     int cursor;

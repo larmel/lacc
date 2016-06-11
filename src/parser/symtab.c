@@ -45,42 +45,58 @@ static void free_label(void *ref)
 void push_scope(struct namespace *ns)
 {
     unsigned cap;
-    struct hash_table *scope;
+    struct hash_table *scope, empty = {0};
 
-    cap = hash_cap_default;
-    if (list_len(&ns->scope_list) < sizeof(hash_cap) / sizeof(hash_cap[0]))
-        cap = hash_cap[list_len(&ns->scope_list)];
+    /* Look at the maximum number of scopes that have been previously
+     * allocated. If within, we only need to clear the old scope. */
+    if (array_len(&ns->scope) < ns->max_scope_depth) {
+        assert(array_len(&ns->scope) < ns->scope.capacity);
+        array_len(&ns->scope) += 1;
+        scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
+        hash_clear(scope);
+    } else {
+        cap = hash_cap_default;
+        if (array_len(&ns->scope) < sizeof(hash_cap) / sizeof(hash_cap[0])) {
+            cap = hash_cap[array_len(&ns->scope)];
+        }
 
-    scope = calloc(1, sizeof(*scope));
-    hash_init(scope, cap, &sym_hash_key, NULL, NULL);
-    list_push(&ns->scope_list, scope);
+        ns->max_scope_depth += 1;
+        array_push_back(&ns->scope, empty);
+        scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
+        hash_init(scope, cap, &sym_hash_key, NULL, NULL);
+    }
 }
 
 void pop_scope(struct namespace *ns)
 {
+    int i;
     struct hash_table *scope;
-    assert(list_len(&ns->scope_list));
-
-    scope = list_pop(&ns->scope_list);
-    hash_destroy(scope);
-    free(scope);
 
     /* Popping last scope frees the whole symbol table, including the
      * symbols themselves. For label scope, which is per function, make
      * sure there are no tentative definitions. */
-    if (!list_len(&ns->scope_list)) {
-        list_clear(&ns->scope_list, NULL);
+    if (array_len(&ns->scope) == 1) {
+        for (i = 0; i < ns->max_scope_depth; ++i) {
+            scope = &array_get(&ns->scope, i);
+            hash_destroy(scope);
+        }
+
+        ns->max_scope_depth = 0;
+        array_clear(&ns->scope);
         if (ns == &ns_label) {
             list_clear(&ns->symbol_list, &free_label);
         } else {
             list_clear(&ns->symbol_list, &free);
         }
+    } else {
+        assert(array_len(&ns->scope));
+        array_len(&ns->scope) -= 1;
     }
 }
 
 unsigned current_scope_depth(struct namespace *ns)
 {
-    unsigned depth = list_len(&ns->scope_list);
+    unsigned depth = array_len(&ns->scope);
     assert(depth);
     return depth - 1;
 }
@@ -91,8 +107,8 @@ struct symbol *sym_lookup(struct namespace *ns, String name)
     struct hash_table *scope;
     struct symbol *sym;
 
-    for (i = 0; i < list_len(&ns->scope_list); ++i) {
-        scope = list_get(&ns->scope_list, i);
+    for (i = array_len(&ns->scope) - 1; i >= 0; --i) {
+        scope = &array_get(&ns->scope, i);
         sym = hash_lookup(scope, name);
         if (sym) {
             sym->referenced += 1;
@@ -232,7 +248,9 @@ struct symbol *sym_add(
     /* Add to normal identifier namespace, and make it searchable
      * through current scope. */
     list_push_back(&ns->symbol_list, sym);
-    hash_insert(list_get(&ns->scope_list, 0), (void *) sym);
+    hash_insert(
+        &array_get(&ns->scope, array_len(&ns->scope) - 1),
+        (void *) sym);
 
     verbose(
         "\t[type: %s, link: %s]\n"
