@@ -37,6 +37,27 @@ static unsigned long djb2_hash(String str)
     return hash;
 }
 
+static struct hash_entry *hash_alloc_entry(struct hash_table *tab)
+{
+    struct hash_entry *ref;
+
+    ref = tab->table[tab->capacity].next;
+    if (ref) {
+        tab->table[tab->capacity].next = ref->next;
+        memset(ref, 0, sizeof(*ref));
+    } else {
+        ref = calloc(1, sizeof(*ref));
+    }
+
+    return ref;
+}
+
+static void hash_free_entry(struct hash_table *tab, struct hash_entry *ref)
+{
+    ref->next = tab->table[tab->capacity].next;
+    tab->table[tab->capacity].next = ref;
+}
+
 static struct hash_entry *hash_walk(
     struct hash_table *tab,
     enum hash_op op,
@@ -58,7 +79,7 @@ static struct hash_entry *hash_walk(
             break;
 
         if (!ref->next && op == HASH_INSERT)
-            ref->next = calloc(1, sizeof(*ref));
+            ref->next = hash_alloc_entry(tab);
 
         pre = ref;
         ref = ref->next;
@@ -87,7 +108,7 @@ static struct hash_entry *hash_walk(
                     memset(ref, 0, sizeof(*ref));
             } else {
                 pre->next = ref->next;
-                free(ref);
+                hash_free_entry(tab, ref);
             }
 
             /* Entry is freed, but pointer to data as well as hash value
@@ -109,6 +130,32 @@ static void hash_del_noop(void *elem)
     return;
 }
 
+static void hash_chain_free(struct hash_entry *ref, void (*del)(void *))
+{
+    if (ref->next) {
+        hash_chain_free(ref->next, del);
+        free(ref->next);
+    }
+
+    del(ref->data);
+}
+
+static struct hash_entry *hash_chain_clear(
+    struct hash_table *tab,
+    struct hash_entry *ref)
+{
+    struct hash_entry *last = ref;
+    assert(tab->table);
+    assert(ref->data);
+
+    if (ref->next) {
+        last = hash_chain_clear(tab, ref->next);
+    }
+
+    tab->del(ref->data);
+    return last;
+}
+
 struct hash_table *hash_init(
     struct hash_table *tab,
     unsigned cap,
@@ -123,20 +170,34 @@ struct hash_table *hash_init(
     tab->key = key;
     tab->add = add ? add : hash_add_identity;
     tab->del = del ? del : hash_del_noop;
-    tab->table = calloc(tab->capacity, sizeof(*tab->table));
+    tab->table = calloc(tab->capacity + 1, sizeof(*tab->table));
     return tab;
 }
 
-void hash_chain_free(struct hash_entry *ref, void (*del)(void *))
+/* Delete all values, putting hash_entry objects already allocated in
+ * overflow slot at table[capacity].
+ */
+void hash_clear(struct hash_table *tab)
 {
-    assert(ref->data);
+    unsigned i;
+    struct hash_entry *ref, *last;
+    assert(tab->table);
 
-    if (ref->next) {
-        hash_chain_free(ref->next, del);
-        free(ref->next);
+    for (i = 0; i < tab->capacity; ++i) {
+        ref = &tab->table[i];
+        if (ref->data) {
+            tab->del(ref->data);
+            if (ref->next) {
+                /* Put chain of allocated hash_entry objects at the
+                 * beginning of overflow slot. */
+                last = hash_chain_clear(tab, ref->next);
+                last->next = tab->table[tab->capacity].next;
+                tab->table[tab->capacity].next = ref->next;
+            }
+        }
     }
 
-    del(ref->data);
+    memset(tab->table, 0, sizeof(*tab->table) * tab->capacity);
 }
 
 void hash_destroy(struct hash_table *tab)
@@ -154,6 +215,7 @@ void hash_destroy(struct hash_table *tab)
             assert(!ref->next);
     }
 
+    hash_chain_free(&tab->table[tab->capacity], &hash_del_noop);
     free(tab->table);
 }
 

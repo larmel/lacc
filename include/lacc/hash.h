@@ -42,6 +42,10 @@ struct hash_table *hash_init(
     void *(*add)(void *),
     void (*del)(void *));
 
+/* Reset table, clearing all values. Does not deallocate memory.
+ */
+void hash_clear(struct hash_table *tab);
+
 /* Free resources owned by table.
  */
 void hash_destroy(struct hash_table *tab);
