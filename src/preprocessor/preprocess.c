@@ -107,8 +107,7 @@ static void read_macro_invocation(TokenArray *line, const struct macro *macro)
         array_push_back(line, t);
     }
     if (nesting) {
-        error("Unbalanced invocation of macro '%s'.",
-            str_raw(macro->name.d.string));
+        error("Unbalanced invocation of macro '%s'.", str_raw(macro->name));
         exit(1);
     }
 }
@@ -132,7 +131,7 @@ static void read_defined_operator(TokenArray *line)
         exit(1);
     }
 
-    if (definition(t))
+    if (definition(tokstr(t)))
         t = tokenize("1", &endptr);
     else
         t = tokenize("0", &endptr);
@@ -171,9 +170,9 @@ static void read_complete_line(TokenArray *line, struct token t, int directive)
         if (t.token == IDENTIFIER) {
             if (!tok_cmp(t, ident__defined) && directive && expandable) {
                 read_defined_operator(line);
-            } else if (
-                (def = definition(t)) && def->type == FUNCTION_LIKE &&
-                expandable)
+            } else if ((def = definition(tokstr(t)))
+                && def->type == FUNCTION_LIKE
+                && expandable)
             {
                 array_push_back(line, t);
                 read_macro_invocation(line, def);

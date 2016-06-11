@@ -24,7 +24,7 @@ static int macrocmp(const struct macro *a, const struct macro *b)
     if ((a->type != b->type) || (a->params != b->params))
         return 1;
 
-    if (tok_cmp(a->name, b->name))
+    if (str_cmp(a->name, b->name))
         return 1;
 
     if (array_len(&a->replacement) != array_len(&b->replacement))
@@ -42,7 +42,7 @@ static int macrocmp(const struct macro *a, const struct macro *b)
 
 static String macro_hash_key(void *ref)
 {
-    return ((struct macro *) ref)->name.d.string;
+    return ((struct macro *) ref)->name;
 }
 
 static void macro_hash_del(void *ref)
@@ -87,21 +87,20 @@ static void ensure_initialized(void)
     }
 }
 
-const struct macro *definition(struct token name)
+const struct macro *definition(String name)
 {
-    struct macro *ref = NULL;
+    String builtin__line__ = SHORT_STRING_INIT("__LINE__");
+    struct macro *ref;
     struct token *tok;
 
     ensure_initialized();
-    if (name.token == IDENTIFIER) {
-        ref = hash_lookup(&macro_hash_table, name.d.string);
-        if (ref) {
-            /* Replace __LINE__ with current line number, by mutating
-             * the replacement list on the fly. */
-            if (!str_cmp(ref->name.d.string, str_init("__LINE__"))) {
-                tok = &array_get(&ref->replacement, 0);
-                tok->d.number.val.i = current_file_line;
-            }
+    ref = hash_lookup(&macro_hash_table, name);
+    if (ref) {
+        /* Replace __LINE__ with current line number, by mutating
+         * the replacement list on the fly. */
+        if (!str_cmp(ref->name, builtin__line__)) {
+            tok = &array_get(&ref->replacement, 0);
+            tok->d.number.val.i = current_file_line;
         }
     }
 
@@ -117,7 +116,7 @@ void define(struct macro macro)
     ref = hash_insert(&macro_hash_table, &macro);
     if (macrocmp(ref, &macro)) {
         error("Redefinition of macro '%s' with different substitution.",
-            str_raw(macro.name.d.string));
+            str_raw(macro.name));
         exit(1);
     }
 
@@ -128,12 +127,10 @@ void define(struct macro macro)
     }
 }
 
-void undef(struct token name)
+void undef(String name)
 {
     ensure_initialized();
-    if (name.token == IDENTIFIER) {
-        hash_remove(&macro_hash_table, name.d.string);
-    }
+    hash_remove(&macro_hash_table, name);
 }
 
 /* Keep track of which macros have been expanded, avoiding recursion by
@@ -148,7 +145,7 @@ static int is_macro_expanded(const struct macro *macro)
 
     for (i = 0; i < list_len(&expand_stack); ++i) {
         other = (const struct macro *) list_get(&expand_stack, i);
-        if (!tok_cmp(other->name, macro->name))
+        if (!str_cmp(other->name, macro->name))
             return 1;
     }
 
@@ -431,7 +428,7 @@ void expand(TokenArray *list)
     while (i < array_len(list)) {
         t = array_get(list, i);
         if (t.token == IDENTIFIER) {
-            def = definition(t);
+            def = definition(tokstr(t));
 
             /* Only expand function-like macros if they appear as func-
              * tion invocations, beginning with an open paranthesis. */
@@ -567,12 +564,12 @@ static TokenArray parse(char *str)
 static void register__builtin_va_end(void)
 {
     struct macro macro = {
-        {IDENTIFIER},
+        {{0}},
         FUNCTION_LIKE,
         1, /* parameters */
     };
 
-    macro.name.d.string = str_init("__builtin_va_end");
+    macro.name = str_init("__builtin_va_end");
     macro.replacement = parse(
         "@[0].gp_offset=0;"
         "@[0].fp_offset=0;"
@@ -587,53 +584,51 @@ static void register__builtin__FILE__(void)
 {
     struct token file = {STRING};
     struct macro macro = {
-        {IDENTIFIER},
+        SHORT_STRING_INIT("__FILE__"),
         OBJECT_LIKE,
         0, /* parameters */
     };
 
     file.d.string = current_file_path;
     array_push_back(&macro.replacement, file);
-
-    macro.name.d.string = str_init("__FILE__");
     define(macro);
 }
 
 void register_builtin_definitions(void)
 {
     struct macro macro = {
-        {IDENTIFIER},
+        {{0}},
         OBJECT_LIKE,
         0, /* parameters */
     };
 
     /* Required by GNU features.h. */
-    macro.name.d.string = str_init("__STRICT_ANSI__");
+    macro.name = str_init("__STRICT_ANSI__");
     macro.replacement = parse("");
     define(macro);
 
-    macro.name.d.string = str_init("__STDC_VERSION__");
+    macro.name = str_init("__STDC_VERSION__");
     macro.replacement = parse("199409L");
     define(macro);
 
-    macro.name.d.string = str_init("__STDC__");
+    macro.name = str_init("__STDC__");
     macro.replacement = parse("1");
     define(macro);
 
-    macro.name.d.string = str_init("__STDC_HOSTED__");
+    macro.name = str_init("__STDC_HOSTED__");
     macro.replacement = parse("1");
     define(macro);
 
-    macro.name.d.string = str_init("__LINE__");
+    macro.name = str_init("__LINE__");
     macro.replacement = parse("0");
     define(macro);
 
-    macro.name.d.string = str_init("__x86_64__");
+    macro.name = str_init("__x86_64__");
     macro.replacement = parse("1");
     define(macro);
 
     /* For some reason this is not properly handled by musl. */
-    macro.name.d.string = str_init("__inline");
+    macro.name = str_init("__inline");
     macro.replacement = parse("");
     define(macro);
 
