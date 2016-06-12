@@ -2,7 +2,6 @@
 #define IR_H
 
 #include "array.h"
-#include "list.h"
 #include "symbol.h"
 #include "token.h"
 
@@ -163,13 +162,13 @@ struct definition {
     /* Store all symbols associated with a function definition. Need
      * non-const references, as backend will use this to assign stack
      * offset of existing symbols. */
-    struct list
+    array_of(struct symbol *)
         params,
         locals;
 
     /* Store all associated nodes in a list to be able to free
      * everything at the end. */
-    struct list nodes;
+    array_of(struct block *) nodes;
 };
 
 /* A direct reference to given symbol, with two exceptions:

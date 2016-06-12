@@ -623,10 +623,7 @@ static void call(
     }
 }
 
-static void enter(
-    const struct typetree *type,
-    struct list *params,
-    struct list *locals)
+static void enter(struct definition *def)
 {
     int i, j, n,
         register_args = 0,  /* Arguments passed in registers. */
@@ -641,6 +638,9 @@ static void enter(
         struct param_class pc;
         int i;
     } argpc[MAX_REGISTER_ARGS];
+    const struct typetree *type;
+
+    type = &def->symbol->type;
     assert(is_function(type));
 
     /* Address of return value is passed as first integer argument. If
@@ -664,8 +664,8 @@ static void enter(
     /* Assign storage to parameters. Guarantee that parameters are 8-
      * byte aligned also for those passed by register, which makes it
      * easier to store in local frame after entering function. */
-    for (i = 0; i < list_len(params); ++i) {
-        sym = (struct symbol *) list_get(params, i);
+    for (i = 0; i < array_len(&def->params); ++i) {
+        sym = array_get(&def->params, i);
         arg = classify(&sym->type);
         n = EIGHTBYTES(&sym->type);
         assert(!sym->stack_offset);
@@ -683,8 +683,8 @@ static void enter(
     }
 
     /* Assign storage to locals. */
-    for (i = 0; i < list_len(locals); ++i) {
-        sym = (struct symbol *) list_get(locals, i);
+    for (i = 0; i < array_len(&def->locals); ++i) {
+        sym = array_get(&def->locals, i);
         assert(!sym->stack_offset);
         if (sym->linkage == LINK_NONE) {
             stack_offset -= size_of(&sym->type);
@@ -748,9 +748,9 @@ static void enter(
     next_sse_reg = 0;
     for (i = 0; i < register_args; ++i) {
         assert(argpc[i].pc.eightbyte[0] != PC_MEMORY);
-        assert(argpc[i].i < list_len(params));
+        assert(argpc[i].i < array_len(&def->params));
 
-        sym = (struct symbol *) list_get(params, argpc[i].i);
+        sym = array_get(&def->params, argpc[i].i);
         ref = var_direct(sym);
         n = EIGHTBYTES(&sym->type);
         for (j = 0; j < n; ++j) {
@@ -1490,10 +1490,8 @@ static void compile_function(struct definition *def)
     emit(INSTR_PUSH, OPT_REG, reg(BP, 8));
     emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(BP, 8));
 
-    /* Make sure parameters and local variables are placed on stack.
-     * Keep parameter class of return value for later assembling return
-     * statement. */
-    enter(&def->symbol->type, &def->params, &def->locals);
+    /* Make sure parameters and local variables are placed on stack. */
+    enter(def);
 
     /* Recursively assemble body. */
     compile_block(def->body, &def->symbol->type);

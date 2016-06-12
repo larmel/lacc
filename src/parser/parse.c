@@ -1,6 +1,7 @@
 #include "declaration.h"
 #include "parse.h"
 #include "symtab.h"
+#include <lacc/list.h>
 
 #include <assert.h>
 
@@ -18,23 +19,38 @@ static struct list definitions;
  *  enum { A = 1 };
  *
  */
-static struct list expr_blocks;
+static array_of(struct block *) expressions;
 
 /* Holds blocks that are allocated and free to use (not bound to any
  * definition).
  */
-static struct list blocks;
+static array_of(struct block *) blocks;
 
-static void free_block(void *elem)
+/* Free memory in static buffers.
+ */
+static void cleanup(void)
 {
-    struct block *block = (struct block *) elem;
-    array_clear(&block->code);
-    free(block);
+    int i;
+    struct block *block;
+
+    list_clear(&definitions, NULL);
+    for (i = 0; i < array_len(&expressions); ++i) {
+        block = array_get(&expressions, i);
+        array_clear(&block->code);
+        free(block);
+    }
+    for (i = 0; i < array_len(&blocks); ++i) {
+        block = array_get(&blocks, i);
+        array_clear(&block->code);
+        free(block);
+    }
+
+    array_clear(&expressions);
+    array_clear(&blocks);
 }
 
-static void cfg_block_release(void *elem)
+static void cfg_block_release(struct block *block)
 {
-    struct block *block = (struct block *) elem;
     struct var value = {0};
 
     array_empty(&block->code);
@@ -43,14 +59,20 @@ static void cfg_block_release(void *elem)
     block->has_return_value = 0;
     block->jump[0] = block->jump[1] = NULL;
     block->color = WHITE;
-    list_push(&blocks, elem);
+    array_push_back(&blocks, block);
 }
 
 static void cfg_clear(struct definition *def)
 {
-    list_clear(&def->params, NULL);
-    list_clear(&def->locals, NULL);
-    list_clear(&def->nodes, &cfg_block_release);
+    int i;
+
+    array_clear(&def->params);
+    array_clear(&def->locals);
+    for (i = 0; i < array_len(&def->nodes); ++i) {
+        cfg_block_release(array_get(&def->nodes, i));
+    }
+
+    array_clear(&def->nodes);
     free(def);
 }
 
@@ -58,17 +80,17 @@ struct block *cfg_block_init(struct definition *def)
 {
     struct block *block;
 
-    if (list_len(&blocks)) {
-        block = list_pop(&blocks);
+    if (array_len(&blocks)) {
+        block = array_pop_back(&blocks);
     } else {
         block = calloc(1, sizeof(*block));
     }
 
     if (def) {
         block->label = sym_create_label();
-        list_push_back(&def->nodes, block);
+        array_push_back(&def->nodes, block);
     } else {
-        list_push_back(&expr_blocks, block);
+        array_push_back(&expressions, block);
     }
 
     return block;
@@ -109,9 +131,7 @@ struct definition *parse(void)
     def = list_pop(&definitions);
     if (peek().token == END && !def) {
         assert(!list_len(&definitions));
-        list_clear(&definitions, NULL);
-        list_clear(&expr_blocks, &free_block);
-        list_clear(&blocks, &free_block);
+        cleanup();
     }
 
     return def;

@@ -6,7 +6,6 @@
 #include "symtab.h"
 #include "type.h"
 #include <lacc/cli.h>
-#include <lacc/list.h>
 #include <lacc/token.h>
 
 #include <assert.h>
@@ -868,7 +867,7 @@ struct block *declaration(struct definition *def, struct block *parent)
         if (current_scope_depth(&ns_ident)) {
             assert(current_scope_depth(&ns_ident) > 1);
             assert(def);
-            list_push_back(&def->locals, sym);
+            array_push_back(&def->locals, sym);
         }
 
         switch (peek().token) {
@@ -924,7 +923,7 @@ struct block *declaration(struct definition *def, struct block *parent)
                     error("Missing parameter name at position %d.", i + 1);
                     exit(1);
                 }
-                list_push_back(&def->params,
+                array_push_back(&def->params,
                     sym_add(&ns_ident, name, type, symtype, linkage));
             }
             parent = block(def, def->body);

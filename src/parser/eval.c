@@ -48,7 +48,7 @@ static struct var create_var(
 
     tmp = sym_create_tmp(type);
     res = var_direct(tmp);
-    list_push_back(&def->locals, tmp);
+    array_push_back(&def->locals, tmp);
     res.lvalue = 1;
     return res;
 }
