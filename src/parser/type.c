@@ -4,7 +4,6 @@
 #endif
 #include "type.h"
 #include <lacc/array.h>
-#include <lacc/list.h>
 
 #include <assert.h>
 #include <stdarg.h>
@@ -37,27 +36,35 @@ struct signature {
 /* Manage memory ownership of all dynamically allocated types and type
  * members, freeing them on exit.
  */
-static struct list type_registry;
-static struct list signature_registry;
+static array_of(struct typetree *) types;
+static array_of(struct signature *) signatures;
 static int init;
-
-static void free_signature(void *elem)
-{
-    struct signature *sig = (struct signature *) elem;
-    array_clear(&sig->members);
-    free(sig);
-}
 
 static void cleanup(void)
 {
-    list_clear(&type_registry, &free);
-    list_clear(&signature_registry, &free_signature);
+    int i;
+    struct typetree *type;
+    struct signature *signature;
+
+    for (i = 0; i < array_len(&types); ++i) {
+        type = array_get(&types, i);
+        free(type);
+    }
+
+    for (i = 0; i < array_len(&signatures); ++i) {
+        signature = array_get(&signatures, i);
+        array_clear(&signature->members);
+        free(signature);
+    }
+
+    array_clear(&types);
+    array_clear(&signatures);
 }
 
 static struct typetree *mktype(void)
 {
     struct typetree *type = calloc(1, sizeof(*type));
-    list_push_back(&type_registry, type);
+    array_push_back(&types, type);
     if (!init) {
         init = 1;
         atexit(cleanup);
@@ -68,7 +75,7 @@ static struct typetree *mktype(void)
 static struct signature *mksignature(void)
 {
     struct signature *sig = calloc(1, sizeof(*sig));
-    list_push_back(&signature_registry, sig);
+    array_push_back(&signatures, sig);
     if (!init) {
         init = 1;
         atexit(cleanup);
