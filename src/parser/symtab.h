@@ -3,7 +3,6 @@
 
 #include <lacc/array.h>
 #include <lacc/hash.h>
-#include <lacc/list.h>
 #include <lacc/symbol.h>
 
 /* A namespace holds symbols and manage resolution in scopes as they are
@@ -16,7 +15,7 @@ struct namespace {
 
     /* All symbols, regardless of scope, are stored in the same list.
      * Must not be affected by reallocation, so store pointers. */
-    struct list symbol_list;
+    array_of(struct symbol *) symbol;
 
     /* Use hash table per scope, storing pointers to symbols in the
      * namespace symbol list. */

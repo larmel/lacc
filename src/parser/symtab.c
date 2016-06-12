@@ -5,7 +5,6 @@
 #include "symtab.h"
 #include "type.h"
 #include <lacc/cli.h>
-#include <lacc/hash.h>
 
 #include <assert.h>
 #include <stdio.h>
@@ -30,16 +29,6 @@ static unsigned hash_cap_default = 8;
 static String sym_hash_key(void *ref)
 {
     return ((const struct symbol *) ref)->name;
-}
-
-static void free_label(void *ref)
-{
-    struct symbol *sym = (struct symbol *) ref;
-    if (sym->symtype == SYM_TENTATIVE) {
-        error("Undefined label '%s'.", sym_name(sym));
-    }
-
-    free(ref);
 }
 
 void push_scope(struct namespace *ns)
@@ -70,6 +59,7 @@ void push_scope(struct namespace *ns)
 void pop_scope(struct namespace *ns)
 {
     int i;
+    struct symbol *sym;
     struct hash_table *scope;
 
     /* Popping last scope frees the whole symbol table, including the
@@ -83,11 +73,14 @@ void pop_scope(struct namespace *ns)
 
         ns->max_scope_depth = 0;
         array_clear(&ns->scope);
-        if (ns == &ns_label) {
-            list_clear(&ns->symbol_list, &free_label);
-        } else {
-            list_clear(&ns->symbol_list, &free);
+        for (i = 0; i < array_len(&ns->symbol); ++i) {
+            sym = array_get(&ns->symbol, i);
+            if (ns == &ns_label && sym->symtype == SYM_TENTATIVE) {
+                error("Undefined label '%s'.", sym_name(sym));
+            }
+            free(sym);
         }
+        array_clear(&ns->symbol);
     } else {
         assert(array_len(&ns->scope));
         array_len(&ns->scope) -= 1;
@@ -247,7 +240,7 @@ struct symbol *sym_add(
 
     /* Add to normal identifier namespace, and make it searchable
      * through current scope. */
-    list_push_back(&ns->symbol_list, sym);
+    array_push_back(&ns->symbol, sym);
     hash_insert(
         &array_get(&ns->scope, array_len(&ns->scope) - 1),
         (void *) sym);
@@ -283,7 +276,7 @@ struct symbol *sym_create_tmp(const struct typetree *type)
 
     /* Add temporary to normal identifier namespace, but do not make it
      * searchable through any scope. */
-    list_push_back(&ns_ident.symbol_list, sym);
+    array_push_back(&ns_ident.symbol, sym);
     return sym;
 }
 
@@ -300,7 +293,7 @@ struct symbol *sym_create_label(void)
 
     /* Construct symbol in normal namespace, but do not add it to any
      * scope. No need or use for searching labels. */
-    list_push_back(&ns_ident.symbol_list, sym);
+    array_push_back(&ns_ident.symbol, sym);
     return sym;
 }
 
@@ -314,7 +307,7 @@ struct symbol *sym_create_constant(const struct typetree *type, union value val)
     };
 
     struct symbol *sym = malloc(sizeof(*sym));
-    list_push_back(&ns_ident.symbol_list, sym);
+    array_push_back(&ns_ident.symbol, sym);
     data.n++;
     *sym = data;
     sym->type = *type;
@@ -361,8 +354,8 @@ const struct symbol *yield_declaration(struct namespace *ns)
 {
     const struct symbol *sym;
 
-    while (ns->cursor < list_len(&ns->symbol_list)) {
-        sym = (const struct symbol *) list_get(&ns->symbol_list, ns->cursor);
+    while (ns->cursor < array_len(&ns->symbol)) {
+        sym = array_get(&ns->symbol, ns->cursor);
         ns->cursor++;
         if (sym->symtype == SYM_TENTATIVE ||
             sym->symtype == SYM_STRING_VALUE ||
@@ -381,14 +374,14 @@ const struct symbol *yield_declaration(struct namespace *ns)
 void output_symbols(FILE *stream, struct namespace *ns)
 {
     unsigned i;
-    struct symbol *sym;
     char *tstr;
+    const struct symbol *sym;
 
-    for (i = 0; i < list_len(&ns->symbol_list); ++i) {
+    for (i = 0; i < array_len(&ns->symbol); ++i) {
         if (!i) {
             verbose("namespace %s:", ns->name);
         }
-        sym = (struct symbol *) list_get(&ns->symbol_list, i);
+        sym = array_get(&ns->symbol, i);
         fprintf(stream, "%*s", sym->depth * 2, "");
         if (sym->linkage != LINK_NONE) {
             fprintf(stream, "%s ",
