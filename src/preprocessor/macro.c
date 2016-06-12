@@ -4,7 +4,6 @@
 #include "tokenize.h"
 #include <lacc/cli.h>
 #include <lacc/hash.h>
-#include <lacc/list.h>
 
 #include <assert.h>
 #include <ctype.h>
@@ -16,6 +15,26 @@
 
 static struct hash_table macro_hash_table;
 static int new_macro_added;
+
+/* Keep track of which macros have been expanded, avoiding recursion by
+ * looking up in this list for each new expansion.
+ */
+static array_of(String) expand_stack;
+
+static int is_macro_expanded(const struct macro *macro)
+{
+    int i;
+    String name;
+
+    for (i = 0; i < array_len(&expand_stack); ++i) {
+        name = array_get(&expand_stack, i);
+        if (!str_cmp(name, macro->name)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
 
 static int macrocmp(const struct macro *a, const struct macro *b)
 {
@@ -68,6 +87,7 @@ static void *macro_hash_add(void *ref)
 
 static void cleanup(void)
 {
+    array_clear(&expand_stack);
     hash_destroy(&macro_hash_table);
 }
 
@@ -131,40 +151,6 @@ void undef(String name)
 {
     ensure_initialized();
     hash_remove(&macro_hash_table, name);
-}
-
-/* Keep track of which macros have been expanded, avoiding recursion by
- * looking up in this list for each new expansion.
- */
-static struct list expand_stack;
-
-static int is_macro_expanded(const struct macro *macro)
-{
-    int i;
-    const struct macro *other;
-
-    for (i = 0; i < list_len(&expand_stack); ++i) {
-        other = (const struct macro *) list_get(&expand_stack, i);
-        if (!str_cmp(other->name, macro->name))
-            return 1;
-    }
-
-    return 0;
-}
-
-static void push_expand_stack(const struct macro *macro)
-{
-    assert(!is_macro_expanded(macro));
-    list_push(&expand_stack, (void *) macro);
-}
-
-static void pop_expand_stack(void)
-{
-    assert(list_len(&expand_stack));
-    list_pop(&expand_stack);
-    if (!list_len(&expand_stack)) {
-        list_clear(&expand_stack, NULL);
-    }
 }
 
 void print_token_array(const TokenArray *list)
@@ -267,7 +253,7 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
     struct token *stringified = NULL;
     TokenArray list = {0};
 
-    push_expand_stack(def);
+    array_push_back(&expand_stack, def->name);
     if (def->params) {
         stringified = calloc(def->params, sizeof(*stringified));
         for (i = 0; i < def->params; ++i) {
@@ -299,7 +285,7 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
 
     expand_paste_operators(&list);
     expand(&list);
-    pop_expand_stack();
+    (void) array_pop_back(&expand_stack);
     for (i = 0; i < def->params; ++i) {
         array_clear(&args[i]);
     }
