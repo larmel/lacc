@@ -1,7 +1,7 @@
 #include "declaration.h"
 #include "parse.h"
 #include "symtab.h"
-#include <lacc/list.h>
+#include <lacc/deque.h>
 
 #include <assert.h>
 
@@ -9,7 +9,7 @@
  * multiple definitions. For example 'int foo = 1, bar = 2;'. These
  * are buffered and returned one by one on calls to parse().
  */
-static struct list definitions;
+static deque_of(struct definition *) definitions;
 
 /* A list of blocks kept for housekeeping when parsing declarations
  * that do not have a full definition object associated. For example,
@@ -33,7 +33,6 @@ static void cleanup(void)
     int i;
     struct block *block;
 
-    list_clear(&definitions, NULL);
     for (i = 0; i < array_len(&expressions); ++i) {
         block = array_get(&expressions, i);
         array_clear(&block->code);
@@ -45,6 +44,7 @@ static void cleanup(void)
         free(block);
     }
 
+    deque_destroy(&definitions);
     array_clear(&expressions);
     array_clear(&blocks);
 }
@@ -103,7 +103,7 @@ struct definition *cfg_init(const struct symbol *sym)
 
     def = calloc(1, sizeof(*def));
     def->symbol = sym;
-    def = list_push_back(&definitions, def);
+    deque_push_back(&definitions, def);
     def->body = cfg_block_init(def);
 
     return def;
@@ -122,16 +122,18 @@ struct definition *parse(void)
     /* Parse a declaration, which can include definitions that will fill
      * up the buffer. Tentative declarations will only affect the symbol
      * table. */
-    while (!list_len(&definitions) && peek().token != END) {
+    while (!deque_len(&definitions) && peek().token != END) {
         declaration(NULL, NULL);
     }
 
     /* The next definition is taken from queue. Free memory in case we
      * reach end of input. */
-    def = list_pop(&definitions);
-    if (peek().token == END && !def) {
-        assert(!list_len(&definitions));
+    if (!deque_len(&definitions)) {
+        assert(peek().token == END);
         cleanup();
+        def = NULL;
+    } else {
+        def = deque_pop_front(&definitions);
     }
 
     return def;
