@@ -34,6 +34,9 @@
 #define deque_pop_front(deq) \
     array_get(&(deq)->array, (deq)->cursor++)
 
+#define deque_get(deq, i) \
+    array_get(&(deq)->array, (deq)->cursor + i)
+
 #define deque_destroy(deq) \
     do {                                                                       \
         (deq)->cursor = 0;                                                     \

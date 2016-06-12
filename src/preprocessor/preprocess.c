@@ -4,29 +4,27 @@
 #include "preprocess.h"
 #include "strtab.h"
 #include "tokenize.h"
-#include <lacc/array.h>
 #include <lacc/cli.h>
+#include <lacc/deque.h>
 
 #include <assert.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Toggle for producing preprocessed output (-E).
+/* Lookahead kept in buffer of preprocessed tokens. For the K&R grammar,
+ * it is sufficient to have two lookahead to parse.
  */
-static int preserve_whitespace;
+#define K 2
 
 /* Buffer of preprocessed tokens, ready to be consumed by the parser.
  * Configured to hold at least K tokens, enabling LL(K) parsing.
- *
- * For the K&R grammar, it is sufficient to have K = 2.
- *
- * Cursor points to current position in lookahead buffer, the token to
- * be returned by next().
  */
-static TokenArray lookahead;
-static unsigned cursor;
-static const int K = 2;
+static deque_of(struct token) lookahead;
+
+/* Toggle for producing preprocessed output (-E).
+ */
+static int preserve_whitespace;
 
 /* Line currently being tokenized.
  */
@@ -34,7 +32,7 @@ static char *line_buffer;
 
 static void cleanup(void)
 {
-    array_clear(&lookahead);
+    deque_destroy(&lookahead);
 }
 
 static void ensure_initialized(void)
@@ -191,8 +189,8 @@ static void read_complete_line(TokenArray *line, struct token t, int directive)
 
 static void add_to_lookahead(struct token t)
 {
-    unsigned i = array_len(&lookahead);
     String s;
+    unsigned len = deque_len(&lookahead);
     struct token prev;
     int added = 0;
 
@@ -200,16 +198,16 @@ static void add_to_lookahead(struct token t)
      * preprocessing and macro expansion; logic in preprocess_line will
      * guarantee that we keep preprocessing lines and filling up the
      * lookahead buffer for as long as there can be continuations. */
-    if (t.token == STRING && i--) {
-        prev = array_get(&lookahead, i);
+    if (t.token == STRING && len) {
+        prev = deque_get(&lookahead, len - 1);
         if (prev.token == STRING) {
-            array_get(&lookahead, i) = pastetok(prev, t);
+            deque_get(&lookahead, len - 1) = pastetok(prev, t);
             added = 1;
         }
     }
 
     if (!added) {
-        array_push_back(&lookahead, t);
+        deque_push_back(&lookahead, t);
     }
 
     if (verbose_level) {
@@ -218,29 +216,9 @@ static void add_to_lookahead(struct token t)
     }
 }
 
-/* Break array abstraction to move data after cursor to the front, as we
- * consume tokens towards the end of list.
- */
-static void rewind_lookahead_buffer(void)
-{
-    unsigned remaining;
-    assert(array_len(&lookahead) >= cursor);
-
-    remaining = array_len(&lookahead) - cursor;
-    if (remaining) {
-        memmove(
-            lookahead.data,
-            lookahead.data + cursor,
-            remaining * sizeof(*lookahead.data));
-    }
-
-    array_len(&lookahead) = remaining;
-    cursor = 0;
-}
-
 /* Consume at least one line, up until the final newline or end of file.
- * Fill up lookahead buffer and reset cursor. In case of end of input,
- * put END tokens in remaining lookahead slots.
+ * Fill up lookahead buffer to hold at least K tokens. In case of end of
+ * input, put END tokens in remaining slots.
  */
 static void preprocess_line(void)
 {
@@ -250,7 +228,6 @@ static void preprocess_line(void)
     struct token t, u;
 
     ensure_initialized();
-    rewind_lookahead_buffer();
     do {
         t = get_token();
         if (t.token == END) {
@@ -287,20 +264,20 @@ static void preprocess_line(void)
                 }
             }
         }
-    } while (array_len(&lookahead) < K || t.token == STRING);
+    } while (deque_len(&lookahead) < K || t.token == STRING);
 
-    while (array_len(&lookahead) < K) {
+    while (deque_len(&lookahead) < K) {
         add_to_lookahead(basic_token[END]);
     }
 }
 
 struct token next(void)
 {
-    if (cursor + K >= array_len(&lookahead)) {
+    if (deque_len(&lookahead) <= K) {
         preprocess_line();
     }
 
-    return array_get(&lookahead, cursor++);
+    return deque_pop_front(&lookahead);
 }
 
 struct token peek(void)
@@ -311,14 +288,13 @@ struct token peek(void)
 struct token peekn(unsigned n)
 {
     assert(n && n <= K);
-
-    if (!array_len(&lookahead)) {
+    if (!deque_len(&lookahead)) {
         /* If peek() is the first call made, make sure there is an
          * initial call to populate the lookahead buffer. */
         preprocess_line();
     }
 
-    return array_get(&lookahead, cursor + n - 1);
+    return deque_get(&lookahead, n - 1);
 }
 
 struct token consume(enum token_type type)
