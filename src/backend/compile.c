@@ -307,39 +307,45 @@ static enum reg load_cast(struct var val, const struct typetree *type)
     enum reg rg, rt;
     int sv = size_of(val.type), st = size_of(type);
 
-    if (is_integer(type) && is_real(val.type)) {
-        if (st < 4) st = 4;
-        assert(st == 4 || st == 8);
-        rg = get_int_reg();
-        op = (sv == 8) ? INSTR_CVTTSD2SI : INSTR_CVTTSS2SI;
-    } else if (is_real(type) && is_integer(val.type)) {
-        op = (st == 8) ? INSTR_CVTSI2SD : INSTR_CVTSI2SS;
-        if (size_of(val.type) < 4 || val.kind == IMMEDIATE) {
-            rt = get_int_reg();
-            rg = get_sse_reg();
-            load(val, rt);
-            emit(op, OPT_REG_REG, reg(rt, 4), reg(rg, st));
-            return rg;
-        }
-    } else if (is_real(type) && is_real(val.type)) {
+    if (is_real(type) && is_real(val.type)) {
         rg = get_sse_reg();
         load_sse(val, rg, size_of(type));
-        return rg;
     } else if (is_integer(type) && is_integer(val.type)) {
         rg = get_sse_reg();
         load_value(val, rg, size_of(type));
-        return rg;
-    } else
-        assert(0);
+    } else {
+        /* Load while converting between integer and floating point, in
+         * either order. */
+        if (is_integer(type) && is_real(val.type)) {
+            if (st < 4) st = 4;
+            assert(st == 4 || st == 8);
+            rg = get_int_reg();
+            op = (sv == 8) ? INSTR_CVTTSD2SI : INSTR_CVTTSS2SI;
+        } else {
+            assert(is_real(type) && is_integer(val.type));
+            op = (st == 8) ? INSTR_CVTSI2SD : INSTR_CVTSI2SS;
+            rg = get_sse_reg();
+            if (size_of(val.type) < 4 || val.kind == IMMEDIATE) {
+                rt = get_int_reg();
+                load(val, rt);
+                emit(op, OPT_REG_REG, reg(rt, 4), reg(rg, st));
+                return rg;
+            }
+        }
 
-    assert(val.kind != IMMEDIATE);
-    switch (val.kind) {
-    case DIRECT:
-        emit(op, OPT_MEM_REG, location_of(val, sv), reg(rg, st));
-        break;
-    default:
-        assert(0);
-        break;
+        switch (val.kind) {
+        case DIRECT:
+            emit(op, OPT_MEM_REG, location_of(val, sv), reg(rg, st));
+            break;
+        case DEREF:
+            load_value(var_direct(val.symbol), R11, 8);
+            emit(op, OPT_MEM_REG,
+                location(address(val.offset, R11, 0, 0), st), reg(rg, st));
+            break;
+        default:
+            assert(0);
+            break;
+        }
     }
 
     return rg;
