@@ -5,34 +5,58 @@
 #include <stdio.h>
 #include <string.h>
 
+#define MAX_BUF_LEN 256
+
+static char buffer[2][MAX_BUF_LEN];
+
+/* Return a buffer which can be used to write string representation of
+ * variable or symbol. Need to keep at most two alive in order to print
+ * a full statement. Alternate using counter.
+ */
+static char *get_buffer(void)
+{
+    static int i;
+
+    i = (i + 1) % 2;
+    return buffer[i];
+}
+
 static const char *sanitize(const struct symbol *sym)
 {
     const char *label;
+    char *buffer;
     assert(sym->symtype == SYM_LABEL);
 
     label = sym_name(sym);
-    return (label[0] == '.') ? &label[1] : label;
+    buffer = get_buffer();
+    strncpy(
+        buffer,
+        (label[0] == '.') ? label + 1 : label,
+        MAX_BUF_LEN);
+    return buffer;
 }
 
 static const char *escape(const struct symbol *sym)
 {
-    static char buffer[256];
     const char *label;
+    char *buffer;
     assert(sym->symtype == SYM_LABEL);
 
     label = sym_name(sym);
+    buffer = get_buffer();
     if (label[0] == '.') {
         buffer[0] = '\\';
-        strncpy(buffer + 1, label, 254);
-        return buffer;
+        strncpy(buffer + 1, label, MAX_BUF_LEN - 1);
+    } else {
+        strncpy(buffer, label, MAX_BUF_LEN);
     }
 
-    return label;
+    return buffer;
 }
 
 static char *vartostr(const struct var var)
 {
-    char *buffer = calloc(64, sizeof(char)); /* memory leak. */
+    char *buffer = get_buffer();
 
     switch (var.kind) {
     case IMMEDIATE:
@@ -233,6 +257,7 @@ void fdotgen(FILE *stream, struct definition *def)
         fprintf(stream, "\tlabel=\"%s\"\n", sym_name(def->symbol));
         fprintf(stream, "\tlabelloc=\"t\"\n");
     }
+
     foutputnode(stream, def->body);
     fprintf(stream, "}\n");
 }
