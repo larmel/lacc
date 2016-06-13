@@ -36,8 +36,8 @@
 #define X(arg) 0
 #define B(arg) is_64_bit_reg((arg).r)
 
-/* Operand size bit, 0 for 8 bit operand and 1 for 32 bit operand, when default
- * is 32 bit. [Table B-6]
+/* Operand size bit, 0 for 8 bit operand and 1 for 32 bit operand, when
+ * default is 32 bit. [Table B-6]
  */
 #define w(arg) (~(arg).w & 1)
 
@@ -48,8 +48,8 @@
  *      registers and 24 addressing modes.
  * reg: specifies either a register number or three more bits of opcode
  *      information.
- * r/m: specify a register as an operand or it can be combined with the mod
- *      field to encode an addressing mode.
+ * r/m: specify a register as an operand or it can be combined with the
+ *      mod field to encode an addressing mode.
  */
 
 /* SIB       [   scale,   index,   base   ]
@@ -77,9 +77,9 @@ enum tttn {
     TEST_G = 0xF
 };
 
-/* Encode address using ModR/M, SIB and Displacement bytes. Based on Table 2.2
- * and Table 2.3 in reference manual. Symbol references are encoded as %rip-
- * relative addresses, section 2.2.1.6.
+/* Encode address using ModR/M, SIB and Displacement bytes. Based on
+ * Table 2.2 and Table 2.3 in reference manual. Symbol references are
+ * encoded as %rip- relative addresses, section 2.2.1.6.
  */
 static void encode_addr(
     struct code *c,
@@ -262,174 +262,6 @@ static struct code movzx(
         encode_addr(&c, reg(b.reg), a.mem.addr);
     } else
         assert(0);
-
-    return c;
-}
-
-static struct code movaps(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{PREFIX_SSE, 0x29}, 2};
-    assert(optype == OPT_REG_MEM);
-    assert(a.reg.r >= XMM0 && a.reg.r <= XMM7);
-
-    encode_addr(&c, (a.reg.r - XMM0), b.mem.addr);
-    return c;
-}
-
-static struct code mov_floating_point(
-    enum instr_optype optype,
-    unsigned char opcode,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{0}};
-
-    c.val[c.len++] = opcode;
-    switch (optype) {
-    case OPT_REG_REG:
-        c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = 0x11;
-        c.val[c.len++] = 0xC0 | (reg(a.reg) << 3) | reg(b.reg);
-        break;
-    case OPT_MEM_REG:
-        if (rrex(b.reg) || mrex(a.mem.addr)) {
-            c.val[c.len++] = REX | R(b.reg) | mrex(a.mem.addr);
-        }
-        c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = 0x10;
-        encode_addr(&c, reg(b.reg), a.mem.addr);
-        break;
-    case OPT_REG_MEM:
-        c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = 0x11;
-        encode_addr(&c, reg(a.reg), b.mem.addr);
-        break;
-    default:
-        assert(0);
-        break;
-    }
-
-    return c;
-}
-
-static struct code movsd(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return mov_floating_point(optype, 0xF2, a, b);
-}
-
-static struct code movss(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return mov_floating_point(optype, 0xF3, a, b);
-}
-
-static struct code convert_floating_point(
-    enum instr_optype optype,
-    unsigned char opcode1,
-    unsigned char opcode2,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{0}};
-    assert(optype == OPT_MEM_REG || optype == OPT_REG_REG);
-
-    c.val[c.len++] = opcode1;
-    if (optype == OPT_MEM_REG) {
-        if (rrex(b.reg) || mrex(a.mem.addr)) {
-            c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
-        }
-        c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = opcode2;
-        encode_addr(&c, reg(b.reg), a.mem.addr);
-    } else {
-        c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = opcode2;
-        c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
-    }
-
-    return c;
-}
-
-static struct code cvtsi2ss(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return convert_floating_point(optype, 0xF3, 0x2A, a, b);
-}
-
-static struct code cvtsi2sd(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return convert_floating_point(optype, 0xF2, 0x2A, a, b);
-}
-
-static struct code cvtss2sd(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return convert_floating_point(optype, 0xF3, 0x5A, a, b);
-}
-
-static struct code cvtsd2ss(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return convert_floating_point(optype, 0xF2, 0x5A, a, b);
-}
-
-static struct code cvttsd2si(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{0xF2}, 1};
-    assert(optype == OPT_MEM_REG || optype == OPT_REG_REG);
-
-    if (optype == OPT_MEM_REG) {
-        if (rrex(b.reg) || mrex(a.mem.addr)) {
-            c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
-        }
-        c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = 0x2C;
-        encode_addr(&c, reg(b.reg), a.mem.addr);
-    } else {
-        assert(0);
-    }
-
-    return c;
-}
-
-static struct code cvttss2si(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{0xF3}, 1};
-    assert(optype == OPT_MEM_REG || optype == OPT_REG_REG);
-
-    if (optype == OPT_MEM_REG) {
-        if (rrex(b.reg) || mrex(a.mem.addr)) {
-            c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
-        }
-        c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = 0x2D;
-        encode_addr(&c, reg(b.reg), a.mem.addr);
-    } else {
-        assert(0);
-    }
 
     return c;
 }
@@ -662,8 +494,8 @@ static struct code rep_movsq(void)
 
 static struct code ret(void)
 {
-    /* Only 'Near return' is used, returning to a function with address in the
-     * same segment, and not popping any bytes from stack. */
+    /* Only 'Near return' is used, returning to a function with address
+     * in the same segment, and not popping any bytes from stack. */
     struct code c = {{0xC3}, 1};
     return c;
 }
@@ -726,97 +558,6 @@ static struct code mul(enum instr_optype optype, union operand op)
     }
 
     return c;
-}
-
-static struct code floating_point_operation(
-    enum instr_optype optype,
-    unsigned char opcode1,
-    unsigned char opcode2,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{0}};
-    assert(optype == OPT_REG_REG || optype == OPT_MEM_REG);
-
-    c.val[c.len++] = opcode1;
-    if (optype == OPT_MEM_REG) {
-        if (rrex(b.reg) || mrex(a.mem.addr)) {
-            c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
-        }
-        c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = opcode2;
-        encode_addr(&c, reg(b.reg), a.mem.addr);
-    } else {
-        c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = opcode2;
-        c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
-    }
-
-    return c;
-}
-
-static struct code mulsd(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return floating_point_operation(optype, 0xF2, 0x59, a, b);
-}
-
-static struct code mulss(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return floating_point_operation(optype, 0xF3, 0x59, a, b);
-}
-
-static struct code addsd(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return floating_point_operation(optype, 0xF2, 0x58, a, b);
-}
-
-static struct code addss(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return floating_point_operation(optype, 0xF3, 0x58, a, b);
-}
-
-static struct code subsd(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return floating_point_operation(optype, 0xF2, 0x5C, a, b);
-}
-
-static struct code subss(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return floating_point_operation(optype, 0xF3, 0x5C, a, b);
-}
-
-static struct code divsd(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return floating_point_operation(optype, 0xF2, 0x5E, a, b);
-}
-
-static struct code divss(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    return floating_point_operation(optype, 0xF3, 0x5E, a, b);
 }
 
 static struct code encode_div(enum instr_optype optype, union operand op)
@@ -948,43 +689,119 @@ static struct code sar(
     return c;
 }
 
+static struct code movaps(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{PREFIX_SSE, 0x29}, 2};
+    assert(optype == OPT_REG_MEM);
+    assert(a.reg.r >= XMM0 && a.reg.r <= XMM7);
+
+    encode_addr(&c, (a.reg.r - XMM0), b.mem.addr);
+    return c;
+}
+
+static struct code sse_mov(
+    enum instr_optype optype,
+    unsigned char opcode,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{0}};
+
+    c.val[c.len++] = opcode;
+    switch (optype) {
+    case OPT_REG_REG:
+        c.val[c.len++] = PREFIX_SSE;
+        c.val[c.len++] = 0x11;
+        c.val[c.len++] = 0xC0 | (reg(a.reg) << 3) | reg(b.reg);
+        break;
+    case OPT_MEM_REG:
+        if (rrex(b.reg) || mrex(a.mem.addr)) {
+            c.val[c.len++] = REX | R(b.reg) | mrex(a.mem.addr);
+        }
+        c.val[c.len++] = PREFIX_SSE;
+        c.val[c.len++] = 0x10;
+        encode_addr(&c, reg(b.reg), a.mem.addr);
+        break;
+    case OPT_REG_MEM:
+        c.val[c.len++] = PREFIX_SSE;
+        c.val[c.len++] = 0x11;
+        encode_addr(&c, reg(a.reg), b.mem.addr);
+        break;
+    default:
+        assert(0);
+        break;
+    }
+
+    return c;
+}
+
+static struct code sse_generic(
+    enum instr_optype optype,
+    unsigned char opcode1,
+    unsigned char opcode2,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{0}};
+    assert(optype == OPT_MEM_REG || optype == OPT_REG_REG);
+
+    c.val[c.len++] = opcode1;
+    if (optype == OPT_MEM_REG) {
+        if (rrex(b.reg) || mrex(a.mem.addr)) {
+            c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
+        }
+        c.val[c.len++] = PREFIX_SSE;
+        c.val[c.len++] = opcode2;
+        encode_addr(&c, reg(b.reg), a.mem.addr);
+    } else {
+        c.val[c.len++] = PREFIX_SSE;
+        c.val[c.len++] = opcode2;
+        c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
+    }
+
+    return c;
+}
+
 struct code encode(struct instruction instr)
 {
     switch (instr.opcode) {
     case INSTR_ADD:
         return add(instr.optype, instr.source, instr.dest);
     case INSTR_ADDSD:
-        return addsd(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF2, 0x58, instr.source, instr.dest);
     case INSTR_ADDSS:
-        return addss(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF3, 0x58, instr.source, instr.dest);
     case INSTR_CVTSI2SS:
-        return cvtsi2ss(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF3, 0x2A, instr.source, instr.dest);
     case INSTR_CVTSI2SD:
-        return cvtsi2sd(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF2, 0x2A, instr.source, instr.dest);
     case INSTR_CVTSS2SD:
-        return cvtss2sd(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF3, 0x5A, instr.source, instr.dest);
     case INSTR_CVTSD2SS:
-        return cvtsd2ss(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF2, 0x5A, instr.source, instr.dest);
     case INSTR_CVTTSD2SI:
-        return cvttsd2si(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF2, 0x2C, instr.source, instr.dest);
     case INSTR_CVTTSS2SI:
-        return cvttss2si(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF3, 0x2C, instr.source, instr.dest);
     case INSTR_NOT:
         return not(instr.optype, instr.source);
     case INSTR_MUL:
         return mul(instr.optype, instr.source);
     case INSTR_MULSD:
-        return mulsd(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF2, 0x59, instr.source, instr.dest);
     case INSTR_MULSS:
-        return mulss(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF3, 0x59, instr.source, instr.dest);
     case INSTR_XOR:
         return xor(instr.optype, instr.source, instr.dest);
     case INSTR_DIV:
         return encode_div(instr.optype, instr.source);
     case INSTR_DIVSD:
-        return divsd(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF2, 0x5E, instr.source, instr.dest);
     case INSTR_DIVSS:
-        return divss(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF3, 0x5E, instr.source, instr.dest);
     case INSTR_AND:
         return and(instr.optype, instr.source, instr.dest);
     case INSTR_OR:
@@ -1008,17 +825,17 @@ struct code encode(struct instruction instr)
     case INSTR_MOVAPS:
         return movaps(instr.optype, instr.source, instr.dest);
     case INSTR_MOVSD:
-        return movsd(instr.optype, instr.source, instr.dest);
+        return sse_mov(instr.optype, 0xF2, instr.source, instr.dest);
     case INSTR_MOVSS:
-        return movss(instr.optype, instr.source, instr.dest);
+        return sse_mov(instr.optype, 0xF3, instr.source, instr.dest);
     case INSTR_PUSH:
         return push(instr.optype, instr.source);
     case INSTR_SUB:
         return sub(instr.optype, instr.source, instr.dest);
     case INSTR_SUBSD:
-        return subsd(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF2, 0x5C, instr.source, instr.dest);
     case INSTR_SUBSS:
-        return subss(instr.optype, instr.source, instr.dest);
+        return sse_generic(instr.optype, 0xF3, 0x5C, instr.source, instr.dest);
     case INSTR_LEA:
         return lea(instr.optype, instr.source, instr.dest);
     case INSTR_LEAVE:
