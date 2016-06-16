@@ -142,11 +142,57 @@ static struct block *primary_expression(
     return block;
 }
 
+typedef array_of(struct var) VarArray;
+
+/* Need to buffer parameter expressions before each function call, and
+ * since calls can be nested, the same buffer cannot be used for all.
+ */
+static array_of(VarArray) args;
+static unsigned max_depth;
+
+static void cleanup(void)
+{
+    int i;
+
+    for (i = 0; i < max_depth; ++i) {
+        array_clear(&array_get(&args, i));
+    }
+
+    array_clear(&args);
+}
+
+static VarArray *push_argument_list(void)
+{
+    static int init;
+    unsigned len;
+
+    if (!init) {
+        atexit(cleanup);
+        init = 1;
+    }
+
+    array_increase_cap(&args);
+    args.length += 1;
+    len = array_len(&args);
+    if (len > max_depth) {
+        max_depth = len;
+    }
+
+    return &array_get(&args, len - 1);
+}
+
+static void pop_argument_list(void)
+{
+    args.length -= 1;
+    array_empty(&array_get(&args, array_len(&args)));
+}
+
 static struct block *postfix_expression(
     struct definition *def,
     struct block *block)
 {
     struct var root;
+    VarArray *args;
 
     block = primary_expression(def, block);
     root = block->expr;
@@ -154,9 +200,9 @@ static struct block *postfix_expression(
     while (1) {
         const struct member *mbr;
         const struct typetree *type;
-        struct var expr, copy, *arg;
+        struct var expr, copy;
         struct token tok;
-        int i, j;
+        int i;
 
         switch ((tok = peek()).token) {
         case '[':
@@ -181,7 +227,7 @@ static struct block *postfix_expression(
                 exit(1);
             }
             consume('(');
-            arg = calloc(nmembers(type), sizeof(*arg));
+            args = push_argument_list();
             for (i = 0; i < nmembers(type); ++i) {
                 if (peek().token == ')') {
                     error("Too few arguments, expected %d but got %d.",
@@ -189,7 +235,7 @@ static struct block *postfix_expression(
                     exit(1);
                 }
                 block = assignment_expression(def, block);
-                arg[i] = block->expr;
+                array_push_back(args, block->expr);
                 /* todo: type check here. */
                 if (i < nmembers(type) - 1) {
                     consume(',');
@@ -197,21 +243,22 @@ static struct block *postfix_expression(
             }
             while (is_vararg(type) && peek().token != ')') {
                 consume(',');
-                arg = realloc(arg, (i + 1) * sizeof(*arg));
                 block = assignment_expression(def, block);
-                arg[i] = block->expr;
-                if (is_float(arg[i].type)) {
+                if (is_float(block->expr.type)) {
                     /* Single-precision arguments to vararg function are
                      * automatically promoted to double. */
-                    arg[i] = eval_cast(def, block, arg[i], &basic_type__double);
+                    block->expr =
+                        eval_cast(def, block, block->expr, &basic_type__double);
                 }
+                array_push_back(args, block->expr);
                 i++;
             }
             consume(')');
-            for (j = 0; j < i; ++j)
-                param(def, block, arg[j]);
-            free(arg);
+            for (i = 0; i < array_len(args); ++i) {
+                param(def, block, array_get(args, i));
+            }
             root = eval_call(def, block, root);
+            pop_argument_list();
             break;
         case '.':
             consume('.');

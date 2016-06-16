@@ -4,8 +4,7 @@
 #define ARRAY_CAPACITY_INITIAL 16
 #define ARRAY_CAPACITY_GROWTH(cap) (cap * 2)
 
-/* Declare a struct or union member as array of given type. Intended
- * usage:
+/* Declare a type representing an array of given type.
  *
  * struct code {
  *     array_of(struct op) operations;
@@ -19,20 +18,28 @@
         T *data;                                                               \
     }
 
-/* Add element to array. Expands to a block statement.
- */
-#define array_push_back(arr, elem) \
+#define array_increase_cap(arr) \
     do {                                                                       \
         if ((arr)->length == (arr)->capacity) {                                \
             if (!(arr)->capacity) {                                            \
                 (arr)->capacity = ARRAY_CAPACITY_INITIAL;                      \
-                (arr)->data = calloc((arr)->capacity, sizeof(elem));           \
+                (arr)->data = calloc((arr)->capacity, sizeof(*(arr)->data));   \
             } else {                                                           \
                 (arr)->capacity = ARRAY_CAPACITY_GROWTH((arr)->capacity);      \
                 (arr)->data =                                                  \
-                    realloc((arr)->data, (arr)->capacity * sizeof(elem));      \
+                    realloc(                                                   \
+                        (arr)->data,                                           \
+                        (arr)->capacity * sizeof(*(arr)->data));               \
+                memset((arr)->data + (arr)->length, 0, sizeof(*(arr)->data));  \
             }                                                                  \
         }                                                                      \
+    } while (0)
+
+/* Add element to array. Expands to a block statement.
+ */
+#define array_push_back(arr, elem) \
+    do {                                                                       \
+        array_increase_cap(arr);                                               \
         (arr)->data[(arr)->length++] = elem;                                   \
     } while (0)
 
