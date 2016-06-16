@@ -65,8 +65,16 @@ static void cfg_block_release(struct block *block)
 static void cfg_clear(struct definition *def)
 {
     int i;
+    struct symbol *sym;
 
     array_clear(&def->params);
+    for (i = 0; i < array_len(&def->locals); ++i) {
+        sym = array_get(&def->locals, i);
+        if (!str_cmp(sym->name, str_init(".t"))) {
+            sym_release_temporary(sym);
+        }
+    }
+
     array_clear(&def->locals);
     for (i = 0; i < array_len(&def->nodes); ++i) {
         cfg_block_release(array_get(&def->nodes, i));

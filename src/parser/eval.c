@@ -46,7 +46,7 @@ static struct var create_var(
     struct var res;
     assert(def);
 
-    tmp = sym_create_tmp(type);
+    tmp = sym_create_temporary(type);
     res = var_direct(tmp);
     array_push_back(&def->locals, tmp);
     res.lvalue = 1;

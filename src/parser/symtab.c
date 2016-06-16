@@ -11,6 +11,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Maintain list of symbols allocated for temporaries, which can be
+ * reused between function definitions.
+ */
+static array_of(struct symbol *) temporaries;
+
 struct namespace
     ns_ident = {"identifiers"},
     ns_label = {"labels"},
@@ -19,20 +24,62 @@ struct namespace
 const struct symbol
     *decl_memcpy = NULL;
 
-/* Initialize hash table with initial size heuristic based on scope
- * depth. As a special case, depth 1 containing function arguments is
- * assumed to contain fewer symbols.
- */
-static unsigned hash_cap[] = {256, 16, 128, 64, 32, 16};
-static unsigned hash_cap_default = 8;
-
 static String sym_hash_key(void *ref)
 {
     return ((const struct symbol *) ref)->name;
 }
 
+static void sym_clear_temporaries(void)
+{
+    int i;
+    struct symbol *sym;
+
+    for (i = 0; i < array_len(&temporaries); ++i) {
+        sym = array_get(&temporaries, i);
+        free(sym);
+    }
+
+    array_clear(&temporaries);
+}
+
+struct symbol *sym_create_temporary(const struct typetree *type)
+{
+    /* Count number of temporary variables, giving each new one a unique
+     * name by setting the counter instead of creating a string. */
+    static int n;
+
+    struct symbol *sym;
+
+    if (array_len(&temporaries)) {
+        sym = array_pop_back(&temporaries);
+        sym->stack_offset = 0;
+    } else {
+        sym = calloc(1, sizeof(*sym));
+        sym->symtype = SYM_DEFINITION;
+        sym->linkage = LINK_NONE;
+        sym->name = str_init(".t");
+        sym->n = ++n;
+    }
+
+    sym->type = *type;
+    return sym;
+}
+
+void sym_release_temporary(struct symbol *sym)
+{
+    assert(sym->linkage == LINK_NONE);
+    array_push_back(&temporaries, sym);
+}
+
 void push_scope(struct namespace *ns)
 {
+    /* Initialize hash table with initial size heuristic based on scope
+     * depth. As a special case, depth 1 containing function arguments
+     * is assumed to contain fewer symbols.
+     */
+    static const unsigned hash_cap[] = {256, 16, 128, 64, 32, 16};
+    static const unsigned hash_cap_default = 8;
+
     unsigned cap;
     struct hash_table *scope, empty = {0};
 
@@ -80,7 +127,15 @@ void pop_scope(struct namespace *ns)
             }
             free(sym);
         }
+
         array_clear(&ns->symbol);
+
+        /* Temporaries should only be freed once, at exit. Check for a
+         * particular namespace that is only popped completely at the
+         * end of the translation unit. */
+        if (ns == &ns_ident) {
+            sym_clear_temporaries();
+        }
     } else {
         assert(array_len(&ns->scope));
         array_len(&ns->scope) -= 1;
@@ -258,25 +313,6 @@ struct symbol *sym_add(
         sym_name(sym),
         &sym->type);
 
-    return sym;
-}
-
-struct symbol *sym_create_tmp(const struct typetree *type)
-{
-    /* Count number of temporary variables, giving each new one a unique
-     * name by setting the counter instead of creating a string. */
-    static int n;
-
-    struct symbol *sym = calloc(1, sizeof(*sym));
-    sym->symtype = SYM_DEFINITION;
-    sym->linkage = LINK_NONE;
-    sym->name = str_init(".t");
-    sym->n = ++n;
-    sym->type = *type;
-
-    /* Add temporary to normal identifier namespace, but do not make it
-     * searchable through any scope. */
-    array_push_back(&ns_ident.symbol, sym);
     return sym;
 }
 

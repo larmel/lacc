@@ -61,7 +61,12 @@ struct symbol *sym_add(
  * identifier namespace. Used to hold temporary values in expression
  * evaluation.
  */
-struct symbol *sym_create_tmp(const struct typetree *type);
+struct symbol *sym_create_temporary(const struct typetree *type);
+
+/* Release memory used for a temporary symbol, allowing it to be reused
+ * in a different function.
+ */
+void sym_release_temporary(struct symbol *sym);
 
 /* Register compiler internal builtin symbols, that are assumed to
  * exists by standard library headers.
