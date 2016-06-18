@@ -1,18 +1,15 @@
 lacc: A simple, self-hosting C compiler
 =======================================
 
-This is a toy project of mine, with the goal of making a compiler for C, written
-in C, which is able to compile itself.
+This is a toy project of mine, with the goal of making a compiler for C, written in C, which is able to compile itself.
 
-Most language constructs from C89 are supported, in addition to some elements
-from later standards.
-Rudimentary support for floating point numbers.
+Most of the C89 language is supported, in addition to some elements from later standards.
 
-Implementation is entirelly C89, using only the standard headers and some POSIX
-extensions. There are no external dependencies.
+Implementation is entirelly C89, using only the standard headers and some POSIX extensions.
+There are no external dependencies.
 
-The current version can produce textual x86\_64 assembly (-S), or ELF object
-files (-c). An external linker must be used to create standalone executables.
+The compiler can produce x86\_64 assembly (-S), or ELF object files (-c).
+An external linker must be used to create standalone executables.
 
 Here is compiling "hello world" from terminal, typing in interactive mode:
 

@@ -390,8 +390,8 @@ static struct code cmp(
     union operand a,
     union operand b)
 {
-    struct code c = nop();
-    c.len = 0;
+    struct code c = {{0}};
+
     switch (optype) {
     case OPT_IMM_REG:
         if (!is_64_bit(b.reg) && !is_64_bit_reg(b.reg.r)) {
@@ -411,11 +411,11 @@ static struct code cmp(
         break;
     case OPT_REG_REG:
         assert(a.reg.w == b.reg.w);
-        if (!is_64_bit(a.reg) && !is_64_bit_reg(a.reg.r)) {
-            c.val[c.len++] = 0x38 | w(a.reg);
-            c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
-        } else
-            assert(0);
+        if (rrex(a.reg) || rrex(b.reg)) {
+            c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
+        }
+        c.val[c.len++] = 0x38 | w(a.reg);
+        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
         break;
     default:
         assert(0);
@@ -738,6 +738,37 @@ static struct code sse_mov(
     return c;
 }
 
+static struct code ucomiss(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{0}};
+    assert(optype == OPT_REG_REG);
+
+    c.val[c.len++] = PREFIX_SSE;
+    c.val[c.len++] = 0x2E;
+    c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
+
+    return c;
+}
+
+static struct code ucomisd(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{0}};
+    assert(optype == OPT_REG_REG);
+
+    c.val[c.len++] = 0x66;
+    c.val[c.len++] = PREFIX_SSE;
+    c.val[c.len++] = 0x2E;
+    c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
+
+    return c;
+}
+
 static struct code sse_generic(
     enum instr_optype optype,
     unsigned char opcode1,
@@ -836,6 +867,10 @@ struct code encode(struct instruction instr)
         return sse_generic(instr.optype, 0xF2, 0x5C, instr.source, instr.dest);
     case INSTR_SUBSS:
         return sse_generic(instr.optype, 0xF3, 0x5C, instr.source, instr.dest);
+    case INSTR_UCOMISS:
+        return ucomiss(instr.optype, instr.source, instr.dest);
+    case INSTR_UCOMISD:
+        return ucomisd(instr.optype, instr.source, instr.dest);
     case INSTR_LEA:
         return lea(instr.optype, instr.source, instr.dest);
     case INSTR_LEAVE:

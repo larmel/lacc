@@ -1105,6 +1105,41 @@ static void compile_op_divs(struct var a, struct var b, struct var c)
     store(XMM0, a);
 }
 
+static void compile_cmp(struct var a, struct var b)
+{
+    enum reg r0, r1;
+    assert(type_equal(a.type, b.type));
+
+    if (is_real(a.type)) {
+        r0 = load_cast(a, a.type);
+        r1 = load_cast(b, b.type);
+        if (is_float(a.type)) {
+            emit(INSTR_UCOMISS, OPT_REG_REG, reg(r1, 4), reg(r0, 4));
+        } else {
+            emit(INSTR_UCOMISD, OPT_REG_REG, reg(r1, 8), reg(r0, 8));
+        }
+    } else {
+        load(a, AX);
+        load(b, CX);
+        emit(INSTR_CMP, OPT_REG_REG,
+            reg(CX, size_of(a.type)), reg(AX, size_of(a.type)));
+    }
+}
+
+static void compile_op_cmp(
+    enum opcode opcode,
+    struct var a,
+    struct var b,
+    struct var c)
+{
+    assert(type_equal(a.type, &basic_type__int));
+
+    compile_cmp(b, c);
+    emit(opcode, OPT_REG, reg(AX, 1));
+    emit(INSTR_MOVZX, OPT_REG_REG, reg(AX, 1), reg(AX, 4));
+    store(AX, a);
+}
+
 static void compile_op(const struct op *op)
 {
     static int w;
@@ -1258,46 +1293,23 @@ static void compile_op(const struct op *op)
         store(AX, op->a);
         break;
     case IR_OP_EQ:
-        assert(size_of(op->a.type) == 4);
-        load(op->b, AX);
-        load(op->c, CX);
-        emit(INSTR_CMP, OPT_REG_REG,
-            reg(CX, size_of(op->a.type)), reg(AX, size_of(op->a.type)));
-        emit(INSTR_SETZ, OPT_REG, reg(AX, 1));
-        emit(INSTR_MOVZX, OPT_REG_REG, reg(AX, 1), reg(AX, 4));
-        store(AX, op->a);
+        compile_op_cmp(INSTR_SETZ, op->a, op->b, op->c);
         break;
     case IR_OP_GE:
-        assert(size_of(op->a.type) == 4);
-        load(op->b, AX);
-        load(op->c, CX);
-        emit(INSTR_CMP, OPT_REG_REG,
-            reg(CX, size_of(op->a.type)), reg(AX, size_of(op->a.type)));
-        if (is_unsigned(op->b.type)) {
-            assert(is_unsigned(op->c.type));
-            emit(INSTR_SETAE, OPT_REG, reg(AX, 1));
+        if (is_unsigned(op->b.type) || is_real(op->b.type)) {
+            compile_op_cmp(INSTR_SETAE, op->a, op->b, op->c);
         } else {
-            emit(INSTR_SETGE, OPT_REG, reg(AX, 1));
+            compile_op_cmp(INSTR_SETGE, op->a, op->b, op->c);
         }
-        emit(INSTR_MOVZX, OPT_REG_REG, reg(AX, 1), reg(AX, 4));
-        store(AX, op->a);
         break;
     case IR_OP_GT:
-        assert(size_of(op->a.type) == 4);
-        load(op->b, AX);
-        load(op->c, CX);
-        emit(INSTR_CMP, OPT_REG_REG,
-            reg(CX, size_of(op->a.type)), reg(AX, size_of(op->a.type)));
-        if (is_unsigned(op->b.type)) {
-            assert(is_unsigned(op->c.type));
+        if (is_unsigned(op->b.type) || is_real(op->b.type)) {
             /* When comparison is unsigned, set flag without considering
-             * overflow; CF=0 && ZF=0. */ 
-            emit(INSTR_SETA, OPT_REG, reg(AX, 1));
+             * overflow; CF=0 && ZF=0. */
+            compile_op_cmp(INSTR_SETA, op->a, op->b, op->c);
         } else {
-            emit(INSTR_SETG, OPT_REG, reg(AX, 1));
+            compile_op_cmp(INSTR_SETG, op->a, op->b, op->c);
         }
-        emit(INSTR_MOVZX, OPT_REG_REG, reg(AX, 1), reg(AX, 4));
-        store(AX, op->a);
         break;
     case IR_VA_START:
         compile__builtin_va_start(op->a);
@@ -1316,39 +1328,37 @@ static void compile_op(const struct op *op)
 
 static void tail_cmp_jump(struct block *block, const struct typetree *type)
 {
-    struct instruction instr = {0};
-    struct op *cmp = &array_get(&block->code, array_len(&block->code) - 1);
+    enum opcode opcode;
+    struct op *op = &array_get(&block->code, array_len(&block->code) - 1);
 
     /* Target of assignment should be temporary, thus we do not lose any
      * side effects from not storing the value to stack. */
-    assert(!cmp->a.lvalue);
+    assert(!op->a.lvalue);
 
-    load(cmp->c, CX);
-    load(cmp->b, AX);
-    emit(INSTR_CMP, OPT_REG_REG,
-        reg(CX, size_of(cmp->a.type)), reg(AX, size_of(cmp->a.type)));
-
-    switch (cmp->type) {
+    compile_cmp(op->b, op->c);
+    switch (op->type) {
     case IR_OP_EQ:
-        instr.opcode = INSTR_JZ;
+        opcode = INSTR_JZ;
         break;
     case IR_OP_GE:
-        instr.opcode = (is_unsigned(cmp->b.type)) ? INSTR_JAE : INSTR_JGE;
+        opcode =
+            (is_unsigned(op->b.type) || is_real(op->b.type)) ?
+            INSTR_JAE : INSTR_JGE;
         break;
     default:
-        assert(cmp->type == IR_OP_GT);
-        instr.opcode = (is_unsigned(cmp->b.type)) ? INSTR_JA : INSTR_JG;
+        assert(op->type == IR_OP_GT);
+        opcode =
+            (is_unsigned(op->b.type) || is_real(op->b.type)) ?
+            INSTR_JA : INSTR_JG;
         break;
     }
 
-    instr.optype = OPT_IMM;
-    instr.source.imm = addr(block->jump[1]->label);
-    emit_instruction(instr);
-
-    if (block->jump[0]->color == BLACK)
+    emit(opcode, OPT_IMM, addr(block->jump[1]->label));
+    if (block->jump[0]->color == BLACK) {
         emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
-    else
+    } else {
         compile_block(block->jump[0], type);
+    }
 
     compile_block(block->jump[1], type);
 }
@@ -1367,18 +1377,22 @@ static void tail_generic(struct block *block, const struct typetree *type)
         emit(INSTR_LEAVE, OPT_NONE);
         emit(INSTR_RET, OPT_NONE);
     } else if (!block->jump[1]) {
-        if (block->jump[0]->color == BLACK)
+        if (block->jump[0]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
-        else
+        } else {
             compile_block(block->jump[0], type);
+        }
     } else {
+        assert(is_integer(block->expr.type) || is_pointer(block->expr.type));
         load(block->expr, AX);
         emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
         emit(INSTR_JZ, OPT_IMM, addr(block->jump[0]->label));
-        if (block->jump[1]->color == BLACK)
+        if (block->jump[1]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
-        else
+        } else {
             compile_block(block->jump[1], type);
+        }
+
         compile_block(block->jump[0], type);
     }
 }

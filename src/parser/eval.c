@@ -343,20 +343,19 @@ static struct var eval_eq(
     struct var l,
     struct var r)
 {
-    if (!is_pointer(l.type)) {
-        struct var tmp = l;
-        l = r;
-        r = tmp;
+    const struct typetree *type;
+
+    /* Normalize by putting most specific pointer type as left argument,
+     * checking for non-pointer and void-pointer. */
+    if (is_pointer(r.type) && (!is_pointer(l.type) || is_void(l.type->next))) {
+        return eval_eq(def, block, r, l);
     }
 
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
-        const struct typetree *type =
-            usual_arithmetic_conversion(l.type, r.type);
+        type = usual_arithmetic_conversion(l.type, r.type);
         l = eval_cast(def, block, l, type);
         r = eval_cast(def, block, r, type);
     } else if (is_pointer(l.type)) {
-        /* Covers pointer to compatible types, including (void *, void *), 
-         * pointer to object type and void *, pointer and null constant. */
         if (is_pointer(r.type)) {
             if (!is_compatible(l.type, r.type) &&
                 !(is_void(l.type->next) && size_of(r.type->next)) &&
@@ -366,12 +365,14 @@ static struct var eval_eq(
                     l.type, r.type);
                 exit(1);
             }
-        } else {
-            if (!is_integer(r.type) || r.kind != IMMEDIATE || r.imm.i != 0) {
-                error("Numerical comparison must be null constant.");
-                exit(1);
-            }
+        } else if (!is_nullptr(r)) {
+            error("Numerical comparison must be null constant.");
+            exit(1);
         }
+
+        /* Left operand has the most specific type, cast to that to
+         * have the same type on each side. */
+        r = eval_cast(def, block, r, l.type);
     } else {
         error("Illegal comparison between types '%t' and '%t'.",
             l.type, r.type);

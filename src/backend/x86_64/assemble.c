@@ -316,6 +316,8 @@ int asm_text(struct instruction instr)
     case INSTR_SETAE:    I1("setae", source); break;
     case INSTR_SETGE:    I1("setge", source); break;
     case INSTR_TEST:     S2("test", wd, source, destin); break;
+    case INSTR_UCOMISS:  I2("ucomiss", source, destin); break;
+    case INSTR_UCOMISD:  I2("ucomisd", source, destin); break;
     case INSTR_CMP:      S2("cmp", wd, source, destin); break;
     case INSTR_LEA:      S2("lea", wd, source, destin); break;
     case INSTR_PUSH:     S1("push", ws, source); break;
