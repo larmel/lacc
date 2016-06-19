@@ -154,8 +154,8 @@ static const char *immediate(struct immediate imm, int *size)
 
 int asm_symbol(const struct symbol *sym)
 {
-    /* Labels stay in the same function context, otherwise flush to write any
-     * end of function metadata. */
+    /* Labels stay in the same function context, otherwise flush to
+     * write any end of function metadata. */
     if (sym->symtype != SYM_LABEL) {
         asm_flush();
         current_symbol = sym;
@@ -163,9 +163,6 @@ int asm_symbol(const struct symbol *sym)
 
     switch (sym->symtype) {
     case SYM_TENTATIVE:
-        if (is_function(&sym->type)) {
-            printf("Was tentative function!: %s\n", sym_name(sym));
-        }
         assert(is_object(&sym->type));
         if (sym->linkage == LINK_INTERN)
             out("\t.local %s\n", sym_name(sym));
@@ -204,10 +201,9 @@ int asm_symbol(const struct symbol *sym)
         out("\t.align\t%d\n", sym_alignment(sym));
         out("%s:\n", sym_name(sym));
         if (is_float(&sym->type)) {
-            out("\t.long\t%ld\n", sym->constant_value.i & 0xFFFFFFFF);
+            out("\t.long\t%lu\n", sym->constant_value.u & 0xFFFFFFFFu);
         } else if (is_double(&sym->type)) {
-            out("\t.long\t%ld\n", sym->constant_value.i & 0xFFFFFFFF);
-            out("\t.long\t%ld\n", sym->constant_value.i >> 32);
+            out("\t.quad\t%lu\n", sym->constant_value.u);
         } else {
             assert(0);
         }
