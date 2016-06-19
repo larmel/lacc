@@ -167,6 +167,8 @@ void print_token_array(const TokenArray *list)
         t = array_get(list, i);
         if (t.token == PARAM) {
             printf("<param %ld>", t.d.number.val.i);
+        } else if (t.token == EMPTY_ARG) {
+            printf("<no-arg>");
         } else {
             putchar('\'');
             if (t.leading_whitespace > 0) {
@@ -191,6 +193,13 @@ static struct token paste(struct token left, struct token right)
     char *buf, *endptr;
     String ls, rs;
 
+    assert(left.token != EMPTY_ARG || right.token != EMPTY_ARG);
+    if (left.token == EMPTY_ARG) {
+        return right;
+    } else if (right.token == EMPTY_ARG) {
+        return left;
+    }
+
     ls = tokstr(left);
     rs = tokstr(right);
     buf = calloc(ls.len + rs.len + 1, sizeof(*buf));
@@ -208,41 +217,51 @@ static struct token paste(struct token left, struct token right)
     return res;
 }
 
+/* In-place expansion of token paste operators.
+ *
+ * Example:
+ *    ['f', '##', 'u', '##', 'nction'] -> ['function'].
+ */
 static void expand_paste_operators(TokenArray *list)
 {
     unsigned i, j, len;
-    struct token t;
+    struct token t, l, r;
 
     len = array_len(list);
-    if (len) {
-        if (array_get(list, 0).token == TOKEN_PASTE) {
-            error("Unexpected token paste operator at beginning of line.");
+    if (len && array_get(list, 0).token == TOKEN_PASTE) {
+        error("Unexpected token paste operator at beginning of line.");
+        exit(1);
+    } else if (len > 2) {
+        if (array_get(list, len - 1).token == TOKEN_PASTE) {
+            error("Unexpected token paste operator at end of line.");
             exit(1);
-        } else if (len > 2) {
-            if (array_get(list, len - 1).token == TOKEN_PASTE) {
-                error("Unexpected token paste operator at end of line.");
-                exit(1);
-            }
+        }
 
-            /* In-place expansion of token paste operators.
-             * ['f', '##', 'u', '##', 'nction'] becomes ['function']. */
-            for (i = 0, j = 1; j < len; ++j) {
-                assert(i < len);
-                t = array_get(list, j);
-                if (t.token == TOKEN_PASTE) {
-                    array_get(list, i) =
-                        paste(array_get(list, i), array_get(list, j + 1));
-                    j++;
-                } else if (i < j - 1) {
+        for (i = 0, j = 1; j < len; ++j) {
+            assert(i < len);
+            t = array_get(list, j);
+            if (t.token == TOKEN_PASTE) {
+                l = array_get(list, i);
+                r = array_get(list, j + 1);
+                if (l.token == EMPTY_ARG && r.token == EMPTY_ARG) {
+                    /* Pasting together two arguments that are not given
+                     * will result in no token. */
+                    i--;
+                } else {
+                    array_get(list, i) = paste(l, r);
+                }
+                j++;
+            } else if (t.token != EMPTY_ARG) {
+                if (i < j - 1) {
                     i++;
                     array_get(list, i) = array_get(list, j);
                 } else {
                     i++;
                 }
             }
-
-            list->length = i + 1;
         }
+
+        list->length = i + 1;
     }
 }
 
@@ -271,9 +290,9 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
             param = t.d.number.val.i;
             assert(param < def->params);
             array_concat(&list, &args[param]);
-        } else if (t.token == '#' &&
-            i < array_len(&def->replacement) - 1 &&
-            array_get(&def->replacement, i + 1).token == PARAM)
+        } else if (t.token == '#'
+            && i < array_len(&def->replacement) - 1
+            && array_get(&def->replacement, i + 1).token == PARAM)
         {
             i++;
             param = array_get(&def->replacement, i).d.number.val.i;
@@ -309,6 +328,9 @@ static const struct token *skip(const struct token *list, enum token_type token)
     return list;
 }
 
+/* Read tokens forming next macro argument. Missing arguments are
+ * represented by a single EMPTY_ARG element.
+ */
 static TokenArray read_arg(
     const struct token *list,
     const struct token **endptr)
@@ -316,11 +338,12 @@ static TokenArray read_arg(
     int nesting = 0;
     TokenArray arg = {0};
 
-    do {
+    while (nesting || (list->token != ',' && list->token != ')')) {
         if (list->token == NEWLINE) {
             error("Unexpected end of input in expansion.");
             exit(1);
         }
+
         if (list->token == '(') {
             nesting++;
         } else if (list->token == ')') {
@@ -330,8 +353,13 @@ static TokenArray read_arg(
                 exit(1);
             }
         }
+
         array_push_back(&arg, *list++);
-    } while (nesting || (list->token != ',' && list->token != ')'));
+    }
+
+    if (!array_len(&arg)) {
+        array_push_back(&arg, basic_token[EMPTY_ARG]);
+    }
 
     *endptr = list;
     return arg;
@@ -475,7 +503,7 @@ struct token stringify(const TokenArray *list)
     char *buf;
     size_t cap, len, ptr;
 
-    if (array_len(list) == 0) {
+    if (array_len(list) == 0 || array_get(list, 0).token == EMPTY_ARG) {
         str.d.string = str_init("");
     } else if (array_len(list) == 1) {
         tok = array_get(list, 0);

@@ -103,7 +103,11 @@ enum token_type {
 
     /* Pseudo-token representing parameter substitution in macros. Has
      * an immediate integer value referring to the parameter index. */
-    PARAM
+    PARAM,
+
+    /* Pseudo-token representing empty argument for macro expansion in
+     * preprocessor. */
+    EMPTY_ARG
 };
 
 /* Tokens keep track of typed numbers, to capture difference between

@@ -78,7 +78,7 @@ const struct token basic_token[] = {
             {0},                        {0},
             {NUMBER},                   {IDENTIFIER},
             {STRING},                   {PARAM},
-/* 0x78 */  {0},                        {0},
+/* 0x78 */  {EMPTY_ARG},                {0},
             {0},                        T(OPEN_CURLY, "{"),
             T(OR, "|"),                 T(CLOSE_CURLY, "}"),
             T(NEG, "~"),                {0},
@@ -459,6 +459,7 @@ String tokstr(struct token tok)
     struct number num;
     int w = 0;
     assert(tok.token != PARAM);
+    assert(tok.token != EMPTY_ARG);
 
     if (tok.token == NUMBER) {
         /* The string representation is lost during tokenization, so we
