@@ -1,7 +1,9 @@
 DIRS := ${shell find src -type d -print}
 SOURCES := $(foreach sdir,$(DIRS),$(wildcard $(sdir)/*.c))
+
 INSTALL_LIB_PATH := /usr/lib/lacc/
 INSTALL_BIN_PATH := /usr/bin/
+CSMITH_HOME_PATH := ~/Code/csmith
 
 CFLAGS := -Wall -pedantic -std=c89 -g -I include/
 LACCFLAGS := -I include/
@@ -41,8 +43,11 @@ uninstall:
 	rm -rf $(INSTALL_LIB_PATH)
 	rm $(INSTALL_BIN_PATH)/lacc
 
+fuzztest: bin/lacc
+	./fuzztest.sh $(CSMITH_HOME_PATH)
+
 clean:
 	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s
 
-.PHONY: all test test-% install uninstall clean
+.PHONY: all test test-% install uninstall fuzztest clean
