@@ -17,6 +17,10 @@ String tokstr(struct token tok);
  */
 struct token pastetok(struct token a, struct token b);
 
+/* Transform preprocessing number to actual numeric literal.
+ */
+struct token convert_preprocessing_number(struct token t);
+
 /* Parse and return next preprocessing token from given line. Assume
  * comments are removed and line continuations are applied. endptr is
  * set to point to one index past the last character producing the

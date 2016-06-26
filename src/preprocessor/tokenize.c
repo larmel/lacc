@@ -80,7 +80,7 @@ const struct token basic_token[] = {
             {0},                        {0},
             {NUMBER},                   {IDENTIFIER},
             {STRING},                   {PARAM},
-/* 0x78 */  {EMPTY_ARG},                {0},
+/* 0x78 */  {EMPTY_ARG},                {PREP_NUMBER},
             {0},                        TOK(OPEN_CURLY, "{"),
             TOK(OR, "|"),               TOK(CLOSE_CURLY, "}"),
             TOK(NEG, "~"),              {0},
@@ -109,68 +109,115 @@ const struct token basic_token[] = {
 #define S7(a, b, c, d, e, f, g) \
     (at(a) && get(b) && get(c) && get(d) && get(e) && get(f) && get(g) && end())
 
-/* Parse integer literal in the format '1234', '0x123', '077' using
- * strtoul, then consider type suffix if any. Valid suffixes are
- * {'ul', 'Ul', 'uL', 'UL', 'u', 'l'}.
+/* Parse preprocessing number, which starts with an optional period
+ * before a digit, then a sequence of period, letter underscore, digit,
+ * or any of 'e+', 'e-', 'E+', 'E-'.
+ *
+ * This represents a superset of valid numbers in C, but is required
+ * as intermediate representation for preprocessing.
  *
  * There is no such thing as a negative literal; expressions like '-2'
  * is the unary operator applied to the number 2.
+ *
+ * Regular expression:
+ *
+ *      (\.)?(0-9){\.a-zA-Z_0-9(e+|e-|E+|E-)}*
+ *
  */
 static struct token strtonum(char *in, char **endptr)
 {
-    struct token tok = {NUMBER};
+    char *ptr = in;
+    struct token tok = {PREP_NUMBER};
 
-    errno = 0;
-    tok.d.number.type = &basic_type__int;
-    tok.d.number.val.u = strtoul(in, endptr, 0);
-    if (errno || in == *endptr) {
-        error(errno == ERANGE ?
-            "Integer literal out of range." :
-            "Invalid integer literal.");
-        exit(1);
+    if (*in == '.') {
+        in++;
     }
 
-    if (**endptr == '.' || **endptr == 'e' || **endptr == 'f') {
-        tok.d.number.type = &basic_type__double;
-        tok.d.number.val.d = strtod(in, endptr);
-        if (errno || in == *endptr) {
-            error(errno == ERANGE ?
-                "Floating point literal out of range." :
-                "Invalid floating point literal.");
-            exit(1);
+    assert(isdigit(*in));
+    while (1) {
+        if (isdigit(*in) || *in == '.' || *in == '_') {
+            in++;
+        } else if (isalpha(*in)) {
+            if ((*in == 'e' || *in == 'E') && (in[1] == '+' || in[1] == '-')) {
+                in++;
+            }
+            in++;
+        } else {
+            break;
         }
-        if (**endptr == 'f') {
-            tok.d.number.type = &basic_type__float;
-            tok.d.number.val.f = (float) tok.d.number.val.d;
-            (*endptr)++;
-        }
-    } else {
-        if (**endptr == 'u' || **endptr == 'U') {
+    }
+
+    tok.d.string = str_register(ptr, in - ptr);
+    *endptr = in;
+    return tok;
+}
+
+struct token convert_preprocessing_number(struct token t)
+{
+    const char *in;
+    char *endptr;
+    unsigned len;
+    struct token tok = {NUMBER};
+
+    assert(t.token == PREP_NUMBER);
+    in = str_raw(t.d.string);
+    len = t.d.string.len;
+    tok.leading_whitespace = t.leading_whitespace;
+
+    /* Try to read as integer. Handle suffixes u, l, ll, ul, ull, in all
+     * permuations of upper- and lower case. */
+    errno = 0;
+    tok.d.number.type = &basic_type__int;
+    tok.d.number.val.u = strtoul(in, &endptr, 0);
+    if (endptr - in < len) {
+        if (*endptr == 'u' || *endptr == 'U') {
             tok.d.number.type = &basic_type__unsigned_int;
-            (*endptr)++;
+            endptr++;
         }
-        if (**endptr == 'l' || **endptr == 'L') {
+        if (endptr - in < len && (*endptr == 'l' || *endptr == 'L')) {
             tok.d.number.type = 
-                (tok.d.number.type->type == T_UNSIGNED) ?
+                (is_unsigned(tok.d.number.type)) ?
                     &basic_type__unsigned_long :
                     &basic_type__long;
-            (*endptr)++;
+            endptr++;
 
             /* Also consider additional suffix for long long, not part
              * of C89. */
-            if (**endptr == *(*endptr - 1)) {
-                (*endptr)++;
+            if (endptr - in < len && *endptr == *(endptr - 1)) {
+                endptr++;
             }
         }
-        if (tok.d.number.type->type != T_UNSIGNED) {
-            if (**endptr == 'u' || **endptr == 'U') {
+        if (is_signed(tok.d.number.type)) {
+            if (*endptr == 'u' || *endptr == 'U') {
                 tok.d.number.type =
                     (tok.d.number.type->size == 4) ?
                         &basic_type__unsigned_int :
                         &basic_type__unsigned_long;
-                (*endptr)++;
+                endptr++;
             }
         }
+    }
+
+    /* If the integer conversion did not consume the whole token, try to
+     * read as floating point number. */
+    if (endptr - in != len) {
+        errno = 0;
+        tok.d.number.type = &basic_type__double;
+        tok.d.number.val.d = strtod(in, &endptr);
+        if (endptr - in < len && *endptr == 'f') {
+            tok.d.number.type = &basic_type__float;
+            tok.d.number.val.f = (float) tok.d.number.val.d;
+            endptr++;
+        }
+    }
+
+    if (errno || (endptr - in != len)) {
+        if (errno == ERANGE) {
+            error("Numeric literal '%s' is out of range.", str_raw(t.d.string));
+        } else {
+            error("Invalid numeric literal '%s'.", str_raw(t.d.string));
+        }
+        exit(1);
     }
 
     return tok;
@@ -530,7 +577,7 @@ struct token tokenize(char *in, char **endptr)
         tok = strtoident(in, endptr);
     } else if (*in == '\0') {
         tok = basic_token[END];
-    } else if (isdigit(*in)) {
+    } else if (isdigit(*in) || (*in == '.' && isdigit(in[1]))) {
         tok = strtonum(in, endptr);
     } else if (*in == '"') {
         tok = strtostr(in, endptr);

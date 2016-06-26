@@ -107,7 +107,12 @@ enum token_type {
 
     /* Pseudo-token representing empty argument for macro expansion in
      * preprocessor. */
-    EMPTY_ARG
+    EMPTY_ARG,
+
+    /* Preprocessing token representing a number. Valid strings include
+     * a superset of numeric constants in C. A conversion to NUMBER
+     * token is done before handed to parser. */
+    PREP_NUMBER
 };
 
 /* Tokens keep track of typed numbers, to capture difference between

@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 500
 #include "input.h"
 #include "macro.h"
 #include "strtab.h"
@@ -107,11 +108,21 @@ static void ensure_initialized(void)
     }
 }
 
+static struct token get__line__token(void)
+{
+    int len;
+    char buf[32];
+    struct token t = basic_token[PREP_NUMBER];
+
+    len = snprintf(buf, sizeof(buf), "%d", current_file_line);
+    t.d.string = str_register(buf, len);
+    return t;
+}
+
 const struct macro *definition(String name)
 {
     String builtin__line__ = SHORT_STRING_INIT("__LINE__");
     struct macro *ref;
-    struct token *tok;
 
     ensure_initialized();
     ref = hash_lookup(&macro_hash_table, name);
@@ -119,8 +130,7 @@ const struct macro *definition(String name)
         /* Replace __LINE__ with current line number, by mutating
          * the replacement list on the fly. */
         if (!str_cmp(ref->name, builtin__line__)) {
-            tok = &array_get(&ref->replacement, 0);
-            tok->d.number.val.i = current_file_line;
+            array_get(&ref->replacement, 0) = get__line__token();
         }
     }
 

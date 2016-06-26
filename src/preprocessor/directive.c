@@ -91,11 +91,14 @@ static int eval_primary(
     const struct token **endptr)
 {
     String s;
+    struct token n;
     int value = 0;
 
     switch (list->token) {
-    case NUMBER:
-        value = list->d.number.val.i;
+    case PREP_NUMBER:
+        n = convert_preprocessing_number(*list);
+        assert(n.token == NUMBER);
+        value = n.d.number.val.i;
         break;
     case IDENTIFIER:
         /* Macro expansions should already have been done. Stray
@@ -111,6 +114,7 @@ static int eval_primary(
         error("Invalid primary expression '%s'.", str_raw(s));
         break;
     }
+
     *endptr = list + 1;
     return value;
 }

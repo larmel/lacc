@@ -206,6 +206,11 @@ static void add_to_lookahead(struct token t)
         }
     }
 
+    /* Convert preprocessing numbers to actual numeric tokens. */
+    if (t.token == PREP_NUMBER) {
+        t = convert_preprocessing_number(t);
+    }
+
     if (!added) {
         deque_push_back(&lookahead, t);
     }
