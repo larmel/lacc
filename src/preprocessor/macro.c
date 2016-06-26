@@ -585,25 +585,6 @@ static TokenArray parse(char *str)
     return arr;
 }
 
-static void register__builtin_va_end(void)
-{
-    struct macro macro = {
-        {{0}},
-        FUNCTION_LIKE,
-        1, /* parameters */
-    };
-
-    macro.name = str_init("__builtin_va_end");
-    macro.replacement = parse(
-        "@[0].gp_offset=0;"
-        "@[0].fp_offset=0;"
-        "@[0].overflow_arg_area=(void*)0;"
-        "@[0].reg_save_area=(void*)0;");
-
-    assert(array_len(&macro.replacement) == 44);
-    define(macro);
-}
-
 static void register__builtin__FILE__(void)
 {
     struct token file = {STRING};
@@ -657,5 +638,4 @@ void register_builtin_definitions(void)
     define(macro);
 
     register__builtin__FILE__();
-    register__builtin_va_end();
 }

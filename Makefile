@@ -1,5 +1,7 @@
 DIRS := ${shell find src -type d -print}
 SOURCES := $(foreach sdir,$(DIRS),$(wildcard $(sdir)/*.c))
+INSTALL_LIB_PATH := /usr/lib/lacc/
+INSTALL_BIN_PATH := /usr/bin/
 
 CFLAGS := -Wall -pedantic -std=c89 -g -I include/
 LACCFLAGS := -I include/
@@ -29,8 +31,18 @@ test-%: bin/%
 
 test: test-lacc
 
+install: bin/lacc
+	mkdir -p $(INSTALL_LIB_PATH)
+	mkdir -p $(INSTALL_LIB_PATH)/include
+	cp include/stdlib/*.h $(INSTALL_LIB_PATH)/include/
+	cp $< $(INSTALL_BIN_PATH)
+
+uninstall:
+	rm -rf $(INSTALL_LIB_PATH)
+	rm $(INSTALL_BIN_PATH)/lacc
+
 clean:
 	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s
 
-.PHONY: all test test-% clean
+.PHONY: all test test-% install uninstall clean

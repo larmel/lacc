@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
      * searched after anything specified with -I, and in the order
      * listed here. */
     add_include_search_path("/usr/local/include");
-    add_include_search_path("/usr/lib/gcc/x86_64-linux-gnu/5/include");
+    add_include_search_path("/usr/lib/lacc/include");
     add_include_search_path("/usr/include/x86_64-linux-gnu");
     add_include_search_path("/usr/include");
 
