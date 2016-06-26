@@ -487,6 +487,10 @@ void preprocess_directive(TokenArray *array)
             s = stringify(array).d.string;
             error("%s", str_raw(s));
             exit(1);
+        } else {
+            s = tokstr(*line);
+            error("Unsupported preprocessor directive '%s'.", str_raw(s));
+            exit(1);
         }
     }
 }
