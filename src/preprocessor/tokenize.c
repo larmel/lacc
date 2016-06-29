@@ -204,7 +204,7 @@ struct token convert_preprocessing_number(struct token t)
         errno = 0;
         tok.d.number.type = &basic_type__double;
         tok.d.number.val.d = strtod(in, &endptr);
-        if (endptr - in < len && *endptr == 'f') {
+        if (endptr - in < len && (*endptr == 'f' || *endptr == 'F')) {
             tok.d.number.type = &basic_type__float;
             tok.d.number.val.f = (float) tok.d.number.val.d;
             endptr++;
