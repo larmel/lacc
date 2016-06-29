@@ -121,9 +121,13 @@ static struct typetree *direct_declarator(
         break;
     case '(':
         consume('(');
-        type = head = tail = declarator(NULL, name);
-        while (tail->next) {
-            tail = (struct typetree *) tail->next;
+        tail = declarator(NULL, name);
+        if (tail) {
+            head = tail;
+            type = tail;
+            while (tail->next) {
+                tail = (struct typetree *) tail->next;
+            }
         }
         consume(')');
         break;
