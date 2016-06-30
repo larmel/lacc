@@ -138,7 +138,10 @@ static struct token strtonum(char *in, char **endptr)
         if (isdigit(*in) || *in == '.' || *in == '_') {
             in++;
         } else if (isalpha(*in)) {
-            if ((*in == 'e' || *in == 'E') && (in[1] == '+' || in[1] == '-')) {
+            if ((tolower(*in) == 'e' ||
+                    (context.standard >= STD_C99 && tolower(*in) == 'p'))
+                && (in[1] == '+' || in[1] == '-'))
+            {
                 in++;
             }
             in++;
