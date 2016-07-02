@@ -1,12 +1,10 @@
-#if _XOPEN_SOURCE < 500
-#  define _XOPEN_SOURCE 500 /* getopt */
-#endif
 #include "backend/compile.h"
 #include "parser/parse.h"
 #include "parser/symtab.h"
 #include "preprocessor/preprocess.h"
 #include "preprocessor/input.h"
 #include "preprocessor/macro.h"
+#include "util/argparse.h"
 #include <lacc/cli.h>
 #include <lacc/ir.h>
 
@@ -14,66 +12,92 @@
 #include <stdio.h>
 #include <unistd.h>
 
+static enum compile_target target;
+static char *program;
 static char *input;
 static FILE *output;
+static enum c_standard {
+    STD_C89
+} standard;
 
-static void help(const char *prog)
+static void help(const char *arg)
 {
     fprintf(
         stderr,
         "Usage: %s [-(S|E|c)] [-v] [-I <path>] [-o <file>] <file>\n",
-        prog);
+        program);
+    exit(1);
 }
 
-static enum compile_target parse_args(int argc, char *argv[])
+static void flag(const char *arg)
 {
-    enum compile_target target;
-    int c;
+    switch (*arg) {
+    case 'c':
+        target = TARGET_x86_64_ELF;
+        break;
+    case 'S':
+        target = TARGET_x86_64_ASM;
+        break;
+    case 'E':
+        target = TARGET_NONE;
+        break;
+    case 'v':
+        verbose_level += 1;
+        break;
+    default:
+        assert(0);
+        break;
+    }
+}
 
+static void open_output_handle(const char *file)
+{
+    output = fopen(file, "w");
+}
+
+static void set_c_std(const char *std)
+{
+    if (!strcmp("c89", std)) {
+        standard = STD_C89;
+    } else {
+        fprintf(stderr, "Unrecognized option %s.\n", std);
+        exit(1);
+    }
+}
+
+static void parse_program_arguments(int argc, char *argv[])
+{
+    int c;
+    struct option optv[] = {
+        {"-S", &flag},
+        {"-E", &flag},
+        {"-c", &flag},
+        {"-v", &flag},
+        {"--help", &help},
+        {"-o:", &open_output_handle},
+        {"-I:", &add_include_search_path},
+        {"-std=", &set_c_std}
+    };
+
+    program = argv[0];
+    standard = STD_C89;
     target = TARGET_IR_DOT;
     output = stdout;
-
-    while ((c = getopt(argc, argv, "SEco:vI:")) != -1) {
-        switch (c) {
-        case 'c':
-            target = TARGET_x86_64_ELF;
-            break;
-        case 'S':
-            target = TARGET_x86_64_ASM;
-            break;
-        case 'E':
-            target = TARGET_NONE;
-            break;
-        case 'o':
-            output = fopen(optarg, "w");
-            break;
-        case 'v':
-            verbose_level += 1;
-            break;
-        case 'I':
-            add_include_search_path(optarg);
-            break;
-        default:
-            help(argv[0]);
-            exit(1);
-        }
-    }
-
-    if (optind == argc - 1)
-        input = argv[optind];
-    else if (optind < argc - 1) {
+    c = parse_args(sizeof(optv)/sizeof(optv[0]), optv, argc, argv);
+    if (c == argc - 1) {
+        input = argv[c];
+    } else if (c < argc - 1) {
         help(argv[0]);
         exit(1);
     }
-
-    return target;
 }
 
 int main(int argc, char *argv[])
 {
     struct definition *def;
     const struct symbol *sym;
-    enum compile_target target = parse_args(argc, argv);
+
+    parse_program_arguments(argc, argv);
 
     /* Add default search paths last, with lowest priority. These are
      * searched after anything specified with -I, and in the order
@@ -117,8 +141,9 @@ int main(int argc, char *argv[])
         pop_scope(&ns_ident);
     }
 
-    if (output != stdout)
+    if (output != stdout) {
         fclose(output);
+    }
 
     return errors;
 }
