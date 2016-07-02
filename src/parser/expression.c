@@ -750,6 +750,16 @@ struct block *assignment_expression(
         block = assignment_expression(def, block);
         block->expr = eval_expr(def, block, IR_OP_XOR, target, block->expr);
         break;
+    case RSHIFT_ASSIGN:
+        consume(RSHIFT_ASSIGN);
+        block = assignment_expression(def, block);
+        block->expr = eval_expr(def, block, IR_OP_SHR, target, block->expr);
+        break;
+    case LSHIFT_ASSIGN:
+        consume(LSHIFT_ASSIGN);
+        block = assignment_expression(def, block);
+        block->expr = eval_expr(def, block, IR_OP_SHL, target, block->expr);
+        break;
     default:
         return block;
     }
