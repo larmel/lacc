@@ -599,43 +599,32 @@ static void register__builtin__FILE__(void)
     define(macro);
 }
 
+static void register_macro(const char *key, char *value)
+{
+    struct macro macro = {{{0}}, OBJECT_LIKE};
+
+    macro.name = str_init(key);
+    macro.replacement = parse(value);
+    define(macro);
+}
+
 void register_builtin_definitions(void)
 {
-    struct macro macro = {
-        {{0}},
-        OBJECT_LIKE,
-        0, /* parameters */
-    };
+    register_macro("__STDC__", "1");
+    register_macro("__STDC_HOSTED__", "1");
+    register_macro("__LINE__", "0");
+    register_macro("__x86_64__", "1");
+    register_macro("__inline", "");
 
-    /* Required by GNU features.h. */
-    macro.name = str_init("__STRICT_ANSI__");
-    macro.replacement = parse("");
-    define(macro);
-
-    macro.name = str_init("__STDC_VERSION__");
-    macro.replacement = parse("199409L");
-    define(macro);
-
-    macro.name = str_init("__STDC__");
-    macro.replacement = parse("1");
-    define(macro);
-
-    macro.name = str_init("__STDC_HOSTED__");
-    macro.replacement = parse("1");
-    define(macro);
-
-    macro.name = str_init("__LINE__");
-    macro.replacement = parse("0");
-    define(macro);
-
-    macro.name = str_init("__x86_64__");
-    macro.replacement = parse("1");
-    define(macro);
-
-    /* For some reason this is not properly handled by musl. */
-    macro.name = str_init("__inline");
-    macro.replacement = parse("");
-    define(macro);
+    switch (context.standard) {
+    case STD_C89:
+        register_macro("__STDC_VERSION__", "199409L");
+        register_macro("__STRICT_ANSI__", "");
+        break;
+    case STD_C99:
+        register_macro("__STDC_VERSION__", "199901L");
+        break;
+    }
 
     register__builtin__FILE__();
 }

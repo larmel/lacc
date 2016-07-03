@@ -6,7 +6,7 @@ if [[ -z "$file" || ! -f "$file" ]]; then
 	echo "Usage: $0 <compiler> <file>"; exit
 fi
 
-cc $file -o ${file}.out
+cc -std=c89 $file -o ${file}.out
 if [ "$?" -ne "0" ]; then
 	echo "${file}: $(tput setaf 1)Invalid input file!$(tput sgr 0)"; exit
 fi
@@ -20,12 +20,12 @@ function check {
 	fi
 	if [ "$1" == "-E" ]; then
 		mv ${file}.s ${file}.prep.c
-		cc -c ${file}.prep.c -o ${file}.o
+		cc -std=c89 -c ${file}.prep.c -o ${file}.o
 		if [ "$?" -ne "0" ]; then
 			echo "$(tput setaf 1)Compilation failed!$(tput sgr 0)"; return
 		fi
 	elif [ "$1" == "-S" ]; then
-		cc -c ${file}.s -o ${file}.o
+		cc -std=c89 -c ${file}.s -o ${file}.o
 		if [ "$?" -ne "0" ]; then
 			echo "$(tput setaf 1)Assembly failed!$(tput sgr 0)"; return
 		fi

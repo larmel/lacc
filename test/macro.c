@@ -14,6 +14,8 @@ int main() {
 	puts(d);
 
 	puts(__FILE__);
+#if (__STDC_VERSION__ >= 199901)
 	puts(__func__);
+#endif
 	return __LINE__ + FOO ( 1 + a *, 2 ) + e;
 }

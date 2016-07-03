@@ -16,7 +16,8 @@ extern struct context {
         TARGET_x86_64_ELF
     } target;
     enum {
-        STD_C89
+        STD_C89,
+        STD_C99
     } standard;
 } context;
 

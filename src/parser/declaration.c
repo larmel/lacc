@@ -796,13 +796,14 @@ static struct block *initializer(
     return block;
 }
 
-/* C99: Define __func__ as static const char __func__[] = sym->name;
+/* Define __func__ as static const char __func__[] = sym->name;
  */
 static void define_builtin__func__(String name)
 {
     struct typetree *type;
     struct symbol *sym;
     assert(current_scope_depth(&ns_ident) == 1);
+    assert(context.standard == STD_C99);
 
     /* Just add the symbol directly as a special string value. No
      * explicit assignment reflected in the IR. */
@@ -917,7 +918,9 @@ struct block *declaration(struct definition *def, struct block *parent)
             def = cfg_init(sym);
             push_scope(&ns_ident);
             push_scope(&ns_label);
-            define_builtin__func__(sym->name);
+            if (context.standard >= STD_C99) {
+                define_builtin__func__(sym->name);
+            }
             for (i = 0; i < nmembers(&sym->type); ++i) {
                 name = get_member(&sym->type, i)->name;
                 type = get_member(&sym->type, i)->type;
