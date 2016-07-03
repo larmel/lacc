@@ -1,15 +1,14 @@
+#include "compile.h"
 #include "graphviz/dot.h"
 #include "x86_64/abi.h"
 #include "x86_64/assemble.h"
 #include "x86_64/elf.h"
 #include "x86_64/instr.h"
-#include "compile.h"
-#include <lacc/cli.h>
+#include <lacc/context.h>
 
 #include <assert.h>
 #include <stdarg.h>
 
-static enum compile_target compile_target;
 static FILE *output_stream;
 
 static int (*enter_context)(const struct symbol *);
@@ -1517,11 +1516,10 @@ static void compile_function(struct definition *def)
     compile_block(def->body, &def->symbol->type);
 }
 
-void set_compile_target(FILE *stream, enum compile_target target)
+void set_compile_target(FILE *stream)
 {
-    compile_target = target;
     output_stream = stream;
-    switch (target) {
+    switch (context.target) {
     case TARGET_NONE:
     case TARGET_IR_DOT:
         break;
@@ -1547,7 +1545,7 @@ int compile(struct definition *def)
     assert(decl_memcpy);
     assert(def->symbol);
 
-    switch (compile_target) {
+    switch (context.target) {
     case TARGET_IR_DOT:
         fdotgen(output_stream, def);
     case TARGET_NONE:
@@ -1566,7 +1564,7 @@ int compile(struct definition *def)
 
 int declare(const struct symbol *sym)
 {
-    switch (compile_target) {
+    switch (context.target) {
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
         return enter_context(sym);

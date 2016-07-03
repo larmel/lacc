@@ -6,7 +6,7 @@
 #include "input.h"
 #include "strtab.h"
 #include <lacc/array.h>
-#include <lacc/cli.h>
+#include <lacc/context.h>
 
 #include <assert.h>
 #include <ctype.h>

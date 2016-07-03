@@ -4,7 +4,7 @@
 #include "preprocess.h"
 #include "strtab.h"
 #include "tokenize.h"
-#include <lacc/cli.h>
+#include <lacc/context.h>
 #include <lacc/deque.h>
 
 #include <assert.h>
@@ -215,7 +215,7 @@ static void add_to_lookahead(struct token t)
         deque_push_back(&lookahead, t);
     }
 
-    if (verbose_level) {
+    if (context.verbose) {
         s = tokstr(t);
         verbose("   token( %s )", str_raw(s));
     }

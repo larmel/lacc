@@ -4,7 +4,7 @@
 #endif
 #include "strtab.h"
 #include "tokenize.h"
-#include <lacc/cli.h>
+#include <lacc/context.h>
 #include <lacc/typetree.h>
 
 #include <assert.h>

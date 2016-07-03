@@ -5,7 +5,7 @@
 #include "statement.h"
 #include "symtab.h"
 #include "type.h"
-#include <lacc/cli.h>
+#include <lacc/context.h>
 #include <lacc/token.h>
 
 #include <assert.h>

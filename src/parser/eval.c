@@ -3,7 +3,7 @@
 #include "parse.h"
 #include "symtab.h"
 #include "type.h"
-#include <lacc/cli.h>
+#include <lacc/context.h>
 #include <lacc/ir.h>
 
 #include <assert.h>

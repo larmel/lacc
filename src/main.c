@@ -5,20 +5,15 @@
 #include "preprocessor/input.h"
 #include "preprocessor/macro.h"
 #include "util/argparse.h"
-#include <lacc/cli.h>
+#include <lacc/context.h>
 #include <lacc/ir.h>
 
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
 
-static enum compile_target target;
-static char *program;
-static char *input;
+const char *program;
 static FILE *output;
-static enum c_standard {
-    STD_C89
-} standard;
 
 static void help(const char *arg)
 {
@@ -33,16 +28,16 @@ static void flag(const char *arg)
 {
     switch (*arg) {
     case 'c':
-        target = TARGET_x86_64_ELF;
+        context.target = TARGET_x86_64_ELF;
         break;
     case 'S':
-        target = TARGET_x86_64_ASM;
+        context.target = TARGET_x86_64_ASM;
         break;
     case 'E':
-        target = TARGET_NONE;
+        context.target = TARGET_NONE;
         break;
     case 'v':
-        verbose_level += 1;
+        context.verbose += 1;
         break;
     default:
         assert(0);
@@ -58,16 +53,17 @@ static void open_output_handle(const char *file)
 static void set_c_std(const char *std)
 {
     if (!strcmp("c89", std)) {
-        standard = STD_C89;
+        context.standard = STD_C89;
     } else {
         fprintf(stderr, "Unrecognized option %s.\n", std);
         exit(1);
     }
 }
 
-static void parse_program_arguments(int argc, char *argv[])
+static char *parse_program_arguments(int argc, char *argv[])
 {
     int c;
+    char *input;
     struct option optv[] = {
         {"-S", &flag},
         {"-E", &flag},
@@ -80,9 +76,9 @@ static void parse_program_arguments(int argc, char *argv[])
     };
 
     program = argv[0];
-    standard = STD_C89;
-    target = TARGET_IR_DOT;
     output = stdout;
+    context.standard = STD_C89;
+    context.target = TARGET_IR_DOT;
     c = parse_args(sizeof(optv)/sizeof(optv[0]), optv, argc, argv);
     if (c == argc - 1) {
         input = argv[c];
@@ -90,14 +86,17 @@ static void parse_program_arguments(int argc, char *argv[])
         help(argv[0]);
         exit(1);
     }
+
+    return input;
 }
 
 int main(int argc, char *argv[])
 {
+    char *input;
     struct definition *def;
     const struct symbol *sym;
 
-    parse_program_arguments(argc, argv);
+    input = parse_program_arguments(argc, argv);
 
     /* Add default search paths last, with lowest priority. These are
      * searched after anything specified with -I, and in the order
@@ -109,9 +108,9 @@ int main(int argc, char *argv[])
 
     init(input);
     register_builtin_definitions();
-    set_compile_target(output, target);
+    set_compile_target(output);
 
-    if (target == TARGET_NONE) {
+    if (context.target == TARGET_NONE) {
         preprocess(output);
     } else {
         push_scope(&ns_ident);
@@ -119,9 +118,9 @@ int main(int argc, char *argv[])
         register_builtin_types(&ns_ident);
 
         while ((def = parse()) != NULL) {
-            if (errors) {
+            if (context.errors) {
                 error("Aborting because of previous %s.",
-                    (errors > 1) ? "errors" : "error");
+                    (context.errors > 1) ? "errors" : "error");
                 break;
             }
             compile(def);
@@ -131,7 +130,7 @@ int main(int argc, char *argv[])
             declare(sym);
         }
 
-        if (verbose_level) {
+        if (context.verbose) {
             output_symbols(stdout, &ns_ident);
             output_symbols(stdout, &ns_tag);
         }
@@ -145,5 +144,5 @@ int main(int argc, char *argv[])
         fclose(output);
     }
 
-    return errors;
+    return context.errors;
 }

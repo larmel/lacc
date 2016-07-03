@@ -4,8 +4,8 @@
 #include "parse.h"
 #include "symtab.h"
 #include "type.h"
+#include <lacc/context.h>
 #include <lacc/token.h>
-#include <lacc/cli.h>
 
 #include <assert.h>
 

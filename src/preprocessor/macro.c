@@ -3,7 +3,7 @@
 #include "macro.h"
 #include "strtab.h"
 #include "tokenize.h"
-#include <lacc/cli.h>
+#include <lacc/context.h>
 #include <lacc/hash.h>
 
 #include <assert.h>

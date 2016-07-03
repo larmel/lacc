@@ -5,17 +5,10 @@
 
 #include <stdio.h>
 
-enum compile_target {
-    TARGET_NONE,
-    TARGET_IR_DOT,
-    TARGET_x86_64_ASM,
-    TARGET_x86_64_ELF
-};
-
 /* Initialize compile target format and output stream. Must be called
  * before any other compile function.
  */
-void set_compile_target(FILE *stream, enum compile_target target);
+void set_compile_target(FILE *stream);
 
 /* Compile definition, symbols which are assigned some storage.
  */

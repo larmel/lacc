@@ -1,32 +1,25 @@
-#if _XOPEN_SOURCE < 500
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 500 /* snprintf */
-#endif
+#define _XOPEN_SOURCE 500 /* snprintf */
 #include "parser/type.h"
 #include "preprocessor/input.h"
-#include <lacc/cli.h>
+#include <lacc/context.h>
 
 #include <stdio.h>
 #include <stdarg.h>
 
-unsigned errors = 0;
-int verbose_level = 0;
-
 #define PRINT_BUF_SIZE 2048
 
-/* Static limits on output length, for simplicity. Store arguments and sub-
- * strings from format here temporarily.
+struct context context = {0};
+
+/* Static limits on output length, for simplicity. Store arguments and
+ * substrings from format here temporarily.
  */
 static char message[PRINT_BUF_SIZE];
 
-/* Custom implementation of printf, handling a restricted set of formatters:
+/* Custom implementation of printf, handling a restricted set of
+ * formatters: %s, %d, %lu, %ld.
  *
- *  %s,
- *  %d,
- *  %lu, %ld
- *
- * In addition, the following custom formatters representing compiler-internal
- * data structures.
+ * In addition, have a custom formatter for objects representing a
+ * compiler-internal type object.
  *
  *  %t  : struct typetree *
  *
@@ -87,7 +80,7 @@ static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
 
 void verbose(const char *format, ...)
 {
-    if (verbose_level) {
+    if (context.verbose) {
         va_list args;
         va_start(args, format);
         vfprintf_cc(stdout, format, args);
@@ -100,10 +93,12 @@ void error(const char *format, ...)
 {
     va_list args;
 
-    errors++;
+    context.errors++;
     va_start(args, format);
-    fprintf(stderr, "(%s, %d) error: ",
-        str_raw(current_file_path), current_file_line);
+    fprintf(stderr,
+        "(%s, %d) error: ",
+        str_raw(current_file_path),
+        current_file_line);
     vfprintf_cc(stderr, format, args);
     fputc('\n', stderr);
     va_end(args);

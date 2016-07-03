@@ -4,7 +4,7 @@
 #endif
 #include "symtab.h"
 #include "type.h"
-#include <lacc/cli.h>
+#include <lacc/context.h>
 
 #include <assert.h>
 #include <stdio.h>
