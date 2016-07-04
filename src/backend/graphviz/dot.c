@@ -101,6 +101,13 @@ static char *vartostr(const struct var var)
             sprintf(buffer, "%s", sym_name(var.symbol));
         }
         break;
+    case ADDRESS:
+        if (var.offset) {
+            sprintf(buffer, "&%s[%d]", sym_name(var.symbol), var.offset);
+        } else {
+            sprintf(buffer, "&%s", sym_name(var.symbol));
+        }
+        break;
     case DEREF:
         if (!var.offset)
             sprintf(buffer, "*(%s)", sym_name(var.symbol));
@@ -135,10 +142,6 @@ static void foutputnode(FILE *stream, struct block *node)
         case IR_CAST:
             fprintf(stream, " | %s = (%s) %s",
                 vartostr(op.a), typetostr(op.a.type), vartostr(op.b));
-            break;
-        case IR_ADDR:
-            fprintf(stream, " | %s = &%s",
-                vartostr(op.a), vartostr(op.b));
             break;
         case IR_NOT:
             fprintf(stream, " | %s = ~%s",

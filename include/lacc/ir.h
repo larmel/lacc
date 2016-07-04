@@ -13,10 +13,9 @@ enum optype {
     IR_PARAM = 0x10,    /* param a    */
 
     IR_ASSIGN = 0x20,   /* a = b      */
-    IR_ADDR = 0x21,     /* a = &b     */
-    IR_NOT = 0x22,      /* a = ~b     */
-    IR_CALL = 0x23,     /* a = b()    */
-    IR_CAST = 0x24,     /* a = (T) b  */
+    IR_NOT = 0x21,      /* a = ~b     */
+    IR_CALL = 0x22,     /* a = b()    */
+    IR_CAST = 0x23,     /* a = (T) b  */
 
     IR_OP_ADD = 0x30,   /* a = b + c  */
     IR_OP_SUB = 0x31,   /* a = b - c  */
@@ -47,8 +46,10 @@ enum optype {
 #define OPERAND_COUNT(optype) ((optype) >> 4)
 #define IS_COMPARISON(optype) (((optype) & 0x0F) > 9)
 
-/* A reference to some storage location or direct value, used in
- * intermediate representation of expressions.
+/* A reference to some storage location based on a symbol and optional
+ * offset, or immediate constant value. Used in intermediate
+ * representation of expressions, forming operands of three-address
+ * code.
  */
 struct var {
     const struct typetree *type;
@@ -59,6 +60,10 @@ struct var {
          * storage location. Offset evaluate to *(&symbol + offset).
          * Offset in bytes, not pointer arithmetic. */
         DIRECT,
+        /* r-value address of symbol. Evaluate to (&symbol + offset),
+         * always of pointer type. Offset in bytes, not pointer
+         * arithmetic. */
+        ADDRESS,
         /* l-value or r-value reference to *(symbol + offset). Symbol
          * must have pointer type. Offset in bytes, not pointer
          * arithmetic. */

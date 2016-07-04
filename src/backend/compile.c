@@ -133,7 +133,7 @@ static struct memory location(struct address addr, int w)
 static struct address address_of(struct var var)
 {
     struct address addr = {0};
-    assert(var.kind == DIRECT);
+    assert(var.kind == DIRECT || var.kind == ADDRESS);
 
     if (var.symbol->linkage != LINK_NONE) {
         addr.base = IP;
@@ -203,6 +203,9 @@ static void load_sse(struct var val, enum reg r, int w)
     case DIRECT:
         emit(op, OPT_MEM_REG, location_of(val, w), reg(r, w));
         break;
+    case ADDRESS:
+        assert(0);
+        break;
     case DEREF:
         assert(is_pointer(&val.symbol->type));
         load_value(var_direct(val.symbol), R11, 8);
@@ -253,6 +256,11 @@ static void load_value(struct var v, enum reg r, int w)
             load_value(var_direct(v.symbol), R11, 8);
             emit(opcode, OPT_MEM_REG,
                 location(address(v.offset, R11, 0, 0), s), reg(r, w));
+            break;
+        case ADDRESS:
+            assert(w == 8);
+            assert(s == w);
+            emit(INSTR_LEA, OPT_MEM_REG, location_of(v, 8), reg(r, 8));
             break;
         case IMMEDIATE:
             emit(INSTR_MOV, OPT_IMM_REG, value_of(v, w), reg(r, w));
@@ -1212,10 +1220,6 @@ static void compile_op(const struct op *op)
     case IR_CALL:
         call(array_len(&func_args), func_args.data, op->a, op->b);
         array_empty(&func_args);
-        break;
-    case IR_ADDR:
-        load_address(op->b, AX);
-        store(AX, op->a);
         break;
     case IR_NOT:
         load(op->b, AX);

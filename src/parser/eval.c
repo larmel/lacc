@@ -681,16 +681,20 @@ struct var eval_addr(
         if (is_array(var.type)) {
             var = rvalue(def, block, var);
         }
-        assert(is_pointer(var.type));
         break;
     case DIRECT:
-        /* Address of *(&sym + offset) is evaluated directly. */
-        var = evaluate(
-            def,
-            block,
-            IR_ADDR,
-            type_init(T_POINTER, var.type),
-            var);
+        /* Address of *(&sym + offset) is available directly by setting
+         * flag, resulting in (&sym + offset). No special handling of
+         * offset needed. */
+        if (var.lvalue) {
+            var.kind = ADDRESS;
+            var.type = type_init(T_POINTER, var.type);
+            break;
+        }
+    case ADDRESS:
+        assert(!var.lvalue);
+        error("Cannot take address of r-value.");
+        exit(1);
         break;
     case DEREF:
         /* Address of *(sym + offset) is not *(&sym + offset), so not
@@ -708,6 +712,7 @@ struct var eval_addr(
         break;
     }
 
+    assert(is_pointer(var.type));
     return var;
 }
 
@@ -722,26 +727,46 @@ struct var eval_deref(
         exit(1);
     }
 
-    if (var.kind == DEREF) {
+    assert(!is_tagged(var.type));
+    switch (var.kind) {
+    case DEREF:
         assert(is_pointer(&var.symbol->type));
 
         /* Dereferencing *(sym + offset) must evaluate pointer into a
          * new temporary, before marking that as DEREF var. */
         var = eval_assign(def, block, create_var(def, var.type), var);
-    } else if (
-        var.kind == DIRECT &&
-        (var.offset || !is_pointer(&var.symbol->type)))
-    {
-        /* Cannot immediately dereference a pointer which is at a direct
-         * offset from another symbol. Also, pointers that are the
-         * result of indexing into a structure must be evaluated, as
-         * DEREF variables assume symbol to be of pointer type. */
-        var = eval_assign(def, block, create_var(def, var.type), var);
+        break;
+    case DIRECT:
+        if (var.offset != 0 || !is_pointer(&var.symbol->type)) {
+            /* Cannot immediately dereference a pointer which is at a
+             * direct offset from another symbol. Also, pointers that
+             * are the result of indexing into a structure must be
+             * evaluated, as DEREF variables assume symbol to be of
+             * pointer type. */
+            var = eval_assign(def, block, create_var(def, var.type), var);
+        }
+        break;
+    case ADDRESS:
+        /* Dereferencing (&sym + offset) is a DIRECT reference to sym if
+         * offset is 0. Otherwise, assign pointer to new temporary var,
+         * and return DEREF of that. */
+        if (var.offset == 0) {
+            var.kind = DIRECT;
+            var.type = type_deref(var.type);
+            var.lvalue = 1;
+            return var;
+        } else {
+            var = eval_assign(def, block, create_var(def, var.type), var);
+        }
+        break;
+    case IMMEDIATE:
+        assert(0);
+        break;
     }
 
-    assert(var.kind == DIRECT && !var.offset);
-    assert(is_pointer(var.type) && is_pointer(&var.symbol->type));
-
+    assert(var.kind == DIRECT);
+    assert(!var.offset);
+    assert(is_pointer(var.type));
     var.kind = DEREF;
     var.type = type_deref(var.type);
     var.lvalue = 1;
