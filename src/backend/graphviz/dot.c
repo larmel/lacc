@@ -6,18 +6,19 @@
 #include <string.h>
 
 #define MAX_BUF_LEN 256
+#define BUFFERS 3
 
-static char buffer[2][MAX_BUF_LEN];
+static char buffer[BUFFERS][MAX_BUF_LEN];
 
 /* Return a buffer which can be used to write string representation of
- * variable or symbol. Need to keep at most two alive in order to print
- * a full statement. Alternate using counter.
+ * variable or symbol. Need to keep at most three alive in order to
+ * print a full statement. Circulate using counter.
  */
 static char *get_buffer(void)
 {
     static int i;
 
-    i = (i + 1) % 2;
+    i = (i + 1) % BUFFERS;
     return buffer[i];
 }
 
