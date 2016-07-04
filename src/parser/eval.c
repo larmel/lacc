@@ -684,17 +684,21 @@ struct var eval_addr(
         assert(is_pointer(var.type));
         break;
     case DIRECT:
-        var =
-            evaluate(def, block, IR_ADDR, type_init(T_POINTER, var.type), var);
+        /* Address of *(&sym + offset) is evaluated directly. */
+        var = evaluate(
+            def,
+            block,
+            IR_ADDR,
+            type_init(T_POINTER, var.type),
+            var);
         break;
     case DEREF:
+        /* Address of *(sym + offset) is not *(&sym + offset), so not
+         * possible to just convert to DIRECT. Offset must be applied
+         * after converting to direct pointer. */
         assert(is_pointer(&var.symbol->type));
         tmp = var_direct(var.symbol);
         if (var.offset) {
-            /* Address of *(sym + offset) is (sym + offset), but
-             * without pointer arithmetic applied in addition. Cast to
-             * char pointer temporarily to avoid trouble calling
-             * eval_expr. */
             tmp = eval_cast(def, block, tmp,
                 type_init(T_POINTER, &basic_type__char));
             tmp = eval_expr(def, block, IR_OP_ADD, tmp, var_int(var.offset));
