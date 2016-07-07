@@ -1206,13 +1206,6 @@ static void compile_op(const struct op *op)
             store(AX, op->a);
         }
         break;
-    case IR_DEREF:
-        load(op->b, CX);
-        emit(INSTR_MOV, OPT_MEM_REG,
-            location(address(0, CX, 0, 0), size_of(op->a.type)),
-            reg(AX, size_of(op->a.type)));
-        store(AX, op->a);
-        break;
     case IR_PARAM:
         array_push_back(&func_args, op->a);
         break;

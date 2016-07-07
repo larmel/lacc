@@ -716,8 +716,6 @@ struct var eval_deref(
     struct block *block,
     struct var var)
 {
-    struct var ptr;
-
     var = rvalue(def, block, var);
     if (!is_pointer(var.type)) {
         error("Dereferencing non-pointer type '%t'.", var.type);
@@ -727,15 +725,9 @@ struct var eval_deref(
     if (var.kind == DEREF) {
         assert(is_pointer(&var.symbol->type));
 
-        /* Cast to char pointer temporarily to avoid pointer arithmetic
-         * calling eval_expr. No actual evaluation is performed. */
-        ptr = var_direct(var.symbol);
-        ptr = eval_cast(def, block, ptr,
-            type_init(T_POINTER, &basic_type__char));
-        ptr = eval_expr(def, block, IR_OP_ADD, ptr, var_int(var.offset));
-        ptr.type = &var.symbol->type;
-
-        var = evaluate(def, block, IR_DEREF, var.type, ptr);
+        /* Dereferencing *(sym + offset) must evaluate pointer into a
+         * new temporary, before marking that as DEREF var. */
+        var = eval_assign(def, block, create_var(def, var.type), var);
     } else if (
         var.kind == DIRECT &&
         (var.offset || !is_pointer(&var.symbol->type)))

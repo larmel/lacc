@@ -136,10 +136,6 @@ static void foutputnode(FILE *stream, struct block *node)
             fprintf(stream, " | %s = (%s) %s",
                 vartostr(op.a), typetostr(op.a.type), vartostr(op.b));
             break;
-        case IR_DEREF:
-            fprintf(stream, " | %s = *%s",
-                vartostr(op.a), vartostr(op.b));
-            break;
         case IR_ADDR:
             fprintf(stream, " | %s = &%s",
                 vartostr(op.a), vartostr(op.b));
