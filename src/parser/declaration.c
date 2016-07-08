@@ -772,6 +772,7 @@ static struct block *initializer(
     struct block *block,
     struct var target)
 {
+    int ops;
     assert(target.kind == DIRECT);
 
     /* Do not care about cv-qualifiers here. */
@@ -780,8 +781,15 @@ static struct block *initializer(
     if (peek().token == '{') {
         block = object_initializer(def, block, target);
     } else {
+        ops = array_len(&block->code);
         block = assignment_expression(def, block);
-        if (!target.symbol->depth && block->expr.kind != IMMEDIATE) {
+        if (target.symbol->linkage != LINK_NONE
+            && (array_len(&block->code) - ops > 0
+                || (block->expr.kind != IMMEDIATE
+                    && block->expr.kind != ADDRESS)
+                || (block->expr.kind == ADDRESS
+                    && block->expr.symbol->linkage == LINK_NONE)))
+        {
             error("Initializer must be computable at load time.");
             exit(1);
         }

@@ -1425,35 +1425,40 @@ static void compile_block(struct block *block, const struct typetree *type)
 
 static void compile_data_assign(struct var target, struct var val)
 {
-    int size = target.type->size;
     struct immediate imm = {0};
-
     assert(target.kind == DIRECT);
-    assert(val.kind == IMMEDIATE);
 
-    imm.w = size;
-    switch (target.type->type) {
-    case T_POINTER:
-        if (is_string(val)) {
-            imm.type = IMM_ADDR;
-            imm.d.addr.sym = val.symbol;
-            imm.d.addr.disp = val.offset;
+    imm.w = target.type->size;
+    if (val.kind == IMMEDIATE) {
+        switch (target.type->type) {
+        case T_POINTER:
+            if (is_string(val)) {
+                imm.type = IMM_ADDR;
+                imm.d.addr.sym = val.symbol;
+                imm.d.addr.disp = val.offset;
+                break;
+            }
+        case T_SIGNED:
+        case T_UNSIGNED:
+            imm.type = IMM_INT;
+            imm.d.qword = val.imm.i;
+            break;
+        case T_ARRAY:
+            if (is_string(val)) {
+                imm.type = IMM_STRING;
+                imm.d.string = val.symbol->string_value;
+                break;
+            }
+        default:
+            assert(0);
             break;
         }
-    case T_SIGNED:
-    case T_UNSIGNED:
-        imm.type = IMM_INT;
-        imm.d.qword = val.imm.i;
-        break;
-    case T_ARRAY:
-        if (is_string(val)) {
-            imm.type = IMM_STRING;
-            imm.d.string = val.symbol->string_value;
-            break;
-        }
-    default:
-        assert(0);
-        break;
+    } else {
+        assert(val.kind == ADDRESS);
+        assert(val.symbol->linkage != LINK_NONE);
+        imm.type = IMM_ADDR;
+        imm.d.addr.sym = val.symbol;
+        imm.d.addr.disp = val.offset;
     }
 
     emit_data(imm);
