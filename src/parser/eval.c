@@ -257,10 +257,14 @@ static struct var eval_add(
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
-        /* Special case for string literal + constant. This is
-         * represented as an immediate with offset. */
-        if (is_string(l) && r.kind == IMMEDIATE && is_integer(r.type)) {
-            l.offset += r.imm.i;
+        /* Special case for immediate string literal + constant, and
+         * ADDRESS + constant. These can be evaluated immediately. */
+        if ((is_string(l) || l.kind == ADDRESS)
+            && r.kind == IMMEDIATE
+            && is_integer(r.type))
+        {
+            assert(!is_tagged(l.type));
+            l.offset += r.imm.i * size_of(l.type->next);
         }
         /* Evaluate unless r is immediate zero. */
         else if (r.kind != IMMEDIATE || r.imm.i) {
@@ -299,10 +303,14 @@ static struct var eval_sub(
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
-        /* Special case for string literal - constant. This is
-         * represented as an immediate with offset. */
-        if (is_string(l) && r.kind == IMMEDIATE && is_integer(r.type)) {
-            l.offset -= r.imm.i;
+        /* Special case for immediate string literal - constant, and
+         * ADDRESS - constant. These can be evaluated immediately. */
+        if ((is_string(l) || l.kind == ADDRESS)
+            && r.kind == IMMEDIATE
+            && is_integer(r.type))
+        {
+            assert(!is_tagged(l.type));
+            l.offset -= r.imm.i * size_of(l.type->next);
         }
         /* Evaluate unless r is immediate zero. */
         else if (r.kind != IMMEDIATE || r.imm.i) {
