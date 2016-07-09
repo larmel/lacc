@@ -234,9 +234,12 @@ static struct block *postfix_expression(
                         nmembers(type), i);
                     exit(1);
                 }
+                mbr = get_member(type, i);
                 block = assignment_expression(def, block);
+                if (!type_equal(block->expr.type, mbr->type)) {
+                    block->expr = eval_cast(def, block, block->expr, mbr->type);
+                }
                 array_push_back(args, block->expr);
-                /* todo: type check here. */
                 if (i < nmembers(type) - 1) {
                     consume(',');
                 }
