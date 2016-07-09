@@ -291,8 +291,8 @@ static struct block *postfix_expression(
                  * perform normal dereferencing. */
                 root.type = type_init(T_POINTER, mbr->type);
                 root = eval_deref(def, block, root);
-                root.offset = mbr->offset;
                 root.width = mbr->width;
+                root.offset += mbr->offset;
             } else {
                 error("Invalid member access.");
                 exit(1);

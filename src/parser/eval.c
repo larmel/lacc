@@ -747,18 +747,12 @@ struct var eval_deref(
         }
         break;
     case ADDRESS:
-        /* Dereferencing (&sym + offset) is a DIRECT reference to sym if
-         * offset is 0. Otherwise, assign pointer to new temporary var,
-         * and return DEREF of that. */
-        if (var.offset == 0) {
-            var.kind = DIRECT;
-            var.type = type_deref(var.type);
-            var.lvalue = 1;
-            return var;
-        } else {
-            var = eval_assign(def, block, create_var(def, var.type), var);
-        }
-        break;
+        /* Dereferencing (&sym + offset) is a DIRECT reference to sym,
+         * with the same offset. */
+        var.kind = DIRECT;
+        var.type = type_deref(var.type);
+        var.lvalue = 1;
+        return var;
     case IMMEDIATE:
         assert(0);
         break;
