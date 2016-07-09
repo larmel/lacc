@@ -95,26 +95,31 @@ static char *vartostr(const struct var var)
         }
         break;
     case DIRECT:
-        if (var.offset) {
-            sprintf(buffer, "%s[%d]", sym_name(var.symbol), var.offset);    
+        if (var.offset > 0) {
+            sprintf(buffer, "*(&%s + %d)", sym_name(var.symbol), var.offset);
+        } else if (var.offset < 0) {
+            sprintf(buffer, "*(&%s - %d)", sym_name(var.symbol), -var.offset);
         } else {
             sprintf(buffer, "%s", sym_name(var.symbol));
         }
         break;
     case ADDRESS:
-        if (var.offset) {
-            sprintf(buffer, "&%s[%d]", sym_name(var.symbol), var.offset);
+        if (var.offset > 0) {
+            sprintf(buffer, "(&%s + %d)", sym_name(var.symbol), var.offset);
+        } else if (var.offset < 0) {
+            sprintf(buffer, "(&%s - %d)", sym_name(var.symbol), -var.offset);
         } else {
             sprintf(buffer, "&%s", sym_name(var.symbol));
         }
         break;
     case DEREF:
-        if (!var.offset)
-            sprintf(buffer, "*(%s)", sym_name(var.symbol));
-        else if (var.offset > 0)
+        if (var.offset > 0) {
             sprintf(buffer, "*(%s + %d)", sym_name(var.symbol), var.offset);
-        else
+        } else if (var.offset < 0) {
             sprintf(buffer, "*(%s - %d)", sym_name(var.symbol), -var.offset);
+        } else {
+            sprintf(buffer, "*(%s)", sym_name(var.symbol));
+        }
         break;
     }
 
