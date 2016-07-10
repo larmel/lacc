@@ -3,12 +3,12 @@
 
 #include <stddef.h>
 
-/* Global information about translation unit. Accessible from all
- * modules.
+/* Global information about translation unit.
  */
 extern struct context {
     int errors;
     int verbose;
+    int suppress_warning;
     enum target {
         TARGET_NONE,
         TARGET_IR_DOT,
@@ -21,12 +21,16 @@ extern struct context {
     } standard;
 } context;
 
-/* Diagnostics info, written to stdout. No-op if context.verbose is
- * not set.
+/* Output diagnostics info to stdout. No-op if context.verbose is not
+ * set.
  */
 void verbose(const char *, ...);
 
-/* Error reporting, written to stderr.
+/* Output warning to stderr. No-op if context.suppress_warning is set.
+ */
+void warning(const char *, ...);
+
+/* Output error to stderr.
  */
 void error(const char *, ...);
 

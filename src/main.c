@@ -39,6 +39,9 @@ static void flag(const char *arg)
     case 'v':
         context.verbose += 1;
         break;
+    case 'w':
+        context.suppress_warning = 1;
+        break;
     default:
         assert(0);
         break;
@@ -71,6 +74,7 @@ static char *parse_program_arguments(int argc, char *argv[])
         {"-E", &flag},
         {"-c", &flag},
         {"-v", &flag},
+        {"-w", &flag},
         {"--help", &help},
         {"-o:", &open_output_handle},
         {"-I:", &add_include_search_path},

@@ -89,13 +89,30 @@ void verbose(const char *format, ...)
     }
 }
 
+void warning(const char *format, ...)
+{
+    va_list args;
+    if (!context.suppress_warning) {
+        va_start(args, format);
+        fprintf(
+            stderr,
+            "(%s, %d) warning: ",
+            str_raw(current_file_path),
+            current_file_line);
+        vfprintf_cc(stderr, format, args);
+        fputc('\n', stderr);
+        va_end(args);
+    }
+}
+
 void error(const char *format, ...)
 {
     va_list args;
 
     context.errors++;
     va_start(args, format);
-    fprintf(stderr,
+    fprintf(
+        stderr,
         "(%s, %d) error: ",
         str_raw(current_file_path),
         current_file_line);
