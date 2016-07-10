@@ -354,8 +354,8 @@ static struct var eval_eq(
     const struct typetree *type;
 
     /* Normalize by putting most specific pointer type as left argument.
-     * If both sides are pointer, but only one is void *, move the
-     * void pointer to the right. */
+       If both sides are pointer, but only one is void *, move the void
+       pointer to the right. */
     if (is_pointer(r.type)
         && (!is_pointer(l.type)
             || (is_void(l.type->next) && !is_void(r.type->next))))
@@ -373,17 +373,15 @@ static struct var eval_eq(
                 !(is_void(l.type->next) && size_of(r.type->next)) &&
                 !(is_void(r.type->next) && size_of(l.type->next)))
             {
-                error("Comparison between incompatible types '%t' and '%t'.",
+                warning("Comparison between incompatible types '%t' and '%t'.",
                     l.type, r.type);
-                exit(1);
             }
         } else if (!is_nullptr(r)) {
-            error("Numerical comparison must be null constant.");
-            exit(1);
+            warning("Comparison between pointer and non-zero integer.");
         }
 
-        /* Left operand has the most specific type, cast to that to
-         * have the same type on each side. */
+        /* Left operand has the most specific type, cast to that to have
+           the same type on each side. */
         r = eval_cast(def, block, r, l.type);
     } else {
         error("Illegal comparison between types '%t' and '%t'.",
