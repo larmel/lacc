@@ -364,12 +364,12 @@ static void load_address(struct var v, enum reg r)
         emit(INSTR_LEA, OPT_MEM_REG, location_of(v, 8), reg(r, 8));
     } else {
         assert(v.kind == DEREF);
-        assert(v.symbol->stack_offset);
         assert(is_pointer(&v.symbol->type));
 
         load(var_direct(v.symbol), r);
-        if (v.offset)
+        if (v.offset) {
             emit(INSTR_ADD, OPT_IMM_REG, constant(v.offset, 8), reg(r, 8));
+        }
     }
 }
 
