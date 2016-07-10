@@ -415,6 +415,8 @@ struct block *statement(struct definition *def, struct block *parent)
     case STRING:
     case '*':
     case '(':
+    case INCREMENT:
+    case DECREMENT:
         parent = expression(def, parent);
         consume(';');
         break;
