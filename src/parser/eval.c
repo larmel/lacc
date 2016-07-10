@@ -353,9 +353,13 @@ static struct var eval_eq(
 {
     const struct typetree *type;
 
-    /* Normalize by putting most specific pointer type as left argument,
-     * checking for non-pointer and void-pointer. */
-    if (is_pointer(r.type) && (!is_pointer(l.type) || is_void(l.type->next))) {
+    /* Normalize by putting most specific pointer type as left argument.
+     * If both sides are pointer, but only one is void *, move the
+     * void pointer to the right. */
+    if (is_pointer(r.type)
+        && (!is_pointer(l.type)
+            || (is_void(l.type->next) && !is_void(r.type->next))))
+    {
         return eval_eq(def, block, r, l);
     }
 
