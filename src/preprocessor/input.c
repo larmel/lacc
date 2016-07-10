@@ -213,26 +213,27 @@ void init(const char *path)
 static size_t process_chunk(char *line, size_t len, int *linecount)
 {
     /* Preserve progress made between resizing or moving. Both for
-     * optimization, and to not have to backtrack mutations done on the
-     * string, like replacing comments with a single space character. */
+       optimization, and to not have to backtrack mutations done on the
+       string, like replacing comments with a single space character. */
     static ptrdiff_t prev_ptr, prev_tail, prev_end;
-    static int continuations;
     static enum {
         NORMAL,
         COMMENT
     } state = NORMAL;
 
     /* Invariant: ptr always points to one past the last character of
-     * the result string, at loop exit this should be '\0'. The end
-     * pointer always points to, at the start of each iteration, the
-     * next character to consider part of the string.
-     * Tail is the previous content character skipped over by end. This
-     * Needs to be tracked for comments, like *\ (newline) /. Logically,
-     * the character at *(end - 1), when skipping continuations.
-     * Characters are copied from *end to *ptr as processing moves
-     * along, skipping over line continuations and comments.
-     * The preprocessing is successful iff *ptr == '\0' at loop exit,
-     * meaning we were able to process a whole line. */
+       the result string, at loop exit this should be '\0'. The end
+       pointer always points to, at the start of each iteration, the
+       next character to consider part of the string.
+
+       Tail is the previous content character skipped over by end. This
+       Needs to be tracked for comments, like *\ (newline) /. Logically,
+       the character at *(end - 1), when skipping continuations.
+       Characters are copied from *end to *ptr as processing moves
+       along, skipping over line continuations and comments.
+
+       The preprocessing is successful iff *ptr == '\0' at loop exit,
+       meaning we were able to process a whole line. */
     char
         *ptr = line + prev_ptr,
         *end = line + prev_end,
@@ -243,7 +244,7 @@ static size_t process_chunk(char *line, size_t len, int *linecount)
         if (*end == '\\') {
             if (*(end + 1) == '\0') break;
             else if (*(end + 1) == '\n') {
-                continuations++;
+                (*linecount)++;
                 end += 2;
             } else {
                 if (ptr != end) {
@@ -254,11 +255,10 @@ static size_t process_chunk(char *line, size_t len, int *linecount)
             }
         } else if (*end == '\n') {
             end++;
+            (*linecount)++;
             if (state == NORMAL) {
                 *ptr = '\0';
-                (*linecount) += continuations + 1;
                 prev_ptr = prev_tail = prev_end = 0;
-                continuations = 0;
                 return end - line;
             }
         } else {

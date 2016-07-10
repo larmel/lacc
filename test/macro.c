@@ -4,8 +4,12 @@ int puts(const char *);
 
 #define BAR(x) __FILE__, *d = #x, e = x ;
 
+/*
+ * Some comments to confuse line counting.
+ */
+
 int main() {
-	int a = 42;
+	int a = 42; /*     Single line comment. */
 	char *c = BAR(
 		__LINE__
 	)
