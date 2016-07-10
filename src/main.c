@@ -68,7 +68,7 @@ static void set_c_std(const char *std)
 static char *parse_program_arguments(int argc, char *argv[])
 {
     int c;
-    char *input;
+    char *input = NULL;
     struct option optv[] = {
         {"-S", &flag},
         {"-E", &flag},
