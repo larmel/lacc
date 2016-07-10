@@ -783,6 +783,8 @@ struct var eval_assign(
     struct var target,
     struct var var)
 {
+    enum qualifier cv;
+
     if (!target.lvalue) {
         error("Target of assignment must be l-value.");
         exit(1);
@@ -802,43 +804,40 @@ struct var eval_assign(
                 var.type);
             exit(1);
         }
-
         assert(var.symbol);
         assert(var.symbol->symtype == SYM_STRING_VALUE);
+    } else if (is_pointer(target.type) && is_pointer(var.type)) {
+        cv = target.type->next->qualifier | var.type->next->qualifier;
+        if (!is_compatible(target.type, var.type)) {
+            if (!(is_nullptr(var)
+                || (is_void(target.type->next) && is_object(var.type->next))
+                || (is_object(target.type->next) && is_void(var.type->next))))
+            {
+                warning("Incompatible type in pointer assignment; %t = %t.",
+                    target.type,
+                    var.type);
+            }
+        }
+        if (!is_nullptr(var) && cv != target.type->next->qualifier) {
+            warning("Target of assignment lacks qualifiers; %t = %t.",
+                target.type,
+                var.type);
+        }
+    } else if (is_pointer(target.type) && is_integer(var.type)) {
+        if (!is_nullptr(var)) {
+            warning("Assigning non-zero number to pointer.",
+                target.type,
+                var.type);
+        }
     } else if (
         /* The left operand has atomic, qualified, or unqualified
-         * arithmetic type, and the right has arithmetic type. */
+           arithmetic type, and the right has arithmetic type. */
         !(is_arithmetic(target.type) && is_arithmetic(var.type)) &&
         /* The left operand has an atomic, qualified, or unqualified
-         * version of a structure or union type compatible with the
-         * type of the right. */
+           version of a structure or union type compatible with the
+           type of the right. */
         !(is_struct_or_union(target.type)
-            && is_compatible(target.type, var.type)) &&
-        /* The left operand has atomic, qualified, or unqualified
-         * pointer type, and (considering the type the left operand
-         * would have after lvalue conversion) both operands are
-         * pointers to qualified or unqualified versions of compatible
-         * types, and the type pointed to by the left has all the
-         * qualifiers of the type pointed to by the right. */
-        !(is_pointer(target.type) && is_pointer(var.type)
-            && is_compatible(target.type->next, var.type->next)
-            && (target.type->next->qualifier | var.type->next->qualifier)
-                == target.type->next->qualifier) &&
-        /* The left operand has atomic, qualified, or unqualified
-         * pointer type, and (considering the type the left operand
-         * would have after lvalue conversion) one operand is a pointer
-         * to an object type, and the other is a pointer to a qualified
-         * or unqualified version of void, and the type pointed to by
-         * the left has all the qualifiers of the type pointed to by
-         * the right. */
-        !(is_pointer(target.type) && is_pointer(var.type)
-            && ((is_void(target.type->next) && is_object(var.type->next))
-                || (is_object(target.type->next) && is_void(var.type->next)))
-            && (target.type->next->qualifier | var.type->next->qualifier)
-                == target.type->next->qualifier) &&
-        /* The left operand is an atomic, qualified, or unqualified
-         * pointer, and the right is a null pointer constant. */
-        !(is_pointer(target.type) && is_nullptr(var)))
+            && is_compatible(target.type, var.type)))
     {
         error("Incompatible operands to assignment expression, %s :: %t = %t.",
             str_raw(target.symbol->name), target.type, var.type);
@@ -846,8 +845,8 @@ struct var eval_assign(
     }
 
     /* Assignment has implicit conversion for basic types when
-     * evaluating the IR operation, meaning var will be sign extended
-     * to size of target.type. */
+       evaluating the IR operation, meaning var will be sign extended
+       to size of target.type. */
     emit_ir(block, IR_ASSIGN, target, var);
     target.lvalue = 0;
 
