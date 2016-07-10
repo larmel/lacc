@@ -12,12 +12,11 @@ do
 	filename="fuzz/${n}.c"
 	${csmith_home}/src/csmith ${csmith_options} > ${filename};
 	./check.sh \
-		"bin/lacc -std=c99 -I ${csmith_home}/runtime" ${filename} \
+		"bin/lacc -w -std=c99 -I ${csmith_home}/runtime" ${filename} \
 		"cc -w -std=c99 -I ${csmith_home}/runtime";
 	result="$?"
 	if [[ $result -ne "0" ]]; then
 		break
 	fi
 	n=$((n + 1))
-	break
 done
