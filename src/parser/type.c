@@ -201,7 +201,7 @@ void type_add_field(
     struct signature *sig;
     struct member mbr = {{{0}}};
 
-    assert(is_struct(type));
+    assert(is_struct_or_union(type));
     assert(!is_tagged(type));
     assert(type_equal(mtype, &basic_type__int) ||
         type_equal(mtype, &basic_type__unsigned_int));

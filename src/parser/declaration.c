@@ -207,7 +207,7 @@ static void member_declaration_list(struct typetree *type)
         do {
             name.len = 0;
             decl_type = declarator(decl_base, &name);
-            if (is_struct(type) && peek().token == ':') {
+            if (is_struct_or_union(type) && peek().token == ':') {
                 if (!is_integer(decl_type) || decl_type->size != 4) {
                     error("Unsupported type '%t' for bit-field.", decl_type);
                     exit(1);
