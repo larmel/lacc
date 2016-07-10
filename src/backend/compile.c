@@ -394,8 +394,13 @@ static void store(enum reg r, struct var v)
         emit(op, OPT_REG_MEM, reg(r, w), location_of(v, w));
     } else {
         assert(v.kind == DEREF);
-        assert(is_pointer(&v.symbol->type));
-        load_value(var_direct(v.symbol), R11, size_of(&v.symbol->type));
+        if (!v.symbol) {
+            v.kind = IMMEDIATE;
+            load_value(v, R11, 8);
+        } else {
+            assert(is_pointer(&v.symbol->type));
+            load_value(var_direct(v.symbol), R11, size_of(&v.symbol->type));
+        }
         emit(op, OPT_REG_MEM,
             reg(r, w), location(address(v.offset, R11, 0, 0), w));
     }

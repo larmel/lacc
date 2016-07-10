@@ -65,7 +65,8 @@ struct var {
          * arithmetic. */
         ADDRESS,
         /* l-value or r-value reference to *(symbol + offset). Symbol
-         * must have pointer type. Offset in bytes, not pointer
+         * must have pointer type. If symbol is NULL, the dereferenced
+         * pointer is an immediate value. Offset in bytes, not pointer
          * arithmetic. */
         DEREF,
         /* r-value immediate, with the type specified. Symbol is NULL,

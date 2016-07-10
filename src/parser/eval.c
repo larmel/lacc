@@ -687,15 +687,15 @@ struct var eval_addr(
             exit(1);
         }
         /* Address of string literal can be done without evaluation,
-         * just decay the variable to pointer. */
+           just decay the variable to pointer. */
         if (is_array(var.type)) {
             var = rvalue(def, block, var);
         }
         break;
     case DIRECT:
         /* Address of *(&sym + offset) is available directly by setting
-         * flag, resulting in (&sym + offset). No special handling of
-         * offset needed. */
+           flag, resulting in (&sym + offset). No special handling of
+           offset needed. */
         if (var.lvalue) {
             var.kind = ADDRESS;
             var.type = type_init(T_POINTER, var.type);
@@ -707,18 +707,29 @@ struct var eval_addr(
         exit(1);
         break;
     case DEREF:
-        /* Address of *(sym + offset) is not *(&sym + offset), so not
-         * possible to just convert to DIRECT. Offset must be applied
-         * after converting to direct pointer. */
-        assert(is_pointer(&var.symbol->type));
-        tmp = var_direct(var.symbol);
-        if (var.offset) {
-            tmp = eval_cast(def, block, tmp,
-                type_init(T_POINTER, &basic_type__char));
-            tmp = eval_expr(def, block, IR_OP_ADD, tmp, var_int(var.offset));
+        if (!var.symbol) {
+            /* Address of *(const + offset) is just the constant.
+               Convert to immediate, adding the extra offset. */
+            var.kind = IMMEDIATE;
+            var.type = type_init(T_POINTER, var.type);
+            var.imm.u += var.offset;
+            var.offset = 0;
+            var.lvalue = 0;
+        } else {
+            /* Address of *(sym + offset) is not *(&sym + offset), so
+               not possible to just convert to DIRECT. Offset must be
+               applied after converting to direct pointer. */
+            assert(is_pointer(&var.symbol->type));
+            tmp = var_direct(var.symbol);
+            if (var.offset) {
+                tmp = eval_cast(def, block, tmp,
+                    type_init(T_POINTER, &basic_type__char));
+                tmp = eval_expr(
+                    def, block, IR_OP_ADD, tmp, var_int(var.offset));
+            }
+            tmp.type = type_init(T_POINTER, var.type);
+            var = tmp;
         }
-        tmp.type = type_init(T_POINTER, var.type);
-        var = tmp;
         break;
     }
 
@@ -740,32 +751,36 @@ struct var eval_deref(
     assert(!is_tagged(var.type));
     switch (var.kind) {
     case DEREF:
-        assert(is_pointer(&var.symbol->type));
-
         /* Dereferencing *(sym + offset) must evaluate pointer into a
-         * new temporary, before marking that as DEREF var. */
+           new temporary, before marking that as DEREF var. */
         var = eval_assign(def, block, create_var(def, var.type), var);
         break;
     case DIRECT:
         if (var.offset != 0 || !is_pointer(&var.symbol->type)) {
             /* Cannot immediately dereference a pointer which is at a
-             * direct offset from another symbol. Also, pointers that
-             * are the result of indexing into a structure must be
-             * evaluated, as DEREF variables assume symbol to be of
-             * pointer type. */
+               direct offset from another symbol. Also, pointers that
+               are the result of indexing into a structure must be
+               evaluated, as DEREF variables assume symbol to be of
+               pointer type. */
             var = eval_assign(def, block, create_var(def, var.type), var);
         }
         break;
     case ADDRESS:
         /* Dereferencing (&sym + offset) is a DIRECT reference to sym,
-         * with the same offset. */
+           with the same offset. */
         var.kind = DIRECT;
         var.type = type_deref(var.type);
         var.lvalue = 1;
         return var;
     case IMMEDIATE:
-        assert(0);
-        break;
+        /* Dereferencing constant which has been cast to pointer. This
+           is a special case of deref, identified by symbol being NULL.
+           Handled in backend. */
+        var.kind = DEREF;
+        var.type = type_deref(var.type);
+        var.lvalue = 1;
+        assert(!var.symbol);
+        return var;
     }
 
     assert(var.kind == DIRECT);
