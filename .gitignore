@@ -1,4 +1,5 @@
 bin
+csmith
 test/*
 !test/*.c
 !test/*.h

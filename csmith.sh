@@ -1,5 +1,6 @@
 #!/bin/bash
 
+directory="csmith"
 csmith_home="$1"
 csmith_options="--no-packed-struct"
 if [[ -z "$csmith_home" ]]; then
@@ -9,7 +10,7 @@ fi
 n=1
 while [ true ]
 do
-	filename="fuzz/${n}.c"
+	filename="${directory}/${n}.c"
 	${csmith_home}/src/csmith ${csmith_options} > ${filename};
 	./check.sh \
 		"bin/lacc -w -std=c99 -I ${csmith_home}/runtime" ${filename} \
