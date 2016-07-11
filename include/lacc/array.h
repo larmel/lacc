@@ -30,7 +30,10 @@
                     realloc(                                                   \
                         (arr)->data,                                           \
                         (arr)->capacity * sizeof(*(arr)->data));               \
-                memset((arr)->data + (arr)->length, 0, sizeof(*(arr)->data));  \
+                memset(                                                        \
+                    (arr)->data + (arr)->length,                               \
+                    0,                                                         \
+                    sizeof(*(arr)->data) * ((arr)->capacity - (arr)->length)); \
             }                                                                  \
         }                                                                      \
     } while (0)

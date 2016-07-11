@@ -147,15 +147,18 @@ typedef array_of(struct var) VarArray;
 /* Need to buffer parameter expressions before each function call, and
  * since calls can be nested, the same buffer cannot be used for all.
  */
-static array_of(VarArray) args;
+static array_of(VarArray *) args;
 static unsigned max_depth;
 
 static void cleanup(void)
 {
     int i;
+    VarArray *a;
 
     for (i = 0; i < max_depth; ++i) {
-        array_clear(&array_get(&args, i));
+        a = array_get(&args, i);
+        array_clear(a);
+        free(a);
     }
 
     array_clear(&args);
@@ -165,26 +168,34 @@ static VarArray *push_argument_list(void)
 {
     static int init;
     unsigned len;
+    VarArray *list;
 
     if (!init) {
         atexit(cleanup);
         init = 1;
     }
 
-    array_increase_cap(&args);
-    args.length += 1;
     len = array_len(&args);
-    if (len > max_depth) {
-        max_depth = len;
+    if (len == max_depth) {
+        list = calloc(1, sizeof(*list));
+        array_push_back(&args, list);
+        max_depth = len + 1;
+    } else {
+        list = array_get(&args, len);
+        args.length += 1;
     }
 
-    return &array_get(&args, len - 1);
+    return list;
 }
 
 static void pop_argument_list(void)
 {
+    VarArray *list;
+    assert(args.length);
+
     args.length -= 1;
-    array_empty(&array_get(&args, array_len(&args)));
+    list = array_get(&args, array_len(&args));
+    array_empty(list);
 }
 
 static struct block *postfix_expression(
