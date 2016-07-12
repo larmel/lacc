@@ -1,66 +1,228 @@
 lacc: A simple, self-hosting C compiler
 =======================================
+This is a toy project of mine, with the goal of making a compiler for C, written
+in C, which is able to compile itself.
 
-This is a toy project of mine, with the goal of making a compiler for C, written in C, which is able to compile itself.
+Features
+--------
+ * Almost complete support (barring bugs) for C89, and some C99 features. This
+   includes preprocessing, but no linker. To build executable binaries, an
+   external linker must be used.
+ * Target x86_64 assembly GNU syntax (-S flag), or ELF object files (-o flag).
+   Also support pure preprocessing (-E flag).
+ * Rich intermediate representation, building a control flow graph (CFG) with
+   basic blocks of three-address code for each function definition. The goal is
+   in the future to build data flow analysis on this. The IR can be visualized
+   with dot, which is a separate output target.
 
-Most of the C89 language is supported, in addition to some elements from later standards.
+Install
+-------
+Clone and build from source, and the binary will be placed in `bin/lacc`.
+Default include paths assume GNU standard library headers being available, at
+`/usr/include/x86_64-linux-gnu`. To change to some other libc, for example musl,
+edit [main.c](src/main.c#L112).
 
-Implementation is entirelly C89, using only the standard headers and some POSIX extensions.
-There are no external dependencies.
+    git clone https://github.com/larmel/lacc.git
+    cd lacc
+    make
 
-The compiler can produce x86\_64 assembly (-S), or ELF object files (-c).
-An external linker must be used to create standalone executables.
+Some standard library headers, like `stddef.h` and `stdarg.h`, contain
+definitions that are inherently compiler specific, and are provided specifically
+for lacc under [include/stdlib/](include/stdlib). These are expected to be
+located at `/usr/lib/lacc/include`, and `make install` will do the copying.
 
-Here is compiling "hello world" from terminal, typing in interactive mode:
+    make install
 
-```
-$ bin/lacc -S -o hello.s
-int puts(const char *s);
+Install also copies the binary to `/usr/bin`, so it is possible to run `lacc`
+directly in terminal. Run `make uninstall` to remove the files copies from
+install.
 
-int main(void) {
-	puts("Hello World!");
-	return 0;
-}
+Usage
+-----
+Command line interface is kept similar to GCC and other compilers, using mostly
+a subset of the same flags and options. A custom argument parser is used, and
+the definition of each option can be found in [src/main.c](src/main.c#L72).
 
-$ cat hello.s
-	.data
-	.align	16
-__func__.1:
-	.string	"main"
-	.text
-	.globl	main
-	.type	main, @function
-main:
-	pushq	%rbp
-	movq	%rsp, %rbp
-	subq	$4, %rsp
-.L1:
-	movq	$.LC0, %rdi
-	call	puts
-	movl	%eax, -4(%rbp)	# store .t0
-	movl	$0, %eax
-	leaveq
-	retq
-	.size	main, .-main
-	.section .rodata
-.LC0:
-	.string "Hello World!"
+    -E      Output preprocessed.
+    -S      Output GNU style textual x86_64 assembly.
+    -c      Output x86_64 ELF object file.
+    -o      Specify output file name. If not specified, default to stdout.
+    -std=   Specify C standard, valid options are -std=c89 and -std=c99.
+    -I      Add directory to search for included files.
+    -w      Disable warnings.
+    -v      Output verbose diagnostic information. This will dump a lot of
+            internal state during compilation, and can be useful for debugging.
+    --help  Print help text.
 
-$ gcc hello.s -o hello && ./hello
-Hello World!
-```
+Input is by default read from `stdin`, unless specified as a separate unnamed
+argument. As an example invocation, here is compiling [test/fact.c](test/fact.c)
+to object code, and then using GCC linker to produce the final executable.
 
-There is also an option to produce DOT diagrams of the internal CFG
-representation:
+    bin/lacc -c test/fact.c -o fact.o
+    gcc fact.o -o fact
 
-```c
-int main(int argc, char *argv[]) {
-	int i, sum = 0;
-	for (i = 0; i < argc; ++i) {
-		sum += i;
-	}
-	return sum;
-}
-```
+The program is part of the test suite, calculating 5! using recursion, and
+exiting with the answer. Running `./fact` followed by `echo $?` should print
+`120`.
 
-![Internal representation of for loop](doc/control-flow.png)
+Implementation
+--------------
+The compiler is written in C89, with no external dependencies other than the
+C standard library. There is around 13k lines of code total.
+
+The implementation is organized into three main parts; preprocessor, parser, and
+backend, each in their own directory under [src/](src/). In general, each module
+(a `.c` file typically paired with an `.h` file defining the public interface)
+depend mostly on headers in their own subtree. Declarations that are shared on a
+global level reside in [include/lacc/](include/lacc). This is where you will find
+the core data structures, and interfaces between preprocessing, parsing, and
+code generation.
+
+### Preprocessor
+Preprocessing includes reading files, tokenization, macro expansion, and
+directive handling. The interface to the preprocessor are mainly `peek(0)`,
+`consume(1)`, and `next(0)`, which looks at a stream of preprocessed `struct
+token` objects. These are defined in
+[include/lacc/token.h](include/lacc/token.h).
+
+Input processing is done completely lazily, driven by the parser calling these
+three functions to consume more input. A buffer of at least [K = 2]
+(src/preprocessor/preprocess.c#L18) preprocessed tokens are kept for lookahead
+purposes. This number is sufficient to implement a recursive descent parser for
+the C grammar.
+
+### Intermediate Representation
+Code is modeled as control flow graph of basic blocks, each holding a sequence
+of three-address code IR operations. Each external variable or function
+definition is modeled by a `struct definition` object, defining a single
+`struct symbol` and a CFG holding the code. The data structures backing this
+intermediate representation can be found in [include/lacc/ir.h]
+(include/lacc/ir.h), which is one of the most important files of the compiler.
+
+Visualizing the intermediate representation is a separate output target,
+represented by no flags. I.e. if neither -S, -c or -E are specified, a
+dot formatted text file is produced.
+
+    bin/lacc -I include src/backend/compile.c -o compile.dot
+    dot -Tps compile.dot -o compile.ps
+
+Below is an example from a function found in [src/backend/compile.c]
+(src/backend/compile.c), showing a slice of the complete graph. The full
+output can be generated as a PostScript file by running the commands shown.
+
+![Example IR](doc/cfg.png)
+
+ Each basic block in the graph has a list of IR operations,
+each having up to three `struct var` operands. This structure can encode memory
+locations, addresses and dereferenced pointers at a high level.
+
+ * `DIRECT` operands refer to memory at `*(&symbol + offset)`, where symbol is
+   a variable or temporary at a specific location in memory (for example stack).
+ * `ADDRESS` operands represent exactly the address of a `DIRECT` operand, namely
+   `(&symbol + offset)`.
+ * `DEREF` operands refer to memory pointed to by a symbol (which must be of
+   pointer type). The expression is `*(symbol + offset)`, which requires two
+   load operations to map to assembly. Only `DEREF` and `DIRECT` variables can
+   be target for assignment, or l-value.
+ * `IMMEDIATE` operands hold a constant number, or string. Evaluation of
+   immediate operands do constant folding automatically.
+
+These representations are vital to understand the logic in parsing, evaluation,
+and code generation.
+
+### Parser
+The parser is hand coded recursive descent, with main parts split into
+[src/parser/declaration.c](src/parser/declaration.c),
+[src/parser/expression.c](src/parser/expression.c), and
+[src/parser/statement.c](src/parser/statement.c).
+
+The current function control flow graph (represented by `struct definition`),
+and the current active basic block in that graph, are passed as arguments to
+each production. Each production will look at the stream of preprocessed tokens
+through `peek(0)`, `consume(1)` and `next(0)`. Evaluation through `eval_`
+functions generate new three-address code in the current CFG block passed
+around. Most of the semantics is handled by [src/parser/eval.c]
+(src/parser/eval.c).
+
+The following example shows the parsing rule for bitwise or expressions, which
+adds a new `IR_OP_OR` operation to the current block. Logic in `eval_expr`
+will ensure that the operands `value` and `block->expr` are valid, terminating
+in case of an error.
+
+    static struct block *inclusive_or_expression(
+        struct definition *def,
+        struct block *block)
+    {
+        struct var value;
+
+        block = exclusive_or_expression(def, block);
+        while (peek().token == '|') {
+            consume('|');
+            value = block->expr;
+            block = exclusive_or_expression(def, block);
+            block->expr = eval_expr(def, block, IR_OP_OR, value, block->expr);
+        }
+
+        return block;
+    }
+
+The latest evaluation result is always stored in `block->expr`. Branching is
+done by instantiating new basic blocks  and maintaining pointers. Each basic
+block has a true and false branch pointer to other blocks, which is how branches
+and gotos are modeled.
+
+### Backend
+There are three backend targets -- textual assembly code, ELF object files, and
+dot for the intermediate representation. Each `struct definition` object yielded
+from the parser is passed to the backend `compile(1)` function. The file
+[src/backend/compile.c](src/backend/compile.c) is probably the most complicated
+one in the whole project, as it contains the mapping from intermediate control
+flow graph representation down to a lower level IR which directly represents
+x86_64 instructions. The definition for this can be found in
+[src/backend/x86_64/instr.h](src/backend/x86_64/instr.h).
+
+Each CFG IR operation is mapped to one or more low level IR instruction objects
+by the compile module. Then, depending on function pointers set up on program
+start, the instructions are sent to either the ELF backend, or the text assembly
+output backend. The code to output text assembly is therefore very simple, more
+or less just a mapping between the low level IR instructions and their GNU
+syntax assembly code. See
+[src/backend/x86_64/assemble.c](src/backend/x86_64/assemble.c).
+
+Dot output is a separate pipeline that does not need low level IR to be
+generated. The compile module will simply forward the CFG to
+[src/backend/graphviz/dot.c](src/backend/graphviz/dot.c).
+
+Performance
+-----------
+Some effort has been put into making the compiler itself fast (although the
+generated code is still very much unoptimized).
+
+The largest file, [src/backend/compile.c](src/backend/compile.c), is used as a
+crude benchmark. Measurements are made from compiling to object code, with
+arguments `-c -I include src/backend/compile.c -o compile.o`. Lacc was compiled
+using gcc with -O3. Hardware performance counter data is gathered with `perf
+stat`, and memory allocations by `valgrind`.
+
+| Compiler | Cycles      | Instructions | Allocations | Bytes allocated |
+|:---------|------------:|-------------:|------------:|----------------:|
+| lacc     |  31,315,411 |   52,620,312 |      12,040 |       3,725,288 |
+| tcc      |  20,202,165 |   27,231,880 |      10,020 |       2,593,514 |
+| gcc      | 379,131,901 |  615,495,705 |         231 |         134,880 |
+| clang    | 256,248,713 |  317,542,518 |      28,743 |       1,440,078 |
+
+There is yet work to be done to get closer to TCC, which is probably one of
+the fastest C compilers available. Still, we are within reasonable distance from
+TCC performance, and an order of magnitude better than GCC.
+
+References
+----------
+These are some useful resources for building a C compiler targeting x86_64.
+
+ * The C Programming Language, Second Edition. Brian W. Kernighan, Dennis M.
+   Ritchie.
+ * [System V Application Binary Interface]
+   (http://www.x86-64.org/documentation/abi.pdf).
+ * [Intel® 64 and IA-32 Architectures Software Developer’s Manuals]
+   (http://www.intel.com/content/www/us/en/processors/architectures-software-developer-manuals.html),
+   specifically the instruction set reference.
