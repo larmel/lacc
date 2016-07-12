@@ -2,7 +2,7 @@
 
 directory="csmith"
 csmith_home="$1"
-csmith_options="--no-packed-struct"
+csmith_options="--no-packed-struct --max-funcs 1 --max-struct-fields 2 --max-union-fields 2 --max-block-depth 2 --no-jumps"
 if [[ -z "$csmith_home" ]]; then
 	echo "Usage: $0 <csmith home path>"; exit
 fi

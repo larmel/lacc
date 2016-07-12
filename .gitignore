@@ -1,4 +1,5 @@
 bin
+creduce
 csmith
 test/*
 !test/*.c

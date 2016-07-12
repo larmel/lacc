@@ -47,8 +47,22 @@ csmith-test: bin/lacc
 	@mkdir -p csmith
 	./csmith.sh $(CSMITH_HOME_PATH)
 
+creduce-prepare-%: csmith/%.c bin/lacc
+	@mkdir -p creduce
+	bin/lacc -std=c99 -I $(CSMITH_HOME_PATH)/runtime -w -E $< -o creduce/reduce.c
+	bin/lacc -std=c99 -c -I $(CSMITH_HOME_PATH)/runtime $< -o creduce/reduce.o
+	cc creduce/reduce.o -o creduce/reduce -lm
+	cc -std=c99 -I $(CSMITH_HOME_PATH)/runtime $< -o creduce/reduce-cc
+	cp creduce.sh creduce/
+	creduce/reduce 1 > creduce/lacc.out && creduce/reduce-cc 1 > creduce/cc.out
+	diff --side-by-side --suppress-common-lines creduce/lacc.out creduce/cc.out | head -n 1
+
+creduce-check: bin/lacc
+	./check.sh "bin/lacc -std=c99" creduce/reduce.c "cc -std=c99"
+
 clean:
 	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s
 
-.PHONY: all test test-% install uninstall csmith-test clean
+.PHONY: all test test-% install uninstall \
+	csmith-test creduce-prepare-% creduce-check clean
