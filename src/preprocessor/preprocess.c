@@ -24,7 +24,7 @@ static deque_of(struct token) lookahead;
 
 /* Toggle for producing preprocessed output (-E).
  */
-static int preserve_whitespace;
+static int output_preprocessed;
 
 /* Line currently being tokenized.
  */
@@ -206,8 +206,9 @@ static void add_to_lookahead(struct token t)
         }
     }
 
-    /* Convert preprocessing numbers to actual numeric tokens. */
-    if (t.token == PREP_NUMBER) {
+    /* Convert preprocessing numbers to actual numeric tokens, unless
+     * doing only preprocessing. */
+    if (!output_preprocessed && t.token == PREP_NUMBER) {
         t = convert_preprocessing_number(t);
     }
 
@@ -262,7 +263,7 @@ static void preprocess_line(void)
             expand(&line);
             for (i = 0; i < array_len(&line); ++i) {
                 u = array_get(&line, i);
-                if (u.token != NEWLINE || preserve_whitespace) {
+                if (u.token != NEWLINE || output_preprocessed) {
                     if (u.token != NEWLINE)
                         t = u;
                     add_to_lookahead(u);
@@ -334,7 +335,7 @@ void preprocess(FILE *output)
     struct token t;
     String s;
 
-    preserve_whitespace = 1;
+    output_preprocessed = 1;
     while ((t = next()).token != END) {
         if (t.leading_whitespace) {
             fprintf(output, "%*s", t.leading_whitespace, " ");
