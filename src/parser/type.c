@@ -183,9 +183,7 @@ void type_add_member(
     array_push_back(&sig->members, mbr);
     if (is_struct(type)) {
         type->size = align_struct_members(sig);
-    }
-
-    if (is_union(type)) {
+    } else if (is_union(type)) {
         if (type->size < size_of(member_type)) {
             type->size = size_of(member_type);
         }
@@ -216,7 +214,14 @@ void type_add_field(
         mbr.type = mtype;
         mbr.width = width;
         array_push_back(&sig->members, mbr);
-        type->size = align_struct_members(sig);
+        if (is_struct(type)) {
+            type->size = align_struct_members(sig);
+        } else {
+            assert(is_union(type));
+            if (type->size < size_of(mtype)) {
+                type->size = size_of(mtype);
+            }
+        }
     }
 }
 
