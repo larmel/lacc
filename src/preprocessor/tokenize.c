@@ -1,7 +1,4 @@
-#if _XOPEN_SOURCE < 600
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 600 /* isblank, strtoul */
-#endif
+#define _XOPEN_SOURCE 600 /* isblank, strtoul */
 #include "strtab.h"
 #include "tokenize.h"
 #include <lacc/context.h>
@@ -10,6 +7,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -155,11 +153,97 @@ static struct token strtonum(char *in, char **endptr)
     return tok;
 }
 
+enum suffix {
+    SUFFIX_NONE = 0,
+    SUFFIX_U = 0x1,
+    SUFFIX_L = 0x2,
+    SUFFIX_UL = SUFFIX_U | SUFFIX_L,
+    SUFFIX_LL = (SUFFIX_L << 1) | SUFFIX_L,
+    SUFFIX_ULL = SUFFIX_U | SUFFIX_LL
+};
+
+static enum suffix read_integer_suffix(char *ptr, char **endptr)
+{
+    enum suffix s = SUFFIX_NONE;
+
+    if (tolower(*ptr) == 'u') {
+        s = SUFFIX_U;
+        ptr++;
+    }
+
+    if (tolower(*ptr) == 'l') {
+        s |= SUFFIX_L;
+        ptr++;
+        if (*ptr == ptr[-1]) {
+            s |= SUFFIX_LL;
+            ptr++;
+        }
+
+        if (!(s & SUFFIX_U) && tolower(*ptr) == 'u') {
+            s |= SUFFIX_U;
+            ptr++;
+        }
+    }
+
+    *endptr = ptr;
+    return s;
+}
+
+static const struct typetree *constant_integer_type(
+    unsigned long int value,
+    enum suffix suffix,
+    int is_decimal)
+{
+    const struct typetree *type;
+
+    switch (suffix) {
+    case SUFFIX_NONE:
+        if (value <= INT_MAX) {
+            type = &basic_type__int;
+        } else if (!is_decimal && value <= UINT_MAX) {
+            type = &basic_type__unsigned_int;
+        } else if (value <= LONG_MAX) {
+            type = &basic_type__long;
+        } else {
+            type = &basic_type__unsigned_long;
+            if (is_decimal) {
+                warning("Conversion of decimal constant to unsigned.");
+            }
+        }
+        break;
+    case SUFFIX_U:
+        if (value <= UINT_MAX) {
+            type = &basic_type__unsigned_int;
+        } else {
+            type = &basic_type__unsigned_long;
+        }
+        break;
+    case SUFFIX_L:
+    case SUFFIX_LL:
+        if (value <= LONG_MAX) {
+            type = &basic_type__long;
+        } else {
+            type = &basic_type__unsigned_long;
+            if (is_decimal) {
+                warning("Conversion of decimal constant to unsigned.");
+            }
+        }
+        break;
+    case SUFFIX_UL:
+    case SUFFIX_ULL:
+        type = &basic_type__unsigned_long;
+        break;
+    }
+
+    return type;
+}
+
 struct token convert_preprocessing_number(struct token t)
 {
     const char *in;
     char *endptr;
     unsigned len;
+    enum suffix suffix;
     struct token tok = {NUMBER};
 
     assert(t.token == PREP_NUMBER);
@@ -168,42 +252,17 @@ struct token convert_preprocessing_number(struct token t)
     tok.leading_whitespace = t.leading_whitespace;
 
     /* Try to read as integer. Handle suffixes u, l, ll, ul, ull, in all
-     * permuations of upper- and lower case. */
+       permuations of upper- and lower case. */
     errno = 0;
-    tok.d.number.type = &basic_type__int;
     tok.d.number.val.u = strtoul(in, &endptr, 0);
-    if (endptr - in < len) {
-        if (*endptr == 'u' || *endptr == 'U') {
-            tok.d.number.type = &basic_type__unsigned_int;
-            endptr++;
-        }
-        if (endptr - in < len && (*endptr == 'l' || *endptr == 'L')) {
-            tok.d.number.type = 
-                (is_unsigned(tok.d.number.type)) ?
-                    &basic_type__unsigned_long :
-                    &basic_type__long;
-            endptr++;
-
-            /* Also consider additional suffix for long long, not part
-             * of C89. */
-            if (endptr - in < len && *endptr == *(endptr - 1)) {
-                endptr++;
-            }
-        }
-        if (is_signed(tok.d.number.type)) {
-            if (*endptr == 'u' || *endptr == 'U') {
-                tok.d.number.type =
-                    (tok.d.number.type->size == 4) ?
-                        &basic_type__unsigned_int :
-                        &basic_type__unsigned_long;
-                endptr++;
-            }
-        }
-    }
-
-    /* If the integer conversion did not consume the whole token, try to
-     * read as floating point number. */
-    if (endptr - in != len) {
+    suffix = read_integer_suffix(endptr, &endptr);
+    if (endptr - in == len) {
+        assert(isdigit(*in));
+        tok.d.number.type =
+            constant_integer_type(tok.d.number.val.u, suffix, *in != '0');
+    } else {
+        /* If the integer conversion did not consume the whole token,
+           try to read as floating point number. */
         errno = 0;
         tok.d.number.type = &basic_type__double;
         tok.d.number.val.d = strtod(in, &endptr);
