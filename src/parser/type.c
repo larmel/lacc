@@ -340,15 +340,13 @@ const struct typetree *usual_arithmetic_conversion(
     const struct typetree *t2)
 {
     const struct typetree *res;
-    assert(is_arithmetic(t1) && is_arithmetic(t2));
 
+    assert(is_arithmetic(t1) && is_arithmetic(t2));
     if (is_double(t1) || is_double(t2)) {
         res = &basic_type__double;
     } else if (is_float(t1) || is_float(t2)) {
         res = &basic_type__float;
     } else {
-        assert(is_integer(t1) && is_integer(t2));
-
         t1 = promote_integer(t1);
         t2 = promote_integer(t2);
         if (t1->size > t2->size) {

@@ -126,7 +126,7 @@ static struct var imm_double(double val)
 {
     struct number num = {0};
     num.type = &basic_type__double;
-    num.val.f = val;
+    num.val.d = val;
     return var_numeric(num);
 }
 
@@ -140,6 +140,12 @@ static struct var imm_double(double val)
     is_signed(t) ?                                                             \
         imm_signed(t, (l).imm.i op (r).imm.i) :                                \
         imm_unsigned(t, (l).imm.u op (r).imm.u))
+
+#define eval_immediate_compare(t, l, op, r) \
+    var_int(                                                                   \
+        is_signed(t) ? (l).imm.i op (r).imm.i :                                \
+        is_unsigned(t) ? (l).imm.u op (r).imm.u :                              \
+        is_float(t) ? (l).imm.f op (r).imm.f : (l).imm.d op (r).imm.d)
 
 static void emit_ir(struct block *block, enum optype optype, struct var a, ...)
 {
@@ -192,12 +198,18 @@ static struct var eval_mul(
     struct var l,
     struct var r)
 {
-    const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
+    const struct typetree *type;
 
+    type = usual_arithmetic_conversion(l.type, r.type);
+    l = eval_cast(def, block, l, type);
+    r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return eval_arithmetic_immediate(type, l, *, r);
+        l = eval_arithmetic_immediate(type, l, *, r);
+    } else {
+        l = evaluate(def, block, IR_OP_MUL, type, l, r);
     }
-    return evaluate(def, block, IR_OP_MUL, type, l, r);
+
+    return l;
 }
 
 static struct var eval_div(
@@ -206,12 +218,18 @@ static struct var eval_div(
     struct var l,
     struct var r)
 {
-    const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
+    const struct typetree *type;
 
+    type = usual_arithmetic_conversion(l.type, r.type);
+    l = eval_cast(def, block, l, type);
+    r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return eval_arithmetic_immediate(type, l, /, r);
+        l = eval_arithmetic_immediate(type, l, /, r);
+    } else {
+        l = evaluate(def, block, IR_OP_DIV, type, l, r);
     }
-    return evaluate(def, block, IR_OP_DIV, type, l, r);
+
+    return l;
 }
 
 static struct var eval_mod(
@@ -220,16 +238,23 @@ static struct var eval_mod(
     struct var l,
     struct var r)
 {
-    const struct typetree *type = usual_arithmetic_conversion(l.type, r.type);
+    const struct typetree *type;
+
+    type = usual_arithmetic_conversion(l.type, r.type);
     if (!is_integer(type)) {
         error("Operands of modulo operator must be of integer type.");
         exit(1);
     }
 
+    l = eval_cast(def, block, l, type);
+    r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return eval_integer_immediate(type, l, %, r);
+        l = eval_integer_immediate(type, l, %, r);
+    } else {
+        l = evaluate(def, block, IR_OP_MOD, type, l, r);
     }
-    return evaluate(def, block, IR_OP_MOD, type, l, r);
+
+    return l;
 }
 
 static struct var eval_add(
@@ -389,31 +414,32 @@ static struct var eval_eq(
         exit(1);
     }
 
-    if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        return var_int(l.imm.i == r.imm.i);
-    }
-
-    return evaluate(def, block, IR_OP_EQ, &basic_type__int, l, r);
+    assert(type_equal(l.type, r.type));
+    return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
+        ? eval_immediate_compare(l.type, l, ==, r)
+        : evaluate(def, block, IR_OP_EQ, &basic_type__int, l, r);
 }
 
-static int validate_cmp_args(
-    struct definition *def,
-    struct block *block,
-    struct var *l,
-    struct var *r)
+static const struct typetree *common_compare_type(
+    const struct typetree *left,
+    const struct typetree *right)
 {
-    if (is_arithmetic(l->type) && is_arithmetic(r->type)) {
-        const struct typetree *type =
-            usual_arithmetic_conversion(l->type, r->type);
+    const struct typetree *type = NULL;
 
-        *l = eval_cast(def, block, *l, type);
-        *r = eval_cast(def, block, *r, type);
-        return 0;
+    if (is_arithmetic(left) && is_arithmetic(right)) {
+        type = usual_arithmetic_conversion(left, right);
+    } else if (is_pointer(left)
+        && is_pointer(right)
+        && size_of(left->next)
+        && size_of(left->next) == size_of(right->next))
+    {
+        type = left;
+    } else {
+        error("Invalid operands in relational expression.");
+        exit(1);
     }
 
-    return !(is_pointer(l->type) && is_pointer(r->type) &&
-        size_of(l->type->next) &&
-        size_of(l->type->next) == size_of(r->type->next));
+    return type;
 }
 
 /* Intermediate language is simplified to handle only greater than (>)
@@ -425,13 +451,14 @@ static struct var eval_cmp_ge(
     struct var l,
     struct var r)
 {
-    if (validate_cmp_args(def, block, &l, &r)) {
-        error("Invalid operands in relational expression.");
-        exit(1);
-    }
+    const struct typetree *type;
+
+    type = common_compare_type(l.type, r.type);
+    l = eval_cast(def, block, l, type);
+    r = eval_cast(def, block, r, type);
 
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-        ? var_int(l.imm.i >= r.imm.i)
+        ? eval_immediate_compare(l.type, l, >=, r)
         : evaluate(def, block, IR_OP_GE, &basic_type__int, l, r);
 }
 
@@ -441,13 +468,14 @@ static struct var eval_cmp_gt(
     struct var l,
     struct var r)
 {
-    if (validate_cmp_args(def, block, &l, &r)) {
-        error("Invalid operands in relational expression.");
-        exit(1);
-    }
+    const struct typetree *type;
+
+    type = common_compare_type(l.type, r.type);
+    l = eval_cast(def, block, l, type);
+    r = eval_cast(def, block, r, type);
 
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
-        ? var_int(l.imm.i > r.imm.i)
+        ? eval_immediate_compare(l.type, l, >, r)
         : evaluate(def, block, IR_OP_GT, &basic_type__int, l, r);
 }
 
@@ -484,6 +512,9 @@ static struct var eval_xor(
     }
 
     type = usual_arithmetic_conversion(l.type, r.type);
+    l = eval_cast(def, block, l, type);
+    r = eval_cast(def, block, r, type);
+
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
         ? eval_integer_immediate(type, l, ^, r)
         : evaluate(def, block, IR_OP_XOR, type, l, r);
@@ -945,38 +976,35 @@ struct var eval_cast(
     }
 
     /* All immediate conversions must be evaluated compile time. Also
-     * handle conversion which can be done by simply reinterpreting the
-     * memory. */
-    if (size_of(var.type) == size_of(type) && (
-        (is_pointer(var.type) || is_pointer(type))))
-    {
-        var.type = type;
-    } else if (var.kind == IMMEDIATE) {
+       handle conversion which can be done by reinterpreting memory. */
+    if (var.kind == IMMEDIATE) {
         if (is_float(type)) {
             var.imm.f =
-                (is_float(var.type)) ? (float) var.imm.f :
                 (is_double(var.type)) ? (float) var.imm.d :
-                (is_unsigned(var.type)) ? (float) var.imm.u :
-                    (float) var.imm.i;
+                (is_signed(var.type)) ? (float) var.imm.i :
+                (is_unsigned(var.type)) ? (float) var.imm.u : var.imm.f;
         } else if (is_double(type)) {
             var.imm.d =
                 (is_float(var.type)) ? (double) var.imm.f :
-                (is_double(var.type)) ? (double) var.imm.d :
-                (is_unsigned(var.type)) ? (double) var.imm.u :
-                    (double) var.imm.i;
+                (is_signed(var.type)) ? (double) var.imm.i :
+                (is_unsigned(var.type)) ? (double) var.imm.u : var.imm.d;
         } else if (is_unsigned(type) || is_pointer(type)) {
             var.imm.u =
                 (is_float(var.type)) ? (unsigned long) var.imm.f :
                 (is_double(var.type)) ? (unsigned long) var.imm.d :
-                (is_unsigned(var.type)) ? (unsigned long) var.imm.u :
-                    (unsigned long) var.imm.i;
+                (is_signed(var.type)) ? (unsigned long) var.imm.i : var.imm.u;
         } else if (is_signed(type)) {
             var.imm.i =
                 (is_float(var.type)) ? (long) var.imm.f :
                 (is_double(var.type)) ? (long) var.imm.d :
-                (is_unsigned(var.type)) ? (long) var.imm.u :
-                    (long) var.imm.i;
+                (is_unsigned(var.type)) ? (long) var.imm.u : var.imm.i;
+        } else {
+            assert(0);
         }
+        var.type = type;
+    } else if (size_of(var.type) == size_of(type)
+        && (is_pointer(var.type) || is_pointer(type)))
+    {
         var.type = type;
     } else if (!type_equal(var.type, type)) {
         var = evaluate(def, block, IR_CAST, type, var);
