@@ -326,10 +326,8 @@ static const struct typetree *remove_qualifiers(const struct typetree *type)
 const struct typetree *promote_integer(const struct typetree *type)
 {
     assert(is_integer(type));
-
     if (type->size < 4) {
-        type = (is_unsigned(type)) ?
-            &basic_type__unsigned_int : &basic_type__int;
+        type = &basic_type__int;
     }
 
     return type;
