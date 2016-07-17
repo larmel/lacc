@@ -517,6 +517,9 @@ static struct var eval_or(
     }
 
     type = usual_arithmetic_conversion(l.type, r.type);
+    l = eval_cast(def, block, l, type);
+    r = eval_cast(def, block, r, type);
+
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
         ? eval_integer_immediate(type, l, |, r)
         : evaluate(def, block, IR_OP_OR, type, l, r);
