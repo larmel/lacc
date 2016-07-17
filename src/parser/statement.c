@@ -64,22 +64,12 @@ static void free_switch_context(struct switch_context *ctx)
     free(ctx);
 }
 
-static int is_immediate_true(struct var e)
-{
-    return e.kind == IMMEDIATE && is_integer(e.type) && e.imm.i;
-}
-
-static int is_immediate_false(struct var e)
-{
-    return e.kind == IMMEDIATE && is_integer(e.type) && !e.imm.i;
-}
-
 static struct block *if_statement(
     struct definition *def,
     struct block *parent)
 {
     struct block
-        *right = cfg_block_init(def),
+        *right = cfg_block_init(def), *left,
         *next  = cfg_block_init(def);
 
     consume(IF);
@@ -98,9 +88,14 @@ static struct block *if_statement(
     right = statement(def, right);
     right->jump[0] = next;
     if (peek().token == ELSE) {
-        struct block *left = cfg_block_init(def);
         consume(ELSE);
-        parent->jump[0] = left;
+        left = cfg_block_init(def);
+        if (!is_immediate_true(parent->expr)) {
+            /* This block will be an orphan if the branch is immediate
+               taken true branch. Still need to evaluate the expression
+               here though. */
+            parent->jump[0] = left;
+        }
         left = statement(def, left);
         left->jump[0] = next;
     }

@@ -121,4 +121,14 @@ struct var eval__builtin_va_arg(
     struct var arg,
     const struct typetree *type);
 
+/* Return 1 iff e evaluates to an immediate non-zero value. Type must be
+ * scalar.
+ */
+int is_immediate_true(struct var e);
+
+/* Return 1 iff e evaluates to an immediate zero value. Type must be
+ * scalar.
+ */
+int is_immediate_false(struct var e);
+
 #endif

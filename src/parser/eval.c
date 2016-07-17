@@ -10,18 +10,42 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
+int is_immediate_true(struct var e)
+{
+    if (e.kind == IMMEDIATE) {
+        assert(is_scalar(e.type));
+        return
+            (is_signed(e.type)) ? e.imm.i != 0l :
+            (is_unsigned(e.type) || is_pointer(e.type)) ? e.imm.u != 0ul :
+            (is_float(e.type)) ? e.imm.f != 0.0f : e.imm.d != 0.0;
+    }
+
+    return 0;
+}
+
+int is_immediate_false(struct var e)
+{
+    if (e.kind == IMMEDIATE) {
+        assert(is_scalar(e.type));
+        return
+            is_signed(e.type) ? e.imm.i == 0l :
+            is_unsigned(e.type) || is_pointer(e.type) ? e.imm.u == 0ul :
+            is_float(e.type) ? e.imm.f == 0.0f : e.imm.d == 0.0;
+    }
+
+    return 0;
+}
+
 static int is_nullptr(struct var val)
 {
-    return 
-        (is_integer(val.type) || is_pointer(val.type)) &&
-        (val.kind == IMMEDIATE && !val.imm.u);
+    return (is_integer(val.type) || is_pointer(val.type))
+        && is_immediate_false(val);
 }
 
 static int is_string(struct var val)
 {
-    return
-        val.kind == IMMEDIATE && val.symbol &&
-        val.symbol->symtype == SYM_STRING_VALUE;
+    return val.kind == IMMEDIATE && val.symbol
+        && val.symbol->symtype == SYM_STRING_VALUE;
 }
 
 static int is_field(struct var val)
