@@ -1247,14 +1247,28 @@ static void compile_op(const struct op *op)
         }
     case IR_OP_MOD:
         assert(!is_real(op->a.type));
-        /* %rdx must be zero to avoid SIGFPE. */
-        emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
         load(op->b, AX);
+        /* Divident is %rdx:%rax. Zero extend if type is signed,
+           otherwise zero to avoid SIGFPE. */
+        if (is_signed(op->b.type)) {
+            if (size_of(op->b.type) == 8) {
+                emit(INSTR_CQO, OPT_NONE);
+            } else {
+                assert(size_of(op->b.type) == 4);
+                emit(INSTR_CDQ, OPT_NONE);
+            }
+        } else {
+            emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
+        }
         if (op->c.kind == DIRECT) {
-            emit(INSTR_DIV, OPT_MEM, location_of(op->c, size_of(op->c.type)));
+            emit(is_signed(op->a.type) ? INSTR_IDIV : INSTR_DIV,
+                OPT_MEM,
+                location_of(op->c, size_of(op->c.type)));
         } else {
             load(op->c, CX);
-            emit(INSTR_DIV, OPT_REG, reg(CX, size_of(op->c.type)));
+            emit(is_signed(op->a.type) ? INSTR_IDIV : INSTR_DIV,
+                OPT_REG,
+                reg(CX, size_of(op->c.type)));
         }
         store((op->type == IR_OP_DIV) ? AX : DX, op->a);
         break;

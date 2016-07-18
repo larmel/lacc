@@ -273,6 +273,8 @@ int asm_text(struct instruction instr)
     case INSTR_CVTSI2SD: S2("cvtsi2sd", ws, source, destin); break;
     case INSTR_CVTTSD2SI:S2("cvttsd2si", wd, source, destin); break;
     case INSTR_CVTTSS2SI:S2("cvttss2si", wd, source, destin); break;
+    case INSTR_CDQ:      I0("cdq"); break;
+    case INSTR_CQO:      I0("cqo"); break;
     case INSTR_DIV:      S1("div", ws, source); break;
     case INSTR_DIVSD:    I2("divsd", source, destin); break;
     case INSTR_DIVSS:    I2("divss", source, destin); break;
@@ -287,6 +289,7 @@ int asm_text(struct instruction instr)
     case INSTR_SHL:      S2("shl", wd, source, destin); break;
     case INSTR_SHR:      S2("shr", wd, source, destin); break;
     case INSTR_SAR:      S2("sar", wd, source, destin); break;
+    case INSTR_IDIV:     S1("idiv", ws, source); break;
     case INSTR_MOV:      S2("mov", wd, source, destin); break;
     case INSTR_MOVZX:
         assert(ws == 1 || ws == 2);

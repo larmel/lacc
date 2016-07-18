@@ -581,6 +581,24 @@ static struct code encode_div(enum instr_optype optype, union operand op)
     return c;
 }
 
+static struct code encode_signed_div(enum instr_optype optype, union operand op)
+{
+    struct code c = {{0}};
+
+    if (optype == OPT_REG) {
+        c.val[c.len++] = REX | W(op.reg) | B(op.reg);
+        c.val[c.len++] = 0xF6 | w(op.reg);
+        c.val[c.len++] = 0xF8 | reg(op.reg);
+    } else {
+        assert(optype == OPT_MEM);
+        c.val[c.len++] = REX | is_64_bit_reg(op.mem.addr.base);
+        c.val[c.len++] = 0xF6 | w(op.mem);
+        encode_addr(&c, 0x7, op.mem.addr);
+    }
+
+    return c;
+}
+
 static struct code basic_register_only_encode(
     unsigned int opcode,
     struct registr a,
@@ -796,6 +814,18 @@ static struct code sse_generic(
     return c;
 }
 
+static struct code cdq(void)
+{
+    struct code c = {{0x99}, 1};
+    return c;
+}
+
+static struct code cqo(void)
+{
+    struct code c = {{REX, 0x99}, 2};
+    return c;
+}
+
 struct code encode(struct instruction instr)
 {
     switch (instr.opcode) {
@@ -817,6 +847,10 @@ struct code encode(struct instruction instr)
         return sse_generic(instr.optype, 0xF2, 0x2C, instr.source, instr.dest);
     case INSTR_CVTTSS2SI:
         return sse_generic(instr.optype, 0xF3, 0x2C, instr.source, instr.dest);
+    case INSTR_CDQ:
+        return cdq();
+    case INSTR_CQO:
+        return cqo();
     case INSTR_NOT:
         return not(instr.optype, instr.source);
     case INSTR_MUL:
@@ -847,6 +881,8 @@ struct code encode(struct instruction instr)
         return call(instr.optype, instr.source);
     case INSTR_CMP:
         return cmp(instr.optype, instr.source, instr.dest);
+    case INSTR_IDIV:
+        return encode_signed_div(instr.optype, instr.source);
     case INSTR_MOV:
         return mov(instr.optype, instr.source, instr.dest);
     case INSTR_MOVSX:

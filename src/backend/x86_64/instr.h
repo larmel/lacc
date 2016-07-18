@@ -92,12 +92,15 @@ enum opcode {
     INSTR_CVTSD2SS,     /* Convert double to float. */
     INSTR_CVTTSD2SI,    /* Convert double to int. */
     INSTR_CVTTSS2SI,    /* Convert float to int. */
+    INSTR_CDQ,          /* Sign extend %eax to %edx:%eax. */
+    INSTR_CQO,          /* Sign extend %rax to %rdx:%rax. */
     INSTR_SUB,
     INSTR_SUBSD,        /* Subtract scalar double-precision. */
     INSTR_SUBSS,        /* Subtract scalar single-precision. */
     INSTR_NOT,
     INSTR_XOR,
     INSTR_DIV,
+    INSTR_IDIV,         /* Signed division. */
     INSTR_DIVSD,
     INSTR_DIVSS,
     INSTR_AND,
