@@ -1139,8 +1139,20 @@ struct block *eval_logical_or(
 {
     if (!is_scalar(left->expr.type) || !is_scalar(right->expr.type)) {
         error("Operands to logical or must be of scalar type.");
-    } else if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
-        left->expr = var_int(left->expr.imm.i || right->expr.imm.i);
+        exit(1);
+    }
+
+    if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
+        left->expr = var_int(
+            is_immediate_true(left->expr) || is_immediate_true(right->expr));
+    } else if (is_immediate_true(left->expr)) {
+        left->expr = var_int(1);
+    } else if (is_immediate_false(left->expr)) {
+        left->jump[0] = right_top;
+        /* Checking for value != 0 is expressed as (0 == (e == 0)). */
+        right->expr = eval_expr(def, right, IR_OP_EQ, right->expr, var_int(0));
+        right->expr = eval_expr(def, right, IR_OP_EQ, right->expr, var_int(0));
+        left = right;
     } else {
         left = eval_logical_expression(def, 0, left, right_top, right);
     }
@@ -1156,8 +1168,20 @@ struct block *eval_logical_and(
 {
     if (!is_scalar(left->expr.type) || !is_scalar(right->expr.type)) {
         error("Operands to logical and must be of scalar type.");
-    } else if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
-        left->expr = var_int(left->expr.imm.i && right->expr.imm.i);
+        exit(1);
+    }
+
+    if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
+        left->expr = var_int(
+            is_immediate_true(left->expr) && is_immediate_true(right->expr));
+    } else if (is_immediate_false(left->expr)) {
+        left->expr = var_int(0);
+    } else if (is_immediate_true(left->expr)) {
+        left->jump[0] = right_top;
+        /* Checking for value != 0 is expressed as (0 == (e == 0)). */
+        right->expr = eval_expr(def, right, IR_OP_EQ, right->expr, var_int(0));
+        right->expr = eval_expr(def, right, IR_OP_EQ, right->expr, var_int(0));
+        left = right;
     } else {
         left = eval_logical_expression(def, 1, left, right_top, right);
     }
