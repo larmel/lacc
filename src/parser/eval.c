@@ -132,9 +132,17 @@ static struct var imm_signed(const struct typetree *type, long val)
 static struct var imm_unsigned(const struct typetree *type, unsigned long val)
 {
     struct number num = {0};
+
     assert(is_unsigned(type));
     num.type = type;
     num.val.u = val;
+    if (size_of(type) < 8) {
+        assert(size_of(type) == 4
+            || size_of(type) == 2
+            || size_of(type) == 1);
+        num.val.u &= (0xFFFFFFFFu >> ((4 - size_of(type)) * 8));
+    }
+
     return var_numeric(num);
 }
 
@@ -1025,11 +1033,26 @@ struct var eval_cast(
                 (is_float(var.type)) ? (unsigned long) var.imm.f :
                 (is_double(var.type)) ? (unsigned long) var.imm.d :
                 (is_signed(var.type)) ? (unsigned long) var.imm.i : var.imm.u;
+            if (size_of(type) < size_of(var.type)) {
+                assert(size_of(type) == 4
+                    || size_of(type) == 2
+                    || size_of(type) == 1);
+                var.imm.u &= (0xFFFFFFFFu >> ((4 - size_of(type)) * 8));
+            }
         } else if (is_signed(type)) {
             var.imm.i =
                 (is_float(var.type)) ? (long) var.imm.f :
                 (is_double(var.type)) ? (long) var.imm.d :
                 (is_unsigned(var.type)) ? (long) var.imm.u : var.imm.i;
+            if (size_of(type) == 4) {
+                var.imm.i = (int) var.imm.i;
+            } else if (size_of(type) == 2) {
+                var.imm.i = (short) var.imm.i;
+            } else if (size_of(type) == 1) {
+                var.imm.i = (signed char) var.imm.i;
+            } else {
+                assert(size_of(type) == 8);
+            }
         } else {
             assert(0);
         }
