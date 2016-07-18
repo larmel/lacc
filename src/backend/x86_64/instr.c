@@ -591,7 +591,7 @@ static struct code encode_signed_div(enum instr_optype optype, union operand op)
         c.val[c.len++] = 0xF8 | reg(op.reg);
     } else {
         assert(optype == OPT_MEM);
-        c.val[c.len++] = REX | is_64_bit_reg(op.mem.addr.base);
+        c.val[c.len++] = REX | W(op.mem) | is_64_bit_reg(op.mem.addr.base);
         c.val[c.len++] = 0xF6 | w(op.mem);
         encode_addr(&c, 0x7, op.mem.addr);
     }
@@ -822,7 +822,7 @@ static struct code cdq(void)
 
 static struct code cqo(void)
 {
-    struct code c = {{REX, 0x99}, 2};
+    struct code c = {{REX | 0x08, 0x99}, 2};
     return c;
 }
 
