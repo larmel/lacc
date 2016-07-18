@@ -679,6 +679,11 @@ static struct var rvalue(
                 bits = size_of(var.type) * 8 - bits;
                 var = eval_shiftl(def, block, var, var_int(bits));
                 var = eval_shiftr(def, block, var, var_int(bits));
+            } else {
+                /* Fields of unsigned type are promoted to signed int
+                   if the signed type can represent all values of the
+                   unsigned type. */
+                var.type = &basic_type__int;
             }
         } else {
             assert(var.width == size_of(&basic_type__int) * 8);
