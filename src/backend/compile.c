@@ -1341,15 +1341,47 @@ static void compile_op(const struct op *op)
     relase_regs();
 }
 
+/*
+ * Determine whether the block ends in a comparison followed by a jump
+ * on the compare result.
+ *
+ *    .t2 = 0 > .t1
+ *    if .t2 goto .L3
+ *
+ */
+static int is_tail_cmp(const struct block *block)
+{
+    struct op *cmp;
+    unsigned len;
+
+    len = array_len(&block->code);
+    if (len) {
+        cmp = &array_back(&block->code);
+        if (IS_COMPARISON(cmp->type)
+            && !cmp->a.lvalue
+            && block->jump[1]
+            && block->expr.kind == DIRECT
+            && cmp->a.kind == DIRECT
+            && block->expr.offset == cmp->a.offset
+            && block->expr.symbol == cmp->a.symbol)
+        {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static void tail_cmp_jump(struct block *block, const struct typetree *type)
 {
     enum opcode opcode;
-    struct op *op = &array_get(&block->code, array_len(&block->code) - 1);
+    struct op *op;
 
-    /* Target of assignment should be temporary, thus we do not lose any
-     * side effects from not storing the value to stack. */
-    assert(!op->a.lvalue);
+    assert(array_len(&block->code));
+    assert(is_tail_cmp(block));
 
+    op = &array_back(&block->code);
+    assert(IS_COMPARISON(op->type));
     compile_cmp(op->b, op->c);
     switch (op->type) {
     case IR_OP_EQ:
@@ -1414,29 +1446,31 @@ static void tail_generic(struct block *block, const struct typetree *type)
 
 static void compile_block(struct block *block, const struct typetree *type)
 {
-    int i, length;
-    struct op *op = NULL;
+    int i, len;
+    struct op *op;
 
     if (block->color == WHITE) {
         block->color = BLACK;
-        length = array_len(&block->code);
         enter_context(block->label);
+        len = array_len(&block->code);
 
-        /* Visit all operations, except the last one. */
-        for (i = 0; i < length; ++i) {
-            op = &array_get(&block->code, i);
-            if (i < length - 1)
+        if (len) {
+            for (i = 0; i < len - 1; ++i) {
+                op = &array_get(&block->code, i);
                 compile_op(op);
-        }
+            }
 
-        /* Special case on comparison + jump, saving some space by not
-         * writing the result of comparison (always a temporary). */
-        if (op && IS_COMPARISON(op->type) && block->jump[1]) {
-            assert(block->jump[0]);
-            tail_cmp_jump(block, type);
+            /* Special case on comparison + jump, saving some space by
+               not writing the temporary result. */
+            op = &array_back(&block->code);
+            if (is_tail_cmp(block)) {
+                assert(block->jump[0]);
+                tail_cmp_jump(block, type);
+            } else {
+                compile_op(op);
+                tail_generic(block, type);
+            }
         } else {
-            if (op)
-                compile_op(op);
             tail_generic(block, type);
         }
     }

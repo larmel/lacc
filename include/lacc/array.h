@@ -81,6 +81,11 @@
 #define array_len(arr) \
     (arr)->length
 
+/* Return last element of array.
+ */
+#define array_back(arr) \
+    (array_get(arr, array_len(arr) - 1))
+
 /* Reset element count to 0, but keep the capacity already allocated.
  */
 #define array_empty(arr) \
