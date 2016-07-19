@@ -1164,6 +1164,17 @@ static struct block *eval_logical_expression(
     return r;
 }
 
+static int is_logical_immediate(
+    struct block *left,
+    struct block *top,
+    struct block *bottom)
+{
+    return top == bottom
+        && !array_len(&top->code)
+        && top->expr.kind == IMMEDIATE
+        && left->expr.kind == IMMEDIATE;
+}
+
 struct block *eval_logical_or(
     struct definition *def,
     struct block *left,
@@ -1175,7 +1186,7 @@ struct block *eval_logical_or(
         exit(1);
     }
 
-    if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
+    if (is_logical_immediate(left, right_top, right)) {
         left->expr = var_int(
             is_immediate_true(left->expr) || is_immediate_true(right->expr));
     } else if (is_immediate_true(left->expr)) {
@@ -1204,7 +1215,7 @@ struct block *eval_logical_and(
         exit(1);
     }
 
-    if (left->expr.kind == IMMEDIATE && right->expr.kind == IMMEDIATE) {
+    if (is_logical_immediate(left, right_top, right)) {
         left->expr = var_int(
             is_immediate_true(left->expr) && is_immediate_true(right->expr));
     } else if (is_immediate_false(left->expr)) {
