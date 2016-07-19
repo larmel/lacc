@@ -569,6 +569,9 @@ static struct var eval_and(
     }
 
     type = usual_arithmetic_conversion(l.type, r.type);
+    l = eval_cast(def, block, l, type);
+    r = eval_cast(def, block, r, type);
+
     return (l.kind == IMMEDIATE && r.kind == IMMEDIATE)
         ? eval_integer_immediate(type, l, &, r)
         : evaluate(def, block, IR_OP_AND, type, l, r);
@@ -679,9 +682,11 @@ static struct var rvalue(
             type_equal(var.type, &basic_type__unsigned_int));
 
         /* Bit field is loaded, and if needed sign extended, into a full
-         * width integer value. */
+           width integer value. Set width = 0 to make nested calls to
+           eval methods not recursively call rvalue. */
         if (var.width < size_of(&basic_type__int) * 8) {
             bits = var.width;
+            var.width = 0;
             var = eval_and(def, block, var, var_int((1 << bits) - 1));
             if (is_signed(var.type)) {
                 bits = size_of(var.type) * 8 - bits;
