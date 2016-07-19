@@ -1152,9 +1152,18 @@ static void compile_op_cmp(
     store(AX, a);
 }
 
+static int is_standard_register_width(int width)
+{
+    return width == 1
+        || width == 2
+        || width == 4
+        || width == 8;
+}
+
 static void compile_op(const struct op *op)
 {
     static int w;
+    int size;
     enum reg r;
 
     switch (op->type) {
@@ -1166,7 +1175,7 @@ static void compile_op(const struct op *op)
          * assignments with memcpy, other compilers load the string into
          * register as ascii numbers. */
         if (is_array(op->a.type) || is_array(op->b.type)) {
-            int size = size_of(op->a.type);
+            size = size_of(op->a.type);
 
             assert(op->a.kind == DIRECT);
             assert(is_string(op->b));
@@ -1174,25 +1183,24 @@ static void compile_op(const struct op *op)
 
             load_address(op->a, DI);
             emit(INSTR_MOV, OPT_IMM_REG, addr(op->b.symbol), reg(SI, 8));
-            emit(INSTR_MOV, OPT_IMM_REG, constant(size, 8), reg(DX, 8));
+            emit(INSTR_MOV, OPT_IMM_REG, constant(size, 4), reg(DX, 4));
             emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
             break;
         }
-        /* Struct or union assignment, values that cannot be loaded into
-         * a single register. */
-        else if (size_of(op->a.type) > 8) {
-            int size = size_of(op->a.type);
-            assert(size_of(op->a.type) == size_of(op->b.type));
+        /* Assignment of struct or union objects which cannot be made
+           with a simple register move. */
+        else if (!is_standard_register_width(size_of(op->a.type))) {
+            size = size_of(op->a.type);
+            assert(size == size_of(op->b.type));
 
             load_address(op->a, DI);
             load_address(op->b, SI);
-
-            emit(INSTR_MOV, OPT_IMM_REG, constant(size, 8), reg(DX, 8));
+            emit(INSTR_MOV, OPT_IMM_REG, constant(size, 4), reg(DX, 4));
             emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
             break;
         }
         /* Fallthrough, assignment has implicit cast for convenience and
-         * to make static initialization work without explicit casts. */
+           to make static initialization work without explicit casts. */
     case IR_CAST:
         w = (size_of(op->a.type) > size_of(op->b.type)) ?
             size_of(op->a.type) : size_of(op->b.type);
