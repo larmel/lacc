@@ -537,16 +537,35 @@ struct typetree *declaration_specifiers(int *stc)
     return type;
 }
 
-static struct var var_zero(int size)
-{
-    struct var var = {0};
-    var.kind = IMMEDIATE;
-    var.type = BASIC_TYPE_SIGNED(size);
-    var.imm.i = 0;
-    return var;
-}
+/*
+ * Constants representing immediate zero values of all basic types.
+ */
+static const struct var
+    var__zero_float = {&basic_type__float, NULL, IMMEDIATE},
+    var__zero_double = {&basic_type__double, NULL, IMMEDIATE},
+    var__zero_unsigned[] = {
+        {&basic_type__unsigned_char, NULL, IMMEDIATE},
+        {&basic_type__unsigned_short, NULL, IMMEDIATE},
+        {0},
+        {&basic_type__unsigned_int, NULL, IMMEDIATE},
+        {0},
+        {0},
+        {0},
+        {&basic_type__unsigned_long, NULL, IMMEDIATE}
+    },
+    var__zero_signed[] = {
+        {&basic_type__char, NULL, IMMEDIATE},
+        {&basic_type__short, NULL, IMMEDIATE},
+        {0},
+        {&basic_type__int, NULL, IMMEDIATE},
+        {0},
+        {0},
+        {0},
+        {&basic_type__long, NULL, IMMEDIATE}
+    };
 
-/* Set var = 0, using simple assignment on members for composite types.
+/*
+ * Set var = 0, using simple assignment on members for composite types.
  * This rule does not consume any input, but generates a series of
  * assignments on the given variable. Point is to be able to zero
  * initialize using normal simple assignment rules, although IR can
@@ -575,7 +594,7 @@ static void zero_initialize(
         break;
     case T_UNION:
         /* We don't want garbage in any union member after zero-
-         * initialization, so set full width to zero. */
+           initialization, so set full width to zero. */
         target.type =
             (size_of(target.type) % 8) ?
                 type_init(T_ARRAY, &basic_type__char, size_of(target.type)) :
@@ -593,17 +612,24 @@ static void zero_initialize(
         }
         break;
     case T_POINTER:
-        var = var_zero(8);
-        var.type = type_init(T_POINTER, &basic_type__void);
+        var = var__zero_unsigned[7];
+        var.type = target.type;
         eval_assign(def, block, target, var);
         break;
     case T_UNSIGNED:
+        var = var__zero_unsigned[size_of(target.type) - 1];
+        eval_assign(def, block, target, var);
+        break;
     case T_SIGNED:
-        var = var_zero(target.type->size);
+        var = var__zero_signed[size_of(target.type) - 1];
+        eval_assign(def, block, target, var);
+        break;
+    case T_REAL:
+        var = (is_float(target.type) ? var__zero_float : var__zero_double);
         eval_assign(def, block, target, var);
         break;
     default:
-        error("Invalid type to zero-initialize, was '%t'.", target.type);
+        error("Cannot zero-initialize object of type '%t'.", target.type);
         exit(1);
     }
 }
@@ -763,9 +789,10 @@ static struct block *string_initializer(
     return block;
 }
 
-/* Parse and emit initializer code for target variable in statements
- * such as int b[] = {0, 1, 2, 3}. Generate a series of assignment
- * operations on references to target variable.
+/*
+ * Parse and emit initializer code for target variable in statements
+ * such as int b[] = {0, 1, 2, 3}. Generates a series of assignment
+ * operations on references to target variable, with increasing offsets.
  */
 static struct block *initializer(
     struct definition *def,
@@ -797,6 +824,12 @@ static struct block *initializer(
         if (is_array(target.type) && is_string(block->expr)) {
             block = string_initializer(def, block, target);
         } else {
+            /* Make sure basic types are converted, but avoid invalid
+               cast for struct or union types. */
+            if (!type_equal(target.type, block->expr.type)) {
+                block->expr = eval_cast(def, block, block->expr, target.type);
+            }
+
             eval_assign(def, block, target, block->expr);
         }
     }

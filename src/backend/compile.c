@@ -1501,6 +1501,8 @@ static void compile_data_assign(struct var target, struct var val)
             }
         case T_SIGNED:
         case T_UNSIGNED:
+        case T_REAL:
+            assert(type_equal(target.type, val.type));
             imm.type = IMM_INT;
             imm.d.qword = val.imm.i;
             break;
