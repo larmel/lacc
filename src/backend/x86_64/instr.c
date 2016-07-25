@@ -744,6 +744,9 @@ static struct code sse_mov(
         encode_addr(&c, reg(b.reg), a.mem.addr);
         break;
     case OPT_REG_MEM:
+        if (rrex(a.reg) || mrex(b.mem.addr)) {
+            c.val[c.len++] = REX | R(a.reg) | mrex(b.mem.addr);
+        }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = 0x11;
         encode_addr(&c, reg(a.reg), b.mem.addr);
