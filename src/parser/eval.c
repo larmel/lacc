@@ -887,7 +887,7 @@ struct var eval_assign(
 
     if (is_array(target.type)) {
         /* Special case char [] = string in initializers. In this case
-         * we do nothing here, but handle it in backend. */
+           we do nothing here, but handle it in backend. */
         if (!type_equal(target.type, var.type) || var.kind != IMMEDIATE) {
             error("Invalid initializer assignment, was %s :: %t = %t.",
                 str_raw(target.symbol->name),
@@ -920,10 +920,11 @@ struct var eval_assign(
                 target.type,
                 var.type);
         }
+    } else if (is_arithmetic(target.type) && is_arithmetic(var.type)) {
+        if (var.kind == IMMEDIATE) {
+            var = eval_cast(def, block, var, target.type);
+        }
     } else if (
-        /* The left operand has atomic, qualified, or unqualified
-           arithmetic type, and the right has arithmetic type. */
-        !(is_arithmetic(target.type) && is_arithmetic(var.type)) &&
         /* The left operand has an atomic, qualified, or unqualified
            version of a structure or union type compatible with the
            type of the right. */
@@ -935,12 +936,10 @@ struct var eval_assign(
         exit(1);
     }
 
-    /* Assignment has implicit conversion for basic types when
-       evaluating the IR operation, meaning var will be sign extended
-       to size of target.type. */
+    /* Assignment has implicit conversion for basic types, meaning var
+       will be sign extended to size of target.type. */
     emit_ir(block, IR_ASSIGN, target, var);
     target.lvalue = 0;
-
     return target;
 }
 

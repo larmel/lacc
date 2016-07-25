@@ -305,7 +305,8 @@ static void relase_regs(void)
     int_regs_used = sse_regs_used = 0;
 }
 
-/* Read value while doing type conversion (if necessary), returning a
+/*
+ * Read value while doing type conversion (if necessary), returning a
  * register holding the value.
  */
 static enum reg load_cast(struct var val, const struct typetree *type)
@@ -322,7 +323,7 @@ static enum reg load_cast(struct var val, const struct typetree *type)
         load_value(val, rg, size_of(type));
     } else {
         /* Load while converting between integer and floating point, in
-         * either order. */
+           either order. */
         if (is_integer(type) && is_real(val.type)) {
             if (st < 4) st = 4;
             assert(st == 4 || st == 8);
