@@ -324,6 +324,7 @@ int asm_text(struct instruction instr)
     case INSTR_JZ:       I1("jz", source); break;
     case INSTR_JA:       I1("ja", source); break;
     case INSTR_JG:       I1("jg", source); break;
+    case INSTR_JS:       I1("js", source); break;
     case INSTR_JAE:      I1("jae", source); break;
     case INSTR_JGE:      I1("jge", source); break;
     case INSTR_CALL:

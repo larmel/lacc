@@ -132,6 +132,7 @@ enum opcode {
     INSTR_JA,
     INSTR_JG,
     INSTR_JZ,
+    INSTR_JS,           /* Jump if sign bit is set. */
     INSTR_JAE,
     INSTR_JGE,
     INSTR_CALL,

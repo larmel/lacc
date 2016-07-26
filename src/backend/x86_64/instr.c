@@ -74,7 +74,8 @@ enum tttn {
     TEST_Z = 0x4,
     TEST_A = 0x7,
     TEST_GE = 0xD,
-    TEST_G = 0xF
+    TEST_G = 0xF,
+    TEST_S = 0x8
 };
 
 /* Encode address using ModR/M, SIB and Displacement bytes. Based on
@@ -179,11 +180,13 @@ static struct code mov(
         }
         break;
     case OPT_REG_REG:
-        assert(a.reg.w == b.reg.w && a.reg.w == 8);
-        c.len = 3;
-        c.val[0] = REX | W(a.reg) | R(a.reg) | B(b.reg);
-        c.val[1] = 0x88 + is_64_bit(a.reg);
-        c.val[2] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        assert(a.reg.w == b.reg.w);
+        assert(a.reg.w == 4 || a.reg.w == 8);
+        if (rrex(a.reg) || rrex(b.reg)) {
+            c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
+        }
+        c.val[c.len++] = 0x88 | w(a.reg);
+        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
         break;
     case OPT_REG_MEM:
         if (is_16_bit(a.reg))
@@ -522,6 +525,9 @@ static struct code test(
     struct code c = {{0}};
     assert(optype == OPT_REG_REG && !is_64_bit_reg(a.reg.r));
 
+    if (rrex(a.reg) || rrex(b.reg)) {
+        c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
+    }
     c.val[c.len++] = 0x84 | w(a.reg);
     c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
     return c;
@@ -679,13 +685,32 @@ static struct code shr(
     union operand b)
 {
     struct code c = {{0}};
-    assert(optype == OPT_REG_REG);
-    assert(a.reg.r == CX && a.reg.w == 1);
 
-    if (rrex(b.reg))
-        c.val[c.len++] = REX | W(b.reg) | B(b.reg);
-    c.val[c.len++] = 0xD2 | w(b.reg);
-    c.val[c.len++] = 0xE8 | reg(b.reg);
+    /* First operand is shift amount. */
+    if (optype == OPT_REG_REG) {
+        assert(a.reg.r == CX);
+        assert(a.reg.w == 1);
+
+        if (rrex(b.reg)) {
+            c.val[c.len++] = REX | W(b.reg) | B(b.reg);
+        }
+        c.val[c.len++] = 0xD2 | w(b.reg);
+        c.val[c.len++] = 0xE8 | reg(b.reg);
+    } else {
+        assert(optype == OPT_IMM_REG);
+        assert(a.imm.type == IMM_INT);
+        assert(a.imm.w == 1);
+
+        if (a.imm.d.dword == 1) {
+            if (rrex(b.reg)) {
+                c.val[c.len++] = REX | W(b.reg) | B(b.reg);
+            }
+            c.val[c.len++] = 0xD0 | w(b.reg);
+            c.val[c.len++] = 0xE8 | reg(b.reg);
+        } else {
+            assert(0);
+        }
+    }
 
     return c;
 }
@@ -809,6 +834,9 @@ static struct code sse_generic(
         c.val[c.len++] = opcode2;
         encode_addr(&c, reg(b.reg), a.mem.addr);
     } else {
+        if (rrex(a.reg) || rrex(b.reg)) {
+            c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
+        }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = opcode2;
         c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
@@ -927,6 +955,8 @@ struct code encode(struct instruction instr)
         return jcc(instr.optype, TEST_G, instr.source);
     case INSTR_JZ:
         return jcc(instr.optype, TEST_Z, instr.source);
+    case INSTR_JS:
+        return jcc(instr.optype, TEST_S, instr.source);
     case INSTR_JAE:
         return jcc(instr.optype, TEST_AE, instr.source);
     case INSTR_JGE:

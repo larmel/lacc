@@ -290,7 +290,7 @@ static unsigned int_regs_used, sse_regs_used;
 
 static enum reg get_sse_reg(void)
 {
-    assert(sse_regs_used < 16);
+    assert(sse_regs_used < 8);
     return XMM0 + sse_regs_used++;
 }
 
@@ -302,7 +302,8 @@ static enum reg get_int_reg(void)
 
 static void relase_regs(void)
 {
-    int_regs_used = sse_regs_used = 0;
+    int_regs_used = 0;
+    sse_regs_used = 0;
 }
 
 /*
@@ -311,8 +312,9 @@ static void relase_regs(void)
  */
 static enum reg load_cast(struct var val, const struct typetree *type)
 {
+    struct symbol *label, *next;
     enum opcode op;
-    enum reg rg, rt;
+    enum reg rg, rt, tmp;
     int sv = size_of(val.type), st = size_of(type);
 
     if (is_real(type) && is_real(val.type)) {
@@ -322,21 +324,57 @@ static enum reg load_cast(struct var val, const struct typetree *type)
         rg = get_sse_reg();
         load_value(val, rg, size_of(type));
     } else {
-        /* Load while converting between integer and floating point, in
-           either order. */
-        if (is_integer(type) && is_real(val.type)) {
-            if (st < 4) st = 4;
+        assert((is_real(val.type) && is_integer(type))
+            || (is_integer(val.type) && is_real(type)));
+
+        if (is_real(val.type)) {
+            /* Load floating point converted to integer. */
+            st = (st < 4) ? 4 : st;
             assert(st == 4 || st == 8);
             rg = get_int_reg();
             op = (sv == 8) ? INSTR_CVTTSD2SI : INSTR_CVTTSS2SI;
         } else {
-            assert(is_real(type) && is_integer(val.type));
-            op = (st == 8) ? INSTR_CVTSI2SD : INSTR_CVTSI2SS;
+            /* Load integer converted to floating point. Special case
+               for unsigned integer, since there is no instruction for
+               converting unsigned. */
+            assert(is_integer(val.type));
+            assert(val.kind != IMMEDIATE);
+            op = (size_of(type) == 8) ? INSTR_CVTSI2SD : INSTR_CVTSI2SS;
             rg = get_sse_reg();
-            if (size_of(val.type) < 4 || val.kind == IMMEDIATE) {
+            if (size_of(val.type) < 4 || is_unsigned(val.type)) {
                 rt = get_int_reg();
-                load(val, rt);
-                emit(op, OPT_REG_REG, reg(rt, 4), reg(rg, st));
+                sv = (size_of(val.type) < 4) ? 4 : 8;
+                load_value(val, rt, sv);
+                if (sv == 4) {
+                    emit(op, OPT_REG_REG, reg(rt, 4), reg(rg, st));
+                } else {
+                    tmp = get_int_reg();
+                    label = sym_create_label();
+                    next = sym_create_label();
+                    /* Check if unsigned integer is small enough to be
+                       interpreted as signed. */
+                    if (size_of(val.type) == 4) {
+                        emit(INSTR_MOV, OPT_REG_REG, reg(rt, 4), reg(rt, 4));
+                    }
+                    emit(INSTR_TEST, OPT_REG_REG, reg(rt, 8), reg(rt, 8));
+                    emit(INSTR_JS, OPT_IMM, addr(label));
+                    emit(op, OPT_REG_REG, reg(rt, 8), reg(rg, st));
+                    emit(INSTR_JMP, OPT_IMM, addr(next));
+                    enter_context(label);
+                    /* Convert large unsigned integer by adding up two
+                       halves. */
+                    emit(INSTR_MOV, OPT_REG_REG, reg(rt, 8), reg(tmp, 8));
+                    emit(INSTR_SHR, OPT_IMM_REG, constant(1, 1), reg(tmp, 8));
+                    emit(INSTR_AND, OPT_IMM_REG, constant(1, 4), reg(rt, 4));
+                    emit(INSTR_OR, OPT_REG_REG, reg(rt, 8), reg(tmp, 8));
+                    emit(op, OPT_REG_REG, reg(tmp, 8), reg(rg, st));
+                    if (is_float(type)) {
+                        emit(INSTR_ADDSS, OPT_REG_REG, reg(rg, 4), reg(rg, 4));
+                    } else {
+                        emit(INSTR_ADDSD, OPT_REG_REG, reg(rg, 8), reg(rg, 8));
+                    }
+                    enter_context(next);
+                }
                 return rg;
             }
         }
@@ -407,17 +445,25 @@ static void store(enum reg r, struct var v)
     }
 }
 
-/* Push value to stack, rounded up to always be 8 byte aligned.
+/*
+ * Push value to stack, rounded up to always be 8 byte aligned.
  */
 static void push(struct var v)
 {
     int eb;
 
     if (is_scalar(v.type)) {
-        if (v.kind == IMMEDIATE && size_of(v.type) == 8)
+        if (v.kind == IMMEDIATE && size_of(v.type) == 8) {
             emit(INSTR_PUSH, OPT_IMM, value_of(v, 8));
-        else {
-            load(v, AX);
+        } else {
+            /* Not possible to push SSE registers, so load as if normal
+               integer and push that instead. */
+            if (is_real(v.type)) {
+                v.type = (is_float(v.type))
+                    ? &basic_type__unsigned_int
+                    : &basic_type__unsigned_long;
+            }
+            load_value(v, AX, 8);
             emit(INSTR_PUSH, OPT_REG, reg(AX, 8));
         }
     } else {
@@ -455,7 +501,8 @@ static int alloc_register_params(
     return 0;
 }
 
-/* Load variable to register before function call. Parameter class is
+/*
+ * Load variable to register before function call. Parameter class is
  * already computed, and indices to next free registers to use given.
  */
 static void load_arg(
@@ -485,16 +532,17 @@ static void load_arg(
             }
         }
     } else if (pc.eightbyte[0] == PC_INTEGER) {
-        assert((*next_integer_reg) < MAX_INTEGER_ARGS);
+        assert(*next_integer_reg < MAX_INTEGER_ARGS);
         load(arg, param_int_reg[(*next_integer_reg)++]);
     } else {
         assert(pc.eightbyte[0] == PC_SSE);
-        assert((*next_sse_reg) < MAX_SSE_ARGS);
+        assert(*next_sse_reg < MAX_SSE_ARGS);
         load(arg, param_sse_reg[(*next_sse_reg)++]);
     }
 }
 
-/* Store return value found in registers to memory.
+/*
+ * Store return value found in registers to memory.
  */
 static void store_res(
     struct var res,
@@ -523,7 +571,8 @@ static void store_res(
     }
 }
 
-/* Compile a function call. Assign parameter class to arguments and
+/*
+ * Compile a function call. Assign parameter class to arguments and
  * return value, using registers %rdi, %rsi, %rdx, %rcx, %r8 and %r9 for
  * class INTEGER, and %xmm0 through %xmm7 for SSE. Arguments of class
  * MEMORY, or those which do not fit in the available registers, are
