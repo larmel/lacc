@@ -383,7 +383,8 @@ static struct token strtostr(char *in, char **endptr)
     return string;
 }
 
-/* Parse string as keyword or identifier. First character should be
+/*
+ * Parse string as keyword or identifier. First character should be
  * alphabetic or underscore.
  */
 static struct token strtoident(char *in, char **endptr)
@@ -471,13 +472,10 @@ static struct token strtoident(char *in, char **endptr)
         break;
     }
 
-    /* Fallthrough means we have consumed at least one character, and
-     * the token should be identifier. Backtrack one position to correct
-     * a get() that moved us past the end. */
-    (*endptr)--;
-
-    while (isident(**endptr))
+    *endptr = in + 1;
+    while (isident(**endptr)) {
         (*endptr)++;
+    }
 
     ident.d.string = str_register(in, *endptr - in);
     return ident;
