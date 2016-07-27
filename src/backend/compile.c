@@ -16,7 +16,8 @@ static int (*emit_instruction)(struct instruction);
 static int (*emit_data)(struct immediate);
 static int (*flush_backend)(void);
 
-/* Values from va_list initialization.
+/*
+ * Values from va_list initialization.
  */
 static struct {
     int gp_offset;
@@ -25,7 +26,8 @@ static struct {
     int reg_save_area_offset;
 } vararg;
 
-/* Registers used for parameter passing and return value.
+/*
+ * Registers used for parameter passing and return value.
  */
 static enum reg param_int_reg[] = {DI, SI, DX, CX, R8, R9};
 static enum reg param_sse_reg[] = {XMM0, XMM1, XMM2, XMM3,
@@ -33,9 +35,34 @@ static enum reg param_sse_reg[] = {XMM0, XMM1, XMM2, XMM3,
 static enum reg ret_int_reg[] = {AX, DX};
 static enum reg ret_sse_reg[] = {XMM0, XMM1};
 
-/* Store incoming PARAM operations before CALL.
+/*
+ * Store incoming PARAM operations before CALL.
  */
 static array_of(struct var) func_args;
+
+/*
+ * Keep track of used registers when evaluating expressions, not having
+ * to explicitly tell which register is to be used in all rules.
+ */
+static unsigned int_regs_used, sse_regs_used;
+
+static enum reg get_sse_reg(void)
+{
+    assert(sse_regs_used < 8);
+    return XMM0 + sse_regs_used++;
+}
+
+static enum reg get_int_reg(void)
+{
+    assert(int_regs_used < 2);
+    return AX + int_regs_used++;
+}
+
+static void relase_regs(void)
+{
+    int_regs_used = 0;
+    sse_regs_used = 0;
+}
 
 static void compile_block(struct block *block, const struct typetree *type);
 
@@ -83,6 +110,14 @@ static void emit(enum opcode opcode, enum instr_optype optype, ...)
 
     va_end(args);
     emit_instruction(instr);
+}
+
+static int is_standard_register_width(int width)
+{
+    return width == 1
+        || width == 2
+        || width == 4
+        || width == 8;
 }
 
 static struct registr reg(enum reg r, int w)
@@ -174,227 +209,239 @@ static struct immediate constant(int n, int w)
     return value_of(var_int(n), w);
 }
 
-static void load_value(struct var v, enum reg r, int w);
+/*
+ * Emit instruction to load a value to specified register. Handles all
+ * kinds of variables, including immediate. Load instruction can perform
+ * conversion, for example sign extend. I.e. variable and register does
+ * not need to be of the same width.
+ */
+static void emit_load(
+    enum opcode opcode,
+    struct var source,
+    struct registr dest)
+{
+    struct var ptr;
+    const int w = size_of(source.type);
+    assert(is_standard_register_width(w));
 
-/* Load value of type float or double to register. Valid register are
+    switch (source.kind) {
+    case IMMEDIATE:
+        /* There is no suitable instruction for moving an immediate
+           floating point value directly to register. Need to store it
+           in memory first, so create symbol holding constant value. */
+        if (is_real(source.type)) {
+            source.symbol = sym_create_constant(source.type, source.imm);
+            source.kind = DIRECT;
+        } else {
+            assert(opcode == INSTR_MOV);
+            emit(opcode, OPT_IMM_REG, value_of(source, dest.w), dest);
+            break;
+        }
+    case DIRECT:
+        emit(opcode, OPT_MEM_REG, location_of(source, w), dest);
+        break;
+    case DEREF:
+        ptr = var_direct(source.symbol);
+        assert(is_pointer(ptr.type));
+        emit(INSTR_MOV, OPT_MEM_REG, location_of(ptr, 8), reg(R11, 8));
+        emit(opcode,
+            OPT_MEM_REG,
+            location(address(source.offset, R11, 0, 0), w),
+            dest);
+        break;
+    case ADDRESS:
+        assert(opcode == INSTR_LEA);
+        emit(opcode, OPT_MEM_REG, location_of(source, 8), dest);
+        break;
+    }
+}
+
+/*
+ * Load value of type float or double to register. Valid register are
  * in the range XMM0 through XMM7.
  */
 static void load_sse(struct var val, enum reg r, int w)
 {
-    enum opcode op;
-    int s = size_of(val.type);
+    enum opcode opcode;
 
     assert(is_real(val.type));
     assert(w == 4 || w == 8);
     assert(r >= XMM0 && r <= XMM7);
 
-    op =
-        (s == 4 && w == 8) ? INSTR_CVTSS2SD :
-        (s == 8 && w == 4) ? INSTR_CVTSD2SS :
+    opcode =
+        (size_of(val.type) == 4 && w == 8) ? INSTR_CVTSS2SD :
+        (size_of(val.type) == 8 && w == 4) ? INSTR_CVTSD2SS :
         (w == 4) ? INSTR_MOVSS : INSTR_MOVSD;
 
-    switch (val.kind) {
-    case IMMEDIATE:
-        /* There is no suitable instruction for moving an immediate
-         * floating point value directly to register. Need to store it
-         * in memory first, so create symbol holding constant value. */
-        val.symbol = sym_create_constant(val.type, val.imm);
-        val.kind = DIRECT;
-    case DIRECT:
-        emit(op, OPT_MEM_REG, location_of(val, w), reg(r, w));
-        break;
-    case ADDRESS:
-        assert(0);
-        break;
-    case DEREF:
-        assert(is_pointer(&val.symbol->type));
-        load_value(var_direct(val.symbol), R11, 8);
-        emit(op, OPT_MEM_REG,
-            location(address(val.offset, R11, 0, 0), w), reg(r, w));
-        break;
-    }
+    emit_load(opcode, val, reg(r, w));
 }
 
-/* Load variable v to register r, sign extended to fit register size.
- * Width must be either 4 (as in %eax) or 8 (as in %rax).
+/*
+ * Load integer variable v to register r, sign extended to fit register
+ * size. Values are always sign extended to either 4 or 8 bytes on load.
  */
-static void load_value(struct var v, enum reg r, int w)
+static void load_int(struct var v, enum reg r, int w)
 {
-    enum opcode opcode = INSTR_MOV;
-    int s = size_of(v.type);
+    enum opcode opcode;
 
-    /* We operate only with 32 or 64 bit register values, but variables
-     * can be stored with byte or short width. Promote to 32 bit if
-     * required. */
     assert(w == 4 || w == 8);
-    assert(s <= w);
+    assert(!is_real(v.type));
 
-    if (is_float(v.type) || is_double(v.type)) {
-        load_sse(v, r, w);
-    } else {
+    opcode = INSTR_MOV;
+    if (v.kind == ADDRESS) {
+        opcode = INSTR_LEA;
+        assert(w == 8);
+        assert(size_of(v.type) == w);
+    } else if (v.kind == IMMEDIATE) {
+        opcode = INSTR_MOV;
+    } else if (size_of(v.type) < w) {
         if (is_unsigned(v.type)) {
-            if (s < w && s < 4) {
+            if (size_of(v.type) < 4) {
                 opcode = INSTR_MOVZX;
+            } else if (size_of(v.type) == 4 && w == 8) {
+                /* Special case for unsigned extension from 32 to 64
+                   bit, as there is no instruction 'movzlq'. */
+                opcode = INSTR_MOV;
+                w = 4;
             }
-        } else if (s != w) {
+        } else if (is_signed(v.type)) {
             opcode = INSTR_MOVSX;
         }
-
-        /* Special case for unsigned extension from 32 to 64 bit, for which
-         * there is no instruction 'movzlq', but rather just 'movl'. */
-        if (s == 4 && is_unsigned(v.type) && w == 8) {
-            opcode = INSTR_MOV;
-            w = 4;
-        }
-
-        switch (v.kind) {
-        case DIRECT:
-            emit(opcode, OPT_MEM_REG, location_of(v, s), reg(r, w));
-            break;
-        case DEREF:
-            assert(is_pointer(&v.symbol->type));
-            load_value(var_direct(v.symbol), R11, 8);
-            emit(opcode, OPT_MEM_REG,
-                location(address(v.offset, R11, 0, 0), s), reg(r, w));
-            break;
-        case ADDRESS:
-            assert(w == 8);
-            assert(s == w);
-            emit(INSTR_LEA, OPT_MEM_REG, location_of(v, 8), reg(r, 8));
-            break;
-        case IMMEDIATE:
-            emit(INSTR_MOV, OPT_IMM_REG, value_of(v, w), reg(r, w));
-            break;
-        }
     }
+
+    emit_load(opcode, v, reg(r, w));
 }
 
-/* Load variable to register, automatically sign/width extended to
+/*
+ * Load variable to register, automatically sign/width extended to
  * either 32 or 64 bit.
  */
 static void load(struct var v, enum reg r)
 {
-    int w = size_of(v.type);
-
+    const int w = size_of(v.type);
     if (is_real(v.type)) {
         load_sse(v, r, w);
     } else {
-        load_value(v, r, (w < 4) ? 4 : w);
+        load_int(v, r, (w < 4) ? 4 : w);
     }
 }
 
-/* Keep track of used registers when evaluating expressions, not having
- * to explicitly tell which register is to be used in all rules.
- */
-static unsigned int_regs_used, sse_regs_used;
-
-static enum reg get_sse_reg(void)
+static enum reg load_float_as_integer(
+    struct var val,
+    const struct typetree *type)
 {
-    assert(sse_regs_used < 8);
-    return XMM0 + sse_regs_used++;
+    enum reg ax;
+    int width;
+
+    assert(is_real(val.type));
+    assert(is_integer(type));
+
+    ax = get_int_reg();
+    width = size_of(type);
+    width = (width < 4) ? 4 : width;
+    assert(width == 4 || width == 8);
+    if (is_float(val.type)) {
+        emit_load(INSTR_CVTTSS2SI, val, reg(ax, width));
+    } else {
+        emit_load(INSTR_CVTTSD2SI, val, reg(ax, width));
+    }
+
+    return ax;
 }
 
-static enum reg get_int_reg(void)
+static enum reg load_integer_as_float(
+    struct var val,
+    const struct typetree *type)
 {
-    assert(int_regs_used < 2);
-    return AX + int_regs_used++;
-}
+    struct symbol *label, *next;
+    enum reg xmm, ax, cx;
+    enum opcode opcode;
 
-static void relase_regs(void)
-{
-    int_regs_used = 0;
-    sse_regs_used = 0;
+    assert(is_integer(val.type));
+    assert(is_real(type));
+
+    xmm = get_sse_reg();
+    opcode = (size_of(type) == 8) ? INSTR_CVTSI2SD : INSTR_CVTSI2SS;
+    if (is_signed(val.type)) {
+        if (size_of(val.type) < 4) {
+            ax = get_int_reg();
+            load_int(val, ax, 4);
+            emit(opcode, OPT_REG_REG, reg(ax, 4), reg(xmm, size_of(type)));
+        } else {
+            emit_load(opcode, val, reg(xmm, size_of(type)));
+        }
+    } else {
+        ax = get_int_reg();
+        if (size_of(val.type) < 4) {
+            load_int(val, ax, 4);
+            emit(opcode, OPT_REG_REG, reg(ax, 4), reg(xmm, size_of(type)));
+        } else {
+            cx = get_int_reg();
+            load_int(val, ax, 8);
+            label = sym_create_label();
+            next = sym_create_label();
+            /* Check if unsigned integer is small enough to be
+               interpreted as signed. */
+            if (size_of(val.type) == 4) {
+                emit(INSTR_MOV, OPT_REG_REG, reg(ax, 4), reg(ax, 4));
+            }
+            emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
+            emit(INSTR_JS, OPT_IMM, addr(label));
+            emit(opcode, OPT_REG_REG, reg(ax, 8), reg(xmm, size_of(type)));
+            emit(INSTR_JMP, OPT_IMM, addr(next));
+            enter_context(label);
+            /* Convert large unsigned integer by adding up two
+               halves. */
+            emit(INSTR_MOV, OPT_REG_REG, reg(ax, 8), reg(cx, 8));
+            emit(INSTR_SHR, OPT_IMM_REG, constant(1, 1), reg(cx, 8));
+            emit(INSTR_AND, OPT_IMM_REG, constant(1, 4), reg(ax, 4));
+            emit(INSTR_OR, OPT_REG_REG, reg(cx, 8), reg(ax, 8));
+            emit(opcode, OPT_REG_REG, reg(ax, 8), reg(xmm, size_of(type)));
+            if (is_float(type)) {
+                emit(INSTR_ADDSS, OPT_REG_REG, reg(xmm, 4), reg(xmm, 4));
+            } else {
+                emit(INSTR_ADDSD, OPT_REG_REG, reg(xmm, 8), reg(xmm, 8));
+            }
+            enter_context(next);
+        }
+    }
+
+    return xmm;
 }
 
 /*
  * Read value while doing type conversion (if necessary), returning a
- * register holding the value.
+ * register holding the value. Type is promoted to be at least 32 bit
+ * wide.
  */
 static enum reg load_cast(struct var val, const struct typetree *type)
 {
-    struct symbol *label, *next;
-    enum opcode op;
-    enum reg rg, rt, tmp;
-    int sv = size_of(val.type), st = size_of(type);
+    enum reg r;
 
-    if (is_real(type) && is_real(val.type)) {
-        rg = get_sse_reg();
-        load_sse(val, rg, size_of(type));
-    } else if (is_integer(type) && is_integer(val.type)) {
-        rg = get_sse_reg();
-        load_value(val, rg, size_of(type));
-    } else {
-        assert((is_real(val.type) && is_integer(type))
-            || (is_integer(val.type) && is_real(type)));
+    if (is_integer(type) && size_of(type) < 4) {
+        type = (is_unsigned(type))
+            ? &basic_type__unsigned_int
+            : &basic_type__int;
+    }
 
-        if (is_real(val.type)) {
-            /* Load floating point converted to integer. */
-            st = (st < 4) ? 4 : st;
-            assert(st == 4 || st == 8);
-            rg = get_int_reg();
-            op = (sv == 8) ? INSTR_CVTTSD2SI : INSTR_CVTTSS2SI;
+    assert(size_of(type) == 4 || size_of(type) == 8);
+    if (is_real(val.type)) {
+        if (is_real(type)) {
+            r = get_sse_reg();
+            load_sse(val, r, size_of(type));
         } else {
-            /* Load integer converted to floating point. Special case
-               for unsigned integer, since there is no instruction for
-               converting unsigned. */
-            assert(is_integer(val.type));
-            assert(val.kind != IMMEDIATE);
-            op = (size_of(type) == 8) ? INSTR_CVTSI2SD : INSTR_CVTSI2SS;
-            rg = get_sse_reg();
-            if (size_of(val.type) < 4 || is_unsigned(val.type)) {
-                rt = get_int_reg();
-                sv = (size_of(val.type) < 4) ? 4 : 8;
-                load_value(val, rt, sv);
-                if (sv == 4) {
-                    emit(op, OPT_REG_REG, reg(rt, 4), reg(rg, st));
-                } else {
-                    tmp = get_int_reg();
-                    label = sym_create_label();
-                    next = sym_create_label();
-                    /* Check if unsigned integer is small enough to be
-                       interpreted as signed. */
-                    if (size_of(val.type) == 4) {
-                        emit(INSTR_MOV, OPT_REG_REG, reg(rt, 4), reg(rt, 4));
-                    }
-                    emit(INSTR_TEST, OPT_REG_REG, reg(rt, 8), reg(rt, 8));
-                    emit(INSTR_JS, OPT_IMM, addr(label));
-                    emit(op, OPT_REG_REG, reg(rt, 8), reg(rg, st));
-                    emit(INSTR_JMP, OPT_IMM, addr(next));
-                    enter_context(label);
-                    /* Convert large unsigned integer by adding up two
-                       halves. */
-                    emit(INSTR_MOV, OPT_REG_REG, reg(rt, 8), reg(tmp, 8));
-                    emit(INSTR_SHR, OPT_IMM_REG, constant(1, 1), reg(tmp, 8));
-                    emit(INSTR_AND, OPT_IMM_REG, constant(1, 4), reg(rt, 4));
-                    emit(INSTR_OR, OPT_REG_REG, reg(rt, 8), reg(tmp, 8));
-                    emit(op, OPT_REG_REG, reg(tmp, 8), reg(rg, st));
-                    if (is_float(type)) {
-                        emit(INSTR_ADDSS, OPT_REG_REG, reg(rg, 4), reg(rg, 4));
-                    } else {
-                        emit(INSTR_ADDSD, OPT_REG_REG, reg(rg, 8), reg(rg, 8));
-                    }
-                    enter_context(next);
-                }
-                return rg;
-            }
+            r = load_float_as_integer(val, type);
         }
-
-        switch (val.kind) {
-        case DIRECT:
-            emit(op, OPT_MEM_REG, location_of(val, sv), reg(rg, st));
-            break;
-        case DEREF:
-            load_value(var_direct(val.symbol), R11, 8);
-            emit(op, OPT_MEM_REG,
-                location(address(val.offset, R11, 0, 0), st), reg(rg, st));
-            break;
-        default:
-            assert(0);
-            break;
+    } else {
+        if (is_real(type)) {
+            r = load_integer_as_float(val, type);
+        } else {
+            r = get_int_reg();
+            load_int(val, r, size_of(type));
         }
     }
 
-    return rg;
+    return r;
 }
 
 static void load_address(struct var v, enum reg r)
@@ -403,8 +450,6 @@ static void load_address(struct var v, enum reg r)
         emit(INSTR_LEA, OPT_MEM_REG, location_of(v, 8), reg(r, 8));
     } else {
         assert(v.kind == DEREF);
-        assert(is_pointer(&v.symbol->type));
-
         load(var_direct(v.symbol), r);
         if (v.offset) {
             emit(INSTR_ADD, OPT_IMM_REG, constant(v.offset, 8), reg(r, 8));
@@ -435,10 +480,10 @@ static void store(enum reg r, struct var v)
         assert(v.kind == DEREF);
         if (!v.symbol) {
             v.kind = IMMEDIATE;
-            load_value(v, R11, 8);
+            load_int(v, R11, 8);
         } else {
             assert(is_pointer(&v.symbol->type));
-            load_value(var_direct(v.symbol), R11, size_of(&v.symbol->type));
+            load_int(var_direct(v.symbol), R11, size_of(&v.symbol->type));
         }
         emit(op, OPT_REG_MEM,
             reg(r, w), location(address(v.offset, R11, 0, 0), w));
@@ -463,7 +508,7 @@ static void push(struct var v)
                     ? &basic_type__unsigned_int
                     : &basic_type__unsigned_long;
             }
-            load_value(v, AX, 8);
+            load_int(v, AX, 8);
             emit(INSTR_PUSH, OPT_REG, reg(AX, 8));
         }
     } else {
@@ -1089,82 +1134,77 @@ static void compile__builtin_va_arg(struct var res, struct var args)
 
 static void compile_op_add(struct var a, struct var b, struct var c)
 {
-    int w = size_of(a.type);
+    enum reg ax, cx;
+    enum optype optype;
+    int width;
 
-    if (is_real(a.type)) {
-        load_sse(b, XMM0, w);
-        load_sse(c, XMM1, w);
-        if (is_float(a.type)) {
-            emit(INSTR_ADDSS, OPT_REG_REG, reg(XMM1, 4), reg(XMM0, 4));
-        } else {
-            emit(INSTR_ADDSD, OPT_REG_REG, reg(XMM1, 8), reg(XMM0, 8));
-        }
-        store(XMM0, a);
-    } else {
-        load_value(b, AX, w);
-        load_value(c, CX, w);
-        emit(INSTR_ADD, OPT_REG_REG, reg(CX, w), reg(AX, w));
-        store(AX, a);
-    }
+    width = size_of(a.type);
+    optype = (is_float(a.type)) ? INSTR_ADDSS
+        : (is_double(a.type)) ? INSTR_ADDSD
+        : INSTR_ADD;
+
+    ax = load_cast(b, a.type);
+    cx = load_cast(c, a.type);
+    emit(optype, OPT_REG_REG, reg(cx, width), reg(ax, width));
+    store(ax, a);
 }
 
 static void compile_op_sub(struct var a, struct var b, struct var c)
 {
-    enum reg r0, r1;
-    int w = size_of(a.type);
+    enum reg ax, cx;
+    enum optype optype;
+    int width;
 
-    if (is_real(a.type)) {
-        r0 = load_cast(b, a.type);
-        r1 = load_cast(c, a.type);
-        if (is_float(a.type)) {
-            emit(INSTR_SUBSS, OPT_REG_REG, reg(r1, 4), reg(r0, 4));
-        } else {
-            emit(INSTR_SUBSD, OPT_REG_REG, reg(r1, 8), reg(r0, 8));
-        }
-        store(r0, a);
-    } else {
-        load_value(b, AX, w);
-        load_value(c, CX, w);
-        emit(INSTR_SUB, OPT_REG_REG, reg(CX, w), reg(AX, w));
-        store(AX, a);
-    }
+    width = size_of(a.type);
+    optype = (is_float(a.type)) ? INSTR_SUBSS
+        : (is_double(a.type)) ? INSTR_SUBSD
+        : INSTR_SUB;
+
+    ax = load_cast(b, a.type);
+    cx = load_cast(c, a.type);
+    emit(optype, OPT_REG_REG, reg(cx, width), reg(ax, width));
+    store(ax, a);
 }
 
 static void compile_op_mul(struct var a, struct var b, struct var c)
 {
-    enum reg r0, r1;
+    enum reg xmm0, xmm1;
+    enum optype optype;
+    int width;
 
+    width = size_of(a.type);
     if (is_real(a.type)) {
-        r0 = load_cast(b, a.type);
-        r1 = load_cast(c, a.type);
-        if (is_float(a.type)) {
-            emit(INSTR_MULSS, OPT_REG_REG, reg(r1, 4), reg(r0, 4));
-        } else {
-            emit(INSTR_MULSD, OPT_REG_REG, reg(r1, 8), reg(r0, 8));
-        }
-        store(r0, a);
+        xmm0 = load_cast(b, a.type);
+        xmm1 = load_cast(c, a.type);
+        optype = is_float(a.type) ? INSTR_MULSS : INSTR_MULSD;
+        emit(optype, OPT_REG_REG, reg(xmm1, width), reg(xmm0, width));
+        store(xmm0, a);
     } else {
         load(c, AX);
         if (b.kind == DIRECT) {
             emit(INSTR_MUL, OPT_MEM, location_of(b, size_of(b.type)));
+            store(AX, a);
         } else {
             load(b, CX);
-            emit(INSTR_MUL, OPT_REG, reg(CX, size_of(b.type)));
+            emit(INSTR_MUL, OPT_REG, reg(CX, width));
+            store(AX, a);
         }
-        store(AX, a);
     }
 }
 
 static void compile_op_divs(struct var a, struct var b, struct var c)
 {
-    int w = size_of(a.type);
+    enum reg xmm0, xmm1;
+    enum optype optype;
+    int width;
     assert(is_real(a.type));
 
-    load_sse(b, XMM0, w);
-    load_sse(c, XMM1, w);
-    emit(w == 4 ? INSTR_DIVSS : INSTR_DIVSD, OPT_REG_REG,
-        reg(XMM1, w), reg(XMM0, w));
-    store(XMM0, a);
+    width = size_of(a.type);
+    xmm0 = load_cast(b, a.type);
+    xmm1 = load_cast(c, a.type);
+    optype = is_float(a.type) ? INSTR_DIVSS : INSTR_DIVSD;
+    emit(optype, OPT_REG_REG, reg(xmm1, width), reg(xmm0, width));
+    store(xmm0, a);
 }
 
 static void compile_cmp(struct var a, struct var b)
@@ -1202,28 +1242,19 @@ static void compile_op_cmp(
     store(AX, a);
 }
 
-static int is_standard_register_width(int width)
-{
-    return width == 1
-        || width == 2
-        || width == 4
-        || width == 8;
-}
-
 static void compile_op(const struct op *op)
 {
-    static int w;
     int size;
     enum reg r;
 
     switch (op->type) {
     case IR_ASSIGN:
         /* Handle special case of char [] = string literal. This will
-         * only occur as part of initializer, at block scope. External
-         * definitions are handled before this. At no other point should
-         * array types be seen in assembly backend. We handle these
-         * assignments with memcpy, other compilers load the string into
-         * register as ascii numbers. */
+           only occur as part of initializer, at block scope. External
+           definitions are handled before this. At no other point should
+           array types be seen in assembly backend. We handle these
+           assignments with memcpy, other compilers load the string into
+           register as ascii numbers. */
         if (is_array(op->a.type) || is_array(op->b.type)) {
             size = size_of(op->a.type);
 
@@ -1252,30 +1283,8 @@ static void compile_op(const struct op *op)
         /* Fallthrough, assignment has implicit cast for convenience and
            to make static initialization work without explicit casts. */
     case IR_CAST:
-        w = (size_of(op->a.type) > size_of(op->b.type)) ?
-            size_of(op->a.type) : size_of(op->b.type);
-        w = (w < 4) ? 4 : w;
-        assert(w == 4 || w == 8);
-        if (is_real(op->b.type)) {
-            if (is_integer(op->a.type)) {
-                r = load_cast(op->b, op->a.type);
-                store(r, op->a);
-            } else {
-                load_sse(op->b, XMM0, size_of(op->a.type));
-                store(XMM0, op->a);
-            }
-        } else if (is_real(op->a.type)) {
-            if (is_integer(op->b.type)) {
-                r = load_cast(op->b, op->a.type);
-                store(r, op->a);
-            } else {
-                load_sse(op->b, XMM0, size_of(op->a.type));
-                store(XMM0, op->a);
-            }
-        } else {
-            load_value(op->b, AX, w);
-            store(AX, op->a);
-        }
+        r = load_cast(op->b, op->a.type);
+        store(r, op->a);
         break;
     case IR_PARAM:
         array_push_back(&func_args, op->a);
@@ -1350,9 +1359,9 @@ static void compile_op(const struct op *op)
         break;
     case IR_OP_SHL:
         /* Shift instruction encoding is either by immediate, or
-         * implicit %cl register. Encode as if something other than %cl
-         * could be chosen. Behavior is undefined if shift is greater
-         * than integer width, so don't care about overflow or sign. */
+           implicit %cl register. Encode as if something other than %cl
+           could be chosen. Behavior is undefined if shift is greater
+           than integer width, so don't care about overflow or sign. */
         load(op->b, AX);
         load(op->c, CX);
         emit(INSTR_SHL, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(op->a.type)));
@@ -1378,7 +1387,7 @@ static void compile_op(const struct op *op)
     case IR_OP_GT:
         if (is_unsigned(op->b.type) || is_real(op->b.type)) {
             /* When comparison is unsigned, set flag without considering
-             * overflow; CF=0 && ZF=0. */
+               overflow; CF=0 && ZF=0. */
             compile_op_cmp(INSTR_SETA, op->a, op->b, op->c);
         } else {
             compile_op_cmp(INSTR_SETG, op->a, op->b, op->c);
