@@ -146,8 +146,9 @@ static struct code mov(
     switch (optype) {
     case OPT_IMM_REG:
         /* Alternative encoding (shorter). */
-        if (rrex(b.reg))
+        if (rrex(b.reg)) {
             c.val[c.len++] = REX | W(b.reg) | B(b.reg);
+        }
         c.val[c.len++] = 0xB8 | w(b.reg) << 3 | reg(b.reg);
         if (a.imm.w == 1) {
             assert(a.imm.type == IMM_INT);
@@ -829,14 +830,15 @@ static struct code sse_generic(
     c.val[c.len++] = opcode1;
     if (optype == OPT_MEM_REG) {
         if (rrex(b.reg) || mrex(a.mem.addr) || a.mem.w == 8) {
-            c.val[c.len++] = REX | W(a.mem) | R(b.reg) | mrex(a.mem.addr);
+            c.val[c.len++] =
+                REX | W(a.mem) | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = opcode2;
         encode_addr(&c, reg(b.reg), a.mem.addr);
     } else {
         if (rrex(a.reg) || rrex(b.reg)) {
-            c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
+            c.val[c.len++] = REX | W(a.reg) | W(b.reg) | R(a.reg) | B(b.reg);
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = opcode2;

@@ -7,6 +7,7 @@
 #include <lacc/context.h>
 
 #include <assert.h>
+#include <limits.h>
 #include <stdarg.h>
 
 static FILE *output_stream;
@@ -151,6 +152,7 @@ static struct immediate value_of(struct var var, int w)
         assert(!var.offset);
         assert(is_scalar(var.type));
         assert(w == 1 || w == 2 || w == 4 || w == 8);
+        imm.type = IMM_INT;
         imm.d.qword = var.imm.i;
     }
 
@@ -204,9 +206,14 @@ static struct immediate addr(const struct symbol *sym)
     return imm;
 }
 
-static struct immediate constant(int n, int w)
+static struct immediate constant(long n, int w)
 {
-    return value_of(var_int(n), w);
+    struct immediate imm = {0};
+    assert(w == 1 || w == 2 || w == 4 || w == 8);
+    imm.type = IMM_INT;
+    imm.d.qword = n;
+    imm.w = w;
+    return imm;
 }
 
 /*
@@ -330,7 +337,10 @@ static enum reg load_float_as_integer(
     struct var val,
     const struct typetree *type)
 {
-    enum reg ax;
+    enum opcode opcode;
+    enum reg ax, cx, xmm0, xmm1;
+    struct symbol *convert, *next;
+    struct number limit;
     int width;
 
     assert(is_real(val.type));
@@ -338,12 +348,51 @@ static enum reg load_float_as_integer(
 
     ax = get_int_reg();
     width = size_of(type);
-    width = (width < 4) ? 4 : width;
-    assert(width == 4 || width == 8);
-    if (is_float(val.type)) {
-        emit_load(INSTR_CVTTSS2SI, val, reg(ax, width));
+    opcode = is_float(val.type) ? INSTR_CVTTSS2SI : INSTR_CVTTSD2SI;
+    if (is_signed(type)) {
+        width = (width < 4) ? 4 : width;
+        assert(width == 4 || width == 8);
+        emit_load(opcode, val, reg(ax, width));
+    } else if (width < 4) {
+        emit_load(opcode, val, reg(ax, 4));
+    } else if (width < 8) {
+        emit_load(opcode, val, reg(ax, 8));
     } else {
-        emit_load(INSTR_CVTTSD2SI, val, reg(ax, width));
+        cx = get_int_reg();
+        xmm0 = get_sse_reg();
+        xmm1 = get_sse_reg();
+        width = size_of(val.type);
+        convert = sym_create_label();
+        next = sym_create_label();
+        if (is_float(val.type)) {
+            limit.type = &basic_type__float;
+            limit.val.f = (float) LONG_MAX;
+        } else {
+            limit.type = &basic_type__double;
+            limit.val.d = (double) LONG_MAX;
+        }
+        load_sse(val, xmm0, width);
+        load_sse(var_numeric(limit), xmm1, width);
+        if (is_float(val.type)) {
+            emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
+        } else {
+            emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
+        }
+        emit(INSTR_JAE, OPT_IMM, addr(convert));
+        /* Value is representable as signed long. */
+        emit_load(opcode, val, reg(ax, 8));
+        emit(INSTR_JMP, OPT_IMM, addr(next));
+        enter_context(convert);
+        /* Trickery to convert value not within signed long. */
+        if (is_float(val.type)) {
+            emit(INSTR_SUBSS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
+        } else {
+            emit(INSTR_SUBSD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
+        }
+        emit(opcode, OPT_REG_REG, reg(xmm0, width), reg(ax, 8));
+        emit(INSTR_MOV, OPT_IMM_REG, constant(LONG_MAX + 1ul, 8), reg(cx, 8));
+        emit(INSTR_XOR, OPT_REG_REG, reg(cx, 8), reg(ax, 8));
+        enter_context(next);
     }
 
     return ax;
