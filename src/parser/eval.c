@@ -940,7 +940,12 @@ struct var eval_assign(
     /* Assignment has implicit conversion for basic types, meaning var
        will be sign extended to size of target.type. */
     emit_ir(block, IR_ASSIGN, target, var);
-    target.lvalue = 0;
+    if (var.kind == IMMEDIATE) {
+        target = var;
+    } else {
+        target.lvalue = 0;
+    }
+
     return target;
 }
 
