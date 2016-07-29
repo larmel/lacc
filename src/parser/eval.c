@@ -7,6 +7,7 @@
 #include <lacc/ir.h>
 
 #include <assert.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdlib.h>
 
@@ -1002,6 +1003,19 @@ struct var eval_return(struct definition *def, struct block *block)
     return block->expr;
 }
 
+#define cast_immediate(v, T) ( \
+    is_float((v).type) ? (T) (v).imm.f : \
+    is_double((v).type) ? (T) (v).imm.d : \
+    is_signed((v).type) ? (T) (v).imm.i : (T) (v).imm.u)
+
+#define is_float_above(v, n) \
+    ((is_float((v).type) && (v).imm.f > n) \
+            || (is_double((v).type) && (v).imm.d > n))
+
+#define is_float_below(v, n) \
+    ((is_float((v).type) && (v).imm.f < n) \
+        || (is_double((v).type) && (v).imm.d < n))
+
 struct var eval_cast(
     struct definition *def,
     struct block *block,
@@ -1033,32 +1047,40 @@ struct var eval_cast(
                 (is_signed(var.type)) ? (double) var.imm.i :
                 (is_unsigned(var.type)) ? (double) var.imm.u : var.imm.d;
         } else if (is_unsigned(type) || is_pointer(type)) {
-            var.imm.u =
-                (is_float(var.type)) ? (unsigned long) var.imm.f :
-                (is_double(var.type)) ? (unsigned long) var.imm.d :
-                (is_signed(var.type)) ? (unsigned long) var.imm.i : var.imm.u;
-            if (size_of(type) < size_of(var.type)) {
-                assert(size_of(type) == 4
-                    || size_of(type) == 2
-                    || size_of(type) == 1);
-                var.imm.u &= (0xFFFFFFFFu >> ((4 - size_of(type)) * 8));
-            }
-        } else if (is_signed(type)) {
-            var.imm.i =
-                (is_float(var.type)) ? (long) var.imm.f :
-                (is_double(var.type)) ? (long) var.imm.d :
-                (is_unsigned(var.type)) ? (long) var.imm.u : var.imm.i;
-            if (size_of(type) == 4) {
-                var.imm.i = (int) var.imm.i;
-            } else if (size_of(type) == 2) {
-                var.imm.i = (short) var.imm.i;
+            if (is_float_below(var, 0)) {
+                var.imm.u = 0;
             } else if (size_of(type) == 1) {
-                var.imm.i = (signed char) var.imm.i;
+                var.imm.u = is_float_above(var, UCHAR_MAX) ? UCHAR_MAX
+                    : cast_immediate(var, unsigned char);
+            } else if (size_of(type) == 2) {
+                var.imm.u = is_float_above(var, USHRT_MAX) ? USHRT_MAX
+                    : cast_immediate(var, unsigned short);
+            } else if (size_of(type) == 4) {
+                var.imm.u = is_float_above(var, UINT_MAX) ? UINT_MAX
+                    : cast_immediate(var, unsigned int);
             } else {
-                assert(size_of(type) == 8);
+                var.imm.u = is_float_above(var, ULONG_MAX) ? ULONG_MAX
+                    : cast_immediate(var, unsigned long);
             }
         } else {
-            assert(0);
+            assert(is_signed(type));
+            if (size_of(type) == 1) {
+                var.imm.i = is_float_below(var, CHAR_MIN) ? CHAR_MIN
+                    : is_float_above(var, CHAR_MAX) ? CHAR_MAX
+                    : cast_immediate(var, signed char);
+            } else if (size_of(type) == 2) {
+                var.imm.i = is_float_below(var, SHRT_MIN) ? SHRT_MIN
+                    : is_float_above(var, SHRT_MAX) ? SHRT_MAX
+                    : cast_immediate(var, signed short);
+            } else if (size_of(type) == 4) {
+                var.imm.i = is_float_below(var, INT_MIN) ? INT_MIN
+                    : is_float_above(var, INT_MAX) ? INT_MAX
+                    : cast_immediate(var, signed int);
+            } else {
+                var.imm.i = is_float_below(var, LONG_MIN) ? LONG_MIN
+                    : is_float_above(var, LONG_MAX) ? LONG_MAX
+                    : cast_immediate(var, signed long);
+            }
         }
         var.type = type;
     } else if (size_of(var.type) == size_of(type)
