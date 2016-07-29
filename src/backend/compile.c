@@ -467,10 +467,10 @@ static enum reg load_cast(struct var val, const struct typetree *type)
 {
     enum reg r;
 
-    if (is_integer(type) && size_of(type) < 4) {
-        type = (is_unsigned(type))
-            ? &basic_type__unsigned_int
-            : &basic_type__int;
+    if (size_of(type) < 4) {
+        type = (is_signed(type))
+            ? &basic_type__int
+            : &basic_type__unsigned_int;
     }
 
     assert(size_of(type) == 4 || size_of(type) == 8);
