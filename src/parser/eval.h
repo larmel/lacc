@@ -3,7 +3,8 @@
 
 #include <lacc/ir.h>
 
-/* Evaluate a = b <op> c, or unary expression a = <op> b
+/*
+ * Evaluate a = b <op> c, or unary expression a = <op> b
  *
  * Returns a DIRECT reference to a new temporary, or an immediate value.
  */
@@ -13,21 +14,24 @@ struct var eval_expr(
     enum optype optype,
     struct var l, ...);
 
-/* Evaluate &a.
+/*
+ * Evaluate &a.
  */
 struct var eval_addr(
     struct definition *def,
     struct block *block,
     struct var var);
 
-/* Evaluate *a.
+/*
+ * Evaluate *a.
  */
 struct var eval_deref(
     struct definition *def,
     struct block *block,
     struct var var);
 
-/* Evaluate simple assignment (6.5.16.1).
+/*
+ * Evaluate simple assignment (6.5.16.1).
  *
  *      a = b
  *
@@ -41,21 +45,34 @@ struct var eval_assign(
     struct var target,
     struct var var);
 
-/* Evaluate a().
+/*
+ * Evaluate a().
  */
 struct var eval_call(
     struct definition *def,
     struct block *block,
     struct var var);
 
-/* Create and return a copy of var.
+/*
+ * Create and return a copy of var.
  */
 struct var eval_copy(
     struct definition *def,
     struct block *block,
     struct var var);
 
-/* Evaluate (T) a.
+/*
+ * Evaluate (-val). For integer operands, this is equivalent to 0 - val,
+ * but floating point numbers can differentiate between positive and
+ * negative zero.
+ */
+struct var eval_unary_minus(
+    struct definition *def,
+    struct block *block,
+    struct var val);
+
+/*
+ * Evaluate (T) a.
  */
 struct var eval_cast(
     struct definition *def,
@@ -63,7 +80,8 @@ struct var eval_cast(
     struct var v,
     const struct typetree *t);
 
-/* Evaluate (a) ? b : c.
+/*
+ * Evaluate (a) ? b : c.
  */
 struct var eval_conditional(
     struct definition *def,
@@ -71,7 +89,8 @@ struct var eval_conditional(
     struct block *b,
     struct block *c);
 
-/* Push given parameter in preparation of a function call. Invoke in
+/*
+ * Push given parameter in preparation of a function call. Invoke in
  * left to right order, as argument appear in parameter list.
  */
 void param(
@@ -79,7 +98,8 @@ void param(
     struct block *block,
     struct var arg);
 
-/* Evaluate return (expr).
+/*
+ * Evaluate return (expr).
  *
  * If expr has a different type than return type of the current function
  * definition, a conversion equivalent to assignment is made:
@@ -91,7 +111,8 @@ struct var eval_return(
     struct definition *def,
     struct block *block);
 
-/* Evaluate left->expr || right->expr, where right_top is a pointer to
+/*
+ * Evaluate left->expr || right->expr, where right_top is a pointer to
  * the top of the block chain ending up with right. Returns the next
  * block of execution.
  */
@@ -101,7 +122,8 @@ struct block *eval_logical_or(
     struct block *right_top,
     struct block *right);
 
-/* Evaluate left->expr && right->expr.
+/*
+ * Evaluate left->expr && right->expr.
  */
 struct block *eval_logical_and(
     struct definition *def,
@@ -109,11 +131,13 @@ struct block *eval_logical_and(
     struct block *right_top,
     struct block *right);
 
-/* Evaluate va_start builtin function.
+/*
+ * Evaluate va_start builtin function.
  */
 struct var eval__builtin_va_start(struct block *block, struct var arg);
 
-/* Evaluate va_arg builtin function.
+/*
+ * Evaluate va_arg builtin function.
  */
 struct var eval__builtin_va_arg(
     struct definition *def,
@@ -121,12 +145,14 @@ struct var eval__builtin_va_arg(
     struct var arg,
     const struct typetree *type);
 
-/* Return 1 iff e evaluates to an immediate non-zero value. Type must be
+/*
+ * Return 1 iff e evaluates to an immediate non-zero value. Type must be
  * scalar.
  */
 int is_immediate_true(struct var e);
 
-/* Return 1 iff e evaluates to an immediate zero value. Type must be
+/*
+ * Return 1 iff e evaluates to an immediate zero value. Type must be
  * scalar.
  */
 int is_immediate_false(struct var e);

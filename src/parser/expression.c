@@ -365,7 +365,7 @@ static struct block *unary_expression(
     case '-':
         consume('-');
         block = cast_expression(def, block);
-        block->expr = eval_expr(def, block, IR_OP_SUB, var_int(0), block->expr);
+        block->expr = eval_unary_minus(def, block, block->expr);
         break;
     case SIZEOF: {
         struct typetree *type;

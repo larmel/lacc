@@ -745,6 +745,33 @@ struct var eval_expr(
     }
 }
 
+struct var eval_unary_minus(
+    struct definition *def,
+    struct block *block,
+    struct var val)
+{
+    if (!is_arithmetic(val.type)) {
+        error("Unary (-) operand must be of arithmetic type.");
+        exit(1);
+    }
+
+    if (is_float(val.type)) {
+        val.type = &basic_type__unsigned_int;
+        val = eval_expr(def, block, IR_OP_XOR,
+            imm_unsigned(val.type, 1u << 31), val);
+        val.type = &basic_type__float;
+    } else if (is_double(val.type)) {
+        val.type = &basic_type__unsigned_long;
+        val = eval_expr(def, block, IR_OP_XOR,
+            imm_unsigned(val.type, 1ul << 63), val);
+        val.type = &basic_type__double;
+    } else {
+        val = eval_expr(def, block, IR_OP_SUB, var_int(0), val);
+    }
+
+    return val;
+}
+
 struct var eval_addr(
     struct definition *def,
     struct block *block,
