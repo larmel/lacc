@@ -659,7 +659,9 @@ static void store_res(
         } else {
             assert(pc.eightbyte[i] == PC_SSE);
             assert(*next_sse_reg < MAX_SSE_RET);
-            res.type = (i < n - 1) ? &basic_type__double : res.type;
+            res.type = (size_of(res.type) == 4)
+                ? &basic_type__float
+                : &basic_type__double;
             store(ret_sse_reg[(*next_sse_reg)++], res);
         }
     }
