@@ -78,7 +78,8 @@ enum tttn {
     TEST_S = 0x8
 };
 
-/* Encode address using ModR/M, SIB and Displacement bytes. Based on
+/*
+ * Encode address using ModR/M, SIB and Displacement bytes. Based on
  * Table 2.2 and Table 2.3 in reference manual. Symbol references are
  * encoded as %rip- relative addresses, section 2.2.1.6.
  */
@@ -827,8 +828,8 @@ static struct code sse_generic(
 
     c.val[c.len++] = opcode1;
     if (optype == OPT_MEM_REG) {
-        if (rrex(b.reg) || mrex(a.mem.addr)) {
-            c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
+        if (rrex(b.reg) || mrex(a.mem.addr) || a.mem.w == 8) {
+            c.val[c.len++] = REX | W(a.mem) | R(b.reg) | mrex(a.mem.addr);
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = opcode2;
