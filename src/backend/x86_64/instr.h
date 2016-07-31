@@ -128,13 +128,16 @@ enum opcode {
     INSTR_CMP,
     INSTR_LEA,
     INSTR_PUSH,
+    INSTR_PXOR,         /* Bitwise xor with xmm register. */
     INSTR_JMP,
     INSTR_JA,
+    INSTR_JP,           /* Jump if parity. */
     INSTR_JG,
     INSTR_JZ,
     INSTR_JS,           /* Jump if sign bit is set. */
     INSTR_JAE,
     INSTR_JGE,
+    INSTR_JNE,          /* Jump if not equal. */
     INSTR_CALL,
     INSTR_LEAVE,
     INSTR_RET,

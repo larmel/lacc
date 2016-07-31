@@ -75,6 +75,11 @@ static struct block *if_statement(
     consume(IF);
     consume('(');
     parent = expression(def, parent);
+    if (!is_scalar(parent->expr.type)) {
+        error("If expression must have scalar type, was %t.",
+            parent->expr.type);
+        exit(1);
+    }
     consume(')');
     if (is_immediate_true(parent->expr)) {
         parent->jump[0] = right;
@@ -128,6 +133,11 @@ static struct block *do_statement(
     consume(WHILE);
     consume('(');
     tail = expression(def, cond);
+    if (!is_scalar(tail->expr.type)) {
+        error("While expression must have scalar type, was %t.",
+            tail->expr.type);
+        exit(1);
+    }
     consume(')');
     if (is_immediate_true(tail->expr)) {
         tail->jump[0] = top;
@@ -164,6 +174,11 @@ static struct block *while_statement(
     consume(WHILE);
     consume('(');
     cond = expression(def, top);
+    if (!is_scalar(cond->expr.type)) {
+        error("While expression must have scalar type, was %t.",
+            cond->expr.type);
+        exit(1);
+    }
     consume(')');
     if (is_immediate_true(cond->expr)) {
         cond->jump[0] = body;
@@ -209,6 +224,11 @@ static struct block *for_statement(
     if (peek().token != ';') {
         parent->jump[0] = top;
         top = expression(def, top);
+        if (!is_scalar(top->expr.type)) {
+            error("Controlling expression must have scalar type, was %t.",
+                top->expr.type);
+            exit(1);
+        }
         if (is_immediate_true(top->expr)) {
             top->jump[0] = body;
         } else if (is_immediate_false(top->expr)) {
@@ -257,6 +277,11 @@ static struct block *switch_statement(
     consume(SWITCH);
     consume('(');
     parent = expression(def, parent);
+    if (!is_integer(parent->expr.type)) {
+        error("Switch expression must have integer type, was %t.",
+            parent->expr.type);
+        exit(1);
+    }
     consume(')');
     last = statement(def, body);
     last->jump[0] = next;

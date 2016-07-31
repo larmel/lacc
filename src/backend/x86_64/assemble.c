@@ -320,13 +320,16 @@ int asm_text(struct instruction instr)
     case INSTR_CMP:      S2("cmp", wd, source, destin); break;
     case INSTR_LEA:      S2("lea", wd, source, destin); break;
     case INSTR_PUSH:     S1("push", ws, source); break;
+    case INSTR_PXOR:     I2("pxor", source, destin); break;
     case INSTR_JMP:      I1("jmp", source); break;
     case INSTR_JZ:       I1("jz", source); break;
     case INSTR_JA:       I1("ja", source); break;
     case INSTR_JG:       I1("jg", source); break;
     case INSTR_JS:       I1("js", source); break;
+    case INSTR_JP:       I1("jp", source); break;
     case INSTR_JAE:      I1("jae", source); break;
     case INSTR_JGE:      I1("jge", source); break;
+    case INSTR_JNE:      I1("jne", source); break;
     case INSTR_CALL:
         if (instr.optype == OPT_REG)
             out("\tcall\t*%s\n", source);

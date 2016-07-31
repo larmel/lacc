@@ -67,15 +67,19 @@
 
 #define PREFIX_SSE 0x0F
 
-/* Conditional test field.
+/*
+ * Conditional test/jump codes. A nice reference is
+ * http://unixwiz.net/techtips/x86-jumps.html
  */
 enum tttn {
     TEST_AE = 0x3,
     TEST_Z = 0x4,
+    TEST_NE = 0x5,
     TEST_A = 0x7,
+    TEST_S = 0x8,
+    TEST_P = 0xA,
     TEST_GE = 0xD,
-    TEST_G = 0xF,
-    TEST_S = 0x8
+    TEST_G = 0xF
 };
 
 /*
@@ -445,7 +449,7 @@ static struct code jcc(
     c.val[1] |= cond;
 
     /* Existing value will be added to offset. Subtract 4 to account for
-     * instruction length, offset is counted after the immediate. */
+       instruction length, offset is counted after the immediate. */
     disp = elf_text_displacement(addr->sym, c.len) + addr->disp - 4;
     ptr = (int *) (c.val + c.len);
     *ptr = disp;
@@ -860,6 +864,23 @@ static struct code cqo(void)
     return c;
 }
 
+static struct code pxor(
+    enum instr_optype optype,
+    union operand a,
+    union operand b)
+{
+    struct code c = {{0}};
+
+    assert(optype == OPT_REG_REG);
+    assert(a.reg.w == 8);
+    assert(b.reg.w == 8);
+    c.val[c.len++] = 0x66;
+    c.val[c.len++] = 0x0F;
+    c.val[c.len++] = 0xEF;
+    c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
+    return c;
+}
+
 struct code encode(struct instruction instr)
 {
     switch (instr.opcode) {
@@ -931,6 +952,8 @@ struct code encode(struct instruction instr)
         return sse_mov(instr.optype, 0xF3, instr.source, instr.dest);
     case INSTR_PUSH:
         return push(instr.optype, instr.source);
+    case INSTR_PXOR:
+        return pxor(instr.optype, instr.source, instr.dest);
     case INSTR_SUB:
         return sub(instr.optype, instr.source, instr.dest);
     case INSTR_SUBSD:
@@ -954,6 +977,8 @@ struct code encode(struct instruction instr)
         return jmp(instr.optype, instr.source);
     case INSTR_JA:
         return jcc(instr.optype, TEST_A, instr.source);
+    case INSTR_JP:
+        return jcc(instr.optype, TEST_P, instr.source);
     case INSTR_JG:
         return jcc(instr.optype, TEST_G, instr.source);
     case INSTR_JZ:
@@ -964,6 +989,8 @@ struct code encode(struct instruction instr)
         return jcc(instr.optype, TEST_AE, instr.source);
     case INSTR_JGE:
         return jcc(instr.optype, TEST_GE, instr.source);
+    case INSTR_JNE:
+        return jcc(instr.optype, TEST_NE, instr.source);
     case INSTR_SETZ:
         return setcc(instr.optype, TEST_Z, instr.source);
     case INSTR_SETA:

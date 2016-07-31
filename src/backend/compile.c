@@ -1531,8 +1531,6 @@ static void tail_cmp_jump(struct block *block, const struct typetree *type)
 static void tail_generic(struct block *block, const struct typetree *type)
 {
     if (!block->jump[0] && !block->jump[1]) {
-        /* Don't actually check if the function should return what we
-         * have, assume that is done before. */
         if (block->has_return_value) {
             assert(block->expr.type);
             assert(!is_void(block->expr.type));
@@ -1548,10 +1546,27 @@ static void tail_generic(struct block *block, const struct typetree *type)
             compile_block(block->jump[0], type);
         }
     } else {
-        assert(is_integer(block->expr.type) || is_pointer(block->expr.type));
-        load(block->expr, AX);
-        emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
-        emit(INSTR_JZ, OPT_IMM, addr(block->jump[0]->label));
+        assert(is_scalar(block->expr.type));
+        if (is_real(block->expr.type)) {
+            load_sse(block->expr, XMM0, size_of(block->expr.type));
+            emit(INSTR_PXOR, OPT_REG_REG, reg(XMM1, 8), reg(XMM1, 8));
+            if (is_float(block->expr.type)) {
+                emit(INSTR_UCOMISS, OPT_REG_REG, reg(XMM0, 4), reg(XMM1, 4));
+            } else {
+                emit(INSTR_UCOMISD, OPT_REG_REG, reg(XMM0, 8), reg(XMM1, 8));
+            }
+
+            /* Compare both equality and parity flags. Parity is a way
+               to catch compare with invalid floating point numbers. */
+            emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
+            emit(INSTR_JP, OPT_IMM, addr(block->jump[1]->label));
+            emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
+        } else {
+            load(block->expr, AX);
+            emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
+            emit(INSTR_JZ, OPT_IMM, addr(block->jump[0]->label));
+        }
+
         if (block->jump[1]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
         } else {
