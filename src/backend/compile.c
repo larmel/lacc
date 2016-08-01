@@ -620,17 +620,20 @@ static void load_arg(
             } else {
                 assert(pc.eightbyte[i] == PC_SSE);
                 assert(*next_sse_reg < MAX_SSE_ARGS);
-                arg.type = (i < n - 1) ?
-                    &basic_type__double : arg.type;
+                arg.type = is_real(arg.type)
+                    ? arg.type
+                    : &basic_type__double;
                 load(arg, param_sse_reg[(*next_sse_reg)++]);
             }
         }
     } else if (pc.eightbyte[0] == PC_INTEGER) {
         assert(*next_integer_reg < MAX_INTEGER_ARGS);
+        assert(is_integer(arg.type) || is_pointer(arg.type));
         load(arg, param_int_reg[(*next_integer_reg)++]);
     } else {
         assert(pc.eightbyte[0] == PC_SSE);
         assert(*next_sse_reg < MAX_SSE_ARGS);
+        assert(is_real(arg.type));
         load(arg, param_sse_reg[(*next_sse_reg)++]);
     }
 }
@@ -925,8 +928,9 @@ static void enter(struct definition *def)
                 store(param_int_reg[next_integer_reg++], ref);
             } else {
                 assert(argpc[i].pc.eightbyte[j] == PC_SSE);
-                ref.type = (j < n - 1) ?
-                    &basic_type__double : ref.type;
+                ref.type = is_real(ref.type)
+                    ? ref.type
+                    : &basic_type__double;
                 store(param_sse_reg[next_sse_reg++], ref);
             }
 
