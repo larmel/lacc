@@ -2,17 +2,19 @@
 
 #include <assert.h>
 
-/* Map register enum values to register encoding. Depends on register
+/*
+ * Map register enum values to register encoding. Depends on register
  * enumeration values.
  */
 #define reg(arg) (((arg).r - 1) % 8)
 #define is_64_bit(arg) ((arg).w >> 3)
 #define is_32_bit(arg) (((arg).w >> 2) & 1)
 #define is_16_bit(arg) (((arg).w >> 1) & 1)
-#define is_64_bit_reg(arg) \
-    (((arg) >= R8 && (arg) <= R15) || ((arg) >= XMM8 && (arg) <= XMM15))
+#define is_64_bit_reg(arg) ((arg) >= R8 && (arg) <= R15)
+#define is_sse_reg(arg) ((arg).r >= XMM0 && (arg).r <= XMM8)
 
-/* Determine if register or memory argument requires REX prefix.
+/*
+ * Determine if register or memory argument requires REX prefix.
  */
 #define rrex(arg) \
     ((is_64_bit(arg) && (arg).r < XMM0) || is_64_bit_reg(arg.r) || \
@@ -20,11 +22,12 @@
 #define mrex(arg) \
     (!arg.sym && ((is_64_bit_reg(arg.base) || is_64_bit_reg(arg.offset))))
 
-/* Legacy Prefix
- * Valid options are 0x66, 0x67, 0xF2 and 0xF3
+/*
  */
+#define PREFIX_SSE 0x0F
 
-/* REX prefix contains bits [0, 1, 0, 0, W, R, X, B]
+/*
+ * REX prefix contains bits [0, 1, 0, 0, W, R, X, B]
  * W: 1 if operands are 64 bit. 
  * R: Extension of ModRM reg field (most significant bit)
  * X: Extension of SIB index field
@@ -36,12 +39,14 @@
 #define X(arg) 0
 #define B(arg) is_64_bit_reg((arg).r)
 
-/* Operand size bit, 0 for 8 bit operand and 1 for 32 bit operand, when
+/*
+ * Operand size bit, 0 for 8 bit operand and 1 for 32 bit operand, when
  * default is 32 bit. [Table B-6]
  */
 #define w(arg) (~(arg).w & 1)
 
-/* ModR/M    [   mod,    reg,     r/m    ]
+/*
+ * ModR/M    [   mod,    reg,     r/m    ]
  *              2 bit   3 bit    3 bit
  *
  * mod: combines with the r/m field to form 32 possible values: eight
@@ -52,7 +57,8 @@
  *      mod field to encode an addressing mode.
  */
 
-/* SIB       [   scale,   index,   base   ]
+/*
+ * SIB       [   scale,   index,   base   ]
  *                2bit     3bit    3bit
  *
  * scale: specifies the scale factor.
@@ -60,12 +66,11 @@
  * base: specifies the register number of the base register.
  */
 
-/* Determine if integer value can be encoded with certain width.
+/*
+ * Determine if integer value can be encoded with certain width.
  */
 #define in_byte_range(arg) ((arg) >= -128 && (arg) <= 127)
 #define in_32bit_range(arg) ((arg) >= -2147483648 && (arg) <= 2147483647)
-
-#define PREFIX_SSE 0x0F
 
 /*
  * Conditional test/jump codes. A nice reference is
@@ -834,8 +839,10 @@ static struct code sse_generic(
     c.val[c.len++] = opcode1;
     if (optype == OPT_MEM_REG) {
         if (rrex(b.reg) || mrex(a.mem.addr) || a.mem.w == 8) {
-            c.val[c.len++] =
-                REX | W(a.mem) | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
+            c.val[c.len++] = REX | W(a.mem) | R(b.reg) | mrex(a.mem.addr);
+            if (!is_sse_reg(b.reg)) {
+                c.val[c.len - 1] |= W(b.reg);
+            }
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = opcode2;
