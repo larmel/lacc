@@ -605,7 +605,6 @@ static void zero_initialize(
         assert(target.type->size);
         var = target;
         target.type = target.type->next;
-        assert(is_struct(target.type) || !target.type->next);
         for (i = 0; i < var.type->size / var.type->next->size; ++i) {
             target.offset = var.offset + i * var.type->next->size;
             zero_initialize(def, block, target);
