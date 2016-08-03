@@ -2,7 +2,7 @@
 
 directory="csmith"
 csmith_home="$1"
-csmith_options="--no-packed-struct"
+csmith_options="--no-packed-struct --float"
 if [[ -z "$csmith_home" ]]
 then
 	echo "Usage: $0 <csmith home path>"
