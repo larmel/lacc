@@ -123,6 +123,7 @@ enum opcode {
     INSTR_SETG,
     INSTR_SETAE,
     INSTR_SETGE,
+    INSTR_SETNP,        /* Set not parity bit. */
     INSTR_UCOMISS,      /* Compare single-precision and set EFLAGS. */
     INSTR_UCOMISD,      /* Compare double-precision and set EFLAGS. */
     INSTR_CMP,

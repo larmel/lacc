@@ -1293,6 +1293,12 @@ static void compile_op_cmp(
 
     compile_cmp(b, c);
     emit(opcode, OPT_REG, reg(AX, 1));
+    if (opcode == INSTR_SETZ && (is_real(b.type) || is_real(c.type))) {
+        emit(INSTR_SETNP, OPT_REG, reg(CX, 1));
+        emit(INSTR_AND, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
+        emit(INSTR_AND, OPT_IMM_REG, constant(1, 1), reg(AX, 1));
+    }
+
     emit(INSTR_MOVZX, OPT_REG_REG, reg(AX, 1), reg(AX, 4));
     store(AX, a);
 }

@@ -83,6 +83,7 @@ enum tttn {
     TEST_A = 0x7,
     TEST_S = 0x8,
     TEST_P = 0xA,
+    TEST_NP = 0xB,
     TEST_GE = 0xD,
     TEST_G = 0xF
 };
@@ -650,7 +651,7 @@ static struct code and(
     } else {
         assert(optype == OPT_IMM_REG);
         assert(a.imm.w == b.reg.w);
-        assert(a.imm.w == 4);
+        assert(a.imm.w == 4 || a.imm.w == 1);
 
         if (b.reg.r == AX) {
             c.val[c.len++] = 0x24 | w(a.imm);
@@ -1008,6 +1009,8 @@ struct code encode(struct instruction instr)
         return setcc(instr.optype, TEST_AE, instr.source);
     case INSTR_SETGE:
         return setcc(instr.optype, TEST_GE, instr.source);
+    case INSTR_SETNP:
+        return setcc(instr.optype, TEST_NP, instr.source);
     case INSTR_TEST:
         return test(instr.optype, instr.source, instr.dest);
     default:
