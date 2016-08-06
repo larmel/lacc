@@ -896,6 +896,21 @@ struct var eval_deref(
     return var;
 }
 
+static struct var mask_bitfield_immediate(struct var v, int w)
+{
+    assert(v.kind == IMMEDIATE);
+    assert(is_integer(v.type));
+    assert(w > 0);
+    assert(w < size_of(v.type) * 8);
+
+    v.imm.u = (v.imm.u & 0xFFFFFFFFFFFFFFFFul >> (64 - w));
+    if (is_signed(v.type) && (v.imm.u & (1 << (w - 1)))) {
+        v.imm.u |= (0xFFFFFFFFFFFFFFFFul << w);
+    }
+
+    return v;
+}
+
 struct var eval_assign(
     struct definition *def,
     struct block *block,
@@ -951,6 +966,9 @@ struct var eval_assign(
     } else if (is_arithmetic(target.type) && is_arithmetic(var.type)) {
         if (var.kind == IMMEDIATE) {
             var = eval_cast(def, block, var, target.type);
+            if (is_field(target)) {
+                var = mask_bitfield_immediate(var, target.width);
+            }
         }
     } else if (
         /* The left operand has an atomic, qualified, or unqualified

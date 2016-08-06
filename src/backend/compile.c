@@ -513,13 +513,6 @@ static void store(enum reg r, struct var v)
 
     if (is_real(v.type)) {
         op = (is_float(v.type)) ? INSTR_MOVSS : INSTR_MOVSD;
-    } else {
-        /* Bit-field. */
-        if (v.width) {
-            assert(w == size_of(&basic_type__int));
-            emit(INSTR_AND, OPT_IMM_REG,
-                constant((1 << v.width) - 1, w), reg(r, w));
-        }
     }
 
     if (v.kind == DIRECT) {
