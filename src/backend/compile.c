@@ -842,12 +842,13 @@ static void enter(struct definition *def)
         }
     }
 
-    /* Assign storage to locals. */
+    /* Assign storage to locals. Round up to nearest eightbyte, making
+       all variables aligned. */
     for (i = 0; i < array_len(&def->locals); ++i) {
         sym = array_get(&def->locals, i);
         assert(!sym->stack_offset);
         if (sym->linkage == LINK_NONE) {
-            stack_offset -= size_of(&sym->type);
+            stack_offset -= EIGHTBYTES(&sym->type) * 8;
             sym->stack_offset = stack_offset;
         }
     }
