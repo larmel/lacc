@@ -509,7 +509,7 @@ static void load_address(struct var v, enum reg r)
 static void store(enum reg r, struct var v)
 {
     const int w = size_of(v.type);
-    enum optype op = INSTR_MOV;
+    enum opcode op = INSTR_MOV;
 
     if (is_real(v.type)) {
         op = (is_float(v.type)) ? INSTR_MOVSS : INSTR_MOVSD;
@@ -1179,49 +1179,49 @@ static void compile__builtin_va_arg(struct var res, struct var args)
 static void compile_op_add(struct var a, struct var b, struct var c)
 {
     enum reg ax, cx;
-    enum optype optype;
+    enum opcode opcode;
     int width;
 
     width = size_of(a.type);
-    optype = (is_float(a.type)) ? INSTR_ADDSS
+    opcode = (is_float(a.type)) ? INSTR_ADDSS
         : (is_double(a.type)) ? INSTR_ADDSD
         : INSTR_ADD;
 
     ax = load_cast(b, a.type);
     cx = load_cast(c, a.type);
-    emit(optype, OPT_REG_REG, reg(cx, width), reg(ax, width));
+    emit(opcode, OPT_REG_REG, reg(cx, width), reg(ax, width));
     store(ax, a);
 }
 
 static void compile_op_sub(struct var a, struct var b, struct var c)
 {
     enum reg ax, cx;
-    enum optype optype;
+    enum opcode opcode;
     int width;
 
     width = size_of(a.type);
-    optype = (is_float(a.type)) ? INSTR_SUBSS
+    opcode = (is_float(a.type)) ? INSTR_SUBSS
         : (is_double(a.type)) ? INSTR_SUBSD
         : INSTR_SUB;
 
     ax = load_cast(b, a.type);
     cx = load_cast(c, a.type);
-    emit(optype, OPT_REG_REG, reg(cx, width), reg(ax, width));
+    emit(opcode, OPT_REG_REG, reg(cx, width), reg(ax, width));
     store(ax, a);
 }
 
 static void compile_op_mul(struct var a, struct var b, struct var c)
 {
     enum reg xmm0, xmm1;
-    enum optype optype;
+    enum opcode opcode;
     int width;
 
     width = size_of(a.type);
     if (is_real(a.type)) {
         xmm0 = load_cast(b, a.type);
         xmm1 = load_cast(c, a.type);
-        optype = is_float(a.type) ? INSTR_MULSS : INSTR_MULSD;
-        emit(optype, OPT_REG_REG, reg(xmm1, width), reg(xmm0, width));
+        opcode = is_float(a.type) ? INSTR_MULSS : INSTR_MULSD;
+        emit(opcode, OPT_REG_REG, reg(xmm1, width), reg(xmm0, width));
         store(xmm0, a);
     } else {
         load(c, AX);
@@ -1239,15 +1239,15 @@ static void compile_op_mul(struct var a, struct var b, struct var c)
 static void compile_op_divs(struct var a, struct var b, struct var c)
 {
     enum reg xmm0, xmm1;
-    enum optype optype;
+    enum opcode opcode;
     int width;
     assert(is_real(a.type));
 
     width = size_of(a.type);
     xmm0 = load_cast(b, a.type);
     xmm1 = load_cast(c, a.type);
-    optype = is_float(a.type) ? INSTR_DIVSS : INSTR_DIVSD;
-    emit(optype, OPT_REG_REG, reg(xmm1, width), reg(xmm0, width));
+    opcode = is_float(a.type) ? INSTR_DIVSS : INSTR_DIVSD;
+    emit(opcode, OPT_REG_REG, reg(xmm1, width), reg(xmm0, width));
     store(xmm0, a);
 }
 
