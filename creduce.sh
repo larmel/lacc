@@ -16,20 +16,34 @@
 
 filename="reduce.c"
 
+# Replace these values, with output from correct compilation and faulty
+# lacc compilation.
+expect="checksum = F2A1C4A9"
+actual="checksum = 3E0BC437"
+
 # Give up after a couple of seconds. Reduced code can contain infinite
 # loops.
 ulimit -t 2
 
 # See that the file is still compilable. Make sure it has no screaming
 # warnings to avoid some undefined behavior.
-cc -std=c99 ${filename} -o reduce > /dev/null 2> error.txt && ! grep "warning" error.txt
+gcc -std=c99 ${filename} -o reduce > /dev/null 2> error.txt && ! grep "warning" error.txt
 if [ $? -ne 0 ]
 then
 	exit 1
 fi
 
 # Get expected output from cc
-./reduce > reduce.txt && grep "checksum = 6522DF69" reduce.txt > /dev/null 2>&1
+./reduce > reduce.txt && grep "${expect}" reduce.txt > /dev/null 2>&1
+if [ $? -ne 0 ]
+then
+	exit 1
+fi
+
+# Get expected output from clang also, to avoid some cases of undefined
+# behavior that may be treated the same for gcc and lacc.
+clang -std=c99 -w ${filename} -o reduce > /dev/null
+./reduce > reduce.txt && grep "${expect}" reduce.txt > /dev/null 2>&1
 if [ $? -ne 0 ]
 then
 	exit 1
@@ -43,4 +57,4 @@ then
 fi
 
 # Get output from lacc
-./reduce > reduce.txt && grep "checksum = A988DFF7" reduce.txt > /dev/null 2>&1
+./reduce > reduce.txt && grep "${actual}" reduce.txt > /dev/null 2>&1
