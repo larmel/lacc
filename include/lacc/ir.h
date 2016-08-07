@@ -88,6 +88,8 @@ struct var {
     int lvalue;
 };
 
+#define is_field(v) ((v).width != 0)
+
 /* Three-address code, specifying a target (a), left and right operand
  * (b and c, respectively), and the operation type.
  */

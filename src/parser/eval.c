@@ -49,11 +49,6 @@ static int is_string(struct var val)
         && val.symbol->symtype == SYM_STRING_VALUE;
 }
 
-static int is_field(struct var val)
-{
-    return val.width;
-}
-
 static struct var var_void(void)
 {
     struct var var = {0};

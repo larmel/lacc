@@ -509,10 +509,16 @@ static void load_address(struct var v, enum reg r)
 static void store(enum reg r, struct var v)
 {
     const int w = size_of(v.type);
+    unsigned int mask;
     enum opcode op = INSTR_MOV;
 
     if (is_real(v.type)) {
         op = (is_float(v.type)) ? INSTR_MOVSS : INSTR_MOVSD;
+    } else if (is_field(v)) {
+        assert(w == size_of(&basic_type__int));
+        assert(v.width > 0 && v.width < 32);
+        mask = (0xFFFFFFFFu >> (32 - v.width));
+        emit(INSTR_AND, OPT_IMM_REG, constant(mask, w), reg(r, w));
     }
 
     if (v.kind == DIRECT) {
