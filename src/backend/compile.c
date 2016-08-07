@@ -691,9 +691,8 @@ static void call(
         int i;
     } argpc[MAX_REGISTER_ARGS];
 
-    /* Handle both function call by direct reference and pointer. The
-     * former is a special case. */
-    type = is_pointer(func.type) ? func.type->next : func.type;
+    assert(is_pointer(func.type) && is_function(func.type->next));
+    type = func.type->next;
     respc = classify(type->next);
     if (respc.eightbyte[0] == PC_MEMORY) {
         next_integer_reg = 1;
@@ -755,18 +754,14 @@ static void call(
         emit(INSTR_MOV, OPT_IMM_REG, constant(next_sse_reg, 4), reg(AX, 4));
     }
 
-    /* Call. */
-    if (is_pointer(func.type)) {
+    /* Call, with special case on address directly to symbol. */
+    if (func.kind == ADDRESS) {
+        assert(!func.offset);
+        emit(INSTR_CALL, OPT_IMM, addr(func.symbol));
+    } else {
+        assert(func.kind != IMMEDIATE);
         load(func, R11);
         emit(INSTR_CALL, OPT_REG, reg(R11, 8));
-    } else {
-        if (func.kind == DIRECT) {
-            emit(INSTR_CALL, OPT_IMM, addr(func.symbol));
-        } else {
-            assert(func.kind == DEREF);
-            load_address(func, R11);
-            emit(INSTR_CALL, OPT_REG, reg(R11, 8));
-        }
     }
 
     /* Reset stack pointer from overflow arguments. */
