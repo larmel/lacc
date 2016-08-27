@@ -1,4 +1,5 @@
 #include "backend/compile.h"
+#include "optimizer/optimize.h"
 #include "parser/parse.h"
 #include "parser/symtab.h"
 #include "preprocessor/preprocess.h"
@@ -9,11 +10,13 @@
 #include <lacc/ir.h>
 
 #include <assert.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <unistd.h>
 
 const char *program;
 static FILE *output;
+static int optimization_level;
 
 static void help(const char *arg)
 {
@@ -65,6 +68,12 @@ static void set_c_std(const char *std)
     }
 }
 
+static void set_optimization_level(const char *level)
+{
+    assert(isdigit(level[2]));
+    optimization_level = level[2] - '0';
+}
+
 static char *parse_program_arguments(int argc, char *argv[])
 {
     int c;
@@ -78,6 +87,10 @@ static char *parse_program_arguments(int argc, char *argv[])
         {"--help", &help},
         {"-o:", &open_output_handle},
         {"-I:", &add_include_search_path},
+        {"-O0", &set_optimization_level},
+        {"-O1", &set_optimization_level},
+        {"-O2", &set_optimization_level},
+        {"-O3", &set_optimization_level},
         {"-std=", &set_c_std}
     };
 
@@ -122,6 +135,7 @@ int main(int argc, char *argv[])
         push_scope(&ns_ident);
         push_scope(&ns_tag);
         register_builtin_types(&ns_ident);
+        push_optimization(optimization_level);
 
         while ((def = parse()) != NULL) {
             if (context.errors) {
@@ -129,6 +143,8 @@ int main(int argc, char *argv[])
                     (context.errors > 1) ? "errors" : "error");
                 break;
             }
+
+            optimize(def);
             compile(def);
         }
 
@@ -142,6 +158,7 @@ int main(int argc, char *argv[])
         }
 
         flush();
+        pop_optimization();
         pop_scope(&ns_tag);
         pop_scope(&ns_ident);
     }

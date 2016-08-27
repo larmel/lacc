@@ -69,6 +69,19 @@
 #define array_pop_back(arr) \
     (arr)->data[--(arr)->length]
 
+/*
+ * Remove element at position, reducing length of array by 1.
+ */
+#define array_erase(arr, i) \
+    do {                                                                       \
+        assert(array_len(arr));                                                \
+        memmove(                                                               \
+            (arr)->data + i,                                                   \
+            (arr)->data + i + 1,                                               \
+            (array_len(arr) - i - 1) * sizeof(*(arr)->data));                  \
+        (arr)->length--;                                                       \
+    } while (0)
+
 /* Get element from array. Expands to expression, of type being
  * whatever is stored in the array.
  */
@@ -90,6 +103,27 @@
  */
 #define array_empty(arr) \
     (arr)->length = 0
+
+/* Resize array to hold at least given number of elements. */
+#define array_realloc(arr, len) \
+    do {                                                                       \
+        if ((len) > array_len(arr)) {                                          \
+            (arr)->data = realloc((arr)->data, len * sizeof(*(arr)->data));    \
+            (arr)->capacity = len;                                             \
+            memset(                                                            \
+                (arr)->data + (arr)->length,                                   \
+                0,                                                             \
+                sizeof(*(arr)->data) * ((arr)->capacity - array_len(arr)));    \
+        }                                                                      \
+    } while (0)
+
+/* Set all elements of array to zero using memset. */
+#define array_zero(arr) \
+    do {                                                                       \
+        if (array_len(arr)) {                                                  \
+            memset((arr)->data, 0, array_len(arr) * sizeof(*(arr)->data));     \
+        }                                                                      \
+    } while (0)
 
 /* Free allocated memory, making the array empty. Expands to a block
  * statement.

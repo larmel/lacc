@@ -8,12 +8,11 @@ Features
  * Almost complete support (barring bugs) for C89, and some C99 features. This
    includes preprocessing, but no linker. To build executable binaries, an
    external linker must be used.
- * Target x86_64 assembly GNU syntax (-S flag), or ELF object files (-o flag).
-   Also support pure preprocessing (-E flag).
+ * Target x86_64 assembly GNU syntax (-S), binary ELF object files (-c), or pure
+   preprocessing (-E).
  * Rich intermediate representation, building a control flow graph (CFG) with
-   basic blocks of three-address code for each function definition. The goal is
-   in the future to build data flow analysis on this. The IR can be visualized
-   with dot, which is a separate output target.
+   basic blocks of three-address code for each function definition. This is the
+   target for basic dataflow analysis and optimization.
 
 Install
 -------
@@ -50,6 +49,7 @@ the definition of each option can be found in [src/main.c](src/main.c#L72).
     -std=   Specify C standard, valid options are -std=c89 and -std=c99.
     -I      Add directory to search for included files.
     -w      Disable warnings.
+    -O[1-3] Enable optimization.
     -v      Output verbose diagnostic information. This will dump a lot of
             internal state during compilation, and can be useful for debugging.
     --help  Print help text.

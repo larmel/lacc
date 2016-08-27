@@ -90,7 +90,13 @@ struct var {
 
 #define is_field(v) ((v).width != 0)
 
-/* Three-address code, specifying a target (a), left and right operand
+/*
+ * Object used to hold state during optimization passes.
+ */
+struct dataflow;
+
+/*
+ * Three-address code, specifying a target (a), left and right operand
  * (b and c, respectively), and the operation type.
  */
 struct op {
@@ -133,9 +139,16 @@ struct block {
         WHITE,
         BLACK
     } color;
+
+    /* State used for dataflow analysis and optimization passes. */
+    struct dataflow *flow;
 };
 
-/* Represents a function or object definition. Parsing emits one
+/* From optimizer, used for code generation and transformation. */
+int is_live(const struct symbol *sym, const struct block *block, int n);
+
+/*
+ * Represents a function or object definition. Parsing emits one
  * definition at a time, which is passed on to backend. A simple
  * definition can be a static or external symbol assigned to a value:
  * 

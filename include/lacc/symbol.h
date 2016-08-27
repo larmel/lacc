@@ -66,6 +66,9 @@ struct symbol {
 
     /* Number of times symbol has been referenced in the program. */
     int referenced;
+
+    /* Counter used for enumeration during optimization. */
+    int index;
 };
 
 /* Holds the declaration for memcpy, which is needed for codegen.

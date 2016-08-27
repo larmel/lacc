@@ -53,7 +53,7 @@ function check {
 	diffres="$?"
 
 	if [[ "$result" -eq "$answer" && "$diffres" -eq "0" ]]; then
-		echo "$(tput setaf 2)Success!$(tput sgr 0)"
+		echo "$(tput setaf 2)Ok!$(tput sgr 0)"
 		return 0
 	else
 		echo "$(tput setaf 1)Wrong result!$(tput sgr 0)"
@@ -71,8 +71,9 @@ function check {
 prp=$(check -E); result="$?"; retval=$((retval + result))
 asm=$(check -S); result="$?"; retval=$((retval + result))
 elf=$(check -c); result="$?"; retval=$((retval + result))
+opt=$(check "-c -O1"); result="$?"; retval=$((retval + result))
 
-echo "[-E: ${prp}] [-S: ${asm}] [-c: ${elf}] :: ${file}"
+echo "[-E: ${prp}] [-S: ${asm}] [-c: ${elf}] [-c -O1: ${opt}] :: ${file}"
 rm -f ${file}.out ${file}.ans.txt ${file}.txt ${file}.s ${file}.prep.c ${file}.o
 
 exit $retval
