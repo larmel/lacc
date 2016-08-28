@@ -53,11 +53,11 @@ static void cleanup(void)
 
 static void cfg_block_release(struct block *block)
 {
-    struct var value = {0};
+    struct expression expr = {0};
 
     array_empty(&block->code);
     block->label = NULL;
-    block->expr = value;
+    block->expr = expr;
     block->has_return_value = 0;
     block->jump[0] = block->jump[1] = NULL;
     block->color = WHITE;

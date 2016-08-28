@@ -7,48 +7,6 @@
 
 #include <stddef.h>
 
-/* Three address code operation types. */
-enum optype {
-    IR_PARAM = 0x10,    /* param a    */
-
-    IR_ASSIGN = 0x20,   /* a = b      */
-    IR_NOT = 0x21,      /* a = ~b     */
-    IR_CALL = 0x22,     /* a = b()    */
-    IR_CAST = 0x23,     /* a = (T) b  */
-
-    IR_OP_ADD = 0x30,   /* a = b + c  */
-    IR_OP_SUB = 0x31,   /* a = b - c  */
-    IR_OP_MUL = 0x32,   /* a = b * c  */
-    IR_OP_DIV = 0x33,   /* a = b / c  */
-    IR_OP_MOD = 0x34,   /* a = b % c  */
-    IR_OP_AND = 0x35,   /* a = b & c  */
-    IR_OP_OR = 0x36,    /* a = b | c  */
-    IR_OP_XOR = 0x37,   /* a = b ^ c  */
-    IR_OP_SHL = 0x38,   /* a = b << c */
-    IR_OP_SHR = 0x39,   /* a = b >> c */
-
-    IR_OP_EQ = 0x3A,    /* a = b == c */
-    IR_OP_GE = 0x3B,    /* a = b >= c */
-    IR_OP_GT = 0x3C,    /* a = b > c  */
-
-    /*
-     * Call va_start(a), setting reg_save_area and overflow_arg_area.
-     * This, together with va_arg assumes some details about memory
-     * layout that can only be known by backend, thus the need for these
-     * operations.
-     */
-    IR_VA_START = 0x11,
-
-    /*
-     * Call a = va_arg(b, T), with type T taken from a. Intercepted as
-     * call to __builtin_va_arg in parser.
-     */
-    IR_VA_ARG = 0x26
-};
-
-#define OPERAND_COUNT(optype) ((optype) >> 4)
-#define IS_COMPARISON(optype) (((optype) & 0x0F) > 9)
-
 /*
  * A reference to some storage location based on a symbol and optional
  * offset, or immediate constant value. Used in intermediate
@@ -104,19 +62,64 @@ struct var {
 
 #define is_field(v) ((v).width != 0)
 
-/* Object used to hold state during optimization passes. */
-struct dataflow;
+/*
+ * Represent an intermediate expression with up to two operands.
+ *
+ * Handle va_arg(l, T) as a special type of function call, leaving it
+ * up to the backend to generate code to read argument of type T.
+ *
+ * A transparent reference directly to a var is represented as IR_CAST,
+ * where the type is the same as the var.
+ */
+struct expression {
+    enum optype {
+        IR_OP_CAST,   /* (T) l  */
+        IR_OP_CALL,   /* l()    */
+        IR_OP_VA_ARG, /* va_arg(l, T) */
+        IR_OP_NOT,    /* ~l     */
+        IR_OP_ADD,    /* l + r  */
+        IR_OP_SUB,    /* l - r  */
+        IR_OP_MUL,    /* l * r  */
+        IR_OP_DIV,    /* l / r  */
+        IR_OP_MOD,    /* l % r  */
+        IR_OP_AND,    /* l & r  */
+        IR_OP_OR,     /* l | r  */
+        IR_OP_XOR,    /* l ^ r  */
+        IR_OP_SHL,    /* l << r */
+        IR_OP_SHR,    /* l >> r */
+        IR_OP_EQ,     /* l == r */
+        IR_OP_GE,     /* l >= r */
+        IR_OP_GT      /* l > r  */
+    } op;
+    const struct typetree *type;
+    struct var l, r;
+};
+
+#define has_side_effects(e) ((e).op == IR_OP_CALL || (e).op == IR_OP_VA_ARG)
+#define is_identity(e) ((e).op == IR_OP_CAST && type_equal((e).type,(e).l.type))
+#define is_immediate(e) (is_identity(e) && (e).l.kind == IMMEDIATE)
+#define is_comparison(e) ((e).op >= IR_OP_EQ)
 
 /*
- * Three-address code, specifying a target (a), left and right operand
- * (b and c, respectively), and the operation type.
+ * Three-address code, specifying a target (t), left and right operand
+ * (l and r, in expr), and the operation type.
+ *
+ * Handle va_start as a separate statement, as it requires knowledge
+ * about memory layout only available to backend.
  */
-struct op {
-    enum optype type;
-    struct var a;
-    struct var b;
-    struct var c;
+struct statement {
+    enum sttype {
+        IR_EXPR,     /* (expr)         */
+        IR_PARAM,    /* param (expr)   */
+        IR_VA_START, /* va_start(expr) */
+        IR_ASSIGN    /* t = expr       */
+    } st;
+    struct var t;
+    struct expression expr;
 };
+
+/* Object used to hold state during optimization passes. */
+struct dataflow;
 
 /*
  * Basic block in function control flow graph, containing a symbolic
@@ -127,7 +130,7 @@ struct block {
     const struct symbol *label;
 
     /* Contiguous block of three-address code operations. */
-    array_of(struct op) code;
+    array_of(struct statement) code;
 
     /*
      * Value to evaluate in branch conditions, or return value. Also
@@ -135,7 +138,7 @@ struct block {
      * convenience. The decision on whether this block is a branch or
      * not is done purely based on the jump target list.
      */
-    struct var expr;
+    struct expression expr;
 
     /*
      * Branch targets.
@@ -217,6 +220,9 @@ struct definition {
      */
     array_of(struct block *) nodes;
 };
+
+/* Convert variable to no-op IR_OP_CAST expression. */
+struct expression as_expr(struct var var);
 
 /*
  * A direct reference to given symbol, with two exceptions:

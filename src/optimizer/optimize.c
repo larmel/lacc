@@ -71,42 +71,54 @@ static void initialize_dataflow(int count)
     }
 }
 
+static int count_symbol(struct symbol *sym)
+{
+    if (sym && !sym->index && is_object(&sym->type)) {
+        array_push_back(&symbols, sym);
+        sym->index = array_len(&symbols);
+        return 1;
+    }
+
+    return 0;
+}
+
 /*
  * Assign numbers from [1 .. N] to all symbols referenced by operations
  * in the basic block.
  */
 static int enumerate_used_symbols(struct block *block)
 {
-    int i, j, k, n = 0;
-    struct symbol *sym[3];
-    struct op op;
+    int i, n = 0;
+    struct statement s;
 
     for (i = 0; i < array_len(&block->code); ++i) {
-        op = array_get(&block->code, i);
-        j = OPERAND_COUNT(op.type);
-        sym[0] = (struct symbol *) op.a.symbol;
-        if (j > 1) {
-            sym[1] = (struct symbol *) op.b.symbol;
-            if (j > 2) {
-                sym[2] = (struct symbol *) op.c.symbol;
-            }
+        s = array_get(&block->code, i);
+        switch (s.expr.op) {
+        default:
+            n += count_symbol((struct symbol *) s.expr.r.symbol);
+        case IR_OP_CAST:
+        case IR_OP_NOT:
+        case IR_OP_CALL:
+        case IR_OP_VA_ARG:
+            n += count_symbol((struct symbol *) s.expr.l.symbol);
+            break;
         }
 
-        for (k = 0; k < j; ++k) {
-            if (sym[k] && !sym[k]->index && is_object(&sym[k]->type)) {
-                array_push_back(&symbols, sym[k]);
-                sym[k]->index = array_len(&symbols);
-                n++;
-            }
+        if (s.st == IR_ASSIGN) {
+            n += count_symbol((struct symbol *) s.t.symbol);
         }
     }
 
     if (block->has_return_value || block->jump[1]) {
-        sym[0] = (struct symbol *) block->expr.symbol;
-        if (sym[0] && !sym[0]->index) {
-            array_push_back(&symbols, sym[0]);
-            sym[0]->index = array_len(&symbols);
-            n++;
+        switch (block->expr.op) {
+        default:
+            n += count_symbol((struct symbol *) block->expr.r.symbol);
+        case IR_OP_CAST:
+        case IR_OP_NOT:
+        case IR_OP_CALL:
+        case IR_OP_VA_ARG:
+            n += count_symbol((struct symbol *) block->expr.l.symbol);
+            break;
         }
     }
 

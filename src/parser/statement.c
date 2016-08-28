@@ -82,6 +82,7 @@ static struct block *if_statement(
             parent->expr.type);
         exit(1);
     }
+
     consume(')');
     if (is_immediate_true(parent->expr)) {
         parent->jump[0] = right;
@@ -142,6 +143,7 @@ static struct block *do_statement(
             tail->expr.type);
         exit(1);
     }
+
     consume(')');
     if (is_immediate_true(tail->expr)) {
         tail->jump[0] = top;
@@ -183,6 +185,7 @@ static struct block *while_statement(
             cond->expr.type);
         exit(1);
     }
+
     consume(')');
     if (is_immediate_true(cond->expr)) {
         cond->jump[0] = body;
@@ -233,6 +236,7 @@ static struct block *for_statement(
                 top->expr.type);
             exit(1);
         }
+
         if (is_immediate_true(top->expr)) {
             top->jump[0] = body;
         } else if (is_immediate_false(top->expr)) {
@@ -241,6 +245,7 @@ static struct block *for_statement(
             top->jump[0] = next;
             top->jump[1] = body;
         }
+
         top = (struct block *) parent->jump[0];
     } else {
         /* Infinite loop. */
@@ -266,7 +271,12 @@ static struct block *switch_statement(
     struct definition *def,
     struct block *parent)
 {
+    int i;
+    struct var value;
+    struct switch_case sc;
     struct block
+        *cond,
+        *prev_cond,
         *body = cfg_block_init(def),
         *last,
         *next = cfg_block_init(def);
@@ -293,15 +303,13 @@ static struct block *switch_statement(
     if (!array_len(&switch_context->cases) && !switch_context->default_label) {
         parent->jump[0] = next;
     } else {
-        int i;
-        struct block *cond = parent;
-
+        cond = parent;
         for (i = 0; i < array_len(&switch_context->cases); ++i) {
-            struct block *prev_cond = cond;
-            struct switch_case sc = array_get(&switch_context->cases, i);
-
+            prev_cond = cond;
+            sc = array_get(&switch_context->cases, i);
             cond = cfg_block_init(def);
-            cond->expr = eval_expr(def, cond, IR_OP_EQ, sc.value, parent->expr);
+            value = eval(def, parent, parent->expr);
+            cond->expr = eval_expr(def, cond, IR_OP_EQ, sc.value, value);
             cond->jump[1] = sc.label;
             prev_cond->jump[0] = cond;
         }
@@ -442,6 +450,9 @@ struct block *statement(struct definition *def, struct block *parent)
     case INCREMENT:
     case DECREMENT:
         parent = expression(def, parent);
+        if (has_side_effects(parent->expr)) {
+            eval(def, parent, parent->expr);
+        }
         consume(';');
         break;
     default:

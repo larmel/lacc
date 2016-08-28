@@ -6,9 +6,7 @@
 #define IN(block, i) (block)->flow[i].live.bits
 #define OUT(block, i) IN(block, i + 1)
 
-/*
- * Set bit in position of variable if referencing a symbol.
- */
+/* Set bit in position of variable if referencing a symbol. */
 static unsigned long set_var_bit(struct var var)
 {
     switch (var.kind) {
@@ -26,43 +24,36 @@ static unsigned long set_var_bit(struct var var)
     }
 }
 
-/*
- * Set bits for symbols referenced through operation.
- */
-static unsigned long use(const struct op *op)
+/* Set bits for symbols referenced through operation. */
+static unsigned long use(struct expression expr)
 {
-    unsigned long r = 0;
+    unsigned long r = 0ul;
 
-    switch (OPERAND_COUNT(op->type)) {
-    case 3:
-        r |= set_var_bit(op->c);
-    case 2:
-        r |= set_var_bit(op->b);
-        break;
+    switch (expr.op) {
     default:
-        if (op->type == IR_PARAM || op->type == IR_VA_START) {
-            r |= set_var_bit(op->a);
-        }
+        r |= set_var_bit(expr.r);
+    case IR_OP_CAST:
+    case IR_OP_NOT:
+    case IR_OP_CALL:
+    case IR_OP_VA_ARG:
+        r |= set_var_bit(expr.l);
+        break;
     }
 
     return r;
 }
 
-/*
- * Set bit for symbol written through operation.
- */
-static unsigned long def(const struct op *op)
+/* Set bit for symbol written through operation. */
+static unsigned long def(struct statement s)
 {
-    return (op->type != IR_PARAM && op->type != IR_VA_START)
-        ? set_var_bit(op->a)
-        : 0;
+    return (s.st == IR_ASSIGN) ? set_var_bit(s.t) : 0ul;
 }
 
 int live_variable_analysis(struct block *block)
 {
     int i, n = operations(block);
     unsigned long top;
-    struct op code;
+    struct statement code;
 
     top = IN(block, 0);
 
@@ -76,13 +67,13 @@ int live_variable_analysis(struct block *block)
 
     /* if <expr> goto <label>, and return <expr>, get extra edge. */
     if (block->jump[1] || block->has_return_value) {
-        IN(block, n - 1) |= set_var_bit(block->expr);
+        IN(block, n - 1) |= use(block->expr);
     }
 
     /* Go through normal ir operations. */
     for (i = array_len(&block->code) - 1; i >= 0; --i) {
         code = array_get(&block->code, i);
-        IN(block, i) = (OUT(block, i) & ~def(&code)) | use(&code);
+        IN(block, i) = (OUT(block, i) & ~def(code)) | use(code.expr);
     }
 
     return top != IN(block, 0);

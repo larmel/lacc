@@ -627,19 +627,19 @@ static void zero_initialize(
     case T_POINTER:
         var = var__zero_unsigned[7];
         var.type = target.type;
-        eval_assign(def, block, target, var);
+        eval_assign(def, block, target, as_expr(var));
         break;
     case T_UNSIGNED:
         var = var__zero_unsigned[size_of(target.type) - 1];
-        eval_assign(def, block, target, var);
+        eval_assign(def, block, target, as_expr(var));
         break;
     case T_SIGNED:
         var = var__zero_signed[size_of(target.type) - 1];
-        eval_assign(def, block, target, var);
+        eval_assign(def, block, target, as_expr(var));
         break;
     case T_REAL:
         var = (is_float(target.type) ? var__zero_float : var__zero_double);
-        eval_assign(def, block, target, var);
+        eval_assign(def, block, target, as_expr(var));
         break;
     default:
         error("Cannot zero-initialize object of type '%t'.", target.type);
@@ -741,11 +741,11 @@ static struct block *object_initializer(
     return block;
 }
 
-static int is_string(struct var val)
+static int is_string(struct expression expr)
 {
-    return
-        val.kind == IMMEDIATE && val.symbol &&
-        val.symbol->symtype == SYM_STRING_VALUE;
+    return is_identity(expr)
+        && expr.l.kind == IMMEDIATE && expr.l.symbol
+        && expr.l.symbol->symtype == SYM_STRING_VALUE;
 }
 
 /*
@@ -768,6 +768,7 @@ static struct block *string_initializer(
     struct var target)
 {
     const struct typetree *type;
+
     assert(target.kind == DIRECT);
     assert(is_array(target.type));
     assert(is_string(block->expr));
@@ -818,6 +819,7 @@ static struct block *initializer(
     struct var target)
 {
     int ops;
+    struct var value;
     assert(target.kind == DIRECT);
 
     /* Do not care about cv-qualifiers here. */
@@ -828,12 +830,13 @@ static struct block *initializer(
     } else {
         ops = array_len(&block->code);
         block = assignment_expression(def, block);
+        value = block->expr.l;
         if (target.symbol->linkage != LINK_NONE
             && (array_len(&block->code) - ops > 0
-                || (block->expr.kind != IMMEDIATE
-                    && block->expr.kind != ADDRESS)
-                || (block->expr.kind == ADDRESS
-                    && block->expr.symbol->linkage == LINK_NONE)))
+                || !is_identity(block->expr)
+                || (value.kind != IMMEDIATE && value.kind != ADDRESS)
+                || (value.kind == ADDRESS
+                    && value.symbol->linkage == LINK_NONE)))
         {
             error("Initializer must be computable at load time.");
             exit(1);
@@ -847,7 +850,9 @@ static struct block *initializer(
              * cast for struct or union types.
              */
             if (!type_equal(target.type, block->expr.type)) {
-                block->expr = eval_cast(def, block, block->expr, target.type);
+                value = eval(def, block, block->expr);
+                block->expr =
+                    eval_expr(def, block, IR_OP_CAST, value, target.type);
             }
 
             eval_assign(def, block, target, block->expr);

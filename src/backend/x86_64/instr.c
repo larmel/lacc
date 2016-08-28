@@ -10,6 +10,7 @@
 #define is_64_bit(arg) ((arg).w >> 3)
 #define is_32_bit(arg) (((arg).w >> 2) & 1)
 #define is_16_bit(arg) (((arg).w >> 1) & 1)
+#define is_8_bit(arg) ((arg).w & 1)
 #define is_64_bit_reg(arg) ((arg) >= R8 && (arg) <= R15)
 #define is_sse_reg(arg) ((arg).r >= XMM0 && (arg).r <= XMM8)
 
@@ -21,6 +22,7 @@
     (!arg.sym && ((is_64_bit_reg(arg.base) || is_64_bit_reg(arg.offset))))
 
 #define PREFIX_SSE 0x0F
+#define PREFIX_OPERAND_SIZE 0x66
 
 /*
  * REX prefix contains bits [0, 1, 0, 0, W, R, X, B]
@@ -405,19 +407,27 @@ static struct code cmp(
 
     switch (optype) {
     case OPT_IMM_REG:
-        if (!is_64_bit(b.reg) && !is_64_bit_reg(b.reg.r)) {
-            c.val[c.len++] = 0x80 | w(b.reg);
-            c.val[c.len++] = 0xF8 | reg(b.reg);
-            if (is_byte_imm(a.imm)) {
-                c.val[0] |= 2; /* Sign extend byte to 32 bit */
-                c.val[c.len++] = a.imm.d.byte;
-            } else {
-                assert(a.imm.w == 4);
-                memcpy(&c.val[c.len], &a.imm.d.dword, 4);
-                c.len += 4;
-            }
+        assert(!is_64_bit_reg(b.reg.r));
+        if (rrex(b.reg)) {
+            c.val[c.len++] = REX | W(a.imm);
+        } else if (is_16_bit(b.reg)) {
+            c.val[c.len++] = PREFIX_OPERAND_SIZE;
+        } else if (is_8_bit(b.reg)) {
+            assert(b.reg.r == AX);
+            assert(is_byte_imm(a.imm));
+            c.val[c.len++] = 0x3C;
+            c.val[c.len++] = a.imm.d.byte;
+            break;
+        }
+        c.val[c.len++] = 0x80 | w(b.reg) | (is_byte_imm(a.imm) << 1);
+        c.val[c.len++] = 0xF8 | reg(b.reg);
+        if (is_byte_imm(a.imm)) {
+            /* Sign extend bit is set. */
+            c.val[c.len++] = a.imm.d.byte;
         } else {
-            assert(0);
+            assert(a.imm.w == 4);
+            memcpy(&c.val[c.len], &a.imm.d.dword, 4);
+            c.len += 4;
         }
         break;
     case OPT_REG_REG:

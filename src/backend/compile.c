@@ -321,7 +321,7 @@ static void load_int(struct var v, enum reg r, int w)
  * Load variable to register, automatically sign/width extended to
  * either 32 or 64 bit.
  */
-static void load(struct var v, enum reg r)
+static enum reg load(struct var v, enum reg r)
 {
     const int w = size_of(v.type);
     if (is_real(v.type)) {
@@ -329,6 +329,8 @@ static void load(struct var v, enum reg r)
     } else {
         load_int(v, r, (w < 4) ? 4 : w);
     }
+
+    return r;
 }
 
 static enum reg load_float_as_integer(
@@ -466,6 +468,7 @@ static enum reg load_integer_as_float(
  */
 static enum reg load_cast(struct var val, const struct typetree *type)
 {
+    unsigned int mask;
     enum reg r;
 
     if (size_of(type) < 4) {
@@ -484,10 +487,17 @@ static enum reg load_cast(struct var val, const struct typetree *type)
         }
     } else {
         if (is_real(type)) {
+            assert(!is_field(val));
             r = load_integer_as_float(val, type);
         } else {
             r = get_int_reg();
             load_int(val, r, size_of(type));
+            if (is_field(val)) {
+                assert(size_of(val.type) == size_of(&basic_type__int));
+                assert(val.width > 0 && val.width < 32);
+                mask = (0xFFFFFFFFu >> (32 - val.width));
+                emit(INSTR_AND, OPT_IMM_REG, constant(mask, 4), reg(r, 4));
+            }
         }
     }
 
@@ -639,68 +649,66 @@ static void load_arg(
     }
 }
 
-/* Store return value found in registers to memory. */
-static void store_res(
-    struct var res,
-    struct param_class pc,
-    int *next_integer_reg,
-    int *next_sse_reg)
+/*
+ * Store return value from function call. Value is either in register(s)
+ * or memory, depending on parameter classification.
+ *
+ * Objects that have classification MEMORY should never hit this path,
+ * as they are stored ay callee.
+ */
+static void store_res(struct var res, struct param_class pc)
 {
-    int i, n = EIGHTBYTES(res.type), size = size_of(res.type);
+    int i,
+        n = EIGHTBYTES(res.type),
+        size = size_of(res.type),
+        integer_reg = 0,
+        sse_reg = 0;
+
     assert(pc.eightbyte[0] != PC_MEMORY);
     assert(n <= 4);
 
     for (i = 0; i < n; ++i) {
         res.offset += 8 * i;
         if (pc.eightbyte[i] == PC_INTEGER) {
-            assert(*next_integer_reg < MAX_INTEGER_RET);
+            assert(integer_reg < MAX_INTEGER_RET);
             res.type = (i < n - 1) ?
                 &basic_type__unsigned_long :
                 BASIC_TYPE_UNSIGNED(size % 8);
-            store(ret_int_reg[(*next_integer_reg)++], res);
+            store(ret_int_reg[integer_reg++], res);
         } else {
             assert(pc.eightbyte[i] == PC_SSE);
-            assert(*next_sse_reg < MAX_SSE_RET);
+            assert(sse_reg < MAX_SSE_RET);
             res.type = (size_of(res.type) == 4)
                 ? &basic_type__float
                 : &basic_type__double;
-            store(ret_sse_reg[(*next_sse_reg)++], res);
+            store(ret_sse_reg[sse_reg++], res);
         }
     }
 }
 
 /*
- * Compile a function call. Assign parameter class to arguments and
- * return value, using registers %rdi, %rsi, %rdx, %rcx, %r8 and %r9 for
- * class INTEGER, and %xmm0 through %xmm7 for SSE. Arguments of class
- * MEMORY, or those which do not fit in the available registers, are
- * passed on stack.
+ * Push arguments from previous IR_PARAM statements, which are buffered
+ * in static array. Assign parameter class to arguments; using registers
+ * %rdi, %rsi, %rdx, %rcx, %r8 and %r9 for class INTEGER, and %xmm0
+ * through %xmm7 for SSE. Arguments of class MEMORY, or those which do
+ * not fit in the available registers, are passed on stack.
  *
- * After call, the return value is loaded from return registers, unless
- * already written to memory by callee.
+ * Return number of bytes of stack space used. This must be added back
+ * to %rsp after result is read.
  */
-static void call(
-    int n_args,
-    const struct var *args,
-    struct var res,
-    struct var func)
+static int push_function_arguments(
+    const struct typetree *type,
+    struct param_class respc)
 {
-    int i, n,
-        mem_used = 0,
-        register_args = 0,
-        next_sse_reg = 0,
-        next_integer_reg = 0;
-    const struct typetree *type;
-    struct var var;
-    struct param_class respc, arg;
+    int i, n;
+    int next_integer_reg = 0, next_sse_reg = 0, mem_used = 0, register_args = 0;
+    struct param_class pc;
+    struct var arg;
     struct {
         struct param_class pc;
         int i;
     } argpc[MAX_REGISTER_ARGS];
 
-    assert(is_pointer(func.type) && is_function(func.type->next));
-    type = func.type->next;
-    respc = classify(type->next);
     if (respc.eightbyte[0] == PC_MEMORY) {
         next_integer_reg = 1;
     }
@@ -709,14 +717,15 @@ static void call(
      * Classify parameters, handing out register slots sequentially for
      * as long as there are enough available.
      */
-    for (i = 0; i < n_args; ++i) {
-        arg = classify(args[i].type);
-        if (alloc_register_params(arg, &next_integer_reg, &next_sse_reg)) {
-            argpc[register_args].pc = arg;
+    for (i = 0; i < array_len(&func_args); ++i) {
+        arg = array_get(&func_args, i);
+        pc = classify(arg.type);
+        if (alloc_register_params(pc, &next_integer_reg, &next_sse_reg)) {
+            argpc[register_args].pc = pc;
             argpc[register_args].i = i;
             register_args++;
         } else {
-            mem_used += 8*EIGHTBYTES(args[i].type);
+            mem_used += 8*EIGHTBYTES(arg.type);
         }
     }
 
@@ -736,11 +745,12 @@ static void call(
      * the pushing. Reverse traversal in register class list to filter
      * out non-memory arguments.
      */
-    for (i = n_args - 1, n = register_args - 1; i >= 0; --i) {
+    for (i = array_len(&func_args) - 1, n = register_args - 1; i >= 0; --i) {
         if (n >= 0 && argpc[n].i == i) {
             n--;
         } else {
-            push(args[i]);
+            arg = array_get(&func_args, i);
+            push(arg);
         }
     }
 
@@ -749,19 +759,16 @@ static void call(
      * value is MEMORY, pass a pointer in first register.
      */
     next_sse_reg = 0;
-    next_integer_reg = 0;
-    if (respc.eightbyte[0] == PC_MEMORY) {
-        load_address(res, param_int_reg[next_integer_reg++]);
-    }
+    next_integer_reg = (respc.eightbyte[0] == PC_MEMORY);
 
     /*
      * Pass arguments that fit in in registers from left to right,
      * partitioning aggregate types into eightbyte slices.
      */
     for (i = 0; i < register_args; ++i) {
-        arg = argpc[i].pc;
-        var = args[argpc[i].i];
-        load_arg(var, arg, &next_integer_reg, &next_sse_reg);
+        pc = argpc[i].pc;
+        arg = array_get(&func_args, argpc[i].i);
+        load_arg(arg, pc, &next_integer_reg, &next_sse_reg);
     }
 
     /*
@@ -773,7 +780,13 @@ static void call(
         emit(INSTR_MOV, OPT_IMM_REG, constant(next_sse_reg, 4), reg(AX, 4));
     }
 
-    /* Call, with special case on address directly to symbol. */
+    array_empty(&func_args);
+    return mem_used;
+}
+
+/* Compile a function call. */
+static void call(struct var func, int mem_used)
+{
     if (func.kind == ADDRESS) {
         assert(!func.offset);
         emit(INSTR_CALL, OPT_IMM, addr(func.symbol));
@@ -783,20 +796,51 @@ static void call(
         emit(INSTR_CALL, OPT_REG, reg(R11, 8));
     }
 
-    /* Reset stack pointer from overflow arguments. */
     if (mem_used) {
         emit(INSTR_ADD, OPT_IMM_REG, constant(mem_used, 8), reg(SP, 8));
     }
+}
 
-    /*
-     * Move return value from register(s) to memory. Return values with
-     * class MEMORY have already been written by callee.
-     */
-    if (respc.eightbyte[0] != PC_MEMORY) {
-        next_integer_reg = 0;
-        next_sse_reg = 0;
-        store_res(res, respc, &next_integer_reg, &next_sse_reg);
+/*
+ * Generic function call, with assignment of the result back to a
+ * variable. This is used for functions that return non-scalar values,
+ * which have to live in an IR_ASSIGN statement.
+ *
+ * Results of class PC_MEMORY has already been written by callee.
+ */
+static void function_call(struct var res, struct var func)
+{
+    int n;
+    struct param_class pc;
+    assert(is_pointer(func.type) && is_function(func.type->next));
+
+    pc = classify(func.type->next->next);
+    n = push_function_arguments(func.type->next, pc);
+    if (pc.eightbyte[0] == PC_MEMORY) {
+        load_address(res, param_int_reg[0]);
     }
+    call(func, n);
+    if (pc.eightbyte[0] != PC_MEMORY) {
+        store_res(res, pc);
+    }
+}
+
+/*
+ * Compile function call returning a single scalar value, or void. This
+ * can be used on standalone struct expression nodes, for example in
+ * branch conditions.
+ */
+static enum reg scalar_function_call(struct var func)
+{
+    struct param_class pc;
+    assert(is_pointer(func.type) && is_function(func.type->next));
+
+    pc = classify(func.type->next->next);
+    assert(pc.eightbyte[0] != PC_MEMORY);
+    assert(EIGHTBYTES(func.type->next->next) == 1);
+
+    call(func, push_function_arguments(func.type->next, pc));
+    return pc.eightbyte[0] == PC_SSE ? ret_sse_reg[0] : ret_int_reg[0];
 }
 
 static void enter(struct definition *def)
@@ -966,71 +1010,9 @@ static void enter(struct definition *def)
 }
 
 /*
- * Return value from function, placing it in register(s) or writing it
- * to stack, based on parameter class.
- */
-static void ret(struct var val, const struct typetree *type)
-{
-    int i, n,
-        next_integer_reg = 0,
-        next_sse_reg = 0;
-    struct var var;
-    struct param_class pc;
-
-    pc = classify(val.type);
-    if (pc.eightbyte[0] != PC_MEMORY) {
-        n = EIGHTBYTES(val.type);
-        var = val;
-        for (i = 0; i < n; ++i) {
-            if (pc.eightbyte[i] == PC_INTEGER) {
-                assert(next_integer_reg < MAX_INTEGER_RET);
-                if (!is_scalar(val.type)) {
-                    var.type = (i < n - 1) ?
-                        &basic_type__unsigned_long :
-                        BASIC_TYPE_UNSIGNED(size_of(val.type) % 8);
-                }
-                load(var, ret_int_reg[next_integer_reg++]);
-            } else {
-                assert(pc.eightbyte[i] == PC_SSE);
-                assert(next_sse_reg < MAX_SSE_RET);
-                var.type = &basic_type__double;
-                load(var, ret_sse_reg[next_sse_reg++]);
-            }
-
-            var.offset += size_of(var.type);
-        }
-    } else {
-        /*
-         * Load return address from magic stack offset and copy result.
-         * Return address is stored in -8(%rbp), unless the function
-         * takes variable argument lists, in which case it is read
-         * from register spill area.
-         */
-        if (is_vararg(type)) {
-            emit(INSTR_MOV, OPT_MEM_REG,
-                location(address(-176, BP, 0, 0), 8), reg(DI, 8));
-        } else {
-            emit(INSTR_MOV, OPT_MEM_REG,
-                location(address(-8, BP, 0, 0), 8), reg(DI, 8));
-        }
-
-        load_address(val, SI);
-        emit(INSTR_MOV, OPT_IMM_REG,
-            constant(size_of(val.type), 8), reg(DX, 4));
-        emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
-
-        /*
-         * The ABI specifies that the address should be in %rax on
-         * return.
-         */
-        emit(INSTR_MOV, OPT_MEM_REG,
-            location(address(-8, BP, 0, 0), 8), reg(AX, 8));
-    }
-}
-
-/*
  * Execute call to va_start, initializing the provided va_list object.
- * Values are taken from static context set during enter().
+ * Values are taken from static context set during enter(). Address of
+ * va_args object is evaluated from expression.
  */
 static void compile__builtin_va_start(struct var args)
 {
@@ -1061,6 +1043,7 @@ static void compile__builtin_va_start(struct var args)
 
 /*
  * Output logic for fetching a parameter calling res = va_arg(args, T).
+ * Type of args should always be pointer to first element of array.
  */
 static void compile__builtin_va_arg(struct var res, struct var args)
 {
@@ -1071,29 +1054,40 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     struct param_class pc;
 
     struct var
-        var_gp_offset = args,
-        var_fp_offset = args,
-        var_overflow_arg_area = args,
-        var_reg_save_area = args;
+        var_gp_offset,
+        var_fp_offset,
+        var_overflow_arg_area,
+        var_reg_save_area;
 
     /* Get some unique jump labels. */
     const struct symbol
         *memory = sym_create_label(),
         *done = sym_create_label();
 
-    /* Might be too restrictive for res, but simplifies some codegen. */
-    assert(res.kind == DIRECT);
-    assert(args.kind == DIRECT);
+    /* Rewriting references only works for specific input. */
+    assert(res.kind == DIRECT || res.kind == DEREF);
+    assert(args.kind == ADDRESS || args.kind == DIRECT);
+    assert(is_pointer(args.type));
+    assert(!args.offset);
 
     /*
      * References into va_list object, offset and rewrite types to get
      * direct references to each field.
      */
+    if (args.kind == ADDRESS) {
+        args.kind = DIRECT;
+    } else {
+        args.kind = DEREF;
+    }
+    var_gp_offset = args;
     var_gp_offset.type = &basic_type__unsigned_int;
+    var_fp_offset = args;
     var_fp_offset.offset += 4;
     var_fp_offset.type = &basic_type__unsigned_int;
+    var_overflow_arg_area = args;
     var_overflow_arg_area.offset += 8;
     var_overflow_arg_area.type = &basic_type__unsigned_long;
+    var_reg_save_area = args;
     var_reg_save_area.offset += 16;
     var_reg_save_area.type = &basic_type__unsigned_long;
 
@@ -1109,7 +1103,8 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             num_gp = 0, /* General purpose registers needed. */
             num_fp = 0; /* Floating point registers needed. */
 
-        for (i = 0; i < EIGHTBYTES(res.type); ++i) {
+        n = EIGHTBYTES(res.type);
+        for (i = 0; i < n; ++i) {
             if (pc.eightbyte[i] == PC_INTEGER) {
                 num_gp++;
             } else {
@@ -1154,7 +1149,6 @@ static void compile__builtin_va_arg(struct var res, struct var args)
          * in common with enter, ret etc, potential for refactoring
          * probably.
          */
-        n = EIGHTBYTES(res.type);
         while ((i = integer_regs_loaded + sse_regs_loaded) < n) {
             if (pc.eightbyte[i] == PC_INTEGER) {
                 if (!is_scalar(res.type)) {
@@ -1192,14 +1186,26 @@ static void compile__builtin_va_arg(struct var res, struct var args)
 
         /* Store updated offsets to va_list. */
         if (num_gp) {
-            assert(var_gp_offset.kind == DIRECT);
-            emit(INSTR_ADD, OPT_IMM_MEM,
-                constant(8 * num_gp, 4), location_of(var_gp_offset, 4));
+            if (var_gp_offset.kind == DIRECT) {
+                emit(INSTR_ADD, OPT_IMM_MEM,
+                    constant(8 * num_gp, 4), location_of(var_gp_offset, 4));
+            } else {
+                load(var_gp_offset, AX);
+                emit(INSTR_ADD, OPT_IMM_REG,
+                    constant(8 * num_gp, 4), reg(AX, 4));
+                store(AX, var_gp_offset);
+            }
         }
         if (num_fp) {
-            assert(var_fp_offset.kind == DIRECT);
-            emit(INSTR_ADD, OPT_IMM_MEM,
-                constant(16 * num_fp, 4), location_of(var_fp_offset, 4));
+            if (var_fp_offset.kind == DIRECT) {
+                emit(INSTR_ADD, OPT_IMM_MEM,
+                    constant(16 * num_fp, 4), location_of(var_fp_offset, 4));
+            } else {
+                load(var_fp_offset, AX);
+                emit(INSTR_ADD, OPT_IMM_REG,
+                    constant(8 * num_fp, 4), reg(AX, 4));
+                store(AX, var_fp_offset);
+            }
         }
 
         emit(INSTR_JMP, OPT_IMM, addr(done));
@@ -1212,8 +1218,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
      * do not fit in remaining registers.
      */
     load(var_overflow_arg_area, SI);
-    if (w <= 8) {
-        assert(res.kind == DIRECT);
+    if (w <= 8 && res.kind == DIRECT) {
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(0, SI, 0, 0), w), reg(AX, w));
         emit(INSTR_MOV, OPT_REG_MEM, reg(AX, w), location_of(res, w));
@@ -1227,387 +1232,450 @@ static void compile__builtin_va_arg(struct var res, struct var args)
      * Move overflow_arg_area pointer to position of next memory
      * argument, aligning to 8 byte.
      */
-    emit(INSTR_ADD, OPT_IMM_MEM,
-        constant(EIGHTBYTES(res.type) * 8, 4),
-        location_of(var_overflow_arg_area, 4));
+    if (var_overflow_arg_area.kind == DIRECT) {
+        emit(INSTR_ADD, OPT_IMM_MEM,
+            constant(EIGHTBYTES(res.type) * 8, 4),
+            location_of(var_overflow_arg_area, 4));
+    } else {
+        load(var_overflow_arg_area, AX);
+        emit(INSTR_ADD, OPT_IMM_REG,
+            constant(EIGHTBYTES(res.type) * 8, 4), reg(AX, 4));
+        store(AX, var_overflow_arg_area);
+    }
 
     if (pc.eightbyte[0] != PC_MEMORY) {
         enter_context(done);
     }
 }
 
-static void compile_op_add(struct var a, struct var b, struct var c)
+/*
+ * Expressions are evaluated and result stored in either register, a set
+ * of registers, or as an address to a memory location.
+ */
+struct result {
+    enum {
+        VAL_REG,     /* Regular register value. */
+        VAL_VAR,     /* Return object not fitting in register. */
+        VAL_FLAGS    /* From comparison. */
+    } kind;
+    enum reg r;
+    enum opcode cmp;
+    struct var var;
+};
+
+/*
+ * Emit instructions for evaluating expression, and store the result in
+ * a suitable register.
+ *
+ * Shift instruction encoding is either by immediate, or
+ * implicit %cl register. Encode as if something other than %cl
+ * could be chosen. Behavior is undefined if shift is greater
+ * than integer width, so don't care about overflow or sign.
+ */
+static struct result compile_expression(struct expression expr)
 {
-    enum reg ax, cx;
-    enum opcode opcode;
-    int width;
+    int w;
+    struct var l, r;
+    enum opcode opc;
+    enum reg ax, cx, xmm0, xmm1;
+    struct param_class pc;
+    const struct typetree *type;
+    struct result res = {0};
 
-    width = size_of(a.type);
-    opcode = (is_float(a.type)) ? INSTR_ADDSS
-        : (is_double(a.type)) ? INSTR_ADDSD
-        : INSTR_ADD;
+    w = size_of(expr.type);
+    l = expr.l, r = expr.r;
+    type = expr.type;
+    res.kind = VAL_REG;
 
-    ax = load_cast(b, a.type);
-    cx = load_cast(c, a.type);
-    emit(opcode, OPT_REG_REG, reg(cx, width), reg(ax, width));
-    store(ax, a);
-}
-
-static void compile_op_sub(struct var a, struct var b, struct var c)
-{
-    enum reg ax, cx;
-    enum opcode opcode;
-    int width;
-
-    width = size_of(a.type);
-    opcode = (is_float(a.type)) ? INSTR_SUBSS
-        : (is_double(a.type)) ? INSTR_SUBSD
-        : INSTR_SUB;
-
-    ax = load_cast(b, a.type);
-    cx = load_cast(c, a.type);
-    emit(opcode, OPT_REG_REG, reg(cx, width), reg(ax, width));
-    store(ax, a);
-}
-
-static void compile_op_mul(struct var a, struct var b, struct var c)
-{
-    enum reg xmm0, xmm1;
-    enum opcode opcode;
-    int width;
-
-    width = size_of(a.type);
-    if (is_real(a.type)) {
-        xmm0 = load_cast(b, a.type);
-        xmm1 = load_cast(c, a.type);
-        opcode = is_float(a.type) ? INSTR_MULSS : INSTR_MULSD;
-        emit(opcode, OPT_REG_REG, reg(xmm1, width), reg(xmm0, width));
-        store(xmm0, a);
-    } else {
-        load(c, AX);
-        if (b.kind == DIRECT) {
-            emit(INSTR_MUL, OPT_MEM, location_of(b, size_of(b.type)));
-            store(AX, a);
+    switch (expr.op) {
+    case IR_OP_CAST:
+        if (is_array(type)) {
+            assert(is_string(l));
+            res.var = l;
+            res.kind = VAL_VAR;
+        } else if (!is_standard_register_width(size_of(type))) {
+            res.var = l;
+            res.kind = VAL_VAR;
         } else {
-            load(b, CX);
-            emit(INSTR_MUL, OPT_REG, reg(CX, width));
-            store(AX, a);
+            if (is_struct_or_union(type)) {
+                pc = classify(type);
+                if (pc.eightbyte[0] == PC_INTEGER) {
+                    type = BASIC_TYPE_UNSIGNED(size_of(type));
+                } else {
+                    assert(pc.eightbyte[0] == PC_SSE);
+                    type = (size_of(type) == 4)
+                        ? &basic_type__float : &basic_type__double;
+                }
+
+                /* Load as if return, no conversion. */
+                l.type = type;
+            }
+            res.r = load_cast(l, type);
         }
-    }
-}
-
-static void compile_op_divs(struct var a, struct var b, struct var c)
-{
-    enum reg xmm0, xmm1;
-    enum opcode opcode;
-    int width;
-    assert(is_real(a.type));
-
-    width = size_of(a.type);
-    xmm0 = load_cast(b, a.type);
-    xmm1 = load_cast(c, a.type);
-    opcode = is_float(a.type) ? INSTR_DIVSS : INSTR_DIVSD;
-    emit(opcode, OPT_REG_REG, reg(xmm1, width), reg(xmm0, width));
-    store(xmm0, a);
-}
-
-static void compile_cmp(struct var a, struct var b)
-{
-    enum reg r0, r1;
-    assert(type_equal(a.type, b.type));
-
-    if (is_real(a.type)) {
-        r0 = load_cast(a, a.type);
-        r1 = load_cast(b, b.type);
-        if (is_float(a.type)) {
-            emit(INSTR_UCOMISS, OPT_REG_REG, reg(r1, 4), reg(r0, 4));
+        break;
+    case IR_OP_CALL:
+        if (is_scalar(expr.type)) {
+            res.r = scalar_function_call(expr.l);
+            break;
+        }
+    case IR_OP_VA_ARG:
+        /* These are handled per statement. */
+        assert(0);
+        break;
+    case IR_OP_NOT:
+        res.r = load(l, AX);
+        emit(INSTR_NOT, OPT_REG, reg(AX, w));
+        break;
+    case IR_OP_ADD:
+        opc = is_float(type) ? INSTR_ADDSS
+            : is_double(type) ? INSTR_ADDSD : INSTR_ADD;
+        ax = load_cast(l, type);
+        cx = load_cast(r, type);
+        emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        res.r = ax;
+        break;
+    case IR_OP_SUB:
+        opc = is_float(type) ? INSTR_SUBSS
+            : is_double(type) ? INSTR_SUBSD : INSTR_SUB;
+        ax = load_cast(l, type);
+        cx = load_cast(r, type);
+        emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        res.r = ax;
+        break;
+    case IR_OP_MUL:
+        if (is_real(type)) {
+            xmm0 = load_cast(l, type);
+            xmm1 = load_cast(r, type);
+            opc = is_float(type) ? INSTR_MULSS : INSTR_MULSD;
+            emit(opc, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
+            res.r = xmm0;
         } else {
-            emit(INSTR_UCOMISD, OPT_REG_REG, reg(r1, 8), reg(r0, 8));
+            res.r = load(r, AX);
+            if (l.kind == DIRECT) {
+                emit(INSTR_MUL, OPT_MEM, location_of(l, size_of(l.type)));
+            } else {
+                load(l, CX);
+                emit(INSTR_MUL, OPT_REG, reg(CX, w));
+            }
         }
-    } else {
-        load(a, AX);
-        load(b, CX);
-        emit(INSTR_CMP, OPT_REG_REG,
-            reg(CX, size_of(a.type)), reg(AX, size_of(a.type)));
+        break;
+    case IR_OP_DIV:
+        if (is_real(type)) {
+            xmm0 = load_cast(l, type);
+            xmm1 = load_cast(r, type);
+            opc = is_float(type) ? INSTR_DIVSS : INSTR_DIVSD;
+            emit(opc, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
+            res.r = xmm0;
+            break;
+        }
+    case IR_OP_MOD:
+        assert(!is_real(type));
+        res.r = load(l, AX);
+        /* Divident is %rdx:%rax, zero extend if type is signed. */
+        if (is_signed(l.type)) {
+            if (size_of(l.type) == 8) {
+                emit(INSTR_CQO, OPT_NONE);
+            } else {
+                assert(size_of(l.type) == 4);
+                emit(INSTR_CDQ, OPT_NONE);
+            }
+        } else {
+            emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
+        }
+        if (r.kind == DIRECT) {
+            emit(is_signed(type) ? INSTR_IDIV : INSTR_DIV,
+                OPT_MEM,
+                location_of(r, size_of(r.type)));
+        } else {
+            load(r, CX);
+            emit(is_signed(type) ? INSTR_IDIV : INSTR_DIV,
+                OPT_REG,
+                reg(CX, size_of(r.type)));
+        }
+        res.r = (expr.op == IR_OP_DIV) ? AX : DX;
+        break;
+    case IR_OP_AND:
+        load(l, AX);
+        load(r, CX);
+        emit(INSTR_AND, OPT_REG_REG, reg(CX, 8), reg(AX, 8));
+        res.r = AX;
+        break;
+    case IR_OP_OR:
+        load(l, AX);
+        load(r, CX);
+        emit(INSTR_OR, OPT_REG_REG, reg(CX, 8), reg(AX, 8));
+        res.r = AX;
+        break;
+    case IR_OP_XOR:
+        load(l, AX);
+        load(r, CX);
+        emit(INSTR_XOR, OPT_REG_REG, reg(CX, 8), reg(AX, 8));
+        res.r = AX;
+        break;
+    case IR_OP_SHL:
+        load(l, AX);
+        load(r, CX);
+        emit(INSTR_SHL, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(type)));
+        res.r = AX;
+        break;
+    case IR_OP_SHR:
+        load(l, AX);
+        load(r, CX);
+        emit((is_unsigned(type)) ? INSTR_SHR : INSTR_SAR,
+            OPT_REG_REG,
+            reg(CX, 1),
+            reg(AX, size_of(type)));
+        res.r = AX;
+        break;
+    case IR_OP_EQ:
+        res.cmp = INSTR_SETZ;
+        goto compare;
+    case IR_OP_GE:
+        res.cmp =
+            is_unsigned(l.type) || is_real(l.type) ? INSTR_SETAE : INSTR_SETGE;
+        goto compare;
+    case IR_OP_GT:
+        res.cmp =
+            is_unsigned(l.type) || is_real(l.type) ? INSTR_SETA : INSTR_SETG;
+compare:
+        res.kind = VAL_FLAGS;
+        if (is_real(l.type)) {
+            xmm0 = load_cast(l, l.type);
+            xmm1 = load_cast(r, r.type);
+            if (is_float(l.type)) {
+                emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
+            } else {
+                emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
+            }
+        } else {
+            load(l, AX);
+            load(r, CX);
+            emit(INSTR_CMP, OPT_REG_REG,
+                reg(CX, size_of(l.type)), reg(AX, size_of(l.type)));
+        }
+        break;
     }
+
+    return res;
 }
 
-static void compile_op_cmp(
-    enum opcode opcode,
-    struct var a,
-    struct var b,
-    struct var c)
+/*
+ * Store result of comparing two values of given type. Instruction used
+ * for compare is used to determine special handling for floating point
+ * equality.
+ *
+ * This is called after a comparison expression is evaluated, and the
+ * result is assigned to a variable. In other cases, a jump can be
+ * emitted without ever computing the integer 0 or 1 result.
+ */
+static enum reg set_compare_value(
+    const struct typetree *type,
+    enum opcode op)
 {
-    assert(type_equal(a.type, &basic_type__int));
-
-    compile_cmp(b, c);
-    emit(opcode, OPT_REG, reg(AX, 1));
-    if (opcode == INSTR_SETZ && (is_real(b.type) || is_real(c.type))) {
+    emit(op, OPT_REG, reg(AX, 1));
+    if (op == INSTR_SETZ && is_real(type)) {
         emit(INSTR_SETNP, OPT_REG, reg(CX, 1));
         emit(INSTR_AND, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
         emit(INSTR_AND, OPT_IMM_REG, constant(1, 1), reg(AX, 1));
     }
 
     emit(INSTR_MOVZX, OPT_REG_REG, reg(AX, 1), reg(AX, 4));
-    store(AX, a);
+    return AX;
 }
 
-static void compile_op(const struct op *op)
+/*
+ * Write object from address returned by evaluating an expression. Used
+ * for assignment of objects that do not fit in a single register.
+ *
+ * Handle special case of char [] = string literal. This will only occur
+ * as part of initializer, at block scope. External definitions are
+ * handled before this. At no other point should array types be seen in
+ * assembly backend. We handle these assignments with memcpy, other
+ * compilers load the string into register as ascii numbers.
+ */
+static void store_copy_object(struct var var, struct var res)
 {
-    int size;
-    enum reg r;
+    if (is_array(var.type)) {
+        assert(res.kind == DIRECT);
+        assert(is_string(var));
+        assert(type_equal(res.type, var.type));
+        emit(INSTR_MOV, OPT_IMM_REG, addr(var.symbol), reg(SI, 8));
+    } else {
+        load_address(var, SI);
+    }
 
-    switch (op->type) {
-    case IR_ASSIGN:
-        /*
-         * Handle special case of char [] = string literal. This will
-         * only occur as part of initializer, at block scope. External
-         * definitions are handled before this. At no other point should
-         * array types be seen in assembly backend. We handle these
-         * assignments with memcpy, other compilers load the string into
-         * register as ascii numbers.
-         */
-        if (is_array(op->a.type) || is_array(op->b.type)) {
-            size = size_of(op->a.type);
+    load_address(res, DI);
+    emit(INSTR_MOV, OPT_IMM_REG, constant(size_of(res.type), 4), reg(DX, 4));
+    emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
+}
 
-            assert(op->a.kind == DIRECT);
-            assert(is_string(op->b));
-            assert(type_equal(op->a.type, op->b.type));
+/*
+ */
+static void compile_statement(struct statement stmt)
+{
+    struct param_class pc;
+    struct result res;
 
-            load_address(op->a, DI);
-            emit(INSTR_MOV, OPT_IMM_REG, addr(op->b.symbol), reg(SI, 8));
-            emit(INSTR_MOV, OPT_IMM_REG, constant(size, 4), reg(DX, 4));
-            emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
-            break;
-        }
-        /*
-         * Assignment of struct or union objects which cannot be made
-         * with a simple register move.
-         */
-        else if (!is_standard_register_width(size_of(op->a.type))) {
-            size = size_of(op->a.type);
-            assert(size == size_of(op->b.type));
-
-            load_address(op->a, DI);
-            load_address(op->b, SI);
-            emit(INSTR_MOV, OPT_IMM_REG, constant(size, 4), reg(DX, 4));
-            emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
-            break;
-        }
-        /*
-         * Fallthrough, assignment has implicit cast for convenience and
-         * to make static initialization work without explicit casts.
-         */
-    case IR_CAST:
-        r = load_cast(op->b, op->a.type);
-        store(r, op->a);
-        break;
+    switch (stmt.st) {
     case IR_PARAM:
-        array_push_back(&func_args, op->a);
-        break;
-    case IR_CALL:
-        call(array_len(&func_args), func_args.data, op->a, op->b);
-        array_empty(&func_args);
-        break;
-    case IR_NOT:
-        load(op->b, AX);
-        emit(INSTR_NOT, OPT_REG, reg(AX, size_of(op->a.type)));
-        store(AX, op->a);
-        break;
-    case IR_OP_ADD:
-        compile_op_add(op->a, op->b, op->c);
-        break;
-    case IR_OP_SUB:
-        compile_op_sub(op->a, op->b, op->c);
-        break;
-    case IR_OP_MUL:
-        compile_op_mul(op->a, op->b, op->c);
-        break;
-    case IR_OP_DIV:
-        if (is_real(op->a.type)) {
-            compile_op_divs(op->a, op->b, op->c);
-            break;
-        }
-    case IR_OP_MOD:
-        assert(!is_real(op->a.type));
-        load(op->b, AX);
-        /*
-         * Divident is %rdx:%rax. Zero extend if type is signed,
-         * otherwise zero to avoid SIGFPE.
-         */
-        if (is_signed(op->b.type)) {
-            if (size_of(op->b.type) == 8) {
-                emit(INSTR_CQO, OPT_NONE);
-            } else {
-                assert(size_of(op->b.type) == 4);
-                emit(INSTR_CDQ, OPT_NONE);
-            }
-        } else {
-            emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
-        }
-        if (op->c.kind == DIRECT) {
-            emit(is_signed(op->a.type) ? INSTR_IDIV : INSTR_DIV,
-                OPT_MEM,
-                location_of(op->c, size_of(op->c.type)));
-        } else {
-            load(op->c, CX);
-            emit(is_signed(op->a.type) ? INSTR_IDIV : INSTR_DIV,
-                OPT_REG,
-                reg(CX, size_of(op->c.type)));
-        }
-        store((op->type == IR_OP_DIV) ? AX : DX, op->a);
-        break;
-    case IR_OP_AND:
-        load(op->b, AX);
-        load(op->c, CX);
-        emit(INSTR_AND, OPT_REG_REG, reg(CX, 8), reg(AX, 8));
-        store(AX, op->a);
-        break;
-    case IR_OP_OR:
-        load(op->b, AX);
-        load(op->c, CX);
-        emit(INSTR_OR, OPT_REG_REG, reg(CX, 8), reg(AX, 8));
-        store(AX, op->a);
-        break;
-    case IR_OP_XOR:
-        load(op->b, AX);
-        load(op->c, CX);
-        emit(INSTR_XOR, OPT_REG_REG, reg(CX, 8), reg(AX, 8));
-        store(AX, op->a);
-        break;
-    case IR_OP_SHL:
-        /*
-         * Shift instruction encoding is either by immediate, or
-         * implicit %cl register. Encode as if something other than %cl
-         * could be chosen. Behavior is undefined if shift is greater
-         * than integer width, so don't care about overflow or sign.
-         */
-        load(op->b, AX);
-        load(op->c, CX);
-        emit(INSTR_SHL, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(op->a.type)));
-        store(AX, op->a);
-        break;
-    case IR_OP_SHR:
-        load(op->b, AX);
-        load(op->c, CX);
-        emit((is_unsigned(op->a.type)) ? INSTR_SHR : INSTR_SAR, OPT_REG_REG,
-            reg(CX, 1), reg(AX, size_of(op->a.type)));
-        store(AX, op->a);
-        break;
-    case IR_OP_EQ:
-        compile_op_cmp(INSTR_SETZ, op->a, op->b, op->c);
-        break;
-    case IR_OP_GE:
-        if (is_unsigned(op->b.type) || is_real(op->b.type)) {
-            compile_op_cmp(INSTR_SETAE, op->a, op->b, op->c);
-        } else {
-            compile_op_cmp(INSTR_SETGE, op->a, op->b, op->c);
-        }
-        break;
-    case IR_OP_GT:
-        if (is_unsigned(op->b.type) || is_real(op->b.type)) {
-            /*
-             * When comparison is unsigned, set flag without considering
-             * overflow; CF=0 && ZF=0.
-             */
-            compile_op_cmp(INSTR_SETA, op->a, op->b, op->c);
-        } else {
-            compile_op_cmp(INSTR_SETG, op->a, op->b, op->c);
-        }
+        assert(is_identity(stmt.expr));
+        array_push_back(&func_args, stmt.expr.l);
         break;
     case IR_VA_START:
-        compile__builtin_va_start(op->a);
+        assert(is_identity(stmt.expr));
+        compile__builtin_va_start(stmt.expr.l);
         break;
-    case IR_VA_ARG:
-        compile__builtin_va_arg(op->a, op->b);
-        break;
-    default:
-        assert(0);
+    case IR_EXPR:
+    case IR_ASSIGN:
+        if (stmt.expr.op == IR_OP_CALL) {
+            function_call(stmt.t, stmt.expr.l);
+            break;
+        } else if (stmt.expr.op == IR_OP_VA_ARG) {
+            assert(stmt.st == IR_ASSIGN);
+            compile__builtin_va_arg(stmt.t, stmt.expr.l);
+            break;
+        }
+
+        res = compile_expression(stmt.expr);
+        switch (res.kind) {
+        case VAL_FLAGS:
+            assert(type_equal(stmt.expr.l.type, stmt.expr.r.type));
+            res.r = set_compare_value(stmt.expr.l.type, res.cmp);
+        case VAL_REG:
+            if (is_struct_or_union(stmt.t.type)) {
+                pc = classify(stmt.t.type);
+                if (pc.eightbyte[0] == PC_INTEGER) {
+                    assert(res.r >= AX && res.r <= R15);
+                    stmt.t.type = BASIC_TYPE_UNSIGNED(size_of(stmt.t.type));
+                } else {
+                    assert(pc.eightbyte[0] == PC_SSE);
+                    assert(res.r >= XMM0 && res.r <= XMM8);
+                    stmt.t.type = (size_of(stmt.t.type) == 4)
+                        ? &basic_type__float
+                        : &basic_type__double;
+                }
+            }
+            store(res.r, stmt.t);
+            break;
+        case VAL_VAR:
+            store_copy_object(res.var, stmt.t);
+            break;
+        }
         break;
     }
 
-    /* Everything is flushed between operations. */
     relase_regs();
 }
 
 /*
- * Determine whether the block ends in a comparison followed by a jump
- * on the compare result.
+ * Return value from function, placing it in register(s) or writing it
+ * to stack, based on parameter class.
  *
- *    .t2 = 0 > .t1
- *    if .t2 goto .L3
- *
+ * Load return address from magic stack offset and copy result.
+ * Return address is stored in -8(%rbp), unless the function
+ * takes variable argument lists, in which case it is read
+ * from register spill area.
  */
-static int is_tail_cmp(const struct block *block)
+static void ret(struct var var, const struct typetree *type)
 {
-    struct op *cmp;
-    unsigned len;
+    int i,
+        next_integer_reg = 0,
+        next_sse_reg = 0;
+    struct param_class pc;
 
-    len = array_len(&block->code);
-    if (len) {
-        cmp = &array_back(&block->code);
-        if (IS_COMPARISON(cmp->type)
-            && !cmp->a.lvalue
-            && block->jump[1]
-            && block->expr.kind == DIRECT
-            && cmp->a.kind == DIRECT
-            && block->expr.offset == cmp->a.offset
-            && block->expr.symbol == cmp->a.symbol)
-        {
-            return 1;
+    assert(is_function(type));
+    pc = classify(type->next);
+    if (pc.eightbyte[0] != PC_MEMORY) {
+        for (i = 0; i < EIGHTBYTES(type->next); ++i) {
+            if (pc.eightbyte[i] == PC_INTEGER) {
+                assert(next_integer_reg < MAX_INTEGER_RET);
+                if (!is_scalar(type->next)) {
+                    var.type = (i < EIGHTBYTES(type->next) - 1) ?
+                        &basic_type__unsigned_long :
+                        BASIC_TYPE_UNSIGNED(size_of(type->next) % 8);
+                }
+                load(var, ret_int_reg[next_integer_reg++]);
+            } else {
+                assert(pc.eightbyte[i] == PC_SSE);
+                assert(next_sse_reg < MAX_SSE_RET);
+                var.type = &basic_type__double;
+                load(var, ret_sse_reg[next_sse_reg++]);
+            }
+            var.offset += size_of(var.type);
         }
-    }
-
-    return 0;
-}
-
-static void tail_cmp_jump(struct block *block, const struct typetree *type)
-{
-    enum opcode opcode;
-    struct op *op;
-
-    assert(array_len(&block->code));
-    assert(is_tail_cmp(block));
-
-    op = &array_back(&block->code);
-    assert(IS_COMPARISON(op->type));
-    compile_cmp(op->b, op->c);
-    switch (op->type) {
-    case IR_OP_EQ:
-        opcode = INSTR_JZ;
-        break;
-    case IR_OP_GE:
-        opcode =
-            (is_unsigned(op->b.type) || is_real(op->b.type)) ?
-            INSTR_JAE : INSTR_JGE;
-        break;
-    default:
-        assert(op->type == IR_OP_GT);
-        opcode =
-            (is_unsigned(op->b.type) || is_real(op->b.type)) ?
-            INSTR_JA : INSTR_JG;
-        break;
-    }
-
-    emit(opcode, OPT_IMM, addr(block->jump[1]->label));
-    if (block->jump[0]->color == BLACK) {
-        emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
     } else {
-        compile_block(block->jump[0], type);
+        if (is_vararg(type)) {
+            emit(INSTR_MOV, OPT_MEM_REG,
+                location(address(-176, BP, 0, 0), 8), reg(DI, 8));
+        } else {
+            emit(INSTR_MOV, OPT_MEM_REG,
+                location(address(-8, BP, 0, 0), 8), reg(DI, 8));
+        }
+        load_address(var, SI);
+        emit(INSTR_MOV, OPT_IMM_REG,
+            constant(size_of(type->next), 8), reg(DX, 4));
+        emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
+        /* The ABI specifies that the address should be in %rax. */
+        emit(INSTR_MOV, OPT_MEM_REG,
+            location(address(-8, BP, 0, 0), 8), reg(AX, 8));
     }
-
-    compile_block(block->jump[1], type);
 }
 
-static void tail_generic(struct block *block, const struct typetree *type)
+/*
+ * Emit code for all statements in a block, jump to children based on
+ * compare result, or return value in case of no children.
+ *
+ * Most of the complexity deals with interpreting the last block->expr
+ * object, branchhing to the correct next block. All scalar expressions
+ * are allowed.
+ */
+static void compile_block(struct block *block, const struct typetree *type)
 {
+    int i;
+    enum reg xmm0, xmm1;
+    struct result res;
+    struct statement st;
+    struct param_class pc;
+
+    assert(is_function(type));
+
+    if (block->color == BLACK)
+        return;
+
+    block->color = BLACK;
+    enter_context(block->label);
+    for (i = 0; i < array_len(&block->code); ++i) {
+        st = array_get(&block->code, i);
+        compile_statement(st);
+    }
+
     if (!block->jump[0] && !block->jump[1]) {
         if (block->has_return_value) {
-            assert(block->expr.type);
-            assert(!is_void(block->expr.type));
-            ret(block->expr, type);
+            assert(is_object(block->expr.type));
+            assert(type_equal(block->expr.type, type->next));
+            pc = classify(type->next);
+            res = compile_expression(block->expr);
+            switch (res.kind) {
+            case VAL_FLAGS:
+                res.r = set_compare_value(block->expr.l.type, res.cmp);
+            case VAL_REG:
+                if (pc.eightbyte[0] == PC_INTEGER && res.r != ret_int_reg[0]) {
+                    assert(res.r >= AX && res.r <= R15);
+                    emit(INSTR_MOV, OPT_REG_REG,
+                        reg(res.r, 8), reg(ret_int_reg[0], 8));
+                }
+                else if (pc.eightbyte[0] == PC_SSE && res.r != ret_sse_reg[0]) {
+                    assert(res.r >= XMM0 && res.r <= XMM4);
+                    emit(INSTR_MOV, OPT_REG_REG,
+                        reg(res.r, 8), reg(ret_sse_reg[0], 8));
+                }
+                break;
+            case VAL_VAR:
+                ret(res.var, type);
+                break;
+            }
+            relase_regs();
         }
-
         emit(INSTR_LEAVE, OPT_NONE);
         emit(INSTR_RET, OPT_NONE);
     } else if (!block->jump[1]) {
@@ -1618,69 +1686,61 @@ static void tail_generic(struct block *block, const struct typetree *type)
         }
     } else {
         assert(is_scalar(block->expr.type));
-        if (is_real(block->expr.type)) {
-            load_sse(block->expr, XMM0, size_of(block->expr.type));
-            emit(INSTR_PXOR, OPT_REG_REG, reg(XMM1, 8), reg(XMM1, 8));
-            if (is_float(block->expr.type)) {
-                emit(INSTR_UCOMISS, OPT_REG_REG, reg(XMM0, 4), reg(XMM1, 4));
-            } else {
-                emit(INSTR_UCOMISD, OPT_REG_REG, reg(XMM0, 8), reg(XMM1, 8));
+        res = compile_expression(block->expr);
+        if (res.kind == VAL_FLAGS) {
+            switch (res.cmp) {
+            case INSTR_SETZ:
+                if (is_float(block->expr.type)) {
+                    emit(INSTR_JNE, OPT_IMM, addr(block->jump[0]->label));
+                    emit(INSTR_JP, OPT_IMM, addr(block->jump[0]->label));
+                    emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
+                } else {
+                    emit(INSTR_JZ, OPT_IMM, addr(block->jump[1]->label));
+                }
+                break;
+            case INSTR_SETG:
+                emit(INSTR_JG, OPT_IMM, addr(block->jump[1]->label));
+                break;
+            case INSTR_SETA:
+                emit(INSTR_JA, OPT_IMM, addr(block->jump[1]->label));
+                break;
+            case INSTR_SETGE:
+                emit(INSTR_JGE, OPT_IMM, addr(block->jump[1]->label));
+                break;
+            case INSTR_SETAE:
+                emit(INSTR_JAE, OPT_IMM, addr(block->jump[1]->label));
+                break;
+            default: assert(0);
             }
-
-            /*
-             * Compare both equality and parity flags. Parity is a way
-             * to catch compare with invalid floating point numbers.
-             */
+        } else if (is_real(block->expr.type)) {
+            assert(res.kind == VAL_REG);
+            xmm0 = res.r;
+            xmm1 = (xmm0 == XMM0) ? XMM1 : XMM0;
+            emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, 8), reg(xmm1, 8));
+            if (is_float(block->expr.type)) {
+                emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm0, 4), reg(xmm1, 4));
+            } else {
+                emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm0, 8), reg(xmm1, 8));
+            }
             emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
             emit(INSTR_JP, OPT_IMM, addr(block->jump[1]->label));
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
         } else {
-            load(block->expr, AX);
-            emit(INSTR_CMP, OPT_IMM_REG, constant(0, 4), reg(AX, 4));
-            emit(INSTR_JZ, OPT_IMM, addr(block->jump[0]->label));
+            assert(res.kind == VAL_REG);
+            i = size_of(block->expr.type);
+            assert(i == 1 || i == 2 || i == 4 || i == 8);
+            emit(INSTR_CMP, OPT_IMM_REG, constant(0, i), reg(res.r, i));
+            emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
         }
 
-        if (block->jump[1]->color == BLACK) {
-            emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
+        relase_regs();
+        if (block->jump[0]->color == BLACK) {
+            emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
         } else {
-            compile_block(block->jump[1], type);
+            compile_block(block->jump[0], type);
         }
 
-        compile_block(block->jump[0], type);
-    }
-}
-
-static void compile_block(struct block *block, const struct typetree *type)
-{
-    int i, len;
-    struct op *op;
-
-    if (block->color == WHITE) {
-        block->color = BLACK;
-        enter_context(block->label);
-        len = array_len(&block->code);
-
-        if (len) {
-            for (i = 0; i < len - 1; ++i) {
-                op = &array_get(&block->code, i);
-                compile_op(op);
-            }
-
-            /*
-             * Special case on comparison + jump, saving some space by
-             * not writing the temporary result.
-             */
-            op = &array_back(&block->code);
-            if (is_tail_cmp(block)) {
-                assert(block->jump[0]);
-                tail_cmp_jump(block, type);
-            } else {
-                compile_op(op);
-                tail_generic(block, type);
-            }
-        } else {
-            tail_generic(block, type);
-        }
+        compile_block(block->jump[1], type);
     }
 }
 
@@ -1744,23 +1804,24 @@ static void zero_fill_data(size_t bytes)
 
 static void compile_data(struct definition *def)
 {
-    struct op *op;
+    struct statement stmt;
     int i,
         total_size = size_of(&def->symbol->type),
         initialized = 0;
 
     enter_context(def->symbol);
     for (i = 0; i < array_len(&def->body->code); ++i) {
-        op = &array_get(&def->body->code, i);
+        stmt = array_get(&def->body->code, i);
 
-        assert(op->type == IR_ASSIGN);
-        assert(op->a.kind == DIRECT);
-        assert(op->a.symbol == def->symbol);
-        assert(op->a.offset >= initialized);
+        assert(stmt.st == IR_ASSIGN);
+        assert(stmt.t.kind == DIRECT);
+        assert(stmt.t.symbol == def->symbol);
+        assert(stmt.t.offset >= initialized);
+        assert(is_identity(stmt.expr));
 
-        zero_fill_data(op->a.offset - initialized);
-        compile_data_assign(op->a, op->b);
-        initialized = op->a.offset + size_of(op->a.type);
+        zero_fill_data(stmt.t.offset - initialized);
+        compile_data_assign(stmt.t, stmt.expr.l);
+        initialized = stmt.t.offset + size_of(stmt.t.type);
     }
 
     assert(total_size >= initialized);
