@@ -10,7 +10,8 @@ static int is_flag(struct option opt)
     return (strlen(opt.rule) == 2) && (opt.rule[0] == '-');
 }
 
-/* Check if argv matches given option. Argument vector is offset, and
+/*
+ * Check if argv matches given option. Argument vector is offset, and
  * not the same as input to the program. Start reading from index 0 of
  * argv.
  *
@@ -76,7 +77,8 @@ static int match_arg(struct option opt, int argc, char *argv[])
     return 0;
 }
 
-/* Matching works by looping through each input token, trying every
+/*
+ * Matching works by looping through each input token, trying every
  * option in sequence. All non-flag options are tried first, meaning
  * an input like -std is first checked as "-std", then flags -s, -t, -d.
  * All characters in the token must match a flag to be accepted.

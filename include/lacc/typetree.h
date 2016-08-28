@@ -16,8 +16,7 @@
     ((w) == 2) ? &basic_type__unsigned_short :                                 \
     ((w) == 4) ? &basic_type__unsigned_int : &basic_type__unsigned_long;
 
-/* Reflect semantics given in standardese.
- */
+/* Reflect semantics given in standardese. */
 #define is_object(t) (!is_function(t))
 #define is_function(t) ((t)->type == T_FUNCTION)
 #define is_struct_or_union(t) (is_struct(t) || is_union(t))
@@ -41,8 +40,7 @@
 
 struct signature;
 
-/* Internal representation of a type.
- */
+/* Internal representation of a type. */
 struct typetree {
     enum type {
         T_SIGNED,
@@ -69,13 +67,17 @@ struct typetree {
     /* Function parameters, or struct/union members. */
     const struct signature *signature;
 
-    /* Function return value, pointer target, array base, or pointer to
+    /*
+     * Function return value, pointer target, array base, or pointer to
      * tagged struct or union type. Tag indirections are used to avoid
-     * loops in type trees. */
+     * loops in type trees.
+     */
     const struct typetree *next;
 
-    /* Struct or union typedef, reference to symbol table in order to be
-     * able to print the name. */
+    /*
+     * Struct or union typedef, reference to symbol table in order to be
+     * able to print the name.
+     */
     String tag;
 };
 
@@ -86,21 +88,20 @@ struct member {
     /* Member offset into aggregate, in bytes. */
     int offset;
 
-    /* Field width in bits, for bitfield member of type int or unsigned
-     * int. */
+    /*
+     * Field width in bits, for bitfield member of type int or unsigned
+     * int.
+     */
     int width;
 };
 
-/* Get the number of struct or union members, or function parameters.
- */
+/* Get the number of struct or union members, or function parameters. */
 int nmembers(const struct typetree *type);
 
-/* Return the n-th struct or union member, or function parameter.
- */
+/* Return the n-th struct or union member, or function parameter. */
 const struct member *get_member(const struct typetree *type, int n);
 
-/* Singleton unqualified instances of common types.
- */
+/* Singleton unqualified instances of common types. */
 extern const struct typetree
     basic_type__void,
     basic_type__const_void,
@@ -115,28 +116,26 @@ extern const struct typetree
     basic_type__float,
     basic_type__double;
 
-/* A function takes variable arguments if last parameter is '...'.
- */
+/* A function takes variable arguments if last parameter is '...'. */
 int is_vararg(const struct typetree *type);
 
-/* Return size of type. If indirection, return size of tagged type.
- */
+/* Return size of type. If indirection, return size of tagged type. */
 int size_of(const struct typetree *type);
 
-/* Alignment in bytes.
- */
+/* Alignment in bytes. */
 int type_alignment(const struct typetree *type);
 
-/* Returns 1 if types are equal, 0 otherwise.
- */
+/* Returns 1 if types are equal, 0 otherwise. */
 int type_equal(const struct typetree *l, const struct typetree *r);
 
-/* Return tagged type if this is an indirection, ignoring cv-qualifiers.
+/*
+ * Return tagged type if this is an indirection, ignoring cv-qualifiers.
  * The tag is immutable.
  */
 const struct typetree *unwrapped(const struct typetree *type);
 
-/* Serialize type to string. Allocates memory with malloc, caller is
+/*
+ * Serialize type to string. Allocates memory with malloc, caller is
  * responsible for calling free.
  */
 char *typetostr(const struct typetree *type);

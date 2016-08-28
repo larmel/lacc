@@ -26,7 +26,8 @@ static struct block *cast_expression(
     struct definition *def,
     struct block *block);
 
-/* Parse call to builtin symbol __builtin_va_start, which is the result
+/*
+ * Parse call to builtin symbol __builtin_va_start, which is the result
  * of calling va_start(arg, s). Return type depends on second input
  * argument.
  */
@@ -60,7 +61,8 @@ static struct block *parse__builtin_va_start(
     return block;
 }
 
-/* Parse call to builtin symbol __builtin_va_arg, which is the result of
+/*
+ * Parse call to builtin symbol __builtin_va_arg, which is the result of
  * calling va_arg(arg, T). Return type depends on second input argument.
  */
 static struct block *parse__builtin_va_arg(
@@ -95,10 +97,12 @@ static struct block *primary_expression(
             error("Undefined symbol '%s'.", str_raw(tok.d.string));
             exit(1);
         }
-        /* Special handling for builtin pseudo functions. These are
+        /*
+         * Special handling for builtin pseudo functions. These are
          * expected to behave as macros, thus should be no problem
          * parsing as function call in primary expression. Constructs
-         * like (va_arg)(args, int) will not work with this scheme. */
+         * like (va_arg)(args, int) will not work with this scheme.
+         */
         if (!strcmp("__builtin_va_start", str_raw(sym->name))) {
             block = parse__builtin_va_start(def, block);
         } else if (!strcmp("__builtin_va_arg", str_raw(sym->name))) {
@@ -121,15 +125,17 @@ static struct block *primary_expression(
                 type_init(T_ARRAY, &basic_type__char, tok.d.string.len + 1),
                 SYM_STRING_VALUE,
                 LINK_INTERN);
-
-        /* Store string value directly on symbol, memory ownership is in
+        /*
+         * Store string value directly on symbol, memory ownership is in
          * string table from previously called str_register. The symbol
-         * now exists as if declared static char .LC[] = "...". */
+         * now exists as if declared static char .LC[] = "...".
+         */
         ((struct symbol *) sym)->string_value = tok.d.string;
-
-        /* Result is an IMMEDIATE of type [] char, with a reference to
+        /*
+         * Result is an IMMEDIATE of type [] char, with a reference to
          * the new symbol containing the string literal. Will decay into
-         * char * on evaluation. */
+         * char * on evaluation.
+         */
         block->expr = var_direct(sym);
         assert(block->expr.kind == IMMEDIATE);
         break;
@@ -144,7 +150,8 @@ static struct block *primary_expression(
 
 typedef array_of(struct var) VarArray;
 
-/* Need to buffer parameter expressions before each function call, and
+/*
+ * Need to buffer parameter expressions before each function call, and
  * since calls can be nested, the same buffer cannot be used for all.
  */
 static array_of(VarArray *) args;
@@ -218,9 +225,11 @@ static struct block *postfix_expression(
         switch ((tok = peek()).token) {
         case '[':
             do {
-                /* Evaluate a[b] = *(a + b). The semantics of pointer
+                /*
+                 * Evaluate a[b] = *(a + b). The semantics of pointer
                  * arithmetic takes care of multiplying b with the
-                 * correct width. */
+                 * correct width.
+                 */
                 consume('[');
                 block = expression(def, block);
                 root = eval_expr(def, block, IR_OP_ADD, root, block->expr);
@@ -259,8 +268,10 @@ static struct block *postfix_expression(
                 consume(',');
                 block = assignment_expression(def, block);
                 if (is_float(block->expr.type)) {
-                    /* Single-precision arguments to vararg function are
-                     * automatically promoted to double. */
+                    /*
+                     * Single-precision arguments to vararg function are
+                     * automatically promoted to double.
+                     */
                     block->expr =
                         eval_cast(def, block, block->expr, &basic_type__double);
                 }
@@ -297,9 +308,10 @@ static struct block *postfix_expression(
                         str_raw(tok.d.string));
                     exit(1);
                 }
-
-                /* Make it look like a pointer to the member type, then
-                 * perform normal dereferencing. */
+                /*
+                 * Make it look like a pointer to the member type, then
+                 * perform normal dereferencing.
+                 */
                 root.type = type_init(T_POINTER, mbr->type);
                 root = eval_deref(def, block, root);
                 root.width = mbr->width;
@@ -429,8 +441,10 @@ static struct block *cast_expression(
     struct token tok;
     struct symbol *sym;
 
-    /* This rule needs two lookahead; to see beyond the initial
-     * parenthesis if it is actually a cast or an expression. */
+    /*
+     * This rule needs two lookahead; to see beyond the initial
+     * parenthesis if it is actually a cast or an expression.
+     */
     if (peek().token == '(') {
         tok = peekn(2);
         switch (tok.token) {

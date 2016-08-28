@@ -1,7 +1,4 @@
-#if _XOPEN_SOURCE < 500
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 500 /* snprintf */
-#endif
+#define _XOPEN_SOURCE 500 /* snprintf */
 #include "abi.h"
 #include "assemble.h"
 
@@ -19,8 +16,7 @@
 
 #define MAX_OPERAND_TEXT_LENGTH 256
 
-/* Clients must set this field first.
- */
+/* Clients must set this field first. */
 FILE *asm_output = NULL;
 
 static const struct symbol *current_symbol;
@@ -154,8 +150,10 @@ static const char *immediate(struct immediate imm, int *size)
 
 int asm_symbol(const struct symbol *sym)
 {
-    /* Labels stay in the same function context, otherwise flush to
-     * write any end of function metadata. */
+    /*
+     * Labels stay in the same function context, otherwise flush to
+     * write any end of function metadata.
+     */
     if (sym->symtype != SYM_LABEL) {
         asm_flush();
         current_symbol = sym;

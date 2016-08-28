@@ -3,7 +3,8 @@
 
 #include <stdio.h>
 
-/* Output preprocessed input to provided stream, toggled by -E program
+/*
+ * Output preprocessed input to provided stream, toggled by -E program
  * option.
  */
 void preprocess(FILE *output);

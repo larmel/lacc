@@ -117,9 +117,11 @@ int main(int argc, char *argv[])
 
     input = parse_program_arguments(argc, argv);
 
-    /* Add default search paths last, with lowest priority. These are
+    /*
+     * Add default search paths last, with lowest priority. These are
      * searched after anything specified with -I, and in the order
-     * listed here. */
+     * listed here.
+     */
     add_include_search_path("/usr/local/include");
     add_include_search_path("/usr/lib/lacc/include");
     add_include_search_path("/usr/include/x86_64-linux-gnu");

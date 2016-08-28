@@ -14,17 +14,13 @@ struct var eval_expr(
     enum optype optype,
     struct var l, ...);
 
-/*
- * Evaluate &a.
- */
+/* Evaluate &a. */
 struct var eval_addr(
     struct definition *def,
     struct block *block,
     struct var var);
 
-/*
- * Evaluate *a.
- */
+/* Evaluate *a. */
 struct var eval_deref(
     struct definition *def,
     struct block *block,
@@ -45,17 +41,13 @@ struct var eval_assign(
     struct var target,
     struct var var);
 
-/*
- * Evaluate a().
- */
+/* Evaluate a(). */
 struct var eval_call(
     struct definition *def,
     struct block *block,
     struct var var);
 
-/*
- * Create and return a copy of var.
- */
+/* Create and return a copy of var. */
 struct var eval_copy(
     struct definition *def,
     struct block *block,
@@ -71,18 +63,14 @@ struct var eval_unary_minus(
     struct block *block,
     struct var val);
 
-/*
- * Evaluate (T) a.
- */
+/* Evaluate (T) a. */
 struct var eval_cast(
     struct definition *def,
     struct block *b,
     struct var v,
     const struct typetree *t);
 
-/*
- * Evaluate (a) ? b : c.
- */
+/* Evaluate (a) ? b : c. */
 struct var eval_conditional(
     struct definition *def,
     struct var a,
@@ -122,23 +110,17 @@ struct block *eval_logical_or(
     struct block *right_top,
     struct block *right);
 
-/*
- * Evaluate left->expr && right->expr.
- */
+/* Evaluate left->expr && right->expr. */
 struct block *eval_logical_and(
     struct definition *def,
     struct block *left,
     struct block *right_top,
     struct block *right);
 
-/*
- * Evaluate va_start builtin function.
- */
+/* Evaluate va_start builtin function. */
 struct var eval__builtin_va_start(struct block *block, struct var arg);
 
-/*
- * Evaluate va_arg builtin function.
- */
+/* Evaluate va_arg builtin function. */
 struct var eval__builtin_va_arg(
     struct definition *def,
     struct block *block,

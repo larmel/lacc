@@ -4,7 +4,8 @@
 #include "string.h"
 #include "typetree.h"
 
-/* Map token type to corresponding numerical ascii value where possible,
+/*
+ * Map token type to corresponding numerical ascii value where possible,
  * and fit the remaining tokens in between.
  */
 enum token_type {
@@ -95,27 +96,36 @@ enum token_type {
     CLOSE_CURLY = '}',
     NEG = '~',
 
-    /* The remaining tokens do not correspond to any fixed string, and
-     * are placed at arbitrary locations. */
+    /*
+     * The remaining tokens do not correspond to any fixed string, and
+     * are placed at arbitrary locations.
+     */
     NUMBER = 116,
     IDENTIFIER,
     STRING,
 
-    /* Pseudo-token representing parameter substitution in macros. Has
-     * an immediate integer value referring to the parameter index. */
+    /*
+     * Pseudo-token representing parameter substitution in macros. Has
+     * an immediate integer value referring to the parameter index.
+     */
     PARAM,
 
-    /* Pseudo-token representing empty argument for macro expansion in
-     * preprocessor. */
+    /*
+     * Pseudo-token representing empty argument for macro expansion in
+     * preprocessor.
+     */
     EMPTY_ARG,
 
-    /* Preprocessing token representing a number. Valid strings include
+    /*
+     * Preprocessing token representing a number. Valid strings include
      * a superset of numeric constants in C. A conversion to NUMBER
-     * token is done before handed to parser. */
+     * token is done before handed to parser.
+     */
     PREP_NUMBER
 };
 
-/* Tokens keep track of typed numbers, to capture difference between
+/*
+ * Tokens keep track of typed numbers, to capture difference between
  * literals like 1 and 1ul. Type should always correspond to one of the
  * basic integer types.
  *
@@ -132,7 +142,8 @@ struct number {
     } val;
 };
 
-/* Representation of token; used in preprocessing, and interface to
+/*
+ * Representation of token; used in preprocessing, and interface to
  * parser.
  */
 struct token {
@@ -144,20 +155,16 @@ struct token {
     } d;
 };
 
-/* Peek lookahead of 1.
- */
+/* Peek lookahead of 1. */
 struct token peek(void);
 
-/* Peek lookahead of n.
- */
+/* Peek lookahead of n. */
 struct token peekn(unsigned n);
 
-/* Consume and return next token.
- */
+/* Consume and return next token. */
 struct token next(void);
 
-/* Consume and return next token, or fail of not of expected type.
- */
+/* Consume and return next token, or fail of not of expected type. */
 struct token consume(enum token_type type);
 
 #endif

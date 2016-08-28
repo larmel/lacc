@@ -17,7 +17,8 @@
 static struct hash_table macro_hash_table;
 static int new_macro_added;
 
-/* Keep track of which macros have been expanded, avoiding recursion by
+/*
+ * Keep track of which macros have been expanded, avoiding recursion by
  * looking up in this list for each new expansion.
  */
 static array_of(String) expand_stack;
@@ -79,9 +80,10 @@ static void *macro_hash_add(void *ref)
     arg = (struct macro *) ref;
     macro = calloc(1, sizeof(*macro));
     *macro = *arg;
-
-    /* Signal that the hash table has ownership now, and it will not be
-     * freed in define(). */
+    /*
+     * Signal that the hash table has ownership now, and it will not be
+     * freed in define().
+     */
     new_macro_added = 1;
     return macro;
 }
@@ -127,8 +129,10 @@ const struct macro *definition(String name)
     ensure_initialized();
     ref = hash_lookup(&macro_hash_table, name);
     if (ref) {
-        /* Replace __LINE__ with current line number, by mutating
-         * the replacement list on the fly. */
+        /*
+         * Replace __LINE__ with current line number, by mutating
+         * the replacement list on the fly.
+         */
         if (!str_cmp(ref->name, builtin__line__)) {
             array_get(&ref->replacement, 0) = get__line__token();
         }
@@ -150,8 +154,10 @@ void define(struct macro macro)
         exit(1);
     }
 
-    /* Need to clean up memory for replacement list since ownership was
-     * not given to hash table. */
+    /*
+     * Need to clean up memory for replacement list since ownership was
+     * not given to hash table.
+     */
     if (!new_macro_added) {
         array_clear(&macro.replacement);
     }
@@ -227,7 +233,8 @@ static struct token paste(struct token left, struct token right)
     return res;
 }
 
-/* In-place expansion of token paste operators.
+/*
+ * In-place expansion of token paste operators.
  *
  * Example:
  *    ['f', '##', 'u', '##', 'nction'] -> ['function'].
@@ -254,8 +261,10 @@ static void expand_paste_operators(TokenArray *list)
                 l = array_get(list, i);
                 r = array_get(list, j + 1);
                 if (l.token == EMPTY_ARG && r.token == EMPTY_ARG) {
-                    /* Pasting together two arguments that are not given
-                     * will result in no token. */
+                    /*
+                     * Pasting together two arguments that are not given
+                     * will result in no token.
+                     */
                     i--;
                 } else {
                     array_get(list, i) = paste(l, r);
@@ -338,7 +347,8 @@ static const struct token *skip(const struct token *list, enum token_type token)
     return list;
 }
 
-/* Read tokens forming next macro argument. Missing arguments are
+/*
+ * Read tokens forming next macro argument. Missing arguments are
  * represented by a single EMPTY_ARG element.
  */
 static TokenArray read_arg(
@@ -399,7 +409,8 @@ static TokenArray *read_args(
     return args;
 }
 
-/* Replace content of list between indices [start, end] with contents of
+/*
+ * Replace content of list between indices [start, end] with contents of
  * slice.
  */ 
 static void array_replace_slice(
@@ -421,8 +432,10 @@ static void array_replace_slice(
         list->data = realloc(list->data, list->capacity * sizeof(*list->data));
     }
 
-    /* Move trailing data out of the way, or move closer to prefix, to
-     * align exactly where slice is inserted. */
+    /*
+     * Move trailing data out of the way, or move closer to prefix, to
+     * align exactly where slice is inserted.
+     */
     if (offset != 0) {
         memmove(
             list->data + end + offset,
@@ -453,9 +466,10 @@ void expand(TokenArray *list)
         t = array_get(list, i);
         if (t.token == IDENTIFIER) {
             def = definition(tokstr(t));
-
-            /* Only expand function-like macros if they appear as func-
-             * tion invocations, beginning with an open paranthesis. */
+            /*
+             * Only expand function-like macros if they appear as func-
+             * tion invocations, beginning with an open paranthesis.
+             */
             if (def && !is_macro_expanded(def) &&
                 (def->type != FUNCTION_LIKE ||
                     array_get(list, i + 1).token == '('))
@@ -469,8 +483,10 @@ void expand(TokenArray *list)
                     expn.data[0].leading_whitespace = t.leading_whitespace;
                 }
 
-                /* Squeeze in expn in list, starting from index i and
-                 * extending size elements. */
+                /*
+                 * Squeeze in expn in list, starting from index i and
+                 * extending size elements.
+                 */
                 array_replace_slice(list, i, size, &expn);
                 i += array_len(&expn);
                 array_clear(&expn);
@@ -500,7 +516,8 @@ int tok_cmp(struct token a, struct token b)
     }
 }
 
-/* From GCC documentation: All leading and trailing whitespace in text
+/*
+ * From GCC documentation: All leading and trailing whitespace in text
  * being stringified is ignored. Any sequence of whitespace in the
  * middle of the text is converted to a single space in the stringified
  * result.
@@ -523,8 +540,10 @@ struct token stringify(const TokenArray *list)
                 str_register(str_raw(str.d.string), str.d.string.len);
         }
     } else {
-        /* Estimate 7 characters per token, trying to avoid unnecessary
-         * reallocations. */
+        /*
+         * Estimate 7 characters per token, trying to avoid unnecessary
+         * reallocations.
+         */
         cap = array_len(list) * 7 + 1;
         buf = malloc(cap);
         len = ptr = 0;
@@ -533,16 +552,18 @@ struct token stringify(const TokenArray *list)
         for (i = 0; i < array_len(list); ++i) {
             tok = array_get(list, i);
             assert(tok.token != END);
-
-            /* Do not include trailing space of line. This case hits
-             * when producing message for #error directives. */
+            /*
+             * Do not include trailing space of line. This case hits
+             * when producing message for #error directives.
+             */
             if (tok.token == NEWLINE) {
                 assert(i == array_len(list) - 1);
                 break;
             }
-
-            /* Reduce to a single space, and only insert between other
-             * tokens in the list. */
+            /*
+             * Reduce to a single space, and only insert between other
+             * tokens in the list.
+             */
             strval = tokstr(tok);
             len += strval.len + (tok.leading_whitespace && i);
             if (len >= cap) {
@@ -591,7 +612,7 @@ static void register__builtin__FILE__(void)
     struct macro macro = {
         SHORT_STRING_INIT("__FILE__"),
         OBJECT_LIKE,
-        0, /* parameters */
+        0, /* Parameters. */
     };
 
     file.d.string = current_file_path;

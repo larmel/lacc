@@ -10,7 +10,8 @@
 
 static char buffer[BUFFERS][MAX_BUF_LEN];
 
-/* Return a buffer which can be used to write string representation of
+/*
+ * Return a buffer which can be used to write string representation of
  * variable or symbol. Need to keep at most three alive in order to
  * print a full statement. Circulate using counter.
  */

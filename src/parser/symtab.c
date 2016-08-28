@@ -1,7 +1,4 @@
-#if _XOPEN_SOURCE < 500
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 500 /* snprintf */
-#endif
+#define _XOPEN_SOURCE 500 /* snprintf */
 #include "symtab.h"
 #include "type.h"
 #include <lacc/context.h>
@@ -11,7 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Maintain list of symbols allocated for temporaries, which can be
+/*
+ * Maintain list of symbols allocated for temporaries, which can be
  * reused between function definitions.
  */
 static array_of(struct symbol *) temporaries;
@@ -21,8 +19,7 @@ struct namespace
     ns_label = {"labels"},
     ns_tag = {"tags"};
 
-const struct symbol
-    *decl_memcpy = NULL;
+const struct symbol *decl_memcpy = NULL;
 
 static String sym_hash_key(void *ref)
 {
@@ -44,8 +41,10 @@ static void sym_clear_temporaries(void)
 
 struct symbol *sym_create_temporary(const struct typetree *type)
 {
-    /* Count number of temporary variables, giving each new one a unique
-     * name by setting the counter instead of creating a string. */
+    /*
+     * Count number of temporary variables, giving each new one a unique
+     * name by setting the counter instead of creating a string.
+     */
     static int n;
 
     struct symbol *sym;
@@ -73,7 +72,8 @@ void sym_release_temporary(struct symbol *sym)
 
 void push_scope(struct namespace *ns)
 {
-    /* Initialize hash table with initial size heuristic based on scope
+    /*
+     * Initialize hash table with initial size heuristic based on scope
      * depth. As a special case, depth 1 containing function arguments
      * is assumed to contain fewer symbols.
      */
@@ -83,8 +83,10 @@ void push_scope(struct namespace *ns)
     unsigned cap;
     struct hash_table *scope, empty = {0};
 
-    /* Look at the maximum number of scopes that have been previously
-     * allocated. If within, we only need to clear the old scope. */
+    /*
+     * Look at the maximum number of scopes that have been previously
+     * allocated. If within, we only need to clear the old scope.
+     */
     if (array_len(&ns->scope) < ns->max_scope_depth) {
         assert(array_len(&ns->scope) < ns->scope.capacity);
         array_len(&ns->scope) += 1;
@@ -109,9 +111,11 @@ void pop_scope(struct namespace *ns)
     struct symbol *sym;
     struct hash_table *scope;
 
-    /* Popping last scope frees the whole symbol table, including the
+    /*
+     * Popping last scope frees the whole symbol table, including the
      * symbols themselves. For label scope, which is per function, make
-     * sure there are no tentative definitions. */
+     * sure there are no tentative definitions.
+     */
     if (array_len(&ns->scope) == 1) {
         for (i = 0; i < ns->max_scope_depth; ++i) {
             scope = &array_get(&ns->scope, i);
@@ -130,9 +134,11 @@ void pop_scope(struct namespace *ns)
 
         array_clear(&ns->symbol);
 
-        /* Temporaries should only be freed once, at exit. Check for a
+        /*
+         * Temporaries should only be freed once, at exit. Check for a
          * particular namespace that is only popped completely at the
-         * end of the translation unit. */
+         * end of the translation unit.
+         */
         if (ns == &ns_ident) {
             sym_clear_temporaries();
         }
@@ -174,10 +180,12 @@ const char *sym_name(const struct symbol *sym)
     if (!sym->n)
         return str_raw(sym->name);
 
-    /* Temporary variables and string literals are named '.t' and '.LC',
+    /*
+     * Temporary variables and string literals are named '.t' and '.LC',
      * respectively. For those, append the numeral without anything in
      * between. For other variables, which are disambiguated statics,
-     * insert a period between the name and the number. */
+     * insert a period between the name and the number.
+     */
     if (str_raw(sym->name)[0] == '.')
         snprintf(name, sizeof(name), "%s%d", str_raw(sym->name), sym->n);
     else
@@ -186,7 +194,8 @@ const char *sym_name(const struct symbol *sym)
     return name;
 }
 
-/* Symbols can be declared multiple times, with incomplete or complete
+/*
+ * Symbols can be declared multiple times, with incomplete or complete
  * types. Only functions and arrays can exist as incomplete. Other
  * symbols can be re-declared, but must have identical type each time.
  *
@@ -286,15 +295,19 @@ struct symbol *sym_add(
     sym->symtype = symtype;
     sym->linkage = linkage;
 
-    /* Scoped static variable must get unique name in order to not
-     * collide with other external declarations. */
+    /*
+     * Scoped static variable must get unique name in order to not
+     * collide with other external declarations.
+     */
     if (linkage == LINK_INTERN && (sym->depth || symtype == SYM_STRING_VALUE)) {
         static int n;
         sym->n = ++n;
     }
 
-    /* Add to normal identifier namespace, and make it searchable
-     * through current scope. */
+    /*
+     * Add to normal identifier namespace, and make it searchable
+     * through current scope.
+     */
     array_push_back(&ns->symbol, sym);
     hash_insert(
         &array_get(&ns->scope, array_len(&ns->scope) - 1),
@@ -327,8 +340,10 @@ struct symbol *sym_create_label(void)
     sym->name = str_init(".L");
     sym->n = ++n;
 
-    /* Construct symbol in normal namespace, but do not add it to any
-     * scope. No need or use for searching labels. */
+    /*
+     * Construct symbol in normal namespace, but do not add it to any
+     * scope. No need or use for searching labels.
+     */
     array_push_back(&ns_ident.symbol, sym);
     return sym;
 }
@@ -371,9 +386,11 @@ void register_builtin_types(struct namespace *ns)
         SYM_TYPEDEF,
         LINK_NONE);
 
-    /* Add symbols with dummy types just to reserve them, and make them
+    /*
+     * Add symbols with dummy types just to reserve them, and make them
      * resolve during parsing. These are implemented as compiler
-     * intrinsics. */
+     * intrinsics.
+     */
     sym_add(ns,
         str_init("__builtin_va_start"),
         &basic_type__void,

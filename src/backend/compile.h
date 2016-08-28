@@ -5,23 +5,23 @@
 
 #include <stdio.h>
 
-/* Initialize compile target format and output stream. Must be called
+/*
+ * Initialize compile target format and output stream. Must be called
  * before any other compile function.
  */
 void set_compile_target(FILE *stream);
 
-/* Compile definition, symbols which are assigned some storage.
- */
+/* Compile definition, symbols which are assigned some storage. */
 int compile(struct definition *def);
 
-/* Compile tentative definitions and declarations; symbols which have
+/*
+ * Compile tentative definitions and declarations; symbols which have
  * not been assigned a value in this translation unit, but must be known
  * for linkage.
  */
 int declare(const struct symbol *sym);
 
-/* Flush any buffered output, no more input will follow.
- */
+/* Flush any buffered output, no more input will follow. */
 void flush(void);
 
 #endif

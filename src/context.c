@@ -10,12 +10,14 @@
 
 struct context context = {0};
 
-/* Static limits on output length, for simplicity. Store arguments and
+/*
+ * Static limits on output length, for simplicity. Store arguments and
  * substrings from format here temporarily.
  */
 static char message[PRINT_BUF_SIZE];
 
-/* Custom implementation of printf, handling a restricted set of
+/*
+ * Custom implementation of printf, handling a restricted set of
  * formatters: %s, %d, %lu, %ld.
  *
  * In addition, have a custom formatter for objects representing a

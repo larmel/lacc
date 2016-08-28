@@ -121,8 +121,10 @@ int sym_alignment(const struct symbol *sym)
 {
     int align = type_alignment(&sym->type);
     if (is_array(&sym->type) && align < 16) {
-        /* A local or global array variable of at least 16 bytes should
-         * have alignment of 16. */
+        /*
+         * A local or global array variable of at least 16 bytes should
+         * have alignment of 16.
+         */
         align = 16;
     }
 

@@ -1,7 +1,4 @@
-#if _XOPEN_SOURCE < 600
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 600 /* isblank */
-#endif
+#define _XOPEN_SOURCE 600 /* isblank */
 #include "directive.h"
 #include "input.h"
 #include "strtab.h"
@@ -20,42 +17,44 @@
 struct source {
     FILE *file;
 
-    /* Total capacity of the line buffer is represented by size. The
+    /*
+     * Total capacity of the line buffer is represented by size. The
      * number of characters already handled, a prefix, is 'processed'.
      * Read is the number of valid characters in the buffer. The
      * processed count grows on successive calls towards the read
      * number. When all read characters are processed, or the remaining
      * interval between (processed, read) does not contain a full line,
-     * rewind the buffer, or increase if necessary. */
+     * rewind the buffer, or increase if necessary.
+     */
     char *buffer;
     size_t size, processed, read;
 
     /* Full path, or relative to invocation directory. */
     String path;
 
-    /* Number of characters into path occupied by directory, not
-     * including the last slash. */
+    /*
+     * Number of characters into path occupied by directory, not
+     * including the last slash.
+     */
     int dirlen;
 
     /* Current line. */
     int line;
 };
 
-/* Temporary buffer used to construct search paths.
- */
+/* Temporary buffer used to construct search paths. */
 static char *path_buffer;
 
-/* List of directories to search on resolving include directives.
- */
+/* List of directories to search on resolving include directives. */
 static array_of(const char *) search_path_list;
 
-/* Keep stack of file descriptors as resolved by includes. Push and pop
+/*
+ * Keep stack of file descriptors as resolved by includes. Push and pop
  * from the end of the list.
  */
 static array_of(struct source) source_stack;
 
-/* Expose for diagnostics.
- */
+/* Expose for diagnostics. */
 String current_file_path;
 int current_file_line;
 
@@ -130,8 +129,10 @@ void include_file(const char *name)
     struct source *file;
     struct source source = {0};
 
-    /* Construct path by combining current directory and include name,
-     * which itself can include folders. */
+    /*
+     * Construct path by combining current directory and include name,
+     * which itself can include folders.
+     */
     file = current_file();
     if (file->dirlen) {
         path = create_path(str_raw(file->path), file->dirlen, name);
@@ -212,28 +213,32 @@ void init(const char *path)
 
 static size_t process_chunk(char *line, size_t len, int *linecount)
 {
-    /* Preserve progress made between resizing or moving. Both for
-       optimization, and to not have to backtrack mutations done on the
-       string, like replacing comments with a single space character. */
+    /*
+     * Preserve progress made between resizing or moving. Both for
+     * optimization, and to not have to backtrack mutations done on the
+     * string, like replacing comments with a single space character.
+     */
     static ptrdiff_t prev_ptr, prev_tail, prev_end;
     static enum {
         NORMAL,
         COMMENT
     } state = NORMAL;
 
-    /* Invariant: ptr always points to one past the last character of
-       the result string, at loop exit this should be '\0'. The end
-       pointer always points to, at the start of each iteration, the
-       next character to consider part of the string.
-
-       Tail is the previous content character skipped over by end. This
-       Needs to be tracked for comments, like *\ (newline) /. Logically,
-       the character at *(end - 1), when skipping continuations.
-       Characters are copied from *end to *ptr as processing moves
-       along, skipping over line continuations and comments.
-
-       The preprocessing is successful iff *ptr == '\0' at loop exit,
-       meaning we were able to process a whole line. */
+    /*
+     * Invariant: ptr always points to one past the last character of
+     * the result string, at loop exit this should be '\0'. The end
+     * pointer always points to, at the start of each iteration, the
+     * next character to consider part of the string.
+     *
+     * Tail is the previous content character skipped over by end. This
+     * Needs to be tracked for comments, like *\ (newline) /. Logically,
+     * the character at *(end - 1), when skipping continuations.
+     * Characters are copied from *end to *ptr as processing moves
+     * along, skipping over line continuations and comments.
+     *
+     * The preprocessing is successful iff *ptr == '\0' at loop exit,
+     * meaning we were able to process a whole line.
+     */
     char
         *ptr = line + prev_ptr,
         *end = line + prev_end,
@@ -290,7 +295,8 @@ static size_t process_chunk(char *line, size_t len, int *linecount)
     return 0;
 }
 
-/* Read the next line from file input, doing initial pre-preprocessing.
+/*
+ * Read the next line from file input, doing initial pre-preprocessing.
  */
 static char *initial_preprocess_line(struct source *fn)
 {

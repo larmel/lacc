@@ -4,7 +4,7 @@
 
 #include <assert.h>
 
-#define SHNUM 10        /* Number of section headers */
+#define SHNUM 10        /* Number of section headers. */
 
 #define SHID_ZERO 0
 #define SHID_SHSTRTAB 1
@@ -36,19 +36,19 @@ static Elf64_Ehdr header = {
         0,                      /* El_PAD */
         sizeof(header.e_ident)  /* El_NIDENT */
     },
-    ET_REL,             /* Relocatable file type */
-    0x3E,               /* Machine type x86_64 */
-    1,                  /* Version */
-    0x0,                /* Entry point address */
-    0x0,                /* Program header offset */
-    sizeof(header),     /* Section header offset */
-    0x0,                /* Flags */
+    ET_REL,             /* Relocatable file type. */
+    0x3E,               /* Machine type x86_64. */
+    1,                  /* Version. */
+    0x0,                /* Entry point address. */
+    0x0,                /* Program header offset. */
+    sizeof(header),     /* Section header offset. */
+    0x0,                /* Flags. */
     sizeof(header),
-    0x0,                /* Program header size */
-    0,                  /* Number of program header entries */
-    sizeof(Elf64_Shdr), /* e_shentsize */
-    SHNUM,              /* e_shnum, number of section headers */
-    SHID_SHSTRTAB       /* e_shstrndx, index of shstrtab */
+    0x0,                /* Program header size. */
+    0,                  /* Number of program header entries. */
+    sizeof(Elf64_Shdr), /* e_shentsize. */
+    SHNUM,              /* e_shnum, number of section headers. */
+    SHID_SHSTRTAB       /* e_shstrndx, index of shstrtab. */
 };
 
 static char *shname[] = {
@@ -65,126 +65,126 @@ static char *shname[] = {
 };
 
 static Elf64_Shdr shdr[] = {
-    {0},                /* First section header must contain all-zeroes */
+    {0},                /* First section header must be all-zero. */
     { /* .shstrtab */
-        0,              /* sh_name, index into shstrtab */
-        SHT_STRTAB,     /* sh_type */
-        0,              /* sh_flags */
-        0x0,            /* sh_addr */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_STRTAB,     /* sh_type. */
+        0,              /* sh_flags. */
+        0x0,            /* sh_addr. */
         sizeof(Elf64_Ehdr) + SHNUM * sizeof(Elf64_Shdr),
-        0,              /* sh_size (TODO) */
-        SHN_UNDEF,      /* sh_link */
-        0,              /* sh_info */
-        1,              /* sh_addralign */
-        0               /* sh_entsize */
+        0,              /* sh_size (TODO). */
+        SHN_UNDEF,      /* sh_link. */
+        0,              /* sh_info. */
+        1,              /* sh_addralign. */
+        0               /* sh_entsize. */
     },
     { /* .strtab */
-        0,              /* sh_name, index into shstrtab */
-        SHT_STRTAB,     /* sh_type */
-        0,              /* sh_flags */
-        0x0,            /* sh_addr */
-        0,              /* sh_offset (TODO) */
-        0,              /* sh_size (TODO) */
-        SHN_UNDEF,      /* sh_link */
-        0,              /* sh_info */
-        1,              /* sh_addralign */
-        0               /* sh_entsize */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_STRTAB,     /* sh_type. */
+        0,              /* sh_flags. */
+        0x0,            /* sh_addr. */
+        0,              /* sh_offset (TODO). */
+        0,              /* sh_size (TODO). */
+        SHN_UNDEF,      /* sh_link. */
+        0,              /* sh_info. */
+        1,              /* sh_addralign. */
+        0               /* sh_entsize. */
     },
     { /* .symtab */
-        0,              /* sh_name, index into shstrtab */
-        SHT_SYMTAB,     /* sh_type */
-        0,              /* sh_flags */
-        0x0,            /* sh_addr */
-        0,              /* sh_offset (TODO) */
-        0,              /* sh_size (TODO) */
-        SHID_STRTAB,    /* sh_link, section number of strtab */
-        0,              /* sh_info, index of first non-local symbol (x) */
-        4,              /* sh_addralign */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_SYMTAB,     /* sh_type. */
+        0,              /* sh_flags. */
+        0x0,            /* sh_addr. */
+        0,              /* sh_offset (TODO). */
+        0,              /* sh_size (TODO). */
+        SHID_STRTAB,    /* sh_link, section number of strtab. */
+        0,              /* sh_info, index of first non-local symbol. */
+        4,              /* sh_addralign. */
         sizeof(Elf64_Sym)
     },
     { /* .rela.text */
-        0,              /* sh_name, index into shstrtab */
-        SHT_RELA,       /* sh_type */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_RELA,       /* sh_type. */
         0x0,
-        0x0,            /* Virtual address */
-        0x0,            /* Offset in file (TODO!) */
-        0,              /* Size of section (TODO!) */
-        SHID_SYMTAB,    /* sh_link, symbol table referenced by relocations */
-        SHID_TEXT,      /* sh_info, section which relocations apply */
-        8,              /* sh_addralign */
+        0x0,            /* Virtual address. */
+        0x0,            /* Offset in file (TODO). */
+        0,              /* Size of section (TODO). */
+        SHID_SYMTAB,    /* sh_link, symbol table referenced by reloc. */
+        SHID_TEXT,      /* sh_info, section which relocations apply. */
+        8,              /* sh_addralign. */
         sizeof(Elf64_Rela)
     },
     { /* .rela.data */
-        0,              /* sh_name, index into shstrtab */
-        SHT_RELA,       /* sh_type */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_RELA,       /* sh_type. */
         0x0,
-        0x0,            /* Virtual address */
-        0x0,            /* Offset in file (TODO!) */
-        0,              /* Size of section (TODO!) */
-        SHID_SYMTAB,    /* sh_link, symbol table referenced by relocations */
-        SHID_DATA,      /* sh_info, section which relocations apply */
-        8,              /* sh_addralign */
+        0x0,            /* Virtual address. */
+        0x0,            /* Offset in file (TODO). */
+        0,              /* Size of section (TODO). */
+        SHID_SYMTAB,    /* sh_link, symbol table referenced by reloc. */
+        SHID_DATA,      /* sh_info, section which relocations apply. */
+        8,              /* sh_addralign. */
         sizeof(Elf64_Rela)
     },
     { /* .bss */
-        0,              /* sh_name, index into shstrtab */
-        SHT_NOBITS,     /* Section type */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_NOBITS,     /* Section type. */
         SHF_WRITE | SHF_ALLOC,
-        0x0,            /* Virtual address */
-        0x0,            /* Offset in file (TODO!) */
-        0,              /* Size of section (TODO!) */
-        SHN_UNDEF,      /* sh_link */
-        0,              /* sh_info */
-        4,              /* sh_addralign */
-        0               /* sh_entsize */
+        0x0,            /* Virtual address. */
+        0x0,            /* Offset in file (TODO). */
+        0,              /* Size of section (TODO). */
+        SHN_UNDEF,      /* sh_link. */
+        0,              /* sh_info. */
+        4,              /* sh_addralign. */
+        0               /* sh_entsize. */
     },
     { /* .data */
-        0,              /* sh_name, index into shstrtab */
-        SHT_PROGBITS,   /* Section type */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_PROGBITS,   /* Section type. */
         SHF_WRITE | SHF_ALLOC,
-        0x0,            /* Virtual address */
-        0x0,            /* Offset in file (TODO!) */
-        0,              /* Size of section (TODO!) */
-        SHN_UNDEF,      /* sh_link */
-        0,              /* sh_info */
-        4,              /* sh_addralign */
-        0               /* sh_entsize */
+        0x0,            /* Virtual address. */
+        0x0,            /* Offset in file (TODO). */
+        0,              /* Size of section (TODO). */
+        SHN_UNDEF,      /* sh_link. */
+        0,              /* sh_info. */
+        4,              /* sh_addralign. */
+        0               /* sh_entsize. */
     },
     { /* .rodata */
-        0,              /* sh_name, index into shstrtab */
-        SHT_PROGBITS,   /* sh_type */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_PROGBITS,   /* sh_type. */
         SHF_ALLOC,
-        0x0,            /* Virtual address */
-        0x0,            /* Offset in file (TODO!) */
-        0,              /* Size of section (TODO!) */
-        SHN_UNDEF,      /* sh_link */
-        0,              /* sh_info */
-        16,             /* sh_addralign */
-        0               /* sh_entsize */
+        0x0,            /* Virtual address. */
+        0x0,            /* Offset in file (TODO). */
+        0,              /* Size of section (TODO). */
+        SHN_UNDEF,      /* sh_link. */
+        0,              /* sh_info. */
+        16,             /* sh_addralign. */
+        0               /* sh_entsize. */
     },
     { /* .text */
-        0,              /* sh_name, index into shstrtab */
-        SHT_PROGBITS,   /* sh_type */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_PROGBITS,   /* sh_type. */
         SHF_EXECINSTR | SHF_ALLOC,
-        0x0,            /* Virtual address */
-        0x0,            /* Offset in file (TODO!) */
-        0,              /* Size of section (TODO!) */
-        SHN_UNDEF,      /* sh_link */
-        0,              /* sh_info */
-        16,             /* sh_addralign */
-        0               /* sh_entsize */
+        0x0,            /* Virtual address. */
+        0x0,            /* Offset in file (TODO). */
+        0,              /* Size of section (TODO). */
+        SHN_UNDEF,      /* sh_link. */
+        0,              /* sh_info. */
+        16,             /* sh_addralign. */
+        0               /* sh_entsize. */
     }
 };
 
-/* Data associated with each section.
- */
+/* Data associated with each section. */
 static union {
     unsigned char *data;
     Elf64_Sym *sym;
     Elf64_Rela *rela;
 } sbuf[SHNUM];
 
-/* Pending relocations, waiting for sym->stack_offset to be resolved to
+/*
+ * Pending relocations, waiting for sym->stack_offset to be resolved to
  * index into .symtab.
  */
 struct pending_relocation {
@@ -201,12 +201,14 @@ static int
     n_rela_data,
     n_rela_text;
 
-/* Keep track of function being assembled, updating st_size after each
+/*
+ * Keep track of function being assembled, updating st_size after each
  * instruction.
  */
 static Elf64_Sym *current_function_entry;
 
-/* List of pending global symbols, not yet added to .symtab. All globals
+/*
+ * List of pending global symbols, not yet added to .symtab. All globals
  * have to come after LOCAL symbols, according to spec. Also, ld will
  * segfault(!) otherwise.
  */
@@ -217,7 +219,8 @@ struct global {
 
 static array_of(struct global) globals;
 
-/* Text section contains offsets to labels, also in text. Forward
+/*
+ * Text section contains offsets to labels, also in text. Forward
  * references cannot be resolved immediately, as translation is single
  * pass. Store offsets into .text, paired with symbol (label) which
  * offsets should be calculated.
@@ -229,12 +232,13 @@ struct pending_displacement {
 
 static array_of(struct pending_displacement) pending_displacement_list;
 
-/* Write bytes to section. If ptr is NULL, fill with zeros.
- */
+/* Write bytes to section. If ptr is NULL, fill with zeros. */
 static int elf_section_write(int shid, const void *data, size_t n)
 {
-    /* Section data buffer capacity, in bytes. Buffer is kept in sbuf,
-     * indexed by section id. */
+    /*
+     * Section data buffer capacity, in bytes. Buffer is kept in sbuf,
+     * indexed by section id. 
+     */
     static size_t scap[SHNUM];
 
     size_t offset;
@@ -272,7 +276,8 @@ static int elf_section_write(int shid, const void *data, size_t n)
     return offset;
 }
 
-/* Align data section to specified number of bytes. Following calls to
+/*
+ * Align data section to specified number of bytes. Following calls to
  * elf_section_write start at this alignment. Padding is filled with
  * zero.
  */
@@ -291,8 +296,7 @@ static int elf_section_align(int shid, int align)
     return offset;
 }
 
-/* Add entry to .symtab, returning index.
- */
+/* Add entry to .symtab, returning index. */
 static int elf_symtab_add(Elf64_Sym entry)
 {
     static Elf64_Sym default_symbols[] = {
@@ -314,8 +318,10 @@ static int elf_symtab_add(Elf64_Sym entry)
     i = shdr[SHID_SYMTAB].sh_size / sizeof(Elf64_Sym);
     elf_section_write(SHID_SYMTAB, &entry, sizeof(Elf64_Sym));
 
-    /* All STB_LOCAL must come before STB_GLOBAL. Index of the first
-     * non-local symbol is stored in section header field. */
+    /*
+     * All STB_LOCAL must come before STB_GLOBAL. Index of the first
+     * non-local symbol is stored in section header field.
+     */
     if (entry.st_info >> 4 == STB_GLOBAL && !shdr[SHID_SYMTAB].sh_info) {
         shdr[SHID_SYMTAB].sh_info = i;
     } else {
@@ -326,7 +332,8 @@ static int elf_symtab_add(Elf64_Sym entry)
     return i;
 }
 
-/* Associate symbol with symtab entry. Internal symbols are added to
+/*
+ * Associate symbol with symtab entry. Internal symbols are added to
  * table right away, but global symbols have to be buffered and flushed
  * at the end. (Mis-)use member for storing index into ELF symbol table.
  * Stack offset is otherwise only used for local variables, which will
@@ -346,16 +353,17 @@ static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
         var.entry = entry;
         array_push_back(&globals, var);
         if (is_function(&sym->type)) {
-            /* This seems a bit shady, assumes the array address is kept
-             * stable. Same with LINK_INTERN case... */
+            /*
+             * This seems a bit shady, assumes the array address is kept
+             * stable. Same with LINK_INTERN case...
+             */
             current_function_entry
                 = &array_get(&globals, array_len(&globals) - 1).entry;
         }
     }
 }
 
-/* Write global symtab entries to section data.
- */
+/* Write global symtab entries to section data. */
 static void flush_symtab_globals(void)
 {
     int i;
@@ -369,7 +377,8 @@ static void flush_symtab_globals(void)
     array_clear(&globals);
 }
 
-/* Add string to strtab section, returning its offset into the section
+/*
+ * Add string to strtab section, returning its offset into the section
  * for use in references.
  */
 static int elf_strtab_add(int shid, const char *str)
@@ -428,7 +437,8 @@ static void elf_add_reloc_data(
     elf_add_reloc(r);
 }
 
-/* Construct relocation entries from pending relocations. Invoked with
+/*
+ * Construct relocation entries from pending relocations. Invoked with
  * flush(), after all data and code is processed. It is important that
  * this is called once all symbols have been written to symtab, as it
  * relies on stack_offset pointing to symtab entry index.
@@ -470,8 +480,10 @@ static void flush_relocations(void)
         entry->r_info =
             ELF64_R_INFO(symtab_index_of(pending.symbol), pending.type);
 
-        /* Subtract 4 to account for the size occupied by the relocation
-         * slot itself, it takes up 4 bytes in the instruction. */
+        /*
+         * Subtract 4 to account for the size occupied by the relocation
+         * slot itself, it takes up 4 bytes in the instruction.
+         */
         if (pending.type == R_X86_64_PC32)
             entry->r_addend -= 4;
     }
@@ -479,7 +491,8 @@ static void flush_relocations(void)
     array_clear(&pending_relocation_list);
 }
 
-/* Must be called before writing text segment. Overwrite locations with
+/*
+ * Must be called before writing text segment. Overwrite locations with
  * offsets now found in stack_offset member of label symbols.
  */
 static void flush_text_displacements(void)
@@ -551,8 +564,10 @@ int elf_symbol(const struct symbol *sym)
         entry.st_value = shdr[SHID_RODATA].sh_size;
         entry.st_info |= STT_OBJECT;
 
-        /* Strings and constant symbols carry their actual string value;
-         * write to .rodata immediately. */
+        /*
+         * Strings and constant symbols carry their actual string value;
+         * write to .rodata immediately.
+         */
         if (sym->symtype == SYM_STRING_VALUE) {
             elf_section_write(SHID_RODATA,
                 str_raw(sym->string_value), entry.st_size);

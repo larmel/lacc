@@ -180,8 +180,10 @@ static void emit_ir(struct block *block, enum optype optype, struct var a, ...)
     va_list args;
     struct op op;
 
-    /* Current block can be NULL when parsing an expression that should
-     * not be evaluated, for example argument to sizeof. */
+    /*
+     * Current block can be NULL when parsing an expression that should
+     * not be evaluated, for example argument to sizeof.
+     */
     if (block) {
         op.type = optype;
         op.a = a;
@@ -310,8 +312,10 @@ static struct var eval_add(
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
-        /* Special case for immediate string literal + constant, and
-         * ADDRESS + constant. These can be evaluated immediately. */
+        /*
+         * Special case for immediate string literal + constant, and
+         * ADDRESS + constant. These can be evaluated immediately.
+         */
         if ((is_string(l) || l.kind == ADDRESS)
             && r.kind == IMMEDIATE
             && is_integer(r.type))
@@ -356,8 +360,10 @@ static struct var eval_sub(
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
-        /* Special case for immediate string literal - constant, and
-         * ADDRESS - constant. These can be evaluated immediately. */
+        /*
+         * Special case for immediate string literal - constant, and
+         * ADDRESS - constant. These can be evaluated immediately.
+         */
         if ((is_string(l) || l.kind == ADDRESS)
             && r.kind == IMMEDIATE
             && is_integer(r.type))
@@ -380,11 +386,12 @@ static struct var eval_sub(
             error("Referenced type is incomplete.");
             exit(1);
         }
-
-        /* Result is ptrdiff_t, which will be signed 64 bit integer.
+        /*
+         * Result is ptrdiff_t, which will be signed 64 bit integer.
          * Reinterpret cast both pointers to unsigned long (no codegen),
          * and store result as signed long. Then divide by element size
-         * to get diff. */
+         * to get diff.
+         */
         l = eval_cast(def, block, l, &basic_type__unsigned_long);
         r = eval_cast(def, block, r, &basic_type__unsigned_long);
         l = eval_expr(def, block, IR_OP_SUB, l, r);
@@ -406,9 +413,11 @@ static struct var eval_eq(
 {
     const struct typetree *type;
 
-    /* Normalize by putting most specific pointer type as left argument.
-       If both sides are pointer, but only one is void *, move the void
-       pointer to the right. */
+    /*
+     * Normalize by putting most specific pointer type as left argument.
+     * If both sides are pointer, but only one is void *, move the void
+     * pointer to the right.
+     */
     if (is_pointer(r.type)
         && (!is_pointer(l.type)
             || (is_void(l.type->next) && !is_void(r.type->next))))
@@ -433,8 +442,10 @@ static struct var eval_eq(
             warning("Comparison between pointer and non-zero integer.");
         }
 
-        /* Left operand has the most specific type, cast to that to have
-           the same type on each side. */
+        /*
+         * Left operand has the most specific type, cast to that to have
+         * the same type on each side.
+         */
         r = eval_cast(def, block, r, l.type);
     } else {
         error("Illegal comparison between types '%t' and '%t'.",
@@ -470,7 +481,8 @@ static const struct typetree *common_compare_type(
     return type;
 }
 
-/* Intermediate language is simplified to handle only greater than (>)
+/*
+ * Intermediate language is simplified to handle only greater than (>)
  * and greater than or equal (>=).
  */
 static struct var eval_cmp_ge(
@@ -638,7 +650,8 @@ static struct var eval_not(
     return var;
 }
 
-/* Convert variables of type ARRAY or FUNCTION to addresses when used
+/*
+ * Convert variables of type ARRAY or FUNCTION to addresses when used
  * in expressions, and normalize bit-field values to whole integers.
  * 'array of T' is converted (decay) to pointer to T. Not the same as
  * taking the address of an array, which would give 'pointer to array
@@ -657,18 +670,20 @@ static struct var rvalue(
         if (var.kind == IMMEDIATE) {
             assert(var.symbol);
             assert(var.symbol->symtype == SYM_STRING_VALUE);
-
-            /* Immediate references to strings retain the same
+            /*
+             * Immediate references to strings retain the same
              * representation, only changing type from array to
-             * pointer. */
+             * pointer.
+             */
             var.type = type_init(T_POINTER, var.type->next);
         } else {
-            /* References to arrays decay into pointer to the first
+            /*
+             * References to arrays decay into pointer to the first
              * element. Change type before doing regular address
              * evaluation, this way backend does not need to handle
              * address of array in any special way. The memory location
-             * represented by var can also be seen as the first
-             * element. */
+             * represented by var can also be seen as the first element.
+             */
             var.type = var.type->next;
             var = eval_addr(def, block, var);
         }
@@ -676,10 +691,11 @@ static struct var rvalue(
         assert(
             type_equal(var.type, &basic_type__int) ||
             type_equal(var.type, &basic_type__unsigned_int));
-
-        /* Bit field is loaded, and if needed sign extended, into a full
-           width integer value. Set width = 0 to make nested calls to
-           eval methods not recursively call rvalue. */
+        /*
+         * Bit field is loaded, and if needed sign extended, into a full
+         * width integer value. Set width = 0 to make nested calls to
+         * eval methods not recursively call rvalue.
+         */
         if (var.width < size_of(&basic_type__int) * 8) {
             bits = var.width;
             var.width = 0;
@@ -689,9 +705,11 @@ static struct var rvalue(
                 var = eval_shiftl(def, block, var, var_int(bits));
                 var = eval_shiftr(def, block, var, var_int(bits));
             } else {
-                /* Fields of unsigned type are promoted to signed int
-                   if the signed type can represent all values of the
-                   unsigned type. */
+                /*
+                 * Fields of unsigned type are promoted to signed int
+                 * if the signed type can represent all values of the
+                 * unsigned type.
+                 */
                 var.type = &basic_type__int;
             }
         } else {
@@ -785,16 +803,20 @@ struct var eval_addr(
             error("Cannot take address of immediate of type '%t'.", var.type);
             exit(1);
         }
-        /* Address of string literal can be done without evaluation,
-           just decay the variable to pointer. */
+        /*
+         * Address of string literal can be done without evaluation,
+         * just decay the variable to pointer.
+         */
         if (is_array(var.type)) {
             var = rvalue(def, block, var);
         }
         break;
     case DIRECT:
-        /* Address of *(&sym + offset) is available directly by setting
-           flag, resulting in (&sym + offset). No special handling of
-           offset needed. */
+        /*
+         * Address of *(&sym + offset) is available directly by setting
+         * flag, resulting in (&sym + offset). No special handling of
+         * offset needed.
+         */
         if (var.lvalue) {
             var.kind = ADDRESS;
             var.type = type_init(T_POINTER, var.type);
@@ -807,17 +829,21 @@ struct var eval_addr(
         break;
     case DEREF:
         if (!var.symbol) {
-            /* Address of *(const + offset) is just the constant.
-               Convert to immediate, adding the extra offset. */
+            /*
+             * Address of *(const + offset) is just the constant.
+             * Convert to immediate, adding the extra offset.
+             */
             var.kind = IMMEDIATE;
             var.type = type_init(T_POINTER, var.type);
             var.imm.u += var.offset;
             var.offset = 0;
             var.lvalue = 0;
         } else {
-            /* Address of *(sym + offset) is not *(&sym + offset), so
-               not possible to just convert to DIRECT. Offset must be
-               applied after converting to direct pointer. */
+            /*
+             * Address of *(sym + offset) is not *(&sym + offset), so
+             * not possible to just convert to DIRECT. Offset must be
+             * applied after converting to direct pointer.
+             */
             assert(is_pointer(&var.symbol->type));
             tmp = var_direct(var.symbol);
             if (var.offset) {
@@ -850,31 +876,39 @@ struct var eval_deref(
     assert(!is_tagged(var.type));
     switch (var.kind) {
     case DEREF:
-        /* Dereferencing *(sym + offset) must evaluate pointer into a
-           new temporary, before marking that as DEREF var. */
+        /*
+         * Dereferencing *(sym + offset) must evaluate pointer into a
+         * new temporary, before marking that as DEREF var.
+         */
         var = eval_assign(def, block, create_var(def, var.type), var);
         break;
     case DIRECT:
         if (var.offset != 0 || !is_pointer(&var.symbol->type)) {
-            /* Cannot immediately dereference a pointer which is at a
-               direct offset from another symbol. Also, pointers that
-               are the result of indexing into a structure must be
-               evaluated, as DEREF variables assume symbol to be of
-               pointer type. */
+            /*
+             * Cannot immediately dereference a pointer which is at a
+             * direct offset from another symbol. Also, pointers that
+             * are the result of indexing into a structure must be
+             * evaluated, as DEREF variables assume symbol to be of
+             * pointer type.
+             */
             var = eval_assign(def, block, create_var(def, var.type), var);
         }
         break;
     case ADDRESS:
-        /* Dereferencing (&sym + offset) is a DIRECT reference to sym,
-           with the same offset. */
+        /*
+         * Dereferencing (&sym + offset) is a DIRECT reference to sym,
+         * with the same offset.
+         */
         var.kind = DIRECT;
         var.type = type_deref(var.type);
         var.lvalue = 1;
         return var;
     case IMMEDIATE:
-        /* Dereferencing constant which has been cast to pointer. This
-           is a special case of deref, identified by symbol being NULL.
-           Handled in backend. */
+        /*
+         * Dereferencing constant which has been cast to pointer. This
+         * is a special case of deref, identified by symbol being NULL.
+         * Handled in backend.
+         */
         var.kind = DEREF;
         var.type = type_deref(var.type);
         var.lvalue = 1;
@@ -924,8 +958,10 @@ struct var eval_assign(
     }
 
     if (is_array(target.type)) {
-        /* Special case char [] = string in initializers. In this case
-           we do nothing here, but handle it in backend. */
+        /*
+         * Special case char [] = string in initializers. In this case
+         * we do nothing here, but handle it in backend.
+         */
         if (!type_equal(target.type, var.type) || var.kind != IMMEDIATE) {
             error("Invalid initializer assignment, was %s :: %t = %t.",
                 str_raw(target.symbol->name),
@@ -966,9 +1002,11 @@ struct var eval_assign(
             }
         }
     } else if (
-        /* The left operand has an atomic, qualified, or unqualified
-           version of a structure or union type compatible with the
-           type of the right. */
+        /*
+         * The left operand has an atomic, qualified, or unqualified
+         * version of a structure or union type compatible with the
+         * type of the right.
+         */
         !(is_struct_or_union(target.type)
             && is_compatible(target.type, var.type)))
     {
@@ -977,8 +1015,10 @@ struct var eval_assign(
         exit(1);
     }
 
-    /* Assignment has implicit conversion for basic types, meaning var
-       will be sign extended to size of target.type. */
+    /*
+     * Assignment has implicit conversion for basic types, meaning var
+     * will be sign extended to size of target.type.
+     */
     emit_ir(block, IR_ASSIGN, target, var);
     if (var.kind == IMMEDIATE) {
         target = var;
@@ -1073,8 +1113,10 @@ struct var eval_cast(
         exit(1);
     }
 
-    /* All immediate conversions must be evaluated compile time. Also
-       handle conversion which can be done by reinterpreting memory. */
+    /*
+     * All immediate conversions must be evaluated compile time. Also
+     * handle conversion which can be done by reinterpreting memory.
+     */
     if (var.kind == IMMEDIATE) {
         if (is_float(type)) {
             var.imm.f =
@@ -1199,8 +1241,10 @@ static struct block *eval_logical_expression(
         *f = cfg_block_init(def),
         *r = cfg_block_init(def);
 
-    /* Result is integer type, assigned in true and false branches to
-     * numeric constant 1 or 0. */
+    /*
+     * Result is integer type, assigned in true and false branches to
+     * numeric constant 1 or 0.
+     */
     r->expr = create_var(def, &basic_type__int);
     left->expr = eval_expr(def, left, IR_OP_EQ, left->expr, var_int(0));
     if (is_and) {

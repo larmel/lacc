@@ -25,8 +25,9 @@
 #define restore_continue_target(old) \
     continue_target = old;
 
-/* Store reference to top of loop, for resolving break and continue.
- * Use call stack to keep track of depth, backtracking to the old value.
+/*
+ * Store reference to top of loop, for resolving break and continue. Use
+ * call stack to keep track of depth, backtracking to the old value.
  */
 static struct block
     *break_target,
@@ -42,7 +43,8 @@ struct switch_context {
     array_of(struct switch_case) cases;
 };
 
-/* Keep track of nested switch statements and their case labels. This
+/*
+ * Keep track of nested switch statements and their case labels. This
  * reference always points to the current context, and backtracking is
  * managed recursively by switch_statement.
  */
@@ -96,9 +98,11 @@ static struct block *if_statement(
         consume(ELSE);
         left = cfg_block_init(def);
         if (!is_immediate_true(parent->expr)) {
-            /* This block will be an orphan if the branch is immediate
-               taken true branch. Still need to evaluate the expression
-               here though. */
+            /*
+             * This block will be an orphan if the branch is immediate
+             * taken true branch. Still need to evaluate the expression
+             * here though.
+             */
             parent->jump[0] = left;
         }
         left = statement(def, left);
@@ -239,7 +243,7 @@ static struct block *for_statement(
         }
         top = (struct block *) parent->jump[0];
     } else {
-        /* Infinite loop */
+        /* Infinite loop. */
         parent->jump[0] = body;
         top = body;
     }
@@ -349,7 +353,7 @@ struct block *statement(struct definition *def, struct block *parent)
             sym->label_value = cfg_block_init(def);
         }
         parent->jump[0] = sym->label_value;
-        parent = cfg_block_init(def); /* orphan, unless labeled */
+        parent = cfg_block_init(def); /* Orphan, unless labeled. */
         consume(';');
         break;
     case CONTINUE:
@@ -358,7 +362,7 @@ struct block *statement(struct definition *def, struct block *parent)
         parent->jump[0] =
             (tok.token == CONTINUE) ? continue_target : break_target;
         consume(';');
-        parent = cfg_block_init(def); /* orphan, unless labeled */
+        parent = cfg_block_init(def); /* Orphan, unless labeled. */
         break;
     case RETURN:
         consume(RETURN);
@@ -367,7 +371,7 @@ struct block *statement(struct definition *def, struct block *parent)
             parent->expr = eval_return(def, parent);
         }
         consume(';');
-        parent = cfg_block_init(def); /* orphan, unless labeled */
+        parent = cfg_block_init(def); /* Orphan, unless labeled. */
         break;
     case SWITCH:
         parent = switch_statement(def, parent);
@@ -430,7 +434,7 @@ struct block *statement(struct definition *def, struct block *parent)
                 break;
             }
         }
-        /* fallthrough */
+        /* Fallthrough. */
     case NUMBER:
     case STRING:
     case '*':
@@ -448,7 +452,8 @@ struct block *statement(struct definition *def, struct block *parent)
     return parent;
 }
 
-/* Treat statements and declarations equally, allowing declarations in
+/*
+ * Treat statements and declarations equally, allowing declarations in
  * between statements as in modern C. Called compound-statement in K&R.
  */
 struct block *block(struct definition *def, struct block *parent)

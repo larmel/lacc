@@ -21,21 +21,26 @@ struct token
     ident__error = IDENT("error");
 
 enum state {
-    /* Default state, inside an active #if, #elif, #else, #ifdef, or
-     * #ifndef directive. */
+    /*
+     * Default state, inside an active #if, #elif, #else, #ifdef, or
+     * #ifndef directive.
+     */
     BRANCH_LIVE,
-
-    /* A Previous branch in #if, #elif chain was taken. Everything
+    /*
+     * A Previous branch in #if, #elif chain was taken. Everything
      * up until #endif is dead code, and new #elif directives will not
-     * be computed. */
+     * be computed.
+     */
     BRANCH_DISABLED,
-
-    /* Dead code. New #else or #elif directives become live if evaluated
-     * to true. */
+    /*
+     * Dead code. New #else or #elif directives become live if evaluated
+     * to true.
+     */
     BRANCH_DEAD
 };
 
-/* Keep stack of branch conditions for #if, #elif and #endif. Push and
+/*
+ * Keep stack of branch conditions for #if, #elif and #endif. Push and
  * pop according to current and parent state, and result of evaluating
  * expressions.
  */
@@ -101,8 +106,10 @@ static int eval_primary(
         value = n.d.number.val.i;
         break;
     case IDENTIFIER:
-        /* Macro expansions should already have been done. Stray
-         * identifiers are interpreted as zero constants. */
+        /*
+         * Macro expansions should already have been done. Stray
+         * identifiers are interpreted as zero constants.
+         */
         assert(!definition(tokstr(*list)));
         break;
     case '(':
@@ -366,8 +373,9 @@ static struct macro preprocess_define(
     macro.name = tokstr(*line++);
     macro.type = OBJECT_LIKE;
 
-    /* Function-like macro iff parenthesis immediately after
-     * identifier. */
+    /*
+     * Function-like macro iff parenthesis immediately after identifier.
+     */
     if (line->token == '(' && !line->leading_whitespace) {
         macro.type = FUNCTION_LIKE;
         line++;
@@ -419,15 +427,19 @@ void preprocess_directive(TokenArray *array)
     const struct token *line = array->data;
 
     if (line->token == IF || !tok_cmp(*line, ident__elif)) {
-        /* Perform macro expansion only for if and elif directives,
-         * before doing the expression parsing. */
+        /*
+         * Perform macro expansion only for if and elif directives,
+         * before doing the expression parsing.
+         */
         expand(array);
         line = array->data;
     }
 
     if (line->token == IF) {
-        /* Expressions are not necessarily valid in dead blocks, for
-         * example can function-like macros be undefined. */
+        /*
+         * Expressions are not necessarily valid in dead blocks, for
+         * example can function-like macros be undefined.
+         */
         if (in_active_block()) {
             expr = expression(line + 1, &line);
             push(expr ? BRANCH_LIVE : BRANCH_DEAD);

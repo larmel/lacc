@@ -17,9 +17,7 @@ static int (*emit_instruction)(struct instruction);
 static int (*emit_data)(struct immediate);
 static int (*flush_backend)(void);
 
-/*
- * Values from va_list initialization.
- */
+/* Values from va_list initialization. */
 static struct {
     int gp_offset;
     int fp_offset;
@@ -27,18 +25,14 @@ static struct {
     int reg_save_area_offset;
 } vararg;
 
-/*
- * Registers used for parameter passing and return value.
- */
+/* Registers used for parameter passing and return value. */
 static enum reg param_int_reg[] = {DI, SI, DX, CX, R8, R9};
 static enum reg param_sse_reg[] = {XMM0, XMM1, XMM2, XMM3,
                                    XMM4, XMM5, XMM6, XMM7};
 static enum reg ret_int_reg[] = {AX, DX};
 static enum reg ret_sse_reg[] = {XMM0, XMM1};
 
-/*
- * Store incoming PARAM operations before CALL.
- */
+/* Store incoming PARAM operations before CALL. */
 static array_of(struct var) func_args;
 
 /*
@@ -233,9 +227,11 @@ static void emit_load(
 
     switch (source.kind) {
     case IMMEDIATE:
-        /* There is no suitable instruction for moving an immediate
-           floating point value directly to register. Need to store it
-           in memory first, so create symbol holding constant value. */
+        /*
+         * There is no suitable instruction for moving an immediate
+         * floating point value directly to register. Need to store it
+         * in memory first, so create symbol holding constant value.
+         */
         if (is_real(source.type)) {
             source.symbol = sym_create_constant(source.type, source.imm);
             source.kind = DIRECT;
@@ -306,8 +302,10 @@ static void load_int(struct var v, enum reg r, int w)
             if (size_of(v.type) < 4) {
                 opcode = INSTR_MOVZX;
             } else if (size_of(v.type) == 4 && w == 8) {
-                /* Special case for unsigned extension from 32 to 64
-                   bit, as there is no instruction 'movzlq'. */
+                /*
+                 * Special case for unsigned extension from 32 to 64
+                 * bit, as there is no instruction 'movzlq'.
+                 */
                 opcode = INSTR_MOV;
                 w = 4;
             }
@@ -429,8 +427,10 @@ static enum reg load_integer_as_float(
             load_int(val, ax, 8);
             label = sym_create_label();
             next = sym_create_label();
-            /* Check if unsigned integer is small enough to be
-               interpreted as signed. */
+            /*
+             * Check if unsigned integer is small enough to be
+             * interpreted as signed.
+             */
             if (size_of(val.type) == 4) {
                 emit(INSTR_MOV, OPT_REG_REG, reg(ax, 4), reg(ax, 4));
             }
@@ -439,8 +439,9 @@ static enum reg load_integer_as_float(
             emit(opcode, OPT_REG_REG, reg(ax, 8), reg(xmm, size_of(type)));
             emit(INSTR_JMP, OPT_IMM, addr(next));
             enter_context(label);
-            /* Convert large unsigned integer by adding up two
-               halves. */
+            /*
+             * Convert large unsigned integer by adding up two halves.
+             */
             emit(INSTR_MOV, OPT_REG_REG, reg(ax, 8), reg(cx, 8));
             emit(INSTR_SHR, OPT_IMM_REG, constant(1, 1), reg(cx, 8));
             emit(INSTR_AND, OPT_IMM_REG, constant(1, 4), reg(ax, 4));
@@ -538,9 +539,7 @@ static void store(enum reg r, struct var v)
     }
 }
 
-/*
- * Push value to stack, rounded up to always be 8 byte aligned.
- */
+/* Push value to stack, rounded up to always be 8 byte aligned. */
 static void push(struct var v)
 {
     int eb;
@@ -549,8 +548,10 @@ static void push(struct var v)
         if (v.kind == IMMEDIATE && size_of(v.type) == 8) {
             emit(INSTR_PUSH, OPT_IMM, value_of(v, 8));
         } else {
-            /* Not possible to push SSE registers, so load as if normal
-               integer and push that instead. */
+            /*
+             * Not possible to push SSE registers, so load as if normal
+             * integer and push that instead.
+             */
             if (is_real(v.type)) {
                 v.type = (is_float(v.type))
                     ? &basic_type__unsigned_int
@@ -569,7 +570,8 @@ static void push(struct var v)
     }
 }
 
-/* Determine if given parameter classification can fit in registers
+/*
+ * Determine if given parameter classification can fit in registers
  * available.
  */
 static int alloc_register_params(
@@ -637,9 +639,7 @@ static void load_arg(
     }
 }
 
-/*
- * Store return value found in registers to memory.
- */
+/* Store return value found in registers to memory. */
 static void store_res(
     struct var res,
     struct param_class pc,
@@ -675,6 +675,7 @@ static void store_res(
  * class INTEGER, and %xmm0 through %xmm7 for SSE. Arguments of class
  * MEMORY, or those which do not fit in the available registers, are
  * passed on stack.
+ *
  * After call, the return value is loaded from return registers, unless
  * already written to memory by callee.
  */
@@ -704,8 +705,10 @@ static void call(
         next_integer_reg = 1;
     }
 
-    /* Classify parameters, handing out register slots sequentially for
-     * as long as there are enough available. */
+    /*
+     * Classify parameters, handing out register slots sequentially for
+     * as long as there are enough available.
+     */
     for (i = 0; i < n_args; ++i) {
         arg = classify(args[i].type);
         if (alloc_register_params(arg, &next_integer_reg, &next_sse_reg)) {
@@ -717,18 +720,22 @@ static void call(
         }
     }
 
-    /* Make sure stack is aligned to 16 byte after pushing all memory
-     * arguments. Insert padding if necessary. */
+    /*
+     * Make sure stack is aligned to 16 byte after pushing all memory
+     * arguments. Insert padding if necessary.
+     */
     if (mem_used % 16) {
         mem_used += 8;
         assert((mem_used % 16) == 0);
         emit(INSTR_SUB, OPT_IMM_REG, constant(8, 8), reg(SP, 8));
     }
 
-    /* Pass arguments on stack from right to left. Do this before
+    /*
+     * Pass arguments on stack from right to left. Do this before
      * populating registers, because %rdi, %rsi etc will be used to do
      * the pushing. Reverse traversal in register class list to filter
-     * out non-memory arguments. */
+     * out non-memory arguments.
+     */
     for (i = n_args - 1, n = register_args - 1; i >= 0; --i) {
         if (n >= 0 && argpc[n].i == i) {
             n--;
@@ -737,24 +744,30 @@ static void call(
         }
     }
 
-    /* Rewind register counters before pushing arguments. When return
-     * value is MEMORY, pass a pointer in first register. */
+    /*
+     * Rewind register counters before pushing arguments. When return
+     * value is MEMORY, pass a pointer in first register.
+     */
     next_sse_reg = 0;
     next_integer_reg = 0;
     if (respc.eightbyte[0] == PC_MEMORY) {
         load_address(res, param_int_reg[next_integer_reg++]);
     }
 
-    /* Pass arguments that fit in in registers from left to right,
-     * partitioning aggregate types into eightbyte slices. */
+    /*
+     * Pass arguments that fit in in registers from left to right,
+     * partitioning aggregate types into eightbyte slices.
+     */
     for (i = 0; i < register_args; ++i) {
         arg = argpc[i].pc;
         var = args[argpc[i].i];
         load_arg(var, arg, &next_integer_reg, &next_sse_reg);
     }
 
-    /* For variable argument lists, %al contains the number of vector
-     * registers used. */
+    /*
+     * For variable argument lists, %al contains the number of vector
+     * registers used.
+     */
     if (is_vararg(type)) {
         assert(next_sse_reg >= 0 && next_sse_reg <= MAX_SSE_ARGS);
         emit(INSTR_MOV, OPT_IMM_REG, constant(next_sse_reg, 4), reg(AX, 4));
@@ -775,8 +788,10 @@ static void call(
         emit(INSTR_ADD, OPT_IMM_REG, constant(mem_used, 8), reg(SP, 8));
     }
 
-    /* Move return value from register(s) to memory. Return values with
-     * class MEMORY have already been written by callee. */
+    /*
+     * Move return value from register(s) to memory. Return values with
+     * class MEMORY have already been written by callee.
+     */
     if (respc.eightbyte[0] != PC_MEMORY) {
         next_integer_reg = 0;
         next_sse_reg = 0;
@@ -804,27 +819,33 @@ static void enter(struct definition *def)
     type = &def->symbol->type;
     assert(is_function(type));
 
-    /* Address of return value is passed as first integer argument. If
-     * return value is MEMORY, store the address at stack offset -8. */
+    /*
+     * Address of return value is passed as first integer argument. If
+     * return value is MEMORY, store the address at stack offset -8.
+     */
     res = classify(type->next);
     if (res.eightbyte[0] == PC_MEMORY) {
         stack_offset = -8;
         next_integer_reg = 1;
     }
 
-    /* For functions with variable argument list, reserve a fixed area
+    /*
+     * For functions with variable argument list, reserve a fixed area
      * at the beginning of the stack fram for register values. In total
      * there are 8 bytes for each of the 6 integer registers, and 16
      * bytes for each of the 8 SSE registers, for a total of 176 bytes.
      * If return type is MEMORY, the return address is automatically
-     * included in register spill area. */
+     * included in register spill area.
+     */
     if (is_vararg(type)) {
         stack_offset = -176;
     }
 
-    /* Assign storage to parameters. Guarantee that parameters are 8-
+    /*
+     * Assign storage to parameters. Guarantee that parameters are 8-
      * byte aligned also for those passed by register, which makes it
-     * easier to store in local frame after entering function. */
+     * easier to store in local frame after entering function.
+     */
     for (i = 0; i < array_len(&def->params); ++i) {
         sym = array_get(&def->params, i);
         arg = classify(&sym->type);
@@ -843,8 +864,10 @@ static void enter(struct definition *def)
         }
     }
 
-    /* Assign storage to locals. Round up to nearest eightbyte, making
-       all variables aligned. */
+    /*
+     * Assign storage to locals. Round up to nearest eightbyte, making
+     * all variables aligned.
+     */
     for (i = 0; i < array_len(&def->locals); ++i) {
         sym = array_get(&def->locals, i);
         assert(!sym->stack_offset);
@@ -854,18 +877,22 @@ static void enter(struct definition *def)
         }
     }
 
-    /* Make invariant to have %rsp aligned to 0x10, which is mandatory
+    /*
+     * Make invariant to have %rsp aligned to 0x10, which is mandatory
      * according to the ABI for function calls. On entry, (%rsp + 8) is
      * a multiple of 16, and after pushing %rbp we have alignment at
      * this point. Alignment must also be considered when calling other
-     * functions, to push memory divisible by 16. */
+     * functions, to push memory divisible by 16.
+     */
     if (stack_offset < 0) {
         i = (-stack_offset) % 16;
         stack_offset -= 16 - i;
     }
 
-    /* Allocate space in the call frame to hold local variables. Store
-     * return address to well known location -8(%rbp). */
+    /*
+     * Allocate space in the call frame to hold local variables. Store
+     * return address to well known location -8(%rbp).
+     */
     if (stack_offset < 0) {
         emit(INSTR_SUB, OPT_IMM_REG, constant(-stack_offset, 8), reg(SP, 8));
         if (res.eightbyte[0] == PC_MEMORY) {
@@ -874,11 +901,13 @@ static void enter(struct definition *def)
         }
     }
 
-    /* Store all potential parameters to register save area. This
+    /*
+     * Store all potential parameters to register save area. This
      * includes parameters that are known to be passed as registers,
      * that will anyway be stored to another stack location. It is
      * desireable to skip touching floating point unit if possible,
-     * %al holds the number of registers passed. */
+     * %al holds the number of registers passed.
+     */
     if (is_vararg(type)) {
         sym = sym_create_label();
         vararg.gp_offset = 8*next_integer_reg;
@@ -903,9 +932,11 @@ static void enter(struct definition *def)
         }
     }
 
-    /* Move arguments from register to stack, looking only in array of
+    /*
+     * Move arguments from register to stack, looking only in array of
      * stored classifications that are not memory. Remember not to load
-     * from the first register if used for return address. */
+     * from the first register if used for return address.
+     */
     next_integer_reg = (res.eightbyte[0] == PC_MEMORY);
     next_sse_reg = 0;
     for (i = 0; i < register_args; ++i) {
@@ -934,7 +965,8 @@ static void enter(struct definition *def)
     }
 }
 
-/* Return value from function, placing it in register(s) or writing it
+/*
+ * Return value from function, placing it in register(s) or writing it
  * to stack, based on parameter class.
  */
 static void ret(struct var val, const struct typetree *type)
@@ -968,10 +1000,12 @@ static void ret(struct var val, const struct typetree *type)
             var.offset += size_of(var.type);
         }
     } else {
-        /* Load return address from magic stack offset and copy result.
+        /*
+         * Load return address from magic stack offset and copy result.
          * Return address is stored in -8(%rbp), unless the function
          * takes variable argument lists, in which case it is read
-         * from register spill area. */
+         * from register spill area.
+         */
         if (is_vararg(type)) {
             emit(INSTR_MOV, OPT_MEM_REG,
                 location(address(-176, BP, 0, 0), 8), reg(DI, 8));
@@ -985,14 +1019,17 @@ static void ret(struct var val, const struct typetree *type)
             constant(size_of(val.type), 8), reg(DX, 4));
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
 
-        /* The ABI specifies that the address should be in %rax on
-         * return. */
+        /*
+         * The ABI specifies that the address should be in %rax on
+         * return.
+         */
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(-8, BP, 0, 0), 8), reg(AX, 8));
     }
 }
 
-/* Execute call to va_start, initializing the provided va_list object.
+/*
+ * Execute call to va_start, initializing the provided va_list object.
  * Values are taken from static context set during enter().
  */
 static void compile__builtin_va_start(struct var args)
@@ -1022,8 +1059,8 @@ static void compile__builtin_va_start(struct var args)
         location_of(args, 8));
 }
 
-/* Output logic for fetching a parameter from calling
- * res = va_arg(args, T).
+/*
+ * Output logic for fetching a parameter calling res = va_arg(args, T).
  */
 static void compile__builtin_va_arg(struct var res, struct var args)
 {
@@ -1048,8 +1085,10 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     assert(res.kind == DIRECT);
     assert(args.kind == DIRECT);
 
-    /* References into va_list object, offset and rewrite types to get
-     * direct references to each field. */
+    /*
+     * References into va_list object, offset and rewrite types to get
+     * direct references to each field.
+     */
     var_gp_offset.type = &basic_type__unsigned_int;
     var_fp_offset.offset += 4;
     var_fp_offset.type = &basic_type__unsigned_int;
@@ -1058,15 +1097,17 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     var_reg_save_area.offset += 16;
     var_reg_save_area.type = &basic_type__unsigned_long;
 
-    /* Integer or SSE parameters are read from registers, if there are
-     * enough of them left. Otherwise read from overflow area. */
+    /*
+     * Integer or SSE parameters are read from registers, if there are
+     * enough of them left. Otherwise read from overflow area.
+     */
     pc = classify(res.type);
     if (pc.eightbyte[0] != PC_MEMORY) {
         struct var slice = res;
         int i,
             width,
-            num_gp = 0, /* general purpose registers needed */
-            num_fp = 0; /* floating point registers needed */
+            num_gp = 0, /* General purpose registers needed. */
+            num_fp = 0; /* Floating point registers needed. */
 
         for (i = 0; i < EIGHTBYTES(res.type); ++i) {
             if (pc.eightbyte[i] == PC_INTEGER) {
@@ -1077,14 +1118,18 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             }
         }
 
-        /* Keep reg_save_area in register for the remainder, a pointer
+        /*
+         * Keep reg_save_area in register for the remainder, a pointer
          * to stack where registers are stored. This value does not
-         * change. */
+         * change.
+         */
         load(var_reg_save_area, SI);
 
-        /* Check whether there are enough registers left for the
+        /*
+         * Check whether there are enough registers left for the
          * argument to be passed in, comparing gp_offset and fp_offset
-         * with max values. */
+         * with max values.
+         */
         if (num_gp) {
             load(var_gp_offset, CX);
             emit(INSTR_CMP, OPT_IMM_REG,
@@ -1092,9 +1137,11 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             emit(INSTR_JA, OPT_IMM, addr(memory));
         }
         if (num_fp) {
-            /* Max fp_offset is 6*8 + 8*16, pointing past also the first
+            /*
+             * Max fp_offset is 6*8 + 8*16, pointing past also the first
              * integer registers. In ABI it sais 16*16, but that has to
-             * be wrong. Only 8 registers are used for arguments. */
+             * be wrong. Only 8 registers are used for arguments.
+             */
             load(var_fp_offset, DX);
             emit(INSTR_CMP, OPT_IMM_REG,
                 constant(MAX_INTEGER_ARGS*8 + MAX_SSE_ARGS*16 - 16*num_fp, 4),
@@ -1102,9 +1149,11 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             emit(INSTR_JA, OPT_IMM, addr(memory));
         }
 
-        /* Load argument, one eightbyte at a time. This code has a lot
+        /*
+         * Load argument, one eightbyte at a time. This code has a lot
          * in common with enter, ret etc, potential for refactoring
-         * probably. */
+         * probably.
+         */
         n = EIGHTBYTES(res.type);
         while ((i = integer_regs_loaded + sse_regs_loaded) < n) {
             if (pc.eightbyte[i] == PC_INTEGER) {
@@ -1113,11 +1162,13 @@ static void compile__builtin_va_arg(struct var res, struct var args)
                         &basic_type__unsigned_long :
                         BASIC_TYPE_UNSIGNED(size_of(res.type) % 8);
                 }
-                /* Advanced addressing, load (%rsi + 8*i + (%rcx * 1))
+                /*
+                 * Advanced addressing, load (%rsi + 8*i + (%rcx * 1))
                  * into %rax. Base of registers are stored in %rsi, first
                  * pending register is at offset %rcx, and i counts number
                  * of registers done. In GNU assembly it is
-                 * {i*8}(%rsi, %rcx, 1). */
+                 * {i*8}(%rsi, %rcx, 1).
+                 */
                 i = integer_regs_loaded++;
                 width = size_of(slice.type);
                 emit(INSTR_MOV, OPT_MEM_REG,
@@ -1127,8 +1178,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
                 assert(pc.eightbyte[i] == PC_SSE);
                 assert(sse_regs_loaded < MAX_SSE_RET);
                 i = sse_regs_loaded++;
-                /* Floating point arguments to vararg is always double.
-                 */
+                /* Floating arguments to vararg is always double. */
                 slice.type = &basic_type__double;
                 width = size_of(slice.type);
                 emit(INSTR_MOVSD, OPT_MEM_REG,
@@ -1156,9 +1206,11 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         enter_context(memory);
     }
 
-    /* Parameters that are passed on stack will be read from
+    /*
+     * Parameters that are passed on stack will be read from
      * overflow_arg_area. This is also the fallback when arguments
-     * do not fit in remaining registers. */
+     * do not fit in remaining registers.
+     */
     load(var_overflow_arg_area, SI);
     if (w <= 8) {
         assert(res.kind == DIRECT);
@@ -1171,8 +1223,10 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
     }
 
-    /* Move overflow_arg_area pointer to position of next memory
-     * argument, aligning to 8 byte. */
+    /*
+     * Move overflow_arg_area pointer to position of next memory
+     * argument, aligning to 8 byte.
+     */
     emit(INSTR_ADD, OPT_IMM_MEM,
         constant(EIGHTBYTES(res.type) * 8, 4),
         location_of(var_overflow_arg_area, 4));
@@ -1305,12 +1359,14 @@ static void compile_op(const struct op *op)
 
     switch (op->type) {
     case IR_ASSIGN:
-        /* Handle special case of char [] = string literal. This will
-           only occur as part of initializer, at block scope. External
-           definitions are handled before this. At no other point should
-           array types be seen in assembly backend. We handle these
-           assignments with memcpy, other compilers load the string into
-           register as ascii numbers. */
+        /*
+         * Handle special case of char [] = string literal. This will
+         * only occur as part of initializer, at block scope. External
+         * definitions are handled before this. At no other point should
+         * array types be seen in assembly backend. We handle these
+         * assignments with memcpy, other compilers load the string into
+         * register as ascii numbers.
+         */
         if (is_array(op->a.type) || is_array(op->b.type)) {
             size = size_of(op->a.type);
 
@@ -1324,8 +1380,10 @@ static void compile_op(const struct op *op)
             emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
             break;
         }
-        /* Assignment of struct or union objects which cannot be made
-           with a simple register move. */
+        /*
+         * Assignment of struct or union objects which cannot be made
+         * with a simple register move.
+         */
         else if (!is_standard_register_width(size_of(op->a.type))) {
             size = size_of(op->a.type);
             assert(size == size_of(op->b.type));
@@ -1336,8 +1394,10 @@ static void compile_op(const struct op *op)
             emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
             break;
         }
-        /* Fallthrough, assignment has implicit cast for convenience and
-           to make static initialization work without explicit casts. */
+        /*
+         * Fallthrough, assignment has implicit cast for convenience and
+         * to make static initialization work without explicit casts.
+         */
     case IR_CAST:
         r = load_cast(op->b, op->a.type);
         store(r, op->a);
@@ -1371,8 +1431,10 @@ static void compile_op(const struct op *op)
     case IR_OP_MOD:
         assert(!is_real(op->a.type));
         load(op->b, AX);
-        /* Divident is %rdx:%rax. Zero extend if type is signed,
-           otherwise zero to avoid SIGFPE. */
+        /*
+         * Divident is %rdx:%rax. Zero extend if type is signed,
+         * otherwise zero to avoid SIGFPE.
+         */
         if (is_signed(op->b.type)) {
             if (size_of(op->b.type) == 8) {
                 emit(INSTR_CQO, OPT_NONE);
@@ -1414,10 +1476,12 @@ static void compile_op(const struct op *op)
         store(AX, op->a);
         break;
     case IR_OP_SHL:
-        /* Shift instruction encoding is either by immediate, or
-           implicit %cl register. Encode as if something other than %cl
-           could be chosen. Behavior is undefined if shift is greater
-           than integer width, so don't care about overflow or sign. */
+        /*
+         * Shift instruction encoding is either by immediate, or
+         * implicit %cl register. Encode as if something other than %cl
+         * could be chosen. Behavior is undefined if shift is greater
+         * than integer width, so don't care about overflow or sign.
+         */
         load(op->b, AX);
         load(op->c, CX);
         emit(INSTR_SHL, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(op->a.type)));
@@ -1442,8 +1506,10 @@ static void compile_op(const struct op *op)
         break;
     case IR_OP_GT:
         if (is_unsigned(op->b.type) || is_real(op->b.type)) {
-            /* When comparison is unsigned, set flag without considering
-               overflow; CF=0 && ZF=0. */
+            /*
+             * When comparison is unsigned, set flag without considering
+             * overflow; CF=0 && ZF=0.
+             */
             compile_op_cmp(INSTR_SETA, op->a, op->b, op->c);
         } else {
             compile_op_cmp(INSTR_SETG, op->a, op->b, op->c);
@@ -1561,8 +1627,10 @@ static void tail_generic(struct block *block, const struct typetree *type)
                 emit(INSTR_UCOMISD, OPT_REG_REG, reg(XMM0, 8), reg(XMM1, 8));
             }
 
-            /* Compare both equality and parity flags. Parity is a way
-               to catch compare with invalid floating point numbers. */
+            /*
+             * Compare both equality and parity flags. Parity is a way
+             * to catch compare with invalid floating point numbers.
+             */
             emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
             emit(INSTR_JP, OPT_IMM, addr(block->jump[1]->label));
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
@@ -1598,8 +1666,10 @@ static void compile_block(struct block *block, const struct typetree *type)
                 compile_op(op);
             }
 
-            /* Special case on comparison + jump, saving some space by
-               not writing the temporary result. */
+            /*
+             * Special case on comparison + jump, saving some space by
+             * not writing the temporary result.
+             */
             op = &array_back(&block->code);
             if (is_tail_cmp(block)) {
                 assert(block->jump[0]);

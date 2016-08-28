@@ -15,13 +15,13 @@ extern struct token
     ident__endif,
     ident__error;
 
-/* Preprocess a line starting with a '#' directive. Borrows ownership of
+/*
+ * Preprocess a line starting with a '#' directive. Borrows ownership of
  * input. Assume input is END terminated.
  */
 void preprocess_directive(TokenArray *line);
 
-/* Non-zero iff currently not inside a false #if directive.
- */
+/* Non-zero iff currently not inside a false #if directive. */
 int in_active_block(void);
 
 #endif

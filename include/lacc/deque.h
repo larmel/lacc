@@ -3,7 +3,8 @@
 
 #include "array.h"
 
-/* Declare a type resembling a deque in C++, which can be efficiently
+/*
+ * Declare a type resembling a deque in C++, which can be efficiently
  * pushed and popped from either side.
  */
 #define deque_of(T) \

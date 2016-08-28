@@ -1,7 +1,8 @@
 #ifndef _FLOAT_H
 #define _FLOAT_H
 
-/* IEEE float.
+/*
+ * IEEE float.
  */
 #define FLT_RADIX 2
 #define FLT_ROUNDS 1
@@ -13,7 +14,8 @@
 #define FLT_MIN 1.17549435e-38f
 #define FLT_MIN_EXP (-125)
 
-/* IEEE double.
+/*
+ * IEEE double.
  */
 #define DBL_DIG 15
 #define DBL_EPSILON 2.2204460492503131e-16

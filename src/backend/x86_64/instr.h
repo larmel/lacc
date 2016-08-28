@@ -4,19 +4,20 @@
 #include "abi.h"
 #include <lacc/symbol.h>
 
-/* Start with %rax = 1 to make sure 0 is invalid. This is used in
+/*
+ * Start with %rax = 1 to make sure 0 is invalid. This is used in
  * address representation, but unfortunately crashes with instruction
  * encoding using 0b000 for AX.
  */
 enum reg {
-    AX  = 1, /* 0b000 */
-    CX  = 2, /* 0b001 */
-    DX  = 3, /* 0b010 */
-    BX  = 4, /* 0b011 */
-    SP  = 5, /* 0b100 */
-    BP  = 6, /* 0b101 */
-    SI  = 7, /* 0b110 */
-    DI  = 8, /* 0b111 */
+    AX  = 1,    /* 0b000 */
+    CX  = 2,    /* 0b001 */
+    DX  = 3,    /* 0b010 */
+    BX  = 4,    /* 0b011 */
+    SP  = 5,    /* 0b100 */
+    BP  = 6,    /* 0b101 */
+    SI  = 7,    /* 0b110 */
+    DI  = 8,    /* 0b111 */
     R8  = 9,
     R9  = 10,
     R10 = 11,
@@ -26,8 +27,10 @@ enum reg {
     R14 = 15,
     R15 = 16,
 
-    /* Floating point registers. REX prefix needed for XMM8 through 15,
-     * which are index 24 (11000) through 31 (0b11111). */
+    /*
+     * Floating point registers. REX prefix needed for XMM8 through 15,
+     * which are index 24 (11000) through 31 (0b11111).
+     */
     XMM0, XMM1,  XMM2,  XMM3,  XMM4,  XMM5,  XMM6,  XMM7,
     XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15,
 
@@ -35,16 +38,16 @@ enum reg {
     IP
 };
 
-/* Register and width, which is 1, 2, 4 or 8.
- */
+/* Register and width, which is 1, 2, 4 or 8. */
 struct registr {
     enum reg r;
     int w;
 };
 
-/* Full addressing is disp(base register, offset register, scalar
+/*
+ * Full addressing is disp(base register, offset register, scalar
  * multiplier). Displacement can be relative to symbol, for example
- * foo+3(%rip)
+ * foo+3(%rip).
  */
 struct address {
     const struct symbol *sym;
@@ -54,22 +57,22 @@ struct address {
     int mult;
 };
 
-/* Memory location; address and width.
- */
+/* Memory location; address and width. */
 struct memory {
     struct address addr;
     int w;
 };
 
-/* Immediates can be numeric (fit in registers), or references to static
+/*
+ * Immediates can be numeric (fit in registers), or references to static
  * string values. Expressions like "hello" + 1 can result in for ex
  * $.LC1+1 in GNU assembly.
  */
 struct immediate {
     enum {
-        IMM_INT,    /* 1, 2, 4 or 8 byte signed number */
-        IMM_ADDR,   /* Symbol-relative address, label etc */
-        IMM_STRING  /* string value, only used for initialization */
+        IMM_INT,    /* 1, 2, 4 or 8 byte signed number. */
+        IMM_ADDR,   /* Symbol-relative address, label etc. */
+        IMM_STRING  /* string value, only used for initialization. */
     } type;
     int w;
     union {
@@ -145,8 +148,7 @@ enum opcode {
     INSTR_REP_MOVSQ
 };
 
-/* Instructions with register, memory or immediate operands.
- */
+/* Instructions with register, memory or immediate operands. */
 struct instruction {
     enum opcode opcode;
     enum instr_optype {
@@ -167,11 +169,12 @@ struct instruction {
     } source, dest;
 };
 
-/* According to Intel reference manual, instructions can contain the
+/*
+ * According to Intel reference manual, instructions can contain the
  * following fields, for a combined maximum length of 18 bytes:
  *
- *  [Legacy Prefixes] [REX] [Opcode] [ModR/M] [SIB] [Displacement] [Immediate]
- *   (up to 4 bytes)   (1)    (3)      (1)     (1)       (4)           (4)
+ *  [Legacy Prefixes] [REX] [Opcode] [ModR/M] [SIB] [Displ] [Immediate]
+ *   (up to 4 bytes)   (1)    (3)      (1)     (1)    (4)       (4)
  *
  */
 struct code {
@@ -179,8 +182,7 @@ struct code {
     int len;
 };
 
-/* Convert instruction to binary format.
- */
+/* Convert instruction to binary format. */
 struct code encode(struct instruction instr);
 
 #endif

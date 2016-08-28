@@ -12,22 +12,22 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Lookahead kept in buffer of preprocessed tokens. For the K&R grammar,
+/*
+ * Lookahead kept in buffer of preprocessed tokens. For the K&R grammar,
  * it is sufficient to have two lookahead to parse.
  */
 #define K 2
 
-/* Buffer of preprocessed tokens, ready to be consumed by the parser.
+/*
+ * Buffer of preprocessed tokens, ready to be consumed by the parser.
  * Configured to hold at least K tokens, enabling LL(K) parsing.
  */
 static deque_of(struct token) lookahead;
 
-/* Toggle for producing preprocessed output (-E).
- */
+/* Toggle for producing preprocessed output (-E). */
 static int output_preprocessed;
 
-/* Line currently being tokenized.
- */
+/* Line currently being tokenized. */
 static char *line_buffer;
 
 static void cleanup(void)
@@ -56,9 +56,11 @@ static struct token get_token(void)
         r = tokenize(line_buffer, &endptr);
         line_buffer = endptr;
         if (r.token == END) {
-            /* Newlines are removed by getprepline, and never present in
+            /*
+             * Newlines are removed by getprepline, and never present in
              * the input data. Instead intercept end of string, which
-             * represents end of line. */
+             * represents end of line.
+             */
             line_buffer = NULL;
             r = basic_token[NEWLINE];
         }
@@ -67,7 +69,8 @@ static struct token get_token(void)
     return r;
 }
 
-/* Keep track of the nesting depth of macro arguments. For example;
+/*
+ * Keep track of the nesting depth of macro arguments. For example;
  * MAX( MAX(10, 12), 20 ) should complete on the last parenthesis, which
  * makes the expression balanced. Read lines until full macro invocation
  * is included.
@@ -81,8 +84,10 @@ static void read_macro_invocation(TokenArray *line, const struct macro *macro)
     t = get_token();
     array_push_back(line, t);
     if (t.token != '(')
-        /* Only expand function-like macros if they appear as function
-         * invocations, beginning with an open paranthesis. */
+        /*
+         * Only expand function-like macros if they appear as function
+         * invocations, beginning with an open paranthesis.
+         */
         return;
 
     nesting = 1;
@@ -96,9 +101,11 @@ static void read_macro_invocation(TokenArray *line, const struct macro *macro)
             nesting--;
         }
         if (t.token == NEWLINE) {
-            /* This is the only scenario where reading a line is not
+            /*
+             * This is the only scenario where reading a line is not
              * enough. Macro invocations can span lines, and we want to
-             * have everything in the same token list. */
+             * have everything in the same token list.
+             */
             continue;
         }
         assert(t.token != END);
@@ -110,8 +117,7 @@ static void read_macro_invocation(TokenArray *line, const struct macro *macro)
     }
 }
 
-/* Replace 'defined name' and 'defined (name)' with 0 or 1 constants.
- */
+/* Replace 'defined name' and 'defined (name)' with 0 or 1 constants. */
 static void read_defined_operator(TokenArray *line)
 {
     int is_parens = 0;
@@ -144,9 +150,10 @@ static void read_defined_operator(TokenArray *line)
     }
 }
 
-/* Read tokens until reaching end of line. If initial token is '#', stop
- * on first newline. Otherwise make sure macro invocations spanning mul-
- * tiple lines are joined, and replace 'defined' directives with 0 or 1.
+/*
+ * Read tokens until reaching end of line. If initial token is '#', stop
+ * on first newline. Otherwise make sure macro invocations spanning
+ * multiple lines are joined, and replace 'defined' with 0 or 1.
  *
  * Returns a buffer containing all necessary tokens to preprocess a
  * line. Always ends with a newline (\n) token, but never contains any
@@ -194,10 +201,12 @@ static void add_to_lookahead(struct token t)
     struct token prev;
     int added = 0;
 
-    /* Combine adjacent string literals. This step is done after
+    /*
+     * Combine adjacent string literals. This step is done after
      * preprocessing and macro expansion; logic in preprocess_line will
      * guarantee that we keep preprocessing lines and filling up the
-     * lookahead buffer for as long as there can be continuations. */
+     * lookahead buffer for as long as there can be continuations.
+     */
     if (t.token == STRING && len) {
         prev = deque_get(&lookahead, len - 1);
         if (prev.token == STRING) {
@@ -206,8 +215,10 @@ static void add_to_lookahead(struct token t)
         }
     }
 
-    /* Convert preprocessing numbers to actual numeric tokens, unless
-     * doing only preprocessing. */
+    /*
+     * Convert preprocessing numbers to actual numeric tokens, unless
+     * doing only preprocessing.
+     */
     if (!output_preprocessed && t.token == PREP_NUMBER) {
         t = convert_preprocessing_number(t);
     }
@@ -222,7 +233,8 @@ static void add_to_lookahead(struct token t)
     }
 }
 
-/* Consume at least one line, up until the final newline or end of file.
+/*
+ * Consume at least one line, up until the final newline or end of file.
  * Fill up lookahead buffer to hold at least K tokens. In case of end of
  * input, put END tokens in remaining slots.
  */
@@ -295,8 +307,10 @@ struct token peekn(unsigned n)
 {
     assert(n && n <= K);
     if (!deque_len(&lookahead)) {
-        /* If peek() is the first call made, make sure there is an
-         * initial call to populate the lookahead buffer. */
+        /*
+         * If peek() is the first call made, make sure there is an
+         * initial call to populate the lookahead buffer.
+         */
         preprocess_line();
     }
 

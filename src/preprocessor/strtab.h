@@ -5,7 +5,8 @@
 
 #include <stddef.h>
 
-/* Register a string and store it internally, allocating a new copy if
+/*
+ * Register a string and store it internally, allocating a new copy if
  * needed. Manages memory ownership for all string constants used at
  * runtime.
  */

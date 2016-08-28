@@ -15,7 +15,8 @@ static struct block *initializer(
     struct block *block,
     struct var target);
 
-/* FOLLOW(parameter-list) = { ')' }, peek to return empty list; even
+/*
+ * FOLLOW(parameter-list) = { ')' }, peek to return empty list; even
  * though K&R require at least specifier: (void)
  * Set parameter-type-list = parameter-list, including the , ...
  */
@@ -59,7 +60,8 @@ static struct typetree *parameter_list(const struct typetree *base)
     return func;
 }
 
-/* Parse array declarations of the form [s0][s1]..[sn], resulting in
+/*
+ * Parse array declarations of the form [s0][s1]..[sn], resulting in
  * type [s0] [s1] .. [sn] (base).
  *
  * Only the first dimension s0 can be unspecified, yielding an
@@ -95,7 +97,8 @@ static struct typetree *direct_declarator_array(struct typetree *base)
     return base;
 }
 
-/* Parse function and array declarators. Some trickery is needed to
+/*
+ * Parse function and array declarators. Some trickery is needed to
  * handle declarations like `void (*foo)(int)`, where the inner *foo
  * has to be  traversed first, and prepended on the outer type
  * `* (int) -> void` afterwards making it `* (int) -> void`.
@@ -267,11 +270,12 @@ static struct typetree *struct_or_union_declaration(void)
                 str_raw(sym->name), (is_struct(&sym->type)) ? "struct" : "union");
             exit(1);
         }
-
-        /* Retrieve type from existing symbol, possibly providing a
+        /*
+         * Retrieve type from existing symbol, possibly providing a
          * complete definition that will be available for later
          * declarations. Overwrites existing type information from
-         * symbol table. */
+         * symbol table.
+         */
         type = &sym->type;
         if (peek().token == '{' && type->size) {
             error("Redefiniton of '%s'.", str_raw(sym->name));
@@ -281,8 +285,10 @@ static struct typetree *struct_or_union_declaration(void)
 
     if (peek().token == '{') {
         if (!type) {
-            /* Anonymous structure; allocate a new standalone type,
-             * not part of any symbol. */
+            /*
+             * Anonymous structure; allocate a new standalone type,
+             * not part of any symbol.
+             */
             type = type_init(kind);
         }
 
@@ -292,9 +298,11 @@ static struct typetree *struct_or_union_declaration(void)
         consume('}');
     }
 
-    /* Return to the caller a copy of the root node, which can be
+    /*
+     * Return to the caller a copy of the root node, which can be
      * overwritten with new type qualifiers without altering the tag
-     * registration. */
+     * registration.
+     */
     return (sym) ? type_tagged_copy(&sym->type, sym->name) : type;
 }
 
@@ -351,9 +359,10 @@ static struct typetree *enum_declaration(void)
                 str_raw(tag->name));
             exit(1);
         }
-
-        /* Use constant_value as a sentinel to represent definition,
-         * checked on  lookup to detect duplicate definitions. */
+        /*
+         * Use constant_value as a sentinel to represent definition,
+         * checked on  lookup to detect duplicate definitions.
+         */
         if (peek().token == '{') {
             if (tag->constant_value.i) {
                 error("Redefiniton of enum '%s'.", str_raw(tag->name));
@@ -365,8 +374,10 @@ static struct typetree *enum_declaration(void)
         enumerator_list();
     }
 
-    /* Result is always integer. Do not care about the actual enum
-     * definition, all enums are ints and no type checking is done. */
+    /*
+     * Result is always integer. Do not care about the actual enum
+     * definition, all enums are ints and no type checking is done.
+     */
     return type;
 }
 
@@ -420,7 +431,8 @@ static struct typetree get_basic_type_from_specifier(unsigned short spec)
     }
 }
 
-/* Parse type, qualifiers and storage class. Do not assume int by
+/*
+ * Parse type, qualifiers and storage class. Do not assume int by
  * default, but require at least one type specifier. Storage class is
  * returned as token value, unless the provided pointer is NULL, in
  * which case the input is parsed as specifier-qualifier-list.
@@ -431,8 +443,10 @@ struct typetree *declaration_specifiers(int *stc)
     struct token tok;
     int done = 0;
 
-    /* Use a compact bit representation to hold state about declaration 
-     * specifiers. Initialize storage class to sentinel value. */
+    /*
+     * Use a compact bit representation to hold state about declaration 
+     * specifiers. Initialize storage class to sentinel value.
+     */
     unsigned short spec = 0x0000;
     enum qualifier qual = Q_NONE;
     if (stc)       *stc =    '$';
@@ -537,9 +551,7 @@ struct typetree *declaration_specifiers(int *stc)
     return type;
 }
 
-/*
- * Constants representing immediate zero values of all basic types.
- */
+/* Constants representing immediate zero values of all basic types. */
 static const struct var
     var__zero_float = {&basic_type__float, NULL, IMMEDIATE},
     var__zero_double = {&basic_type__double, NULL, IMMEDIATE},
@@ -593,8 +605,10 @@ static void zero_initialize(
         }
         break;
     case T_UNION:
-        /* We don't want garbage in any union member after zero-
-           initialization, so set full width to zero. */
+        /*
+         * We don't want garbage in any union member after zero-
+         * initialization, so set full width to zero.
+         */
         target.type =
             (size_of(target.type) % 8) ?
                 type_init(T_ARRAY, &basic_type__char, size_of(target.type)) :
@@ -652,9 +666,11 @@ static struct block *object_initializer(
         target.type = member->type;
         block = initializer(def, block, target);
         if (size_of(member->type) < type->size) {
-            /* Only the first element of a union can be initialized.
+            /*
+             * Only the first element of a union can be initialized.
              * Zero the remaining memory if there is padding, or the
-             * first member is not the largest one. */
+             * first member is not the largest one.
+             */
             target.type =
                 type_init(
                     T_ARRAY,
@@ -703,9 +719,10 @@ static struct block *object_initializer(
         if (!type->size) {
             assert(!target.symbol->type.size);
             assert(is_array(&target.symbol->type));
-
-            /* Incomplete array type can only be in the root level of
-             * target type tree, overwrite type directly in symbol. */
+            /*
+             * Incomplete array type can only be in the root level of
+             * target type tree, overwrite type directly in symbol.
+             */
             ((struct symbol *) target.symbol)->type.size =
                 (i + 1) * size_of(type->next);
         } else {
@@ -731,7 +748,8 @@ static int is_string(struct var val)
         val.symbol->symtype == SYM_STRING_VALUE;
 }
 
-/* Assignment between array and string literal. Handle special case of
+/*
+ * Assignment between array and string literal. Handle special case of
  * incomplete array type, and assignment to arrays which are longer than
  * the string itself. In that case, the rest of the array is initialized
  * to zero.
@@ -774,9 +792,10 @@ static struct block *string_initializer(
     } else {
         if (!target.type->size) {
             assert(!target.offset);
-
-            /* Complete type based on string literal. Evaluation does
-             * not have the required context to do this logic. */
+            /*
+             * Complete type based on string literal. Evaluation does
+             * not have the required context to do this logic.
+             */
             ((struct symbol *) target.symbol)->type.size =
                 block->expr.type->size;
             target.type = block->expr.type;
@@ -823,8 +842,10 @@ static struct block *initializer(
         if (is_array(target.type) && is_string(block->expr)) {
             block = string_initializer(def, block, target);
         } else {
-            /* Make sure basic types are converted, but avoid invalid
-               cast for struct or union types. */
+            /*
+             * Make sure basic types are converted, but avoid invalid
+             * cast for struct or union types.
+             */
             if (!type_equal(target.type, block->expr.type)) {
                 block->expr = eval_cast(def, block, block->expr, target.type);
             }
@@ -836,8 +857,7 @@ static struct block *initializer(
     return block;
 }
 
-/* Define __func__ as static const char __func__[] = sym->name;
- */
+/* Define __func__ as static const char __func__[] = sym->name; */
 static void define_builtin__func__(String name)
 {
     struct typetree *type;
@@ -845,8 +865,10 @@ static void define_builtin__func__(String name)
     assert(current_scope_depth(&ns_ident) == 1);
     assert(context.standard == STD_C99);
 
-    /* Just add the symbol directly as a special string value. No
-     * explicit assignment reflected in the IR. */
+    /*
+     * Just add the symbol directly as a special string value. No
+     * explicit assignment reflected in the IR.
+     */
     type = type_init(T_ARRAY, &basic_type__char, name.len + 1);
     sym = sym_add(
         &ns_ident,
@@ -857,7 +879,8 @@ static void define_builtin__func__(String name)
     sym->string_value = name;
 }
 
-/* Cover both external declarations, functions, and local declarations
+/*
+ * Cover both external declarations, functions, and local declarations
  * (with optional initialization code) inside functions.
  */
 struct block *declaration(struct definition *def, struct block *parent)

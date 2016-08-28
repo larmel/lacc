@@ -5,13 +5,15 @@
 
 #include <assert.h>
 
-/* Parser consumes whole declaration statements, which can include
+/*
+ * Parser consumes whole declaration statements, which can include
  * multiple definitions. For example 'int foo = 1, bar = 2;'. These
  * are buffered and returned one by one on calls to parse().
  */
 static deque_of(struct definition *) definitions;
 
-/* A list of blocks kept for housekeeping when parsing declarations
+/*
+ * A list of blocks kept for housekeeping when parsing declarations
  * that do not have a full definition object associated. For example,
  * the following constant expression would be evaluated by a dummy
  * block holding the immediate value:
@@ -21,13 +23,13 @@ static deque_of(struct definition *) definitions;
  */
 static array_of(struct block *) expressions;
 
-/* Holds blocks that are allocated and free to use (not bound to any
+/*
+ * Holds blocks that are allocated and free to use (not bound to any
  * definition).
  */
 static array_of(struct block *) blocks;
 
-/* Free memory in static buffers.
- */
+/* Free memory in static buffers. */
 static void cleanup(void)
 {
     int i;
@@ -121,21 +123,27 @@ struct definition *parse(void)
 {
     static struct definition *def;
 
-    /* Clear memory allocated for previous result. Parse is called until
-     * no more input can be consumed. */
+    /*
+     * Clear memory allocated for previous result. Parse is called until
+     * no more input can be consumed.
+     */
     if (def) {
         cfg_clear(def);
     }
 
-    /* Parse a declaration, which can include definitions that will fill
+    /*
+     * Parse a declaration, which can include definitions that will fill
      * up the buffer. Tentative declarations will only affect the symbol
-     * table. */
+     * table.
+     */
     while (!deque_len(&definitions) && peek().token != END) {
         declaration(NULL, NULL);
     }
 
-    /* The next definition is taken from queue. Free memory in case we
-     * reach end of input. */
+    /*
+     * The next definition is taken from queue. Free memory in case we
+     * reach end of input.
+     */
     if (!deque_len(&definitions)) {
         assert(peek().token == END);
         cleanup();

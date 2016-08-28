@@ -1,7 +1,4 @@
-#if _XOPEN_SOURCE < 500
-#  undef _XOPEN_SOURCE
-#  define _XOPEN_SOURCE 500 /* snprintf */
-#endif
+#define _XOPEN_SOURCE 500 /* snprintf */
 #include "type.h"
 #include <lacc/array.h>
 
@@ -25,7 +22,8 @@ const struct typetree
     basic_type__float = { T_REAL, 4 },
     basic_type__double = { T_REAL, 8 };
 
-/* Store member list separate from type to make memory ownership easier,
+/*
+ * Store member list separate from type to make memory ownership easier,
  * types do not own their member list.
  */
 struct signature {
@@ -33,7 +31,8 @@ struct signature {
     array_of(struct member) members;
 };
 
-/* Manage memory ownership of all dynamically allocated types and type
+/*
+ * Manage memory ownership of all dynamically allocated types and type
  * members, freeing them on exit.
  */
 static array_of(struct typetree *) types;
@@ -278,7 +277,8 @@ struct typetree *type_tagged_copy(
     return tag;
 }
 
-/* Determine whether two types are the same. Disregarding qualifiers,
+/*
+ * Determine whether two types are the same. Disregarding qualifiers,
  * and names of function parameters.
  */
 int type_equal(const struct typetree *a, const struct typetree *b)
@@ -364,8 +364,7 @@ const struct typetree *usual_arithmetic_conversion(
     return remove_qualifiers(res);
 }
 
-/* 6.2.7 Compatible types. Simplified rules.
- */
+/* 6.2.7 Compatible types. Simplified rules. */
 int is_compatible(const struct typetree *l, const struct typetree *r)
 {
     return type_equal(l, r);

@@ -9,7 +9,8 @@
 
 static struct hash_table strtab;
 
-/* Every unique string encountered, being identifiers or literals, is
+/*
+ * Every unique string encountered, being identifiers or literals, is
  * kept for the lifetime of the program. To save allocations, store the
  * raw string buffer in the same allocation as the struct.
  *

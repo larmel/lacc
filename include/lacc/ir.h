@@ -7,8 +7,7 @@
 
 #include <stddef.h>
 
-/* Three address code operation types.
- */
+/* Three address code operation types. */
 enum optype {
     IR_PARAM = 0x10,    /* param a    */
 
@@ -32,21 +31,26 @@ enum optype {
     IR_OP_GE = 0x3B,    /* a = b >= c */
     IR_OP_GT = 0x3C,    /* a = b > c  */
 
-    /* Call va_start(a), setting reg_save_area and overflow_arg_area.
+    /*
+     * Call va_start(a), setting reg_save_area and overflow_arg_area.
      * This, together with va_arg assumes some details about memory
      * layout that can only be known by backend, thus the need for these
-     * operations. */
+     * operations.
+     */
     IR_VA_START = 0x11,
 
-    /* Call a = va_arg(b, T), with type T taken from a. Intercepted as
-     * call to __builtin_va_arg in parser. */
+    /*
+     * Call a = va_arg(b, T), with type T taken from a. Intercepted as
+     * call to __builtin_va_arg in parser.
+     */
     IR_VA_ARG = 0x26
 };
 
 #define OPERAND_COUNT(optype) ((optype) >> 4)
 #define IS_COMPARISON(optype) (((optype) & 0x0F) > 9)
 
-/* A reference to some storage location based on a symbol and optional
+/*
+ * A reference to some storage location based on a symbol and optional
  * offset, or immediate constant value. Used in intermediate
  * representation of expressions, forming operands of three-address
  * code.
@@ -56,30 +60,40 @@ struct var {
     const struct symbol *symbol;
 
     enum {
-        /* l-value or r-value reference to symbol, which must have some
+        /*
+         * l-value or r-value reference to symbol, which must have some
          * storage location. Offset evaluate to *(&symbol + offset).
-         * Offset in bytes, not pointer arithmetic. */
+         * Offset in bytes, not pointer arithmetic.
+         */
         DIRECT,
-        /* r-value address of symbol. Evaluate to (&symbol + offset),
+        /*
+         * r-value address of symbol. Evaluate to (&symbol + offset),
          * always of pointer type. Offset in bytes, not pointer
-         * arithmetic. */
+         * arithmetic.
+         */
         ADDRESS,
-        /* l-value or r-value reference to *(symbol + offset). Symbol
+        /*
+         * l-value or r-value reference to *(symbol + offset). Symbol
          * must have pointer type. If symbol is NULL, the dereferenced
          * pointer is an immediate value. Offset in bytes, not pointer
-         * arithmetic. */
+         * arithmetic.
+         */
         DEREF,
-        /* r-value immediate, with the type specified. Symbol is NULL,
+        /*
+         * r-value immediate, with the type specified. Symbol is NULL,
          * or be of type SYM_STRING_VALUE. String immediates can either
          * have type array of char, or pointer to char. They can also
-         * have offsets, representing constants such as .LC1+3. */
+         * have offsets, representing constants such as .LC1+3.
+         */
         IMMEDIATE
     } kind;
 
-    /* Width in bits of bitfield access. Direct or deref references to
+    /*
+     * Width in bits of bitfield access. Direct or deref references to
      * fields in a struct are restricted to a number of bits, which is
      * used for masking evaluation of assignment. Normal references have
-     * default value of 0. */
+     * default value of 0.
+     */
     int width;
 
     union value imm;
@@ -90,9 +104,7 @@ struct var {
 
 #define is_field(v) ((v).width != 0)
 
-/*
- * Object used to hold state during optimization passes.
- */
+/* Object used to hold state during optimization passes. */
 struct dataflow;
 
 /*
@@ -106,7 +118,8 @@ struct op {
     struct var c;
 };
 
-/* Basic block in function control flow graph, containing a symbolic
+/*
+ * Basic block in function control flow graph, containing a symbolic
  * address and a list of IR operations. Each block has a unique jump
  * target address, a symbol of type SYM_LABEL.
  */
@@ -116,22 +129,28 @@ struct block {
     /* Contiguous block of three-address code operations. */
     array_of(struct op) code;
 
-    /* Value to evaluate in branch conditions, or return value. Also
+    /*
+     * Value to evaluate in branch conditions, or return value. Also
      * used for return value from expression parsing rules, as a
      * convenience. The decision on whether this block is a branch or
-     * not is done purely based on the jump target list. */
+     * not is done purely based on the jump target list.
+     */
     struct var expr;
 
-    /* Branch targets.
+    /*
+     * Branch targets.
      * - (NULL, NULL): Terminal node, return expr from function.
      * - (x, NULL)   : Unconditional jump; break, continue, goto, loop.
-     * - (x, y)      : False and true branch targets, respectively. */
+     * - (x, y)      : False and true branch targets, respectively.
+     */
     struct block *jump[2];
 
-    /* Toggle last statement was return, meaning expr is valid. There
+    /*
+     * Toggle last statement was return, meaning expr is valid. There
      * are cases where we reach end of control in a non-void function,
      * but not wanting to return a value. For example when exit has been
-     * called. */
+     * called.
+     */
     int has_return_value;
 
     /* Used to mark nodes as visited during graph traversal. */
@@ -170,38 +189,45 @@ int is_live(const struct symbol *sym, const struct block *block, int n);
  * from parser.
  */
 struct definition {
-    /* Symbol definition, which is assigned some value. A definition
-     * only concerns a single symbol. */
+    /*
+     * Symbol definition, which is assigned some value. A definition
+     * only concerns a single symbol.
+     */
     const struct symbol *symbol;
 
-    /* Function definitions are associated with a control flow graph,
+    /*
+     * Function definitions are associated with a control flow graph,
      * where this is the entry point. Static and extern definitions are
-     * represented as a series of assignment IR operations. */
+     * represented as a series of assignment IR operations.
+     */
     struct block *body;
 
-    /* Store all symbols associated with a function definition. Need
+    /*
+     * Store all symbols associated with a function definition. Need
      * non-const references, as backend will use this to assign stack
-     * offset of existing symbols. */
+     * offset of existing symbols.
+     */
     array_of(struct symbol *)
         params,
         locals;
 
-    /* Store all associated nodes in a list to be able to free
-     * everything at the end. */
+    /*
+     * Store all associated nodes in a list to be able to free
+     * everything at the end.
+     */
     array_of(struct block *) nodes;
 };
 
-/* A direct reference to given symbol, with two exceptions:
+/*
+ * A direct reference to given symbol, with two exceptions:
  * SYM_CONSTANT and SYM_STRING_VALUE reduce to IMMEDIATE values.
  */
 struct var var_direct(const struct symbol *sym);
 
-/* Immediate numeric value of type int.
- */
+/* Immediate numeric value of type int. */
 struct var var_int(int value);
 
-/* Immediate numeric value from typed number.
- */
+/* Immediate numeric value from typed number. */
 struct var var_numeric(struct number n);
 
 #endif

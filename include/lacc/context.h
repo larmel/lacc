@@ -3,8 +3,7 @@
 
 #include <stddef.h>
 
-/* Global information about translation unit.
- */
+/* Global information about translation unit. */
 extern struct context {
     int errors;
     int verbose;
@@ -21,17 +20,18 @@ extern struct context {
     } standard;
 } context;
 
-/* Output diagnostics info to stdout. No-op if context.verbose is not
+/*
+ * Output diagnostics info to stdout. No-op if context.verbose is not
  * set.
  */
 void verbose(const char *, ...);
 
-/* Output warning to stderr. No-op if context.suppress_warning is set.
+/*
+ * Output warning to stderr. No-op if context.suppress_warning is set.
  */
 void warning(const char *, ...);
 
-/* Output error to stderr.
- */
+/* Output error to stderr. */
 void error(const char *, ...);
 
 #endif

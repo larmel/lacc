@@ -4,13 +4,7 @@
 #define ARRAY_CAPACITY_INITIAL 16
 #define ARRAY_CAPACITY_GROWTH(cap) (cap * 2)
 
-/* Declare a type representing an array of given type.
- *
- * struct code {
- *     array_of(struct op) operations;
- * };
- *
- */
+/* Declare an object representing an array of given type. */
 #define array_of(T) \
     struct {                                                                   \
         unsigned capacity;                                                     \
@@ -38,15 +32,15 @@
         }                                                                      \
     } while (0)
 
-/* Add element to array. Expands to a block statement.
- */
+/* Add element to array. Expands to a block statement. */
 #define array_push_back(arr, elem) \
     do {                                                                       \
         array_increase_cap(arr);                                               \
         (arr)->data[(arr)->length++] = elem;                                   \
     } while (0)
 
-/* Copy elements from b to end of a, keeping b unchanged. Expands to a
+/*
+ * Copy elements from b to end of a, keeping b unchanged. Expands to a
  * block statement.
  */
 #define array_concat(a, b) \
@@ -63,7 +57,8 @@
         (a)->length += array_len(b);                                           \
     } while (0)
 
-/* Remove and return last element in array. Expands to expression of
+/*
+ * Remove and return last element in array. Expands to expression of
  * element type.
  */
 #define array_pop_back(arr) \
@@ -82,25 +77,25 @@
         (arr)->length--;                                                       \
     } while (0)
 
-/* Get element from array. Expands to expression, of type being
+/*
+ * Get element from array. Expands to expression, of type being
  * whatever is stored in the array.
  */
 #define array_get(arr, i) \
     (arr)->data[i]
 
-/* Return length of the array. Expands to expression of unsigned integer
+/*
+ * Return length of the array. Expands to expression of unsigned integer
  * type.
  */
 #define array_len(arr) \
     (arr)->length
 
-/* Return last element of array.
- */
+/* Return last element of array. */
 #define array_back(arr) \
     (array_get(arr, array_len(arr) - 1))
 
-/* Reset element count to 0, but keep the capacity already allocated.
- */
+/* Reset element count to 0, but keep the capacity already allocated. */
 #define array_empty(arr) \
     (arr)->length = 0
 
@@ -125,7 +120,8 @@
         }                                                                      \
     } while (0)
 
-/* Free allocated memory, making the array empty. Expands to a block
+/*
+ * Free allocated memory, making the array empty. Expands to a block
  * statement.
  */
 #define array_clear(arr) \

@@ -13,17 +13,13 @@
 #define is_64_bit_reg(arg) ((arg) >= R8 && (arg) <= R15)
 #define is_sse_reg(arg) ((arg).r >= XMM0 && (arg).r <= XMM8)
 
-/*
- * Determine if register or memory argument requires REX prefix.
- */
+/* Determine if register or memory argument requires REX prefix. */
 #define rrex(arg) \
     ((is_64_bit(arg) && (arg).r < XMM0) || is_64_bit_reg(arg.r) || \
         (arg.w == 1 && (arg.r == DI || arg.r == SI)))
 #define mrex(arg) \
     (!arg.sym && ((is_64_bit_reg(arg.base) || is_64_bit_reg(arg.offset))))
 
-/*
- */
 #define PREFIX_SSE 0x0F
 
 /*
@@ -454,8 +450,10 @@ static struct code jcc(
 
     c.val[1] |= cond;
 
-    /* Existing value will be added to offset. Subtract 4 to account for
-       instruction length, offset is counted after the immediate. */
+    /*
+     * Existing value will be added to offset. Subtract 4 to account for
+     * instruction length, offset is counted after the immediate.
+     */
     disp = elf_text_displacement(addr->sym, c.len) + addr->disp - 4;
     ptr = (int *) (c.val + c.len);
     *ptr = disp;
@@ -507,10 +505,12 @@ static struct code rep_movsq(void)
     return c;
 }
 
+/*
+ * Only 'near return' is used, returning to a function with address in
+ * the same segment, and not popping any bytes from stack.
+ */
 static struct code ret(void)
 {
-    /* Only 'Near return' is used, returning to a function with address
-     * in the same segment, and not popping any bytes from stack. */
     struct code c = {{0xC3}, 1};
     return c;
 }

@@ -19,7 +19,7 @@ Install
 Clone and build from source, and the binary will be placed in `bin/lacc`.
 Default include paths assume GNU standard library headers being available, at
 `/usr/include/x86_64-linux-gnu`. To change to some other libc, for example musl,
-edit [main.c](src/main.c#L112).
+edit [main.c](src/main.c#L126).
 
     git clone https://github.com/larmel/lacc.git
     cd lacc
@@ -40,7 +40,7 @@ Usage
 -----
 Command line interface is kept similar to GCC and other compilers, using mostly
 a subset of the same flags and options. A custom argument parser is used, and
-the definition of each option can be found in [src/main.c](src/main.c#L72).
+the definition of each option can be found in [src/main.c](src/main.c#L81).
 
     -E      Output preprocessed.
     -S      Output GNU style textual x86_64 assembly.
@@ -87,7 +87,7 @@ token` objects. These are defined in
 
 Input processing is done completely lazily, driven by the parser calling these
 three functions to consume more input. A buffer of at least [K = 2]
-(src/preprocessor/preprocess.c#L18) preprocessed tokens are kept for lookahead
+(src/preprocessor/preprocess.c#L19) preprocessed tokens are kept for lookahead
 purposes. This number is sufficient to implement a recursive descent parser for
 the C grammar.
 

@@ -12,7 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Static initializer for token. Only works with string representation
+/*
+ * Static initializer for token. Only works with string representation
  * that can fit inline.
  */
 #define TOK(t, s) {(t), 0, {SHORT_STRING_INIT(s)}}
@@ -84,12 +85,14 @@ const struct token basic_token[] = {
             TOK(NEG, "~"),              {0},
 };
 
-/* Valid identifier character, except in the first position which does
+/*
+ * Valid identifier character, except in the first position which does
  * not allow numbers.
  */
 #define isident(c) (isalnum(c) || (c) == '_')
 
-/* Macros to make state state machine implementation of identifier and
+/*
+ * Macros to make state state machine implementation of identifier and
  * operator tokenization simpler.
  */
 #define at(c) (**endptr == (c) && (*endptr)++)
@@ -107,7 +110,8 @@ const struct token basic_token[] = {
 #define S7(a, b, c, d, e, f, g) \
     (at(a) && get(b) && get(c) && get(d) && get(e) && get(f) && get(g) && end())
 
-/* Parse preprocessing number, which starts with an optional period
+/*
+ * Parse preprocessing number, which starts with an optional period
  * before a digit, then a sequence of period, letter underscore, digit,
  * or any of 'e+', 'e-', 'E+', 'E-'.
  *
@@ -251,8 +255,10 @@ struct token convert_preprocessing_number(struct token t)
     len = t.d.string.len;
     tok.leading_whitespace = t.leading_whitespace;
 
-    /* Try to read as integer. Handle suffixes u, l, ll, ul, ull, in all
-       permuations of upper- and lower case. */
+    /*
+     * Try to read as integer. Handle suffixes u, l, ll, ul, ull, in all
+     * permuations of upper- and lower case.
+     */
     errno = 0;
     tok.d.number.val.u = strtoul(in, &endptr, 0);
     suffix = read_integer_suffix(endptr, &endptr);
@@ -261,8 +267,10 @@ struct token convert_preprocessing_number(struct token t)
         tok.d.number.type =
             constant_integer_type(tok.d.number.val.u, suffix, *in != '0');
     } else {
-        /* If the integer conversion did not consume the whole token,
-           try to read as floating point number. */
+        /*
+         * If the integer conversion did not consume the whole token,
+         * try to read as floating point number.
+         */
         errno = 0;
         tok.d.number.type = &basic_type__double;
         tok.d.number.val.d = strtod(in, &endptr);
@@ -285,7 +293,8 @@ struct token convert_preprocessing_number(struct token t)
     return tok;
 }
 
-/* Parse character escape code, including octal and hexadecimal number
+/*
+ * Parse character escape code, including octal and hexadecimal number
  * literals. Unescaped characters are returned as-is. Invalid escape
  * sequences continues with an error, consuming only the backslash.
  */
@@ -321,7 +330,8 @@ static char escpchar(char *in, char **endptr)
     return *in;
 }
 
-/* Parse character literals in the format 'a', '\xaf', '\0', '\077' etc,
+/*
+ * Parse character literals in the format 'a', '\xaf', '\0', '\077' etc,
  * starting from *in. The position of the character after the last '
  * character is stored in endptr. If no valid conversion can be made,
  * *endptr == in.
@@ -341,7 +351,8 @@ static struct token strtochar(char *in, char **endptr)
     return tok;
 }
 
-/* Parse string literal inputs delimited by quotation marks, handling
+/*
+ * Parse string literal inputs delimited by quotation marks, handling
  * escaped quotes. The input buffer is destructively overwritten while
  * resolving escape sequences. Concatenate string literals separated by
  * whitespace.
@@ -548,7 +559,8 @@ static struct token strtoop(char *in, char **endptr)
     return basic_token[(int) *in];
 }
 
-/* Parse string as whitespace tokens, consuming space and tabs. Return
+/*
+ * Parse string as whitespace tokens, consuming space and tabs. Return
  * number of characters.
  */
 static int skip_spaces(char *in, char **endptr)
@@ -571,8 +583,10 @@ String tokstr(struct token tok)
     assert(tok.token != EMPTY_ARG);
 
     if (tok.token == NUMBER) {
-        /* The string representation is lost during tokenization, so we
-         * cannot necessarily reconstruct the same suffixes. */
+        /*
+         * The string representation is lost during tokenization, so we
+         * cannot necessarily reconstruct the same suffixes.
+         */
         num = tok.d.number;
         switch (num.type->type) {
         case T_UNSIGNED:

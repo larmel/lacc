@@ -5,8 +5,10 @@
 #include <string.h>
 
 struct hash_entry {
-    /* We don't own the data, only keep pointers to some block of memory
-     * controlled by the client. */
+    /*
+     * We don't own the data, only keep pointers to some block of memory
+     * controlled by the client.
+     */
     void *data;
 
     unsigned long hash;
@@ -19,7 +21,8 @@ enum hash_op {
     HASH_REMOVE
 };
 
-/* Hash algorithm is adapted from http://www.cse.yorku.ca/~oz/hash.html.
+/*
+ * Hash algorithm is adapted from http://www.cse.yorku.ca/~oz/hash.html.
  */
 static unsigned long djb2_hash(String str)
 {
@@ -63,8 +66,10 @@ static struct hash_entry *hash_walk(
     enum hash_op op,
     String key)
 {
-    /* Sentinel to hold return value from deleted entries, as we want to
-     * have the same interface for all invocations. */
+    /*
+     * Sentinel to hold return value from deleted entries, as we want to
+     * have the same interface for all invocations.
+     */
     static struct hash_entry deleted;
 
     struct hash_entry *ref, *pre;
@@ -100,8 +105,10 @@ static struct hash_entry *hash_walk(
             deleted.hash = ref->hash;
 
             if (!pre) {
-                /* Delete entry in first slot, moving the next element
-                 * in if it exists, or reset to zero. */
+                /*
+                 * Delete entry in first slot, moving the next element
+                 * in if it exists, or reset to zero.
+                 */
                 if (ref->next)
                     *ref = *(ref->next);
                 else
@@ -111,8 +118,10 @@ static struct hash_entry *hash_walk(
                 hash_free_entry(tab, ref);
             }
 
-            /* Entry is freed, but pointer to data as well as hash value
-             * is still valid. */
+            /*
+             * Entry is freed, but pointer to data as well as hash value
+             * is still valid.
+             */
             ref = &deleted;
         }
     }
@@ -174,7 +183,8 @@ struct hash_table *hash_init(
     return tab;
 }
 
-/* Delete all values, putting hash_entry objects already allocated in
+/*
+ * Delete all values, putting hash_entry objects already allocated in
  * overflow slot at table[capacity].
  */
 void hash_clear(struct hash_table *tab)
@@ -188,8 +198,10 @@ void hash_clear(struct hash_table *tab)
         if (ref->data) {
             tab->del(ref->data);
             if (ref->next) {
-                /* Put chain of allocated hash_entry objects at the
-                 * beginning of overflow slot. */
+                /*
+                 * Put chain of allocated hash_entry objects at the
+                 * beginning of overflow slot.
+                 */
                 last = hash_chain_clear(tab, ref->next);
                 last->next = tab->table[tab->capacity].next;
                 tab->table[tab->capacity].next = ref->next;
