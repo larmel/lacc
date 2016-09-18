@@ -67,7 +67,7 @@ int live_variable_analysis(struct block *block)
 
     /* if <expr> goto <label>, and return <expr>, get extra edge. */
     if (block->jump[1] || block->has_return_value) {
-        IN(block, n - 1) |= use(block->expr);
+        IN(block, n - 1) = OUT(block, n - 1) | use(block->expr);
     }
 
     /* Go through normal ir operations. */
