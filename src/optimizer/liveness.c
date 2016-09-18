@@ -84,7 +84,8 @@ int is_live(const struct symbol *sym, const struct block *block, int n)
     if (block->flow) {
         assert(n >= 0);
         assert(sym->index);
-        return (OUT(block, n) & (1ul << (sym->index - 1))) != 0;
+        return (OUT(block, n) & (1ul << (sym->index - 1)))
+            || sym->linkage != LINK_NONE;
     }
 
     return 1;
