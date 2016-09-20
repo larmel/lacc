@@ -11,6 +11,7 @@ extern struct context {
     enum target {
         TARGET_NONE,
         TARGET_IR_DOT,
+        TARGET_CIL,
         TARGET_x86_64_ASM,
         TARGET_x86_64_ELF
     } target;

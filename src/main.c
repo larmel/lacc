@@ -22,7 +22,7 @@ static void help(const char *arg)
 {
     fprintf(
         stderr,
-        "Usage: %s [-(S|E|c)] [-v] [-I <path>] [-o <file>] <file>\n",
+        "Usage: %s [-(S|E|c|cil)] [-v] [-I <path>] [-o <file>] <file>\n",
         program);
     exit(1);
 }
@@ -68,6 +68,11 @@ static void set_c_std(const char *std)
     }
 }
 
+static void set_cil_target(const char *arg)
+{
+    context.target = TARGET_CIL;
+}
+
 static void set_optimization_level(const char *level)
 {
     assert(isdigit(level[2]));
@@ -91,7 +96,8 @@ static char *parse_program_arguments(int argc, char *argv[])
         {"-O1", &set_optimization_level},
         {"-O2", &set_optimization_level},
         {"-O3", &set_optimization_level},
-        {"-std=", &set_c_std}
+        {"-std=", &set_c_std},
+        {"-cil", &set_cil_target}
     };
 
     program = argv[0];

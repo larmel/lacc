@@ -1,5 +1,6 @@
 #include "compile.h"
 #include "graphviz/dot.h"
+#include "cil/cil.h"
 #include "x86_64/abi.h"
 #include "x86_64/assemble.h"
 #include "x86_64/elf.h"
@@ -1849,6 +1850,9 @@ void set_compile_target(FILE *stream)
     case TARGET_NONE:
     case TARGET_IR_DOT:
         break;
+    case TARGET_CIL:
+        cil_set_output(stream);
+        break;
     case TARGET_x86_64_ASM:
         asm_output = stream;
         enter_context = asm_symbol;
@@ -1874,7 +1878,9 @@ int compile(struct definition *def)
     switch (context.target) {
     case TARGET_IR_DOT:
         fdotgen(output_stream, def);
-    case TARGET_NONE:
+        break;
+    case TARGET_CIL:
+        cil_compile_definition(def);
         break;
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
@@ -1882,6 +1888,8 @@ int compile(struct definition *def)
             compile_function(def);
         else
             compile_data(def);
+        break;
+    case TARGET_NONE:
         break;
     }
 
@@ -1894,6 +1902,8 @@ int declare(const struct symbol *sym)
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
         return enter_context(sym);
+    case TARGET_CIL:
+        cil_declare_symbol(sym);
     default:
         return 0;
     }
@@ -1901,8 +1911,12 @@ int declare(const struct symbol *sym)
 
 void flush(void)
 {
-    array_clear(&func_args);
-    if (flush_backend) {
-        flush_backend();
+    if (context.target == TARGET_CIL) {
+        cil_flush();
+    } else {
+        array_clear(&func_args);
+        if (flush_backend) {
+            flush_backend();
+        }
     }
 }
