@@ -88,6 +88,7 @@ struct expression {
         IR_OP_SHL,    /* l << r */
         IR_OP_SHR,    /* l >> r */
         IR_OP_EQ,     /* l == r */
+        IR_OP_NE,     /* l != r */
         IR_OP_GE,     /* l >= r */
         IR_OP_GT      /* l > r  */
     } op;

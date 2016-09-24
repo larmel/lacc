@@ -187,6 +187,9 @@ static char *exprtostr(struct expression expr)
     case IR_OP_EQ:
         sprintf(buffer, "%s == %s", vartostr(expr.l), vartostr(expr.r));
         break;
+    case IR_OP_NE:
+        sprintf(buffer, "%s != %s", vartostr(expr.l), vartostr(expr.r));
+        break;
     case IR_OP_GE:
         sprintf(buffer, "%s \\>= %s", vartostr(expr.l), vartostr(expr.r));
         break;

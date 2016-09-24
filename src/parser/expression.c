@@ -638,25 +638,22 @@ static struct block *equality_expression(
     struct definition *def,
     struct block *block)
 {
+    enum optype op;
     struct var value;
 
     block = relational_expression(def, block);
     while (1) {
         if (peek().token == EQ) {
             consume(EQ);
-            value = eval(def, block, block->expr);
-            block = relational_expression(def, block);
-            block->expr = eval_expr(def, block, IR_OP_EQ, value,
-                eval(def, block, block->expr));
+            op = IR_OP_EQ;
         } else if (peek().token == NEQ) {
             consume(NEQ);
-            value = eval(def, block, block->expr);
-            block = relational_expression(def, block);
-            block->expr = eval_expr(def, block, IR_OP_EQ, var_int(0),
-                eval(def, block,
-                    eval_expr(def, block, IR_OP_EQ, value,
-                        eval(def, block, block->expr))));
+            op = IR_OP_NE;
         } else break;
+        value = eval(def, block, block->expr);
+        block = relational_expression(def, block);
+        block->expr =
+            eval_expr(def, block, op, value, eval(def, block, block->expr));
     }
 
     return block;

@@ -270,6 +270,7 @@ static struct expression create_expr(enum optype op, struct var l, ...)
         assert(is_integer(l.type));
         break;
     case IR_OP_EQ:
+    case IR_OP_NE:
     case IR_OP_GE:
     case IR_OP_GT:
         expr.r = va_arg(args, struct var);
@@ -509,6 +510,51 @@ static struct expression sub(
     return expr;
 }
 
+static void prepare_comparison_operands(
+    struct definition *def,
+    struct block *block,
+    struct var *l,
+    struct var *r)
+{
+    const struct typetree *type;
+
+    /* Normalize by putting most specific pointer as left argument. */
+    if (is_pointer(r->type)
+        && (!is_pointer(l->type)
+            || (is_void(l->type->next) && !is_void(r->type->next))))
+    {
+        prepare_comparison_operands(def, block, r, l);
+        return;
+    }
+
+    if (is_arithmetic(l->type) && is_arithmetic(r->type)) {
+        type = usual_arithmetic_conversion(l->type, r->type);
+        *l = eval_cast(def, block, *l, type);
+        *r = eval_cast(def, block, *r, type);
+    } else if (is_pointer(l->type)) {
+        if (is_pointer(r->type)) {
+            if (!is_compatible(l->type, r->type) &&
+                !(is_void(l->type->next) && size_of(r->type->next)) &&
+                !(is_void(r->type->next) && size_of(l->type->next)))
+            {
+                warning("Comparison between incompatible types '%t' and '%t'.",
+                    l->type, r->type);
+            }
+        } else if (!is_nullptr(*r)) {
+            warning("Comparison between pointer and non-zero integer.");
+        }
+
+        /* Left operand has the most specific type. */
+        *r = eval_cast(def, block, *r, l->type);
+    } else {
+        error("Illegal comparison between types '%t' and '%t'.",
+            l->type, r->type);
+        exit(1);
+    }
+
+    assert(type_equal(l->type, r->type));
+}
+
 static struct expression cmp_eq(
     struct definition *def,
     struct block *block,
@@ -516,47 +562,32 @@ static struct expression cmp_eq(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
 
-    /* Normalize by putting most specific pointer as left argument. */
-    if (is_pointer(r.type)
-        && (!is_pointer(l.type)
-            || (is_void(l.type->next) && !is_void(r.type->next))))
-    {
-        return cmp_eq(def, block, r, l);
-    }
-
-    if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
-        type = usual_arithmetic_conversion(l.type, r.type);
-        l = eval_cast(def, block, l, type);
-        r = eval_cast(def, block, r, type);
-    } else if (is_pointer(l.type)) {
-        if (is_pointer(r.type)) {
-            if (!is_compatible(l.type, r.type) &&
-                !(is_void(l.type->next) && size_of(r.type->next)) &&
-                !(is_void(r.type->next) && size_of(l.type->next)))
-            {
-                warning("Comparison between incompatible types '%t' and '%t'.",
-                    l.type, r.type);
-            }
-        } else if (!is_nullptr(r)) {
-            warning("Comparison between pointer and non-zero integer.");
-        }
-
-        /* Left operand has the most specific type. */
-        r = eval_cast(def, block, r, l.type);
-    } else {
-        error("Illegal comparison between types '%t' and '%t'.",
-            l.type, r.type);
-        exit(1);
-    }
-
-    assert(type_equal(l.type, r.type));
+    prepare_comparison_operands(def, block, &l, &r);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_immediate_compare(l.type, l, ==, r);
         expr = as_expr(l);
     } else {
         expr = create_expr(IR_OP_EQ, l, r);
+    }
+
+    return expr;
+}
+
+static struct expression cmp_ne(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r)
+{
+    struct expression expr;
+
+    prepare_comparison_operands(def, block, &l, &r);
+    if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
+        l = eval_immediate_compare(l.type, l, !=, r);
+        expr = as_expr(l);
+    } else {
+        expr = create_expr(IR_OP_NE, l, r);
     }
 
     return expr;
@@ -1018,6 +1049,7 @@ struct expression eval_expr(
     case IR_OP_ADD:  return add(def, block, l, r);
     case IR_OP_SUB:  return sub(def, block, l, r);
     case IR_OP_EQ:   return cmp_eq(def, block, l, r);
+    case IR_OP_NE:   return cmp_ne(def, block, l, r);
     case IR_OP_GE:   return cmp_ge(def, block, l, r);
     case IR_OP_GT:   return cmp_gt(def, block, l, r);
     case IR_OP_AND:  return and(def, block, l, r);
@@ -1490,12 +1522,9 @@ struct block *eval_logical_or(
     } else if (is_immediate_false(left->expr)) {
         left->jump[0] = right_top;
         left = right;
-        /* Checking for value != 0 is expressed as (0 == (e == 0)). */
         if (!is_comparison(left->expr)) {
             value = eval(def, left, left->expr);
-            left->expr = eval_expr(def, left, IR_OP_EQ, value, var_int(0));
-            value = eval(def, left, left->expr);
-            left->expr = eval_expr(def, left, IR_OP_EQ, value, var_int(0));
+            left->expr = eval_expr(def, left, IR_OP_NE, value, var_int(0));
         }
     } else {
         left = eval_logical_expression(def, 0, left, right_top, right);
@@ -1526,12 +1555,9 @@ struct block *eval_logical_and(
     } else if (is_immediate_true(left->expr)) {
         left->jump[0] = right_top;
         left = right;
-        /* Checking for value != 0 is expressed as (0 == (e == 0)). */
         if (!is_comparison(left->expr)) {
             value = eval(def, left, left->expr);
-            left->expr = eval_expr(def, left, IR_OP_EQ, value, var_int(0));
-            value = eval(def, left, left->expr);
-            left->expr = eval_expr(def, left, IR_OP_EQ, value, var_int(0));
+            left->expr = eval_expr(def, left, IR_OP_NE, value, var_int(0));
         }
     } else {
         left = eval_logical_expression(def, 1, left, right_top, right);

@@ -1430,6 +1430,9 @@ static struct result compile_expression(struct expression expr)
     case IR_OP_EQ:
         res.cmp = INSTR_SETZ;
         goto compare;
+    case IR_OP_NE:
+        res.cmp = INSTR_SETNE;
+        goto compare;
     case IR_OP_GE:
         res.cmp =
             is_unsigned(l.type) || is_real(l.type) ? INSTR_SETAE : INSTR_SETGE;
@@ -1709,6 +1712,9 @@ static void compile_block(struct block *block, const struct typetree *type)
                 break;
             case INSTR_SETAE:
                 emit(INSTR_JAE, OPT_IMM, addr(block->jump[1]->label));
+                break;
+            case INSTR_SETNE:
+                emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
                 break;
             default: assert(0);
             }
