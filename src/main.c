@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 500
 #include "backend/compile.h"
 #include "optimizer/optimize.h"
 #include "parser/parse.h"
@@ -74,6 +75,20 @@ static void set_optimization_level(const char *level)
     optimization_level = level[2] - '0';
 }
 
+static void define_macro(const char *arg)
+{
+    static char line[1024];
+    char *sep;
+
+    snprintf(line, sizeof(line), "#define %s", arg);
+    sep = strchr(line, '=');
+    if (sep) {
+        *sep = ' ';
+    }
+
+    preprocess_parameter_directive(line);
+}
+
 static char *parse_program_arguments(int argc, char *argv[])
 {
     int c;
@@ -91,7 +106,8 @@ static char *parse_program_arguments(int argc, char *argv[])
         {"-O1", &set_optimization_level},
         {"-O2", &set_optimization_level},
         {"-O3", &set_optimization_level},
-        {"-std=", &set_c_std}
+        {"-std=", &set_c_std},
+        {"-D:", &define_macro}
     };
 
     program = argv[0];
