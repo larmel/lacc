@@ -18,7 +18,7 @@ static char message[PRINT_BUF_SIZE];
 
 /*
  * Custom implementation of printf, handling a restricted set of
- * formatters: %s, %d, %lu, %ld.
+ * formatters: %s, %c, %d, %lu, %ld.
  *
  * In addition, have a custom formatter for objects representing a
  * compiler-internal type object.
@@ -46,6 +46,9 @@ static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
         switch (*format++) {
         case 's':
             n += fputs(va_arg(ap, char *), stream);
+            break;
+        case 'c':
+            n += fprintf(stream, "%c", va_arg(ap, int));
             break;
         case 'd':
             n += fprintf(stream, "%d", va_arg(ap, int));
