@@ -105,6 +105,9 @@ static int eval_primary(
         assert(n.token == NUMBER);
         value = n.d.number.val.i;
         break;
+    case NUMBER:
+        value = list->d.number.val.i;
+        break;
     case IDENTIFIER:
         /*
          * Macro expansions should already have been done. Stray
@@ -118,7 +121,7 @@ static int eval_primary(
         break;
     default:
         s = tokstr(*list);
-        error("Invalid primary expression '%s'.", str_raw(s));
+        error("Invalid primary expression '%s' in directive.", str_raw(s));
         break;
     }
 

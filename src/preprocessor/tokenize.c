@@ -293,6 +293,8 @@ struct token convert_preprocessing_number(struct token t)
     return tok;
 }
 
+#define isoctal(c) ((c) >= '0' && (c) < '8')
+
 /*
  * Parse character escape code, including octal and hexadecimal number
  * literals. Unescaped characters are returned as-is. Invalid escape
@@ -314,15 +316,16 @@ static char escpchar(char *in, char **endptr)
         case '?': return '\?';
         case '\'': return '\'';
         case '\"': return '\"';
-        case '0':
-            if (isdigit(in[2]) && in[2] < '8')
-                return (char) strtol(&in[1], endptr, 8);
-            return '\0';
-        case 'x':
-            return (char) strtol(&in[2], endptr, 16);
+        case 'x': return (char) strtol(&in[2], endptr, 16);
         default:
-            error("Invalid escape sequence '\\%c'.", in[1]);
-            return in[1];
+            if (isoctal(in[1])) {
+                if (in[1] == '0' && !isoctal(in[2]))
+                    return '\0';
+            } else {
+                error("Invalid escape sequence '\\%c'.", in[1]);
+            }
+
+            return (char) strtol(&in[1], endptr, 8);
         }
     }
 
