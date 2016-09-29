@@ -1,4 +1,4 @@
-#define _XOPEN_SOURCE 600 /* isblank, strtoul */
+#define _XOPEN_SOURCE 500 /* snprintf */
 #include "strtab.h"
 #include "tokenize.h"
 #include <lacc/context.h>
@@ -383,7 +383,7 @@ static struct token strtostr(char *in, char **endptr)
         }
 
         /* See if there is another string after this one. */
-        while (isblank(*in)) in++;
+        while (isspace(*in)) in++;
         if (*in != '"')
             break;
     } while (1);
@@ -562,15 +562,11 @@ static struct token strtoop(char *in, char **endptr)
     return basic_token[(int) *in];
 }
 
-/*
- * Parse string as whitespace tokens, consuming space and tabs. Return
- * number of characters.
- */
 static int skip_spaces(char *in, char **endptr)
 {
     char *start = in;
 
-    while (isblank(*in))
+    while (isspace(*in))
         in++;
 
     *endptr = in;
