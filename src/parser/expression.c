@@ -762,18 +762,16 @@ static struct block *conditional_expression(
         /* todo: type checking on immediate paths. */
         condition = block->expr;
         consume('?');
+        t = cfg_block_init(def);
         if (is_immediate_true(block->expr)) {
-            f = cfg_block_init(NULL);
-            block = expression(NULL, block);
+            block = expression(def, block);
             consume(':');
-            f = conditional_expression(def, f);
+            t = conditional_expression(def, t); /* throwaway */
         } else if (is_immediate_false(block->expr)) {
-            t = cfg_block_init(NULL);
-            t = expression(NULL, t);
+            t = expression(def, t); /* throwaway */
             consume(':');
             block = conditional_expression(def, block);
         } else {
-            t = cfg_block_init(def);
             f = cfg_block_init(def);
             next = cfg_block_init(def);
             block->jump[0] = f;
