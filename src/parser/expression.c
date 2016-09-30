@@ -374,6 +374,7 @@ static struct block *unary_expression(
 {
     struct var value;
     struct block *head, *tail;
+    const struct symbol *sym;
     const struct typetree *type;
 
     switch (peek().token) {
@@ -419,6 +420,10 @@ static struct block *unary_expression(
         consume(SIZEOF);
         if (peek().token == '(') {
             switch (peekn(2).token) {
+            case IDENTIFIER:
+                sym = sym_lookup(&ns_ident, peekn(2).d.string);
+                if (!sym || sym->symtype != SYM_TYPEDEF)
+                    goto exprsize;;
             case FIRST(type_name):
                 consume('(');
                 type = declaration_specifiers(NULL);
@@ -427,12 +432,10 @@ static struct block *unary_expression(
                 }
                 consume(')');
                 break;
-            default:
-                tail = unary_expression(def, head);
-                type = tail->expr.type;
-                break;
+            default: goto exprsize;
             }
         } else {
+exprsize:
             tail = unary_expression(def, head);
             type = tail->expr.type;
         }
