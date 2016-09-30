@@ -441,7 +441,6 @@ const struct symbol *yield_declaration(struct namespace *ns)
 void output_symbols(FILE *stream, struct namespace *ns)
 {
     unsigned i;
-    char *tstr;
     const struct symbol *sym;
 
     for (i = 0; i < array_len(&ns->symbol); ++i) {
@@ -464,10 +463,7 @@ void output_symbols(FILE *stream, struct namespace *ns)
             (sym->symtype == SYM_STRING_VALUE) ? "string" : "label");
 
         fprintf(stream, "%s :: ", sym_name(sym));
-        tstr = typetostr(&sym->type);
-        fprintf(stream, "%s", tstr);
-        free(tstr);
-
+        fprinttype(stream, &sym->type);
         fprintf(stream, ", size=%d", size_of(&sym->type));
         if (sym->stack_offset)
             fprintf(stream, " (stack_offset: %d)", sym->stack_offset);

@@ -80,7 +80,4 @@ const struct typetree *usual_arithmetic_conversion(
  */
 const struct typetree *promote_integer(const struct typetree *type);
 
-/* Print type to buffer, returning number of characters written. */
-int snprinttype(const struct typetree *type, char *str, size_t size);
-
 #endif

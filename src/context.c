@@ -66,8 +66,7 @@ static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
             }
             break;
         case 't':
-            snprinttype(va_arg(ap, struct typetree *), message, PRINT_BUF_SIZE);
-            n += fputs(message, stream);
+            n += fprinttype(stream, va_arg(ap, const struct typetree *));
             break;
         default:
             format--;

@@ -134,10 +134,7 @@ int type_equal(const struct typetree *l, const struct typetree *r);
  */
 const struct typetree *unwrapped(const struct typetree *type);
 
-/*
- * Serialize type to string. Allocates memory with malloc, caller is
- * responsible for calling free.
- */
-char *typetostr(const struct typetree *type);
+/* Print type to stream, returning number of characters written. */
+int fprinttype(FILE *stream, const struct typetree *type);
 
 #endif

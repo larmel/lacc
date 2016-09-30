@@ -134,7 +134,9 @@ int sym_alignment(const struct symbol *sym)
 void dump_classification(struct param_class pc, const struct typetree *type)
 {
     int i;
-    printf("TYPE: %s\n", typetostr(type));
+    printf("TYPE: ");
+    fprinttype(stdout, type);
+    printf("\n");
     printf("CLASS: %d eightbyte\n", EIGHTBYTES(type));
     if (pc.eightbyte[0] == PC_MEMORY) {
         printf("\tMEMORY\n");

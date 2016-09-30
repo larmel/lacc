@@ -400,105 +400,77 @@ const struct member *find_type_member(
     return NULL;
 }
 
-int snprinttype(const struct typetree *tree, char *s, size_t size)
+int fprinttype(FILE *stream, const struct typetree *type)
 {
-    size_t w = 0;
-    int i;
+    const struct member *m;
+    int i, n = 0;
 
-    if (!tree) {
-        return w;
+    if (is_const(type))
+        n += fputs("const ", stream);
+    if (is_volatile(type))
+        n += fputs("volatile ", stream);
+    if (is_tagged(type)) {
+        assert(is_struct_or_union(type));
+        return n + fprintf(stream, "%s %s",
+            is_union(type) ? "union" : "struct", str_raw(type->tag));
     }
 
-    if (is_const(tree)) w += snprintf(s + w, size - w, "const ");
-    if (is_volatile(tree)) w += snprintf(s + w, size - w, "volatile ");
-
-    if (is_tagged(tree)) {
-        w += snprintf(s + w, size - w, "%s %s",
-            (is_union(tree)) ? "union" : "struct", str_raw(tree->tag));
-        return w;
-    }
-
-    switch (tree->type) {
+    switch (type->type) {
     case T_UNSIGNED:
-        w += snprintf(s + w, size - w, "unsigned ");
+        n += fputs("unsigned ", stream);
     case T_SIGNED:
-        switch (tree->size) {
-        case 1:
-            w += snprintf(s + w, size - w, "char");
-            break;
-        case 2:
-            w += snprintf(s + w, size - w, "short");
-            break;
-        case 4:
-            w += snprintf(s + w, size - w, "int");
-            break;
-        default:
-            w += snprintf(s + w, size - w, "long");
-            break;
-        }
+        n += fputs(
+            type->size == 1 ? "char" :
+            type->size == 2 ? "short" :
+            type->size == 4 ? "int" : "long", stream);
         break;
     case T_REAL:
-        switch (tree->size) {
-        case 4:
-            w += snprintf(s + w, size - w, "float");
-            break;
-        default:
-            w += snprintf(s + w, size - w, "double");
-            break;
-        }
+        n += fputs(is_float(type) ? "float" : "double", stream);
         break;
     case T_VOID:
-        w += snprintf(s + w, size - w, "void");
+        n += fputs("void", stream);
         break;
     case T_POINTER:
-        w += snprintf(s + w, size - w, "* ");
-        w += snprinttype(tree->next, s + w, size - w);
+        n += fputs("* ", stream);
+        n += fprinttype(stream, type->next);
         break;
     case T_FUNCTION:
-        w += snprintf(s + w, size - w, "(");
-        for (i = 0; i < nmembers(tree); ++i) {
-            w += snprinttype(get_member(tree, i)->type, s + w, size - w);
-            if (i < nmembers(tree) - 1) {
-                w += snprintf(s + w, size - w, ", ");
+        n += fputs("(", stream);
+        for (i = 0; i < nmembers(type); ++i) {
+            n += fprinttype(stream, get_member(type, i)->type);
+            if (i < nmembers(type) - 1) {
+                n += fputs(", ", stream);
             }
         }
-        if (is_vararg(tree)) {
-            w += snprintf(s + w, size - w, ", ...");
+        if (is_vararg(type)) {
+            n += fputs(", ...", stream);
         }
-        w += snprintf(s + w, size - w, ") -> ");
-        w += snprinttype(tree->next, s + w, size - w);
+        n += fputs(") -> ", stream);
+        n += fprinttype(stream, type->next);
         break;
     case T_ARRAY:
-        if (tree->size > 0) {
-            w += snprintf(s + w, size - w, "[%u] ",
-                tree->size / size_of(tree->next));
+        if (type->size > 0) {
+            n += fprintf(stream, "[%u]", type->size / size_of(type->next));
         } else {
-            w += snprintf(s + w, size - w, "[] ");
+            n += fputs("[] ", stream);
         }
-        w += snprinttype(tree->next, s + w, size - w);
+        n += fprinttype(stream, type->next);
         break;
     case T_STRUCT:
     case T_UNION:
-        w += snprintf(s + w, size - w, "{");
-        for (i = 0; i < nmembers(tree); ++i) {
-            const struct member *member = get_member(tree, i);
-            w += snprintf(s + w, size - w, ".%s::", str_raw(member->name));
-            w += snprinttype(member->type, s + w, size - w);
-            w += snprintf(s + w, size - w, " (+%d)", member->offset);
-            if (i < nmembers(tree) - 1) {
-                w += snprintf(s + w, size - w, ", ");
+        n += fputc('{', stream);
+        for (i = 0; i < nmembers(type); ++i) {
+            m = get_member(type, i);
+            n += fprintf(stream, ".%s::", str_raw(m->name));
+            n += fprinttype(stream, m->type);
+            n += fprintf(stream, " (+%d)", m->offset);
+            if (i < nmembers(type) - 1) {
+                n += fputs(", ", stream);
             }
         }
-        w += snprintf(s + w, size - w, "}");
+        n += fputc('}', stream);
         break;
     }
 
-    return w;
-}
-
-char *typetostr(const struct typetree *type)
-{
-    char *text = malloc(2048 * sizeof(char));
-    snprinttype(type, text, 2047);
-    return text;
+    return n;
 }

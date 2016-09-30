@@ -12,8 +12,7 @@ static char buffer[BUFFERS][MAX_BUF_LEN];
 
 /*
  * Return a buffer which can be used to write string representation of
- * variable or symbol. Need to keep at most four alive in order to print
- * a full statement. Circulate using counter.
+ * variable or symbol.
  */
 static char *get_buffer(void)
 {
@@ -131,74 +130,72 @@ static char *vartostr(const struct var var)
     return buffer;
 }
 
-static char *exprtostr(struct expression expr)
+static void fprintexpr(FILE *stream, struct expression expr)
 {
-    char *buffer;
-
-    buffer = get_buffer();
     switch (expr.op) {
     case IR_OP_CAST:
         if (type_equal(expr.type, expr.l.type)) {
-            sprintf(buffer, "%s", vartostr(expr.l));
+            fprintf(stream, "%s", vartostr(expr.l));
         } else {
-            sprintf(buffer, "(%s) %s", typetostr(expr.type), vartostr(expr.l));
+            fputc('(', stream);
+            fprinttype(stream, expr.type);
+            fprintf(stream, ") %s", vartostr(expr.l));
         }
         break;
     case IR_OP_CALL:
-        sprintf(buffer, "call %s", vartostr(expr.l));
+        fprintf(stream, "call %s", vartostr(expr.l));
         break;
     case IR_OP_VA_ARG:
-        sprintf(buffer, "va_arg(%s, %s)",
-            vartostr(expr.l), typetostr(expr.type));
+        fprintf(stream, "va_arg(%s, ", vartostr(expr.l));
+        fprinttype(stream, expr.type);
+        fputc(')', stream);
         break;
     case IR_OP_NOT:
-        sprintf(buffer, "~%s", vartostr(expr.l));
+        fprintf(stream, "~%s", vartostr(expr.l));
         break;
     case IR_OP_ADD:
-        sprintf(buffer, "%s + %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s + %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_SUB:
-        sprintf(buffer, "%s - %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s - %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_MUL:
-        sprintf(buffer, "%s * %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s * %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_DIV:
-        sprintf(buffer, "%s / %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s / %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_MOD:
-        sprintf(buffer, "%s %% %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s %% %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_AND:
-        sprintf(buffer, "%s & %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s & %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_OR:
-        sprintf(buffer, "%s | %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s | %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_XOR:
-        sprintf(buffer, "%s ^ %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s ^ %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_SHL:
-        sprintf(buffer, "%s \\<\\< %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s \\<\\< %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_SHR:
-        sprintf(buffer, "%s \\>\\> %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s \\>\\> %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_EQ:
-        sprintf(buffer, "%s == %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s == %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_NE:
-        sprintf(buffer, "%s != %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s != %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_GE:
-        sprintf(buffer, "%s \\>= %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s \\>= %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_GT:
-        sprintf(buffer, "%s \\> %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s \\> %s", vartostr(expr.l), vartostr(expr.r));
         break;
     }
-
-    return buffer;
 }
 
 static void foutputnode(FILE *stream, struct block *node)
@@ -217,29 +214,35 @@ static void foutputnode(FILE *stream, struct block *node)
         s = array_get(&node->code, i);
         switch (s.st) {
         case IR_ASSIGN:
-            fprintf(stream, " | %s = %s", vartostr(s.t), exprtostr(s.expr));
+            fprintf(stream, " | %s = ", vartostr(s.t));
+            fprintexpr(stream, s.expr);
             break;
         case IR_PARAM:
-            fprintf(stream, " | param %s", exprtostr(s.expr));
+            fputs(" | param ", stream);
+            fprintexpr(stream, s.expr);
             break;
         case IR_VA_START:
-            fprintf(stream, " | va_start(%s)", exprtostr(s.expr));
+            fputs(" | va_start(", stream);
+            fprintexpr(stream, s.expr);
+            fputs(")", stream);
             break;
         case IR_EXPR:
-            fprintf(stream, " | %s", exprtostr(s.expr));
+            fputs(" | ", stream);
+            fprintexpr(stream, s.expr);
             break;
         }
     }
 
     if (node->jump[0] == NULL && node->jump[1] == NULL) {
         if (node->has_return_value) {
-            fprintf(stream, " | return");
-            fprintf(stream, " %s", exprtostr(node->expr));
+            fputs(" | return ", stream);
+            fprintexpr(stream, node->expr);
         }
-        fprintf(stream, " }\"];\n");
+        fputs(" }\"];\n", stream);
     } else if (node->jump[1] != NULL) {
-        fprintf(stream, " | if %s goto %s",
-            exprtostr(node->expr), escape(node->jump[1]->label));
+        fputs(" | if ", stream);
+        fprintexpr(stream, node->expr);
+        fprintf(stream, " goto %s", escape(node->jump[1]->label));
         fprintf(stream, " }\"];\n");
         foutputnode(stream, node->jump[0]);
         foutputnode(stream, node->jump[1]);
