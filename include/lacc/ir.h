@@ -61,6 +61,8 @@ struct var {
 };
 
 #define is_field(v) ((v).width != 0)
+#define is_constant(v) \
+    ((v).kind == IMMEDIATE || ((v).kind == DEREF && !(v).symbol))
 
 /*
  * Represent an intermediate expression with up to two operands.

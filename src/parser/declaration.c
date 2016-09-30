@@ -834,7 +834,7 @@ static struct block *initializer(
         if (target.symbol->linkage != LINK_NONE
             && (array_len(&block->code) - ops > 0
                 || !is_identity(block->expr)
-                || (value.kind != IMMEDIATE && value.kind != ADDRESS
+                || (!is_constant(value) && value.kind != ADDRESS
                     && !(value.kind == DIRECT && is_function(value.type)))
                 || (value.kind == ADDRESS
                     && value.symbol->linkage == LINK_NONE)))

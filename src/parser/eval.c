@@ -423,6 +423,9 @@ static struct expression add(
             assert(!is_tagged(l.type));
             l.offset += r.imm.i * size_of(l.type->next);
             expr = as_expr(l);
+        } else if (is_constant(l) && r.kind == IMMEDIATE) {
+            l.imm.i += r.imm.i;
+            expr = as_expr(l);
         } else if (r.kind != IMMEDIATE || r.imm.i) {
             r = eval(def, block,
                     eval_expr(def, block, IR_OP_MUL,
@@ -476,6 +479,9 @@ static struct expression sub(
         {
             assert(!is_tagged(l.type));
             l.offset -= r.imm.i * size_of(l.type->next);
+            expr = as_expr(l);
+        } else if (is_constant(l) && r.kind == IMMEDIATE) {
+            l.imm.i -= r.imm.i;
             expr = as_expr(l);
         } else if (!is_immediate_false(as_expr(r))) {
             r = eval(def, block,
