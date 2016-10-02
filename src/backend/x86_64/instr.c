@@ -281,9 +281,23 @@ static struct code movzx(
 
 static struct code push(enum instr_optype optype, union operand op)
 {
-    struct code c = nop();
-    if (optype == OPT_REG)
-        c.val[0] = 0x50 + reg(op.reg);
+    struct code c = {{0}};
+
+    if (optype == OPT_REG) {
+        c.val[c.len++] = 0x50 + reg(op.reg);
+    } else {
+        assert(optype == OPT_IMM);
+        assert(op.imm.w == 8);
+        if (is_byte_imm(op.imm)) {
+            c.val[c.len++] = 0x6A;
+            c.val[c.len++] = op.imm.d.byte;
+        } else if (is_32bit_imm(op.imm)) {
+            c.val[c.len++] = 0x68;
+            memcpy(&c.val[c.len], &op.imm.d.dword, 4);
+            c.len += 4;
+        } else assert(0);
+    }
+
     return c;
 }
 

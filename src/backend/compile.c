@@ -555,7 +555,7 @@ static void push(struct var v)
     int eb;
 
     if (is_scalar(v.type)) {
-        if (v.kind == IMMEDIATE && size_of(v.type) == 8) {
+        if (v.kind == IMMEDIATE && size_of(v.type) < 8) {
             emit(INSTR_PUSH, OPT_IMM, value_of(v, 8));
         } else {
             /*
