@@ -199,12 +199,10 @@ struct typetree *declarator(struct typetree *base, String *name)
 
 static void member_declaration_list(struct typetree *type)
 {
-    struct namespace ns = {0};
     String name;
     struct var expr;
     struct typetree *decl_base, *decl_type;
 
-    push_scope(&ns);
     do {
         decl_base = declaration_specifiers(NULL);
         do {
@@ -221,21 +219,22 @@ static void member_declaration_list(struct typetree *type)
                     error("Negative width in bit-field.");
                     exit(1);
                 }
-                if (name.len) {
-                    sym_add(&ns, name, decl_type, SYM_DECLARATION, LINK_NONE);
-                }
                 type_add_field(type, name, decl_type, expr.imm.i);
             } else {
                 if (!name.len) {
-                    error("Missing name in member declarator.");
-                    exit(1);
+                    if (is_struct_or_union(decl_type)) {
+                        type_add_anonymous_member(type, decl_type);
+                    } else {
+                        error("Missing name in member declarator.");
+                        exit(1);
+                    }
                 } else if (!size_of(decl_type)) {
                     error("Member '%s' has incomplete type '%t'.",
                         name.len, decl_type);
                     exit(1);
+                } else {
+                    type_add_member(type, name, decl_type);
                 }
-                sym_add(&ns, name, decl_type, SYM_DECLARATION, LINK_NONE);
-                type_add_member(type, name, decl_type);
             }
 
             if (peek().token == ',') {
@@ -245,7 +244,7 @@ static void member_declaration_list(struct typetree *type)
         } while (peek().token != ';');
         consume(';');
     } while (peek().token != '}');
-    pop_scope(&ns);
+    type_seal(type);
 }
 
 static struct typetree *struct_or_union_declaration(void)
@@ -590,31 +589,15 @@ static void zero_initialize(
 {
     int i;
     struct var var;
-    const struct member *member;
-    assert(target.kind == DIRECT);
 
+    assert(target.kind == DIRECT);
     switch (target.type->type) {
     case T_STRUCT:
-        target.type = unwrapped(target.type);
-        var = target;
-        for (i = 0; i < nmembers(var.type); ++i) {
-            member = get_member(var.type, i);
-            target.type = member->type;
-            target.offset = var.offset + member->offset;
-            zero_initialize(def, block, target);
-        }
-        break;
     case T_UNION:
-        /*
-         * We don't want garbage in any union member after zero-
-         * initialization, so set full width to zero.
-         */
         target.type =
             (size_of(target.type) % 8) ?
                 type_init(T_ARRAY, &basic_type__char, size_of(target.type)) :
                 type_init(T_ARRAY, &basic_type__long, size_of(target.type) / 8);
-        zero_initialize(def, block, target);
-        break;
     case T_ARRAY:
         assert(target.type->size);
         var = target;
@@ -657,7 +640,6 @@ static struct block *object_initializer(
     const struct member *member;
 
     assert(!is_tagged(type));
-
     consume('{');
     target.lvalue = 1;
     switch (type->type) {
@@ -672,9 +654,7 @@ static struct block *object_initializer(
              * first member is not the largest one.
              */
             target.type =
-                type_init(
-                    T_ARRAY,
-                    &basic_type__char,
+                type_init(T_ARRAY, &basic_type__char,
                     type->size - size_of(member->type));
             target.offset += size_of(member->type);
             zero_initialize(def, block, target);
@@ -697,10 +677,12 @@ static struct block *object_initializer(
                 break;
             }
         }
-        while (++i < nmembers(type)) {
-            member = get_member(type, i);
-            target.type = member->type;
-            target.offset = filled + member->offset;
+        if (i < nmembers(type) - 1) {
+            assert(member);
+            target.offset += size_of(member->type);
+            target.type =
+                type_init(T_ARRAY, &basic_type__char,
+                    size_of(type) - (member->offset + size_of(member->type)));
             zero_initialize(def, block, target);
         }
         break;

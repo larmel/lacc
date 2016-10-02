@@ -12,9 +12,19 @@
  * arguments, the last member should be passed as "...".
  */
 void type_add_member(
-    struct typetree *type,
+    struct typetree *parent,
     String name,
-    const struct typetree *mtype);
+    const struct typetree *type);
+
+/*
+ * Add unnamed struct or union member, which itself has to be struct or
+ * union type.
+ *
+ * This is a C11 feature.
+ */
+void type_add_anonymous_member(
+    struct typetree *parent,
+    const struct typetree *type);
 
 /*
  * Add bitfield to struct. Type must be either signed or unsigned int.
@@ -22,10 +32,16 @@ void type_add_member(
  * occupying 4 bytes each.
  */
 void type_add_field(
-    struct typetree *type,
+    struct typetree *parent,
     String name,
-    const struct typetree *mtype,
+    const struct typetree *type,
     int width);
+
+/*
+ * Commit type members and calculate final trailing padding. Must be
+ * called after adding struct or union members of a new type.
+ */
+void type_seal(struct typetree *parent);
 
 /*
  * Find type member of the given name, meaning struct or union field, or

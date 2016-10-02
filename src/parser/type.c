@@ -1,6 +1,6 @@
-#define _XOPEN_SOURCE 500 /* snprintf */
 #include "type.h"
 #include <lacc/array.h>
+#include <lacc/context.h>
 
 #include <assert.h>
 #include <stdarg.h>
@@ -104,39 +104,6 @@ int type_alignment(const struct typetree *type)
     }
 }
 
-static int align_struct_members(struct signature *sig)
-{
-    int i,
-        size = 0,
-        alignment,
-        max_alignment = 0;
-    struct member *field;
-
-    for (i = 0; i < array_len(&sig->members); ++i) {
-        field = &array_get(&sig->members, i);
-        alignment = type_alignment(field->type);
-        if (alignment > max_alignment) {
-            max_alignment = alignment;
-        }
-
-        /* Add padding until size matches alignment. */
-        if (size % alignment) {
-            size += alignment - (size % alignment);
-        }
-
-        assert(!(size % alignment));
-        field->offset = size;
-        size += size_of(field->type);
-    }
-
-    /* Total size must be a multiple of strongest alignment. */
-    if (size % max_alignment) {
-        size += max_alignment - (size % max_alignment);
-    }
-
-    return size;
-}
-
 int nmembers(const struct typetree *type)
 {
     return (type->signature) ? array_len(&type->signature->members) : 0;
@@ -150,77 +117,156 @@ const struct member *get_member(const struct typetree *type, int n)
             &array_get(&type->signature->members, n);
 }
 
-void type_add_member(
-    struct typetree *type,
-    String member_name,
-    const struct typetree *member_type)
+/*
+ * Add member to type signature list. Create the list if this is the
+ * first member added. Calculate new size of parent type based on the
+ * type added.
+ *
+ * Verify that a named struct or union member does not already exist.
+ */
+static void add_member(struct typetree *parent, struct member m)
 {
     struct signature *sig;
-    struct member mbr = {{{0}}};
 
-    assert(is_struct_or_union(type) || is_function(type));
-    assert(!is_function(type) || !is_vararg(type));
-    assert(!is_tagged(type));
-
-    if (!type->signature) {
-        type->signature = mksignature();
+    sig = (struct signature *) parent->signature;
+    if (!sig) {
+        sig = mksignature();
+        parent->signature = sig;
     }
 
-    sig = (struct signature *) type->signature;
-    if (is_function(type)) {
-        if (member_name.len && !str_cmp(member_name, str_init("..."))) {
-            sig->is_vararg = 1;
-            return;
+    if (!str_cmp(m.name, str_init("..."))) {
+        assert(!sig->is_vararg);
+        assert(is_function(parent));
+        sig->is_vararg = 1;
+    } else {
+        if (m.name.len && find_type_member(parent, m.name)) {
+            error("Member '%s' already exists.", str_raw(m.name));
+            exit(1);
         }
-        if (is_array(member_type)) {
-            member_type = type_init(T_POINTER, member_type->next);
-        }
-    }
-
-    mbr.name = member_name;
-    mbr.type = member_type;
-    array_push_back(&sig->members, mbr);
-    if (is_struct(type)) {
-        type->size = align_struct_members(sig);
-    } else if (is_union(type)) {
-        if (type->size < size_of(member_type)) {
-            type->size = size_of(member_type);
+        array_push_back(&sig->members, m);
+        if (parent->size < m.offset + size_of(m.type)) {
+            parent->size = m.offset + size_of(m.type);
         }
     }
 }
 
+/*
+ * Add necessary padding to parent struct such that new member type can
+ * be added. Union types need no padding.
+ */
+static int adjust_member_alignment(
+    struct typetree *parent,
+    const struct typetree *type)
+{
+    int alignment = 0;
+
+    assert(is_struct_or_union(parent));
+    if (is_struct(parent)) {
+        alignment = type_alignment(type);
+        if (parent->size % alignment) {
+            parent->size += alignment - (parent->size % alignment);
+            assert(parent->size % alignment == 0);
+        }
+
+        alignment = parent->size;
+    }
+
+    return alignment;
+}
+
+void type_add_member(
+    struct typetree *parent,
+    String name,
+    const struct typetree *type)
+{
+    struct member m = {{{0}}};
+
+    assert(is_struct_or_union(parent) || is_function(parent));
+    assert(!str_cmp(name, str_init("...")) || is_object(type));
+    assert(!is_tagged(parent));
+    if (is_function(parent)) {
+        if (type && is_array(type)) {
+            type = type_init(T_POINTER, type->next);
+        }
+    } else {
+        m.offset = adjust_member_alignment(parent, type);
+    }
+
+    m.name = name;
+    m.type = type;
+    add_member(parent, m);
+}
+
 void type_add_field(
-    struct typetree *type,
-    String mname,
-    const struct typetree *mtype,
+    struct typetree *parent,
+    String name,
+    const struct typetree *type,
     int width)
 {
-    struct signature *sig;
-    struct member mbr = {{{0}}};
+    struct member m = {{{0}}};
 
+    assert(is_struct_or_union(parent));
+    assert(!is_tagged(parent));
+    assert(type_equal(type, &basic_type__int)
+        || type_equal(type, &basic_type__unsigned_int));
+
+    if (name.len && width) {
+        m.name = name;
+        m.type = type;
+        m.width = width;
+        m.offset = adjust_member_alignment(parent, type);
+        add_member(parent, m);
+    }
+}
+
+void type_add_anonymous_member(
+    struct typetree *parent,
+    const struct typetree *type)
+{
+    int i, offset;
+    struct member m;
+
+    assert(is_struct_or_union(parent));
     assert(is_struct_or_union(type));
-    assert(!is_tagged(type));
-    assert(type_equal(mtype, &basic_type__int) ||
-        type_equal(mtype, &basic_type__unsigned_int));
-
-    if (mname.len && width) {
-        if (!type->signature) {
-            type->signature = mksignature();
+    if (is_struct(parent) && is_union(type)) {
+        offset = adjust_member_alignment(parent, type);
+        for (i = 0; i < nmembers(type); ++i) {
+            m = array_get(&type->signature->members, i);
+            m.offset += offset;
+            add_member(parent, m);
         }
-
-        sig = (struct signature *) type->signature;
-        mbr.name = mname;
-        mbr.type = mtype;
-        mbr.width = width;
-        array_push_back(&sig->members, mbr);
-        if (is_struct(type)) {
-            type->size = align_struct_members(sig);
-        } else {
-            assert(is_union(type));
-            if (type->size < size_of(mtype)) {
-                type->size = size_of(mtype);
-            }
+    } else if (is_union(parent) && is_struct(type)) {
+        for (i = 0; i < nmembers(type); ++i) {
+            m = array_get(&type->signature->members, i);
+            add_member(parent, m);
         }
+    } else {
+        for (i = 0; i < nmembers(type); ++i) {
+            type_add_member(parent, m.name, m.type);
+        }
+    }
+}
+
+/*
+ * Adjust aggregate type size to be a multiple of strongest member
+ * alignment. This function should only be called once all members have
+ * been added.
+ */
+void type_seal(struct typetree *parent)
+{
+    int i, align, maxalign = 0;
+    struct member m;
+
+    for (i = 0; i < nmembers(parent); ++i) {
+        m = array_get(&parent->signature->members, i);
+        align = type_alignment(m.type);
+        if (align > maxalign) {
+            maxalign = align;
+        }
+    }
+
+    if (parent->size % maxalign) {
+        parent->size += maxalign - (parent->size % maxalign);
     }
 }
 
@@ -387,7 +433,7 @@ const struct member *find_type_member(
 {
     int i;
     const struct member *member;
-    assert(is_struct_or_union(type));
+    assert(is_struct_or_union(type) || is_function(type));
 
     type = unwrapped(type);
     for (i = 0; i < nmembers(type); ++i) {
