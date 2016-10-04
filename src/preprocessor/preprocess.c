@@ -153,7 +153,7 @@ static void read_defined_operator(TokenArray *line)
 /*
  * Read tokens until reaching end of line. If initial token is '#', stop
  * on first newline. Otherwise make sure macro invocations spanning
- * multiple lines are joined, and replace 'defined' with 0 or 1.
+ * multiple lines are joined. Replace 'defined' with 0 or 1.
  *
  * Returns a buffer containing all necessary tokens to preprocess a
  * line. Always ends with a newline (\n) token, but never contains any
@@ -172,21 +172,22 @@ static void read_complete_line(TokenArray *line, struct token t, int directive)
 
     while (t.token != NEWLINE) {
         assert(t.token != END);
-        if (t.token == IDENTIFIER) {
-            if (!tok_cmp(t, ident__defined) && directive && expandable) {
+        if (expandable && t.token == IDENTIFIER) {
+            if (directive && !tok_cmp(t, ident__defined)) {
                 read_defined_operator(line);
-            } else if ((def = definition(tokstr(t)))
-                && def->type == FUNCTION_LIKE
-                && expandable)
-            {
-                array_push_back(line, t);
-                read_macro_invocation(line, def);
             } else {
-                array_push_back(line, t);
+                def = definition(tokstr(t));
+                if (def && def->type == FUNCTION_LIKE) {
+                    array_push_back(line, t);
+                    read_macro_invocation(line, def);
+                } else {
+                    array_push_back(line, t);
+                }
             }
         } else {
             array_push_back(line, t);
         }
+
         t = get_token();
     }
 

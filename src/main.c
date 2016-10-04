@@ -80,10 +80,12 @@ static void define_macro(const char *arg)
     static char line[1024];
     char *sep;
 
-    snprintf(line, sizeof(line), "#define %s", arg);
-    sep = strchr(line, '=');
+    sep = strchr(arg, '=');
     if (sep) {
-        *sep = ' ';
+        snprintf(line, sizeof(line), "#define %s", arg);
+        *(line + 8 + (sep - arg)) = ' ';
+    } else {
+        snprintf(line, sizeof(line), "#define %s 1", arg);
     }
 
     preprocess_parameter_directive(line);
