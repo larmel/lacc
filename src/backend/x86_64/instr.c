@@ -1029,6 +1029,8 @@ struct code encode(struct instruction instr)
         return setcc(instr.optype, TEST_A, instr.source);
     case INSTR_SETG:
         return setcc(instr.optype, TEST_G, instr.source);
+    case INSTR_SETP:
+        return setcc(instr.optype, TEST_P, instr.source);
     case INSTR_SETNE:
         return setcc(instr.optype, TEST_NE, instr.source);
     case INSTR_SETAE:

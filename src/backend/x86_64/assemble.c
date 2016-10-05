@@ -312,6 +312,7 @@ int asm_text(struct instruction instr)
     case INSTR_SETZ:     I1("setz", source); break;
     case INSTR_SETA:     I1("seta", source); break;
     case INSTR_SETG:     I1("setg", source); break;
+    case INSTR_SETP:     I1("setp", source); break;
     case INSTR_SETAE:    I1("setae", source); break;
     case INSTR_SETGE:    I1("setge", source); break;
     case INSTR_SETNP:    I1("setnp", source); break;

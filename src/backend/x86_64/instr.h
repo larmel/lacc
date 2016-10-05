@@ -124,6 +124,7 @@ enum opcode {
     INSTR_SETZ,
     INSTR_SETA,
     INSTR_SETG,
+    INSTR_SETP,
     INSTR_SETNE,
     INSTR_SETAE,
     INSTR_SETGE,

@@ -1483,9 +1483,14 @@ static enum reg set_compare_value(
     enum opcode op)
 {
     emit(op, OPT_REG, reg(AX, 1));
-    if (op == INSTR_SETZ && is_real(type)) {
-        emit(INSTR_SETNP, OPT_REG, reg(CX, 1));
-        emit(INSTR_AND, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
+    if (is_real(type)) {
+        if (op == INSTR_SETZ) {
+            emit(INSTR_SETNP, OPT_REG, reg(CX, 1));
+            emit(INSTR_AND, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
+        } else if (op == INSTR_SETNE) {
+            emit(INSTR_SETP, OPT_REG, reg(CX, 1));
+            emit(INSTR_OR, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
+        }
         emit(INSTR_AND, OPT_IMM_REG, constant(1, 1), reg(AX, 1));
     }
 
@@ -1698,14 +1703,24 @@ static void compile_block(struct block *block, const struct typetree *type)
         assert(is_scalar(block->expr.type));
         res = compile_expression(block->expr);
         if (res.kind == VAL_FLAGS) {
+            assert(type_equal(&basic_type__int, block->expr.type));
             switch (res.cmp) {
             case INSTR_SETZ:
-                if (is_float(block->expr.type)) {
+                if (is_real(block->expr.l.type)) {
                     emit(INSTR_JNE, OPT_IMM, addr(block->jump[0]->label));
                     emit(INSTR_JP, OPT_IMM, addr(block->jump[0]->label));
                     emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
                 } else {
                     emit(INSTR_JZ, OPT_IMM, addr(block->jump[1]->label));
+                }
+                break;
+            case INSTR_SETNE:
+                if (is_real(block->expr.l.type)) {
+                    emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
+                    emit(INSTR_JP, OPT_IMM, addr(block->jump[1]->label));
+                    emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
+                } else {
+                    emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
                 }
                 break;
             case INSTR_SETG:
@@ -1719,9 +1734,6 @@ static void compile_block(struct block *block, const struct typetree *type)
                 break;
             case INSTR_SETAE:
                 emit(INSTR_JAE, OPT_IMM, addr(block->jump[1]->label));
-                break;
-            case INSTR_SETNE:
-                emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
                 break;
             default: assert(0);
             }
