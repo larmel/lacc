@@ -97,13 +97,15 @@ static const char *address(struct address addr)
         w += snprintf(buf + w, s - w, "%d", addr.disp);
     }
 
-    reg.r = addr.base;
-    w += snprintf(buf + w, s - w, "(%s", mnemonic(reg));
-    if (addr.offset) {
-        reg.r = addr.offset;
-        w += snprintf(buf + w, s - w, ",%s,%d", mnemonic(reg), addr.mult);
+    if (addr.base) {
+        reg.r = addr.base;
+        w += snprintf(buf + w, s - w, "(%s", mnemonic(reg));
+        if (addr.offset) {
+            reg.r = addr.offset;
+            w += snprintf(buf + w, s - w, ",%s,%d", mnemonic(reg), addr.mult);
+        }
+        w += snprintf(buf + w, s - w, ")");
     }
-    w += snprintf(buf + w, s - w, ")");
 
     return buf;
 }

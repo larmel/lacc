@@ -134,11 +134,9 @@ static struct immediate value_of(struct var var, int w)
 {
     struct immediate imm = {0};
     assert(var.kind == IMMEDIATE);
-    assert(!is_array(var.type));
 
     imm.w = w;
     if (is_string(var)) {
-        assert(is_pointer(var.type));
         imm.type = IMM_ADDR;
         imm.d.addr.sym = var.symbol;
         imm.d.addr.disp = var.offset;
@@ -164,9 +162,13 @@ static struct memory location(struct address addr, int w)
 static struct address address_of(struct var var)
 {
     struct address addr = {0};
-    assert(var.kind == DIRECT || var.kind == ADDRESS);
+    assert(var.kind != DEREF);
 
-    if (var.symbol->linkage != LINK_NONE) {
+    if (var.kind == IMMEDIATE) {
+        assert(is_string(var));
+        addr.sym = var.symbol;
+        addr.disp = var.offset;
+    } else if (var.symbol->linkage != LINK_NONE) {
         addr.base = IP;
         addr.disp = var.offset;
         addr.sym = var.symbol;
@@ -245,12 +247,17 @@ static void emit_load(
         break;
     case DEREF:
         ptr = var_direct(source.symbol);
-        assert(is_pointer(ptr.type));
-        emit(INSTR_MOV, OPT_MEM_REG, location_of(ptr, 8), reg(R11, 8));
-        emit(opcode,
-            OPT_MEM_REG,
-            location(address(source.offset, R11, 0, 0), w),
-            dest);
+        if (is_string(ptr)) {
+            ptr.offset = source.offset;
+            emit(opcode, OPT_MEM_REG, location_of(ptr, w), dest);
+        } else {
+            assert(is_pointer(ptr.type));
+            emit(INSTR_MOV, OPT_MEM_REG, location_of(ptr, 8), reg(R11, 8));
+            emit(opcode,
+                OPT_MEM_REG,
+                location(address(source.offset, R11, 0, 0), w),
+                dest);
+        }
         break;
     case ADDRESS:
         assert(opcode == INSTR_LEA);

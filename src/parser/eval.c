@@ -1220,12 +1220,13 @@ struct var eval_deref(
         /*
          * Dereferencing constant which has been cast to pointer. This
          * is a special case of deref, identified by symbol being NULL.
-         * Handled in backend.
+         * Also the case when indexing into string literals, in which
+         * case symbol is not NULL.
          */
         var.kind = DEREF;
         var.type = type_deref(var.type);
         var.lvalue = 1;
-        assert(!var.symbol);
+        assert(!var.symbol || var.symbol->symtype == SYM_STRING_VALUE);
         return var;
     }
 
