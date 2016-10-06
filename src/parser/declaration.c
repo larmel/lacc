@@ -637,7 +637,7 @@ static struct block *object_initializer(
 {
     int i, filled = target.offset;
     const struct typetree *type = target.type;
-    const struct member *member;
+    const struct member *member = NULL;
 
     assert(!is_tagged(type));
     consume('{');
