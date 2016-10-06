@@ -70,38 +70,43 @@ void sym_release_temporary(struct symbol *sym)
     array_push_back(&temporaries, sym);
 }
 
-void push_scope(struct namespace *ns)
+/*
+ * Initialize hash table with initial size heuristic based on scope
+ * depth. As a special case, depth 1 containing function arguments is
+ * assumed to contain fewer symbols.
+ */
+static unsigned current_scope_hash_cap(struct namespace *ns)
 {
-    /*
-     * Initialize hash table with initial size heuristic based on scope
-     * depth. As a special case, depth 1 containing function arguments
-     * is assumed to contain fewer symbols.
-     */
     static const unsigned hash_cap[] = {256, 16, 128, 64, 32, 16};
     static const unsigned hash_cap_default = 8;
 
     unsigned cap;
-    struct hash_table *scope, empty = {0};
+    assert(array_len(&ns->scope));
+    cap = hash_cap_default;
+    if (array_len(&ns->scope) < sizeof(hash_cap) / sizeof(hash_cap[0])) {
+        cap = hash_cap[array_len(&ns->scope) - 1];
+    }
 
-    /*
-     * Look at the maximum number of scopes that have been previously
-     * allocated. If within, we only need to clear the old scope.
-     */
+    return cap;
+}
+
+void push_scope(struct namespace *ns)
+{
+    static struct scope empty;
+    struct scope *scope;
+
     if (array_len(&ns->scope) < ns->max_scope_depth) {
         assert(array_len(&ns->scope) < ns->scope.capacity);
         array_len(&ns->scope) += 1;
         scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
-        hash_clear(scope);
-    } else {
-        cap = hash_cap_default;
-        if (array_len(&ns->scope) < sizeof(hash_cap) / sizeof(hash_cap[0])) {
-            cap = hash_cap[array_len(&ns->scope)];
+        if (scope->state == SCOPE_INITIALIZED) {
+            scope->state = SCOPE_DIRTY;
         }
-
+    } else {
         ns->max_scope_depth += 1;
         array_push_back(&ns->scope, empty);
         scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
-        hash_init(scope, cap, &sym_hash_key, NULL, NULL);
+        scope->state = SCOPE_CREATED;
     }
 }
 
@@ -109,17 +114,20 @@ void pop_scope(struct namespace *ns)
 {
     int i;
     struct symbol *sym;
-    struct hash_table *scope;
+    struct scope *scope;
 
     /*
      * Popping last scope frees the whole symbol table, including the
      * symbols themselves. For label scope, which is per function, make
      * sure there are no tentative definitions.
      */
+    assert(array_len(&ns->scope) > 0);
     if (array_len(&ns->scope) == 1) {
         for (i = 0; i < ns->max_scope_depth; ++i) {
             scope = &array_get(&ns->scope, i);
-            hash_destroy(scope);
+            if (scope->state != SCOPE_CREATED) {
+                hash_destroy(&scope->table);
+            }
         }
 
         ns->max_scope_depth = 0;
@@ -143,7 +151,6 @@ void pop_scope(struct namespace *ns)
             sym_clear_temporaries();
         }
     } else {
-        assert(array_len(&ns->scope));
         array_len(&ns->scope) -= 1;
     }
 }
@@ -158,15 +165,17 @@ unsigned current_scope_depth(struct namespace *ns)
 struct symbol *sym_lookup(struct namespace *ns, String name)
 {
     int i;
-    struct hash_table *scope;
+    struct scope *scope;
     struct symbol *sym;
 
     for (i = array_len(&ns->scope) - 1; i >= 0; --i) {
         scope = &array_get(&ns->scope, i);
-        sym = hash_lookup(scope, name);
-        if (sym) {
-            sym->referenced += 1;
-            return sym;
+        if (scope->state == SCOPE_INITIALIZED) {
+            sym = hash_lookup(&scope->table, name);
+            if (sym) {
+                sym->referenced += 1;
+                return sym;
+            }
         }
     }
 
@@ -228,8 +237,7 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
                 sym->type.size = type->size;
             }
         }
-    default:
-        break;
+    default: break;
     }
 
     if (conflict) {
@@ -237,6 +245,30 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
             sym->name, &sym->type, type);
         exit(1);
     }
+}
+
+static void add_symbol_to_current_scope(
+    struct namespace *ns,
+    struct symbol *sym)
+{
+    unsigned cap;
+    struct scope *scope;
+
+    array_push_back(&ns->symbol, sym);
+    scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
+    switch (scope->state) {
+    case SCOPE_CREATED:
+        cap = current_scope_hash_cap(ns);
+        hash_init(&scope->table, cap, &sym_hash_key, NULL, NULL);
+        break;
+    case SCOPE_DIRTY:
+        hash_clear(&scope->table);
+        break;
+    default: break;
+    }
+
+    hash_insert(&scope->table, (void *) sym);
+    scope->state = SCOPE_INITIALIZED;
 }
 
 struct symbol *sym_add(
@@ -304,15 +336,7 @@ struct symbol *sym_add(
         sym->n = ++n;
     }
 
-    /*
-     * Add to normal identifier namespace, and make it searchable
-     * through current scope.
-     */
-    array_push_back(&ns->symbol, sym);
-    hash_insert(
-        &array_get(&ns->scope, array_len(&ns->scope) - 1),
-        (void *) sym);
-
+    add_symbol_to_current_scope(ns, sym);
     verbose(
         "\t[type: %s, link: %s]\n"
         "\t%s :: %t",

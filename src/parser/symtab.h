@@ -6,6 +6,18 @@
 #include <lacc/symbol.h>
 
 /*
+ * Delay initializing a new scope until new symbols are added.
+ */
+struct scope {
+    struct hash_table table;
+    enum {
+        SCOPE_CREATED,      /* Pending hash_init. */
+        SCOPE_DIRTY,        /* Pending hash_clear. */
+        SCOPE_INITIALIZED   /* In use, containing symbols. */
+    } state;
+};
+
+/*
  * A namespace holds symbols and manage resolution in scopes as they are
  * pushed or popped.
  */
@@ -26,7 +38,7 @@ struct namespace {
      * Use hash table per scope, storing pointers to symbols in the
      * namespace symbol list.
      */
-    array_of(struct hash_table) scope;
+    array_of(struct scope) scope;
 
     /* Maximum number of scopes pushed. */
     int max_scope_depth;
