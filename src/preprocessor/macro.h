@@ -6,6 +6,12 @@
 
 typedef array_of(struct token) TokenArray;
 
+/* Get empty token array, possibly already allocated with capacity. */
+TokenArray get_token_array(void);
+
+/* Release token array previously aquired by get_token_array. */
+void release_token_array(TokenArray list);
+
 struct macro {
     String name;
 

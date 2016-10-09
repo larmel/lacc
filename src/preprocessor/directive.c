@@ -369,12 +369,13 @@ static struct macro preprocess_define(
 {
     struct macro macro = {{{0}}};
     struct token param = {PARAM};
-    TokenArray params = {0};
+    TokenArray params = get_token_array();
     int i;
 
     expect(line, IDENTIFIER);
     macro.name = tokstr(*line++);
     macro.type = OBJECT_LIKE;
+    macro.replacement = get_token_array();
 
     /*
      * Function-like macro iff parenthesis immediately after identifier.
@@ -418,7 +419,7 @@ static struct macro preprocess_define(
     }
 
     *endptr = line;
-    array_clear(&params);
+    release_token_array(params);
     return macro;
 }
 

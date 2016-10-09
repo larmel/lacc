@@ -258,10 +258,10 @@ hardware performance counter data with `perf stat`, and memory allocations with
 
 | Compiler | Cycles      | Instructions | Allocations | Bytes allocated |
 |:---------|------------:|-------------:|------------:|----------------:|
-| lacc     |  38,179,255 |   61,495,374 |      13,841 |       4,352,672 |
-| tcc      |  19,073,544 |   28,225,456 |      11,208 |       2,888,142 |
-| gcc      | 422,020,668 |  682,279,489 |         231 |         134,880 |
-| clang    | 261,584,944 |  326,832,982 |      28,775 |       1,441,342 |
+| lacc     |  36,779,684 |   61,119,409 |      10,951 |       2,942,812 |
+| tcc      |  18,123,655 |   29,134,092 |      11,580 |       2,937,744 |
+| gcc      | 429,638,431 |  712,090,450 |         231 |         134,972 |
+| clang    | 266,049,110 |  336,297,464 |      28,775 |       1,441,342 |
 
 There is yet work to be done to get closer to TCC, which is probably one of
 the fastest C compilers available. Still, we are within reasonable distance from

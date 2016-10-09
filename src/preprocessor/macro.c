@@ -23,6 +23,9 @@ static int new_macro_added;
  */
 static array_of(String) expand_stack;
 
+/* Keep track of arrays being recycled. */
+static array_of(TokenArray) arrays;
+
 static int is_macro_expanded(const struct macro *macro)
 {
     int i;
@@ -36,6 +39,23 @@ static int is_macro_expanded(const struct macro *macro)
     }
 
     return 0;
+}
+
+TokenArray get_token_array(void)
+{
+    TokenArray list = {0};
+    if (array_len(&arrays)) {
+        list = array_pop_back(&arrays);
+        array_zero(&list);
+        array_empty(&list);
+    }
+
+    return list;
+}
+
+void release_token_array(TokenArray list)
+{
+    array_push_back(&arrays, list);
 }
 
 static int macrocmp(const struct macro *a, const struct macro *b)
@@ -69,7 +89,7 @@ static String macro_hash_key(void *ref)
 static void macro_hash_del(void *ref)
 {
     struct macro *macro = (struct macro *) ref;
-    array_clear(&macro->replacement);
+    release_token_array(macro->replacement);
     free(macro);
 }
 
@@ -90,8 +110,18 @@ static void *macro_hash_add(void *ref)
 
 static void cleanup(void)
 {
+    int i;
+    TokenArray list;
+
     array_clear(&expand_stack);
     hash_destroy(&macro_hash_table);
+
+    for (i = 0; i < array_len(&arrays); ++i) {
+        list = array_get(&arrays, i);
+        array_clear(&list);
+    }
+
+    array_clear(&arrays);
 }
 
 static void ensure_initialized(void)
@@ -186,7 +216,7 @@ void define(struct macro macro)
         ref->is__file__ = !str_cmp(builtin__file__, ref->name);
         ref->is__line__ = !str_cmp(builtin__line__, ref->name);
         if (!new_macro_added) {
-            array_clear(&macro.replacement);
+            release_token_array(macro.replacement);
         }
     }
 }
@@ -316,18 +346,19 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
 {
     int i, param;
     struct token t;
-    struct token *stringified = NULL;
-    TokenArray list = {0};
+    TokenArray
+        strings = get_token_array(),
+        list = get_token_array();
 
     array_push_back(&expand_stack, def->name);
     if (def->params) {
         if (def->stringify) {
-            stringified = calloc(def->params, sizeof(*stringified));
+            for (i = 0; i < def->params; ++i) {
+                t = stringify(&args[i]);
+                array_push_back(&strings, t);
+            }
         }
         for (i = 0; i < def->params; ++i) {
-            if (stringified) {
-                stringified[i] = stringify(&args[i]);
-            }
             expand(&args[i]);
             if (!args[i].data[0].leading_whitespace) {
                 args[i].data[0].leading_whitespace = 1;
@@ -347,7 +378,10 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
         {
             i++;
             param = array_get(&def->replacement, i).d.number.val.i;
-            array_push_back(&list, stringified[param]);
+            assert(param < array_len(&strings));
+            t = array_get(&strings, param);
+            assert(t.token == STRING);
+            array_push_back(&list, t);
         } else {
             array_push_back(&list, t);
         }
@@ -357,11 +391,11 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
     expand(&list);
     (void) array_pop_back(&expand_stack);
     for (i = 0; i < def->params; ++i) {
-        array_clear(&args[i]);
+        release_token_array(args[i]);
     }
 
     free(args);
-    free(stringified);
+    release_token_array(strings);
     return list;
 }
 
@@ -388,7 +422,7 @@ static TokenArray read_arg(
     const struct token **endptr)
 {
     int nesting = 0;
-    TokenArray arg = {0};
+    TokenArray arg = get_token_array();
 
     while (nesting || (list->token != ',' && list->token != ')')) {
         if (list->token == NEWLINE) {
@@ -516,7 +550,7 @@ void expand(TokenArray *list)
                  */
                 array_replace_slice(list, i, size, &expn);
                 i += array_len(&expn);
-                array_clear(&expn);
+                release_token_array(expn);
                 continue;
             }
         }
@@ -617,7 +651,7 @@ static TokenArray parse(char *str)
 {
     char *endptr;
     struct token param = {PARAM};
-    TokenArray arr = {0};
+    TokenArray arr = get_token_array();
 
     while (*str) {
         if (*str == '@') {
