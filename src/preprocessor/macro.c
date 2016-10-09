@@ -121,19 +121,27 @@ static struct token get__line__token(void)
     return t;
 }
 
+static struct token get__file__token(void)
+{
+    struct token t = {STRING};
+    t.d.string = current_file_path;
+    return t;
+}
+
+/*
+ * Replace __FILE__ with file name, and __LINE__ with line number, by
+ * mutating the replacement list on the fly.
+ */
 const struct macro *definition(String name)
 {
-    String builtin__line__ = SHORT_STRING_INIT("__LINE__");
     struct macro *ref;
 
     ensure_initialized();
     ref = hash_lookup(&macro_hash_table, name);
     if (ref) {
-        /*
-         * Replace __LINE__ with current line number, by mutating
-         * the replacement list on the fly.
-         */
-        if (!str_cmp(ref->name, builtin__line__)) {
+        if (ref->is__file__) {
+            array_get(&ref->replacement, 0) = get__file__token();
+        } else if (ref->is__line__) {
             array_get(&ref->replacement, 0) = get__line__token();
         }
     }
@@ -162,6 +170,9 @@ static int has_stringify_replacement(const struct macro *def)
 void define(struct macro macro)
 {
     struct macro *ref;
+    static String
+        builtin__file__ = SHORT_STRING_INIT("__FILE__"),
+        builtin__line__ = SHORT_STRING_INIT("__LINE__");
 
     ensure_initialized();
     new_macro_added = 0;
@@ -172,14 +183,11 @@ void define(struct macro macro)
         exit(1);
     } else {
         ref->stringify = has_stringify_replacement(ref);
-    }
-
-    /*
-     * Need to clean up memory for replacement list since ownership was
-     * not given to hash table.
-     */
-    if (!new_macro_added) {
-        array_clear(&macro.replacement);
+        ref->is__file__ = !str_cmp(builtin__file__, ref->name);
+        ref->is__line__ = !str_cmp(builtin__line__, ref->name);
+        if (!new_macro_added) {
+            array_clear(&macro.replacement);
+        }
     }
 }
 
@@ -630,20 +638,6 @@ static TokenArray parse(char *str)
     return arr;
 }
 
-static void register__builtin__FILE__(void)
-{
-    struct token file = {STRING};
-    struct macro macro = {
-        SHORT_STRING_INIT("__FILE__"),
-        OBJECT_LIKE,
-        0, /* Parameters. */
-    };
-
-    file.d.string = current_file_path;
-    array_push_back(&macro.replacement, file);
-    define(macro);
-}
-
 static void register_macro(const char *key, char *value)
 {
     struct macro macro = {{{0}}, OBJECT_LIKE};
@@ -657,6 +651,7 @@ void register_builtin_definitions(void)
 {
     register_macro("__STDC__", "1");
     register_macro("__STDC_HOSTED__", "1");
+    register_macro("__FILE__", "0");
     register_macro("__LINE__", "0");
     register_macro("__x86_64__", "1");
     register_macro("__inline", "");
@@ -670,6 +665,4 @@ void register_builtin_definitions(void)
         register_macro("__STDC_VERSION__", "199901L");
         break;
     }
-
-    register__builtin__FILE__();
 }

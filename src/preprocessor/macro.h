@@ -20,6 +20,9 @@ struct macro {
     /* Toggle whether any parameter is stringified in replacement. */
     short stringify;
 
+    unsigned int is__line__ : 1;
+    unsigned int is__file__ : 1;
+
     /*
      * A substitution is either a token or a parameter, and parameters
      * are represented by PARAM tokens with an integer index between
