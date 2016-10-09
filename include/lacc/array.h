@@ -102,7 +102,7 @@
 /* Resize array to hold at least given number of elements. */
 #define array_realloc(arr, len) \
     do {                                                                       \
-        if ((len) > array_len(arr)) {                                          \
+        if ((len) > (arr)->capacity) {                                         \
             (arr)->data = realloc((arr)->data, len * sizeof(*(arr)->data));    \
             (arr)->capacity = len;                                             \
             memset(                                                            \

@@ -442,37 +442,32 @@ static TokenArray *read_args(
 }
 
 /*
- * Replace content of list between indices [start, end] with contents of
- * slice.
+ * Replace content of list in segment [start, start + gaplength] with
+ * contents of slice. The gap is from reading arguments from list, and
+ * the slice is result of expanding it. Slice might be smaller or larger
+ * than the gap.
  */ 
 static void array_replace_slice(
     TokenArray *list,
     unsigned start,
-    unsigned size,
+    unsigned gaplength,
     TokenArray *slice)
 {
-    unsigned length, end;
-    int offset;
-    assert(size <= array_len(list));
+    unsigned length;
+    assert(start + gaplength <= array_len(list));
 
-    end = start + size;
-    offset = array_len(slice) - size;
-    length = array_len(list) - size + array_len(slice);
-
-    if (length > list->capacity) {
-        list->capacity = length;
-        list->data = realloc(list->data, list->capacity * sizeof(*list->data));
-    }
+    length = array_len(list) - gaplength + array_len(slice);
+    array_realloc(list, length);
 
     /*
      * Move trailing data out of the way, or move closer to prefix, to
      * align exactly where slice is inserted.
      */
-    if (offset != 0) {
+    if (array_len(slice) != gaplength) {
         memmove(
-            list->data + end + offset,
-            list->data + end,
-            (array_len(list) - end) * sizeof(*list->data));
+            list->data + start + array_len(slice),
+            list->data + start + gaplength,
+            (array_len(list) - (start + gaplength)) * sizeof(*list->data));
     }
 
     /* Copy slice directly into now vacant space in list. */
