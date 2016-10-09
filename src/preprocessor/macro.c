@@ -141,6 +141,24 @@ const struct macro *definition(String name)
     return ref;
 }
 
+static int has_stringify_replacement(const struct macro *def)
+{
+    int i;
+    unsigned len = array_len(&def->replacement);
+
+    if (len > 1) {
+        for (i = 0; i < len - 1; ++i) {
+            if (array_get(&def->replacement, i).token == '#'
+                && array_get(&def->replacement, i + 1).token == PARAM)
+            {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 void define(struct macro macro)
 {
     struct macro *ref;
@@ -152,6 +170,8 @@ void define(struct macro macro)
         error("Redefinition of macro '%s' with different substitution.",
             str_raw(macro.name));
         exit(1);
+    } else {
+        ref->stringify = has_stringify_replacement(ref);
     }
 
     /*
@@ -293,9 +313,13 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
 
     array_push_back(&expand_stack, def->name);
     if (def->params) {
-        stringified = calloc(def->params, sizeof(*stringified));
+        if (def->stringify) {
+            stringified = calloc(def->params, sizeof(*stringified));
+        }
         for (i = 0; i < def->params; ++i) {
-            stringified[i] = stringify(&args[i]);
+            if (stringified) {
+                stringified[i] = stringify(&args[i]);
+            }
             expand(&args[i]);
             if (!args[i].data[0].leading_whitespace) {
                 args[i].data[0].leading_whitespace = 1;

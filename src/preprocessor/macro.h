@@ -15,7 +15,10 @@ struct macro {
     } type;
 
     /* Number of parameters required for substitution. */
-    int params;
+    short params;
+
+    /* Toggle whether any parameter is stringified in replacement. */
+    short stringify;
 
     /*
      * A substitution is either a token or a parameter, and parameters
