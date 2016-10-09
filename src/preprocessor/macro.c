@@ -526,7 +526,7 @@ void expand(TokenArray *list)
     while (i < array_len(list)) {
         t = array_get(list, i);
         if (t.token == IDENTIFIER) {
-            def = definition(tokstr(t));
+            def = definition(t.d.string);
             /*
              * Only expand function-like macros if they appear as func-
              * tion invocations, beginning with an open paranthesis.

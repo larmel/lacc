@@ -135,7 +135,7 @@ static void read_defined_operator(TokenArray *line)
         exit(1);
     }
 
-    if (definition(tokstr(t)))
+    if (definition(t.d.string))
         t = tokenize("1", &endptr);
     else
         t = tokenize("0", &endptr);
@@ -176,7 +176,7 @@ static void read_complete_line(TokenArray *line, struct token t, int directive)
             if (directive && !tok_cmp(t, ident__defined)) {
                 read_defined_operator(line);
             } else {
-                def = definition(tokstr(t));
+                def = definition(t.d.string);
                 if (def && def->type == FUNCTION_LIKE) {
                     array_push_back(line, t);
                     read_macro_invocation(line, def);

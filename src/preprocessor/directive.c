@@ -113,7 +113,7 @@ static int eval_primary(
          * Macro expansions should already have been done. Stray
          * identifiers are interpreted as zero constants.
          */
-        assert(!definition(tokstr(*list)));
+        assert(!definition(list->d.string));
         break;
     case '(':
         value = expression(list + 1, &list);
@@ -373,9 +373,10 @@ static struct macro preprocess_define(
     int i;
 
     expect(line, IDENTIFIER);
-    macro.name = tokstr(*line++);
+    macro.name = line->d.string;
     macro.type = OBJECT_LIKE;
     macro.replacement = get_token_array();
+    line++;
 
     /*
      * Function-like macro iff parenthesis immediately after identifier.
@@ -476,7 +477,7 @@ void preprocess_directive(TokenArray *array)
     } else if (!tok_cmp(*line, ident__ifndef)) {
         if (in_active_block()) {
             expect(++line, IDENTIFIER);
-            expr = definition(tokstr(*line)) == NULL;
+            expr = definition(line->d.string) == NULL;
             push(expr ? BRANCH_LIVE : BRANCH_DEAD);
         } else {
             push(BRANCH_DISABLED);
@@ -484,7 +485,7 @@ void preprocess_directive(TokenArray *array)
     } else if (!tok_cmp(*line, ident__ifdef)) {
         if (in_active_block()) {
             expect(++line, IDENTIFIER);
-            expr = definition(tokstr(*line)) != NULL;
+            expr = definition(line->d.string) != NULL;
             push(expr ? BRANCH_LIVE : BRANCH_DEAD);
         } else {
             push(BRANCH_DISABLED);
@@ -494,7 +495,7 @@ void preprocess_directive(TokenArray *array)
             define(preprocess_define(line + 1, &line));
         } else if (!tok_cmp(*line, ident__undef)) {
             expect(++line, IDENTIFIER);
-            undef(tokstr(*line));
+            undef(line->d.string);
         } else if (!tok_cmp(*line, ident__include)) {
             preprocess_include(line + 1);
         } else if (!tok_cmp(*line, ident__error)) {
