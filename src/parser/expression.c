@@ -515,22 +515,24 @@ static struct block *multiplicative_expression(
     struct block *block)
 {
     struct var value;
+    struct token t;
 
     block = cast_expression(def, block);
     while (1) {
-        if (peek().token == '*') {
+        t = peek();
+        if (t.token == '*') {
             consume('*');
             value = eval(def, block, block->expr);
             block = cast_expression(def, block);
             block->expr = eval_expr(def, block, IR_OP_MUL, value,
                 eval(def, block, block->expr));
-        } else if (peek().token == '/') {
+        } else if (t.token == '/') {
             consume('/');
             value = eval(def, block, block->expr);
             block = cast_expression(def, block);
             block->expr = eval_expr(def, block, IR_OP_DIV, value,
                 eval(def, block, block->expr));
-        } else if (peek().token == '%') {
+        } else if (t.token == '%') {
             consume('%');
             value = eval(def, block, block->expr);
             block = cast_expression(def, block);
@@ -547,16 +549,18 @@ static struct block *additive_expression(
     struct block *block)
 {
     struct var value;
+    struct token t;
 
     block = multiplicative_expression(def, block);
     while (1) {
-        if (peek().token == '+') {
+        t = peek();
+        if (t.token == '+') {
             consume('+');
             value = eval(def, block, block->expr);
             block = multiplicative_expression(def, block);
             block->expr = eval_expr(def, block, IR_OP_ADD, value,
                 eval(def, block, block->expr));
-        } else if (peek().token == '-') {
+        } else if (t.token == '-') {
             consume('-');
             value = eval(def, block, block->expr);
             block = multiplicative_expression(def, block);
@@ -573,16 +577,18 @@ static struct block *shift_expression(
     struct block *block)
 {
     struct var value;
+    struct token t;
 
     block = additive_expression(def, block);
     while (1) {
-        if (peek().token == LSHIFT) {
+        t = peek();
+        if (t.token == LSHIFT) {
             consume(LSHIFT);
             value = eval(def, block, block->expr);
             block = additive_expression(def, block);
             block->expr = eval_expr(def, block, IR_OP_SHL, value,
                 eval(def, block, block->expr));
-        } else if (peek().token == RSHIFT) {
+        } else if (t.token == RSHIFT) {
             consume(RSHIFT);
             value = eval(def, block, block->expr);
             block = additive_expression(def, block);
@@ -643,13 +649,15 @@ static struct block *equality_expression(
 {
     enum optype op;
     struct var value;
+    struct token t;
 
     block = relational_expression(def, block);
     while (1) {
-        if (peek().token == EQ) {
+        t = peek();
+        if (t.token == EQ) {
             consume(EQ);
             op = IR_OP_EQ;
-        } else if (peek().token == NEQ) {
+        } else if (t.token == NEQ) {
             consume(NEQ);
             op = IR_OP_NE;
         } else break;

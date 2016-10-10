@@ -22,13 +22,12 @@ static struct block *initializer(
  */
 static struct typetree *parameter_list(const struct typetree *base)
 {
+    String name;
+    struct typetree *type;
     struct typetree *func = type_init(T_FUNCTION);
+
     func->next = base;
-
     while (peek().token != ')') {
-        String name;
-        struct typetree *type;
-
         name.len = 0;
         type = declaration_specifiers(NULL);
         type = declarator(type, &name);
@@ -45,10 +44,7 @@ static struct typetree *parameter_list(const struct typetree *base)
         }
 
         consume(',');
-        if (peek().token == ')') {
-            error("Unexpected trailing comma in parameter list.");
-            exit(1);
-        } else if (peek().token == DOTS) {
+        if (peek().token == DOTS) {
             consume(DOTS);
             assert(!is_vararg(func));
             type_add_member(func, str_init("..."), NULL);
@@ -70,9 +66,10 @@ static struct typetree *parameter_list(const struct typetree *base)
  */
 static struct typetree *direct_declarator_array(struct typetree *base)
 {
-    if (peek().token == '[') {
-        long length = 0;
+    int length;
 
+    if (peek().token == '[') {
+        length = 0;
         consume('[');
         if (peek().token != ']') {
             struct var expr = constant_expression();
@@ -83,8 +80,8 @@ static struct typetree *direct_declarator_array(struct typetree *base)
             }
             length = expr.imm.i;
         }
-        consume(']');
 
+        consume(']');
         base = direct_declarator_array(base);
         if (!size_of(base)) {
             error("Array has incomplete element type.");
@@ -111,16 +108,16 @@ static struct typetree *direct_declarator(
 {
     struct typetree *type = base;
     struct typetree *head = NULL, *tail = NULL;
-    struct token ident;
+    struct token t;
 
     switch (peek().token) {
     case IDENTIFIER:
-        ident = consume(IDENTIFIER);
+        t = consume(IDENTIFIER);
         if (!name) {
             error("Unexpected identifier in abstract declarator.");
             exit(1);
         }
-        *name = ident.d.string;
+        *name = t.d.string;
         break;
     case '(':
         consume('(');
@@ -138,8 +135,8 @@ static struct typetree *direct_declarator(
         break;
     }
 
-    while (peek().token == '[' || peek().token == '(') {
-        switch (peek().token) {
+    while ((t = peek()).token == '[' || t.token == '(') {
+        switch (t.token) {
         case '[':
             type = direct_declarator_array(base);
             break;
@@ -164,26 +161,25 @@ static struct typetree *direct_declarator(
 
 static struct typetree *pointer(const struct typetree *base)
 {
-    String s;
+    struct token t;
     struct typetree *type = type_init(T_POINTER, base);
-
-    #define set_qualifier(arg) \
-        if (type->qualifier & arg) \
-            error("Duplicate type qualifier '%s'.", str_raw(s)); \
-        type->qualifier |= arg;
 
     consume('*');
     while (1) {
-        s = peek().d.string;
-        if (peek().token == CONST) {
-            set_qualifier(Q_CONST);
-        } else if (peek().token == VOLATILE) {
-            set_qualifier(Q_VOLATILE);
+        t = peek();
+        if (t.token == CONST) {
+            if (type->qualifier & Q_CONST) {
+                error("Duplicate 'const' qualifier.");
+            }
+            type->qualifier |= Q_CONST;
+        } else if (t.token == VOLATILE) {
+            if (type->qualifier & Q_VOLATILE) {
+                error("Duplicate 'volatile' qualifier.");
+            }
+            type->qualifier |= Q_VOLATILE;
         } else break;
         next();
     }
-
-    #undef set_qualifier
 
     return type;
 }
