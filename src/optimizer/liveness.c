@@ -24,7 +24,7 @@ static unsigned long set_var_bit(struct var var)
     }
 }
 
-/* Set bits for symbols referenced through operation. */
+/* Set bits for symbols referenced in expression. */
 static unsigned long use(struct expression expr)
 {
     unsigned long r = 0ul;
@@ -38,6 +38,21 @@ static unsigned long use(struct expression expr)
     case IR_OP_VA_ARG:
         r |= set_var_bit(expr.l);
         break;
+    }
+
+    return r;
+}
+
+/* Set bits for symbols used in statement. */
+static unsigned long uses(struct statement s)
+{
+    unsigned long r = use(s.expr);
+
+    if (s.st == IR_ASSIGN) {
+        if (s.t.kind == DEREF && s.t.symbol) {
+            s.t.kind = DIRECT;
+            r |= set_var_bit(s.t);
+        }
     }
 
     return r;
@@ -73,7 +88,7 @@ int live_variable_analysis(struct block *block)
     /* Go through normal ir operations. */
     for (i = array_len(&block->code) - 1; i >= 0; --i) {
         code = array_get(&block->code, i);
-        IN(block, i) = (OUT(block, i) & ~def(code)) | use(code.expr);
+        IN(block, i) = (OUT(block, i) & ~def(code)) | uses(code);
     }
 
     return top != IN(block, 0);
