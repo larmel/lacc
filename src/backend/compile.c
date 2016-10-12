@@ -212,6 +212,26 @@ static struct immediate constant(long n, int w)
     return imm;
 }
 
+static void count_register_classifications(
+    struct param_class pc,
+    int *intregs,
+    int *sseregs)
+{
+    int i;
+    for (i = 0; i < 4; ++i) {
+        switch (pc.eightbyte[i]) {
+        case PC_INTEGER:
+            (*intregs)++;
+            break;
+        case PC_SSE:
+            (*sseregs)++;
+        case PC_NO_CLASS:
+            break;
+        default: assert(0);
+        }
+    }
+}
+
 /*
  * Emit instruction to load a value to specified register. Handles all
  * kinds of variables, including immediate. Load instruction can perform
@@ -596,13 +616,12 @@ static int alloc_register_params(
     int *next_integer_reg,
     int *next_sse_reg)
 {
-    int i, ints = *next_integer_reg, sses = *next_sse_reg;
+    int ints, sses;
 
     if (pc.eightbyte[0] != PC_MEMORY) {
-        for (i = 0; i < 4; ++i) {
-            if (pc.eightbyte[i] == PC_INTEGER) ints++;
-            if (pc.eightbyte[i] == PC_SSE) sses++;
-        }
+        ints = *next_integer_reg;
+        sses = *next_sse_reg;
+        count_register_classifications(pc, &ints, &sses);
         if (ints <= MAX_INTEGER_ARGS && sses <= MAX_SSE_ARGS) {
             *next_integer_reg = ints;
             *next_sse_reg = sses;
@@ -613,84 +632,75 @@ static int alloc_register_params(
     return 0;
 }
 
-/*
- * Load variable to register before function call. Parameter class is
- * already computed, and indices to next free registers to use given.
- */
-static void load_arg(
-    struct var arg,
+static void move_to_from_registers(
+    struct var var,
     struct param_class pc,
-    int *next_integer_reg,
-    int *next_sse_reg)
+    enum reg *intregs,
+    enum reg *sseregs,
+    int toggle_load)
 {
-    int i, n = EIGHTBYTES(arg.type), size = size_of(arg.type);
-    assert(pc.eightbyte[0] != PC_MEMORY);
+    int i, n;
+    enum reg r;
+    const struct typetree *type;
 
-    if (is_struct_or_union(arg.type)) {
-        for (i = 0; i < n; ++i) {
-            arg.offset += 8 * i;
-            if (pc.eightbyte[i] == PC_INTEGER) {
-                assert(*next_integer_reg < MAX_INTEGER_ARGS);
-                arg.type = (i < n - 1) ?
+    type = var.type;
+    n = EIGHTBYTES(type);
+    for (i = 0; i < n; ++i) {
+        switch (pc.eightbyte[i]) {
+        case PC_INTEGER:
+            r = *intregs++;
+            if (!is_scalar(type)) {
+                var.type = (i < n - 1) ?
                     &basic_type__unsigned_long :
-                    BASIC_TYPE_UNSIGNED(size % 8);
-                load(arg, param_int_reg[(*next_integer_reg)++]);
-            } else {
-                assert(pc.eightbyte[i] == PC_SSE);
-                assert(*next_sse_reg < MAX_SSE_ARGS);
-                arg.type = is_real(arg.type)
-                    ? arg.type
-                    : &basic_type__double;
-                load(arg, param_sse_reg[(*next_sse_reg)++]);
+                    BASIC_TYPE_UNSIGNED(size_of(type) % 8);
             }
+            break;
+        case PC_SSE:
+            r = *sseregs++;
+            if (size_of(type) % 8 == 4) {
+                var.type = &basic_type__float;
+            } else {
+                assert(size_of(type) % 8 == 0);
+                var.type = &basic_type__double;
+            }
+            break;
+        default: assert(0);
         }
-    } else if (pc.eightbyte[0] == PC_INTEGER) {
-        assert(*next_integer_reg < MAX_INTEGER_ARGS);
-        assert(is_integer(arg.type) || is_pointer(arg.type));
-        load(arg, param_int_reg[(*next_integer_reg)++]);
-    } else {
-        assert(pc.eightbyte[0] == PC_SSE);
-        assert(*next_sse_reg < MAX_SSE_ARGS);
-        assert(is_real(arg.type));
-        load(arg, param_sse_reg[(*next_sse_reg)++]);
+
+        if (toggle_load) {
+            load(var, r);
+        } else {
+            store(r, var);
+        }
+
+        var.offset += 8;
     }
 }
 
 /*
- * Store return value from function call. Value is either in register(s)
- * or memory, depending on parameter classification.
- *
- * Objects that have classification MEMORY should never hit this path,
- * as they are stored ay callee.
+ * Move already classified eightbytes of variable to registers. Used
+ * for parameter loading and return values.
  */
-static void store_res(struct var res, struct param_class pc)
+static void load_object_to_registers(
+    struct var var,
+    struct param_class pc,
+    enum reg *intregs,
+    enum reg *sseregs)
 {
-    int i,
-        n = EIGHTBYTES(res.type),
-        size = size_of(res.type),
-        integer_reg = 0,
-        sse_reg = 0;
+    move_to_from_registers(var, pc, intregs, sseregs, 1);
+}
 
-    assert(pc.eightbyte[0] != PC_MEMORY);
-    assert(n <= 4);
-
-    for (i = 0; i < n; ++i) {
-        res.offset += 8 * i;
-        if (pc.eightbyte[i] == PC_INTEGER) {
-            assert(integer_reg < MAX_INTEGER_RET);
-            res.type = (i < n - 1) ?
-                &basic_type__unsigned_long :
-                BASIC_TYPE_UNSIGNED(size % 8);
-            store(ret_int_reg[integer_reg++], res);
-        } else {
-            assert(pc.eightbyte[i] == PC_SSE);
-            assert(sse_reg < MAX_SSE_RET);
-            res.type = (size_of(res.type) == 4)
-                ? &basic_type__float
-                : &basic_type__double;
-            store(ret_sse_reg[sse_reg++], res);
-        }
-    }
+/*
+ * Write to variable from already classified eightbytes stored in
+ * registers.
+ */
+static void store_object_from_registers(
+    struct var var,
+    struct param_class pc,
+    enum reg *intregs,
+    enum reg *sseregs)
+{
+    move_to_from_registers(var, pc, intregs, sseregs, 0);
 }
 
 /*
@@ -775,7 +785,10 @@ static int push_function_arguments(
     for (i = 0; i < register_args; ++i) {
         pc = argpc[i].pc;
         arg = array_get(&func_args, argpc[i].i);
-        load_arg(arg, pc, &next_integer_reg, &next_sse_reg);
+        load_object_to_registers(arg, pc,
+            param_int_reg + next_integer_reg,
+            param_sse_reg + next_sse_reg);
+        count_register_classifications(pc, &next_integer_reg, &next_sse_reg);
     }
 
     /*
@@ -819,16 +832,18 @@ static void function_call(struct var res, struct var func)
 {
     int n;
     struct param_class pc;
-    assert(is_pointer(func.type) && is_function(func.type->next));
+    assert(is_pointer(func.type));
+    assert(is_function(func.type->next));
 
     pc = classify(func.type->next->next);
     n = push_function_arguments(func.type->next, pc);
     if (pc.eightbyte[0] == PC_MEMORY) {
         load_address(res, param_int_reg[0]);
     }
+
     call(func, n);
     if (pc.eightbyte[0] != PC_MEMORY) {
-        store_res(res, pc);
+        store_object_from_registers(res, pc, ret_int_reg, ret_sse_reg);
     }
 }
 
@@ -852,7 +867,7 @@ static enum reg scalar_function_call(struct var func)
 
 static void enter(struct definition *def)
 {
-    int i, j, n,
+    int i, n,
         register_args = 0,  /* Arguments passed in registers. */
         next_integer_reg = 0,
         next_sse_reg = 0,
@@ -983,36 +998,17 @@ static void enter(struct definition *def)
         }
     }
 
-    /*
-     * Move arguments from register to stack, looking only in array of
-     * stored classifications that are not memory. Remember not to load
-     * from the first register if used for return address.
-     */
+    /* Move arguments from register to stack. */
     next_integer_reg = (res.eightbyte[0] == PC_MEMORY);
     next_sse_reg = 0;
     for (i = 0; i < register_args; ++i) {
-        assert(argpc[i].pc.eightbyte[0] != PC_MEMORY);
-        assert(argpc[i].i < array_len(&def->params));
-
+        arg = argpc[i].pc;
         sym = array_get(&def->params, argpc[i].i);
         ref = var_direct(sym);
-        n = EIGHTBYTES(&sym->type);
-        for (j = 0; j < n; ++j) {
-            if (argpc[i].pc.eightbyte[j] == PC_INTEGER) {
-                ref.type = (j < n - 1) ?
-                    &basic_type__unsigned_long :
-                    BASIC_TYPE_UNSIGNED(size_of(&sym->type) % 8);
-                store(param_int_reg[next_integer_reg++], ref);
-            } else {
-                assert(argpc[i].pc.eightbyte[j] == PC_SSE);
-                ref.type = is_real(ref.type)
-                    ? ref.type
-                    : &basic_type__double;
-                store(param_sse_reg[next_sse_reg++], ref);
-            }
-
-            ref.offset += size_of(ref.type);
-        }
+        store_object_from_registers(ref, arg,
+            param_int_reg + next_integer_reg,
+            param_sse_reg + next_sse_reg);
+        count_register_classifications(arg, &next_integer_reg, &next_sse_reg);
     }
 }
 
@@ -1086,6 +1082,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     } else {
         args.kind = DEREF;
     }
+
     var_gp_offset = args;
     var_gp_offset.type = &basic_type__unsigned_int;
     var_fp_offset = args;
@@ -1111,14 +1108,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             num_fp = 0; /* Floating point registers needed. */
 
         n = EIGHTBYTES(res.type);
-        for (i = 0; i < n; ++i) {
-            if (pc.eightbyte[i] == PC_INTEGER) {
-                num_gp++;
-            } else {
-                assert(pc.eightbyte[i] == PC_SSE);
-                num_fp++;
-            }
-        }
+        count_register_classifications(pc, &num_gp, &num_fp);
 
         /*
          * Keep reg_save_area in register for the remainder, a pointer
@@ -1152,12 +1142,13 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         }
 
         /*
-         * Load argument, one eightbyte at a time. This code has a lot
-         * in common with enter, ret etc, potential for refactoring
-         * probably.
+         * Load argument, one eightbyte at a time. Similar to routines
+         * moving object to and from register, but here we are getting
+         * the values from spill area.
          */
         while ((i = integer_regs_loaded + sse_regs_loaded) < n) {
-            if (pc.eightbyte[i] == PC_INTEGER) {
+            switch (pc.eightbyte[i]) {
+            case PC_INTEGER:
                 if (!is_scalar(res.type)) {
                     slice.type = (i < n - 1) ?
                         &basic_type__unsigned_long :
@@ -1165,27 +1156,26 @@ static void compile__builtin_va_arg(struct var res, struct var args)
                 }
                 /*
                  * Advanced addressing, load (%rsi + 8*i + (%rcx * 1))
-                 * into %rax. Base of registers are stored in %rsi, first
-                 * pending register is at offset %rcx, and i counts number
-                 * of registers done. In GNU assembly it is
-                 * {i*8}(%rsi, %rcx, 1).
+                 * into %rax. Base of registers are stored in %rsi,
+                 * first pending register is at offset %rcx, and i
+                 * counts number of registers done. In GNU assembly it
+                 * is {i*8}(%rsi, %rcx, 1).
                  */
                 i = integer_regs_loaded++;
                 width = size_of(slice.type);
                 emit(INSTR_MOV, OPT_MEM_REG,
                     location(address(i*8, SI, CX, 1), width), reg(AX, width));
                 store(AX, slice);
-            } else {
-                assert(pc.eightbyte[i] == PC_SSE);
-                assert(sse_regs_loaded < MAX_SSE_RET);
+                break;
+            case PC_SSE:
                 i = sse_regs_loaded++;
                 /* Floating arguments to vararg is always double. */
                 slice.type = &basic_type__double;
-                width = size_of(slice.type);
                 emit(INSTR_MOVSD, OPT_MEM_REG,
-                    location(address(i*16, SI, DX, 1), width),
-                    reg(XMM0, width));
+                    location(address(i*16, SI, DX, 1), 8), reg(XMM0, 8));
                 store(XMM0, slice);
+                break;
+            default: assert(0);
             }
 
             slice.offset += size_of(slice.type);
@@ -1273,11 +1263,6 @@ struct result {
 /*
  * Emit instructions for evaluating expression, and store the result in
  * a suitable register.
- *
- * Shift instruction encoding is either by immediate, or
- * implicit %cl register. Encode as if something other than %cl
- * could be chosen. Behavior is undefined if shift is greater
- * than integer width, so don't care about overflow or sign.
  */
 static struct result compile_expression(struct expression expr)
 {
@@ -1306,15 +1291,17 @@ static struct result compile_expression(struct expression expr)
         } else {
             if (is_struct_or_union(type)) {
                 pc = classify(type);
-                if (pc.eightbyte[0] == PC_INTEGER) {
+                switch (pc.eightbyte[0]) {
+                case PC_INTEGER:
                     type = BASIC_TYPE_UNSIGNED(size_of(type));
-                } else {
-                    assert(pc.eightbyte[0] == PC_SSE);
+                    break;
+                case PC_SSE:
                     type = (size_of(type) == 4)
-                        ? &basic_type__float : &basic_type__double;
+                        ? &basic_type__float
+                        : &basic_type__double;
+                    break;
+                default: assert(0);
                 }
-
-                /* Load as if return, no conversion. */
                 l.type = type;
             }
             res.r = load_cast(l, type);
@@ -1422,6 +1409,12 @@ static struct result compile_expression(struct expression expr)
     case IR_OP_SHL:
         load(l, AX);
         load(r, CX);
+        /*
+         * Shift instruction encoding is either by immediate, or
+         * implicit %cl register. Encode as if something other than %cl
+         * could be chosen. Behavior is undefined if shift is greater
+         * than integer width, so don't care about overflow or sign.
+         */
         emit(INSTR_SHL, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(type)));
         res.r = AX;
         break;
@@ -1559,15 +1552,18 @@ static void compile_statement(struct statement stmt)
         case VAL_REG:
             if (is_struct_or_union(stmt.t.type)) {
                 pc = classify(stmt.t.type);
-                if (pc.eightbyte[0] == PC_INTEGER) {
+                switch (pc.eightbyte[0]) {
+                case PC_INTEGER:
                     assert(res.r >= AX && res.r <= R15);
                     stmt.t.type = BASIC_TYPE_UNSIGNED(size_of(stmt.t.type));
-                } else {
-                    assert(pc.eightbyte[0] == PC_SSE);
+                    break;
+                case PC_SSE:
                     assert(res.r >= XMM0 && res.r <= XMM8);
                     stmt.t.type = (size_of(stmt.t.type) == 4)
                         ? &basic_type__float
                         : &basic_type__double;
+                    break;
+                default: assert(0);
                 }
             }
             store(res.r, stmt.t);
@@ -1586,38 +1582,21 @@ static void compile_statement(struct statement stmt)
  * Return value from function, placing it in register(s) or writing it
  * to stack, based on parameter class.
  *
- * Load return address from magic stack offset and copy result.
- * Return address is stored in -8(%rbp), unless the function
- * takes variable argument lists, in which case it is read
- * from register spill area.
+ * Load return address from magic stack offset and copy result. Return
+ * address is stored in -8(%rbp), unless the function takes variable
+ * argument lists, in which case it is read from register spill area.
+ *
+ * The ABI specifies that the address of a returned object should be
+ * placed in %rax.
  */
 static void ret(struct var var, const struct typetree *type)
 {
-    int i,
-        next_integer_reg = 0,
-        next_sse_reg = 0;
     struct param_class pc;
 
     assert(is_function(type));
     pc = classify(type->next);
     if (pc.eightbyte[0] != PC_MEMORY) {
-        for (i = 0; i < EIGHTBYTES(type->next); ++i) {
-            if (pc.eightbyte[i] == PC_INTEGER) {
-                assert(next_integer_reg < MAX_INTEGER_RET);
-                if (!is_scalar(type->next)) {
-                    var.type = (i < EIGHTBYTES(type->next) - 1) ?
-                        &basic_type__unsigned_long :
-                        BASIC_TYPE_UNSIGNED(size_of(type->next) % 8);
-                }
-                load(var, ret_int_reg[next_integer_reg++]);
-            } else {
-                assert(pc.eightbyte[i] == PC_SSE);
-                assert(next_sse_reg < MAX_SSE_RET);
-                var.type = &basic_type__double;
-                load(var, ret_sse_reg[next_sse_reg++]);
-            }
-            var.offset += size_of(var.type);
-        }
+        load_object_to_registers(var, pc, ret_int_reg, ret_sse_reg);
     } else {
         if (is_vararg(type)) {
             emit(INSTR_MOV, OPT_MEM_REG,
@@ -1630,7 +1609,6 @@ static void ret(struct var var, const struct typetree *type)
         emit(INSTR_MOV, OPT_IMM_REG,
             constant(size_of(type->next), 8), reg(DX, 4));
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
-        /* The ABI specifies that the address should be in %rax. */
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(-8, BP, 0, 0), 8), reg(AX, 8));
     }
@@ -1674,15 +1652,23 @@ static void compile_block(struct block *block, const struct typetree *type)
             case VAL_FLAGS:
                 res.r = set_compare_value(block->expr.l.type, res.cmp);
             case VAL_REG:
-                if (pc.eightbyte[0] == PC_INTEGER && res.r != ret_int_reg[0]) {
-                    assert(res.r >= AX && res.r <= R15);
-                    emit(INSTR_MOV, OPT_REG_REG,
-                        reg(res.r, 8), reg(ret_int_reg[0], 8));
-                }
-                else if (pc.eightbyte[0] == PC_SSE && res.r != ret_sse_reg[0]) {
-                    assert(res.r >= XMM0 && res.r <= XMM4);
-                    emit(INSTR_MOV, OPT_REG_REG,
-                        reg(res.r, 8), reg(ret_sse_reg[0], 8));
+                i = size_of(type->next);
+                switch (pc.eightbyte[0]) {
+                case PC_INTEGER:
+                    if (res.r != ret_int_reg[0]) {
+                        assert(is_standard_register_width(i));
+                        emit(INSTR_MOV, OPT_REG_REG,
+                            reg(res.r, i), reg(ret_int_reg[0], i));
+                    }
+                    break;
+                case PC_SSE:
+                    if (res.r != ret_sse_reg[0]) {
+                        assert(i == 8 || i == 4);
+                        emit(INSTR_MOV, OPT_REG_REG,
+                            reg(res.r, i), reg(ret_sse_reg[0], i));
+                    }
+                    break;
+                default: assert(0);
                 }
                 break;
             case VAL_VAR:
@@ -1797,9 +1783,7 @@ static void compile_data_assign(struct var target, struct var val)
                 imm.d.string = val.symbol->string_value;
                 break;
             }
-        default:
-            assert(0);
-            break;
+        default: assert(0);
         }
     } else {
         assert(val.kind == ADDRESS);
