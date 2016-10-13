@@ -151,6 +151,65 @@ static void read_defined_operator(TokenArray *line)
 }
 
 /*
+ * Get token at position i of existing line, or add new token from input
+ * stream to line at posistion. Overwrite the trailing newline.
+ */
+static struct token skip_or_get_token(TokenArray *line, int i)
+{
+    struct token t;
+
+    if (i == array_len(line) - 1) {
+        t = array_get(line, i);
+        if (t.token == NEWLINE) {
+            (void) array_pop_back(line);
+        }
+    }
+
+    if (i == array_len(line)) {
+        do {
+            t = get_token();
+        } while (t.token == NEWLINE);
+        assert(t.token != END);
+        array_push_back(line, t);
+    } else {
+        assert(i >= 0);
+        assert(i < array_len(line));
+        t = array_get(line, i);
+    }
+
+    return t;
+}
+
+/*
+ * Make sure expanded token list contains enough tokens to do additional
+ * expansions. Read more input if the provided function-like macro at
+ * posistion i does not have all parameters on the current line.
+ */
+static int skip_or_read_expansion(
+    const struct macro *def,
+    TokenArray *line,
+    int i)
+{
+    int start = i, nest;
+    struct token t;
+
+    assert(def->type == FUNCTION_LIKE);
+    t = skip_or_get_token(line, i++);
+    if (t.token != '(') {
+        return i - start;
+    }
+
+    nest = 1;
+    while (nest) {
+        t = skip_or_get_token(line, i++);
+        if (t.token == '(') nest++;
+        if (t.token == ')') nest--;
+    }
+
+    return i - start;
+}
+
+/*
  * Read tokens until reaching end of line. If initial token is '#', stop
  * on first newline. Otherwise make sure macro invocations spanning
  * multiple lines are joined. Replace 'defined' with 0 or 1.
@@ -193,6 +252,40 @@ static void read_complete_line(TokenArray *line, struct token t, int directive)
 
     assert(t.token == NEWLINE);
     array_push_back(line, t);
+}
+
+/*
+ * After expansion, it might be that we need to read a bit more input to
+ * get argument of new expansion. Look through the array and see whether
+ * there is a partial macro invocation that needs more input.
+ *
+ * Return non-zero if there are more function-like macros that needs to
+ * be expanded.
+ */
+static int refill_expanding_line(TokenArray *line)
+{
+    int i, n;
+    struct token t;
+    const struct macro *def;
+
+    for (n = 0, i = 0; i < array_len(line); i++) {
+        t = array_get(line, i);
+        if (t.token == IDENTIFIER) {
+            def = definition(t.d.string);
+            if (def && def->type == FUNCTION_LIKE) {
+                i += skip_or_read_expansion(def, line, i + 1);
+                n += 1;
+            }
+        }
+    }
+
+    /* Make sure a complete line is read, not to mix directives. */
+    if (t.token != NEWLINE) {
+        t = get_token();
+        read_complete_line(line, t, 0);
+    }
+
+    return n;
 }
 
 static void add_to_lookahead(struct token t)
@@ -273,7 +366,10 @@ static void preprocess_line(void)
         } else {
             assert(in_active_block());
             read_complete_line(&line, t, 0);
-            expand(&line);
+            while (expand(&line)) {
+                if (!refill_expanding_line(&line))
+                    break;
+            }
             for (i = 0; i < array_len(&line); ++i) {
                 u = array_get(&line, i);
                 if (u.token != NEWLINE || output_preprocessed) {

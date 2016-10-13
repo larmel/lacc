@@ -60,9 +60,9 @@ const struct macro *definition(String name);
 
 /*
  * Expand a list of tokens, replacing any macro definitions. Mutates
- * input list as necessary.
+ * input list as necessary. Return non-zero if any macro was expanded.
  */
-void expand(TokenArray *list);
+int expand(TokenArray *list);
 
 /*
  * Compare tokens for equality, returing 0 iff of same type and value.

@@ -515,8 +515,9 @@ static void array_replace_slice(
     list->length = length;
 }
 
-void expand(TokenArray *list)
+int expand(TokenArray *list)
 {
+    int n = 0;
     struct token t;
     unsigned i = 0, size;
     const struct macro *def;
@@ -551,11 +552,14 @@ void expand(TokenArray *list)
                 array_replace_slice(list, i, size, &expn);
                 i += array_len(&expn);
                 release_token_array(expn);
+                n += 1;
                 continue;
             }
         }
         i++;
     }
+
+    return n;
 }
 
 int tok_cmp(struct token a, struct token b)
