@@ -1,19 +1,22 @@
 int puts(const char *);
+int printf(const char *, ...);
 
 #define FOO(a, b) (a b - 1)
 
 #define BAR(x) __FILE__, *d = #x, e = x ;
+#define max(a, b) ((a) > (b) ? (a) : (b))
 
 /*
  * Some comments to confuse line counting.
  */
 
-int main() {
+int main(void) {
 	int a = 42; /*     Single line comment. */
 	char *c = BAR(
 		__LINE__
 	)
 
+	printf("max=%d\n", max(max(2, -1), 1));
 	puts(c);
 	puts(d);
 

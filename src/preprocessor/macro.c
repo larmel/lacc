@@ -350,7 +350,6 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
         strings = get_token_array(),
         list = get_token_array();
 
-    array_push_back(&expand_stack, def->name);
     if (def->params) {
         if (def->stringify) {
             for (i = 0; i < def->params; ++i) {
@@ -366,6 +365,7 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
         }
     }
 
+    array_push_back(&expand_stack, def->name);
     for (i = 0; i < array_len(&def->replacement); ++i) {
         t = array_get(&def->replacement, i);
         if (t.token == PARAM) {
