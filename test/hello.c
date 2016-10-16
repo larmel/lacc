@@ -4,7 +4,7 @@ char hello[] = "Hello World!";
 
 char *how = "How are you?";
 
-long test, ret = 42;
+long demo, ret = 42;
 
 int main(int argc, char *argv[])
 {

@@ -86,31 +86,6 @@ const struct token basic_token[] = {
 };
 
 /*
- * Valid identifier character, except in the first position which does
- * not allow numbers.
- */
-#define isident(c) (isalnum(c) || (c) == '_')
-
-/*
- * Macros to make state state machine implementation of identifier and
- * operator tokenization simpler.
- */
-#define at(c) (**endptr == (c) && (*endptr)++)
-#define get(c) (*(*endptr)++ == (c))
-#define end() !isident(**endptr)
-
-#define S1(a) (at(a) && end())
-#define S2(a, b) (at(a) && get(b) && end())
-#define S3(a, b, c) (at(a) && get(b) && get(c) && end())
-#define S4(a, b, c, d) (at(a) && get(b) && get(c) && get(d) && end())
-#define S5(a, b, c, d, e) \
-    (at(a) && get(b) && get(c) && get(d) && get(e) && end())
-#define S6(a, b, c, d, e, f) \
-    (at(a) && get(b) && get(c) && get(d) && get(e) && get(f) && end())
-#define S7(a, b, c, d, e, f, g) \
-    (at(a) && get(b) && get(c) && get(d) && get(e) && get(f) && get(g) && end())
-
-/*
  * Parse preprocessing number, which starts with an optional period
  * before a digit, then a sequence of period, letter underscore, digit,
  * or any of 'e+', 'e-', 'E+', 'E-'.
@@ -398,168 +373,208 @@ static struct token strtostr(char *in, char **endptr)
 }
 
 /*
+ * Valid identifier character, except in the first position which does
+ * not allow numbers.
+ */
+#define isident(c) (isalnum(c) || (c) == '_')
+
+/*
+ * Macros to make state state machine implementation of identifier and
+ * operator tokenization simpler.
+ */
+#define E(i) !isident(in[i])
+#define M(i, c) (in[i] == (c))
+
+#define M1(a) (M(0, a))
+#define M2(a, b) (M(0, a) && M(1, b))
+#define M3(a, b, c) (M2(a, b) && M(2, c))
+#define M4(a, b, c, d) (M3(a, b, c) && M(3, d))
+#define M5(a, b, c, d, e) (M4(a, b, c, d) && M(4, e))
+#define M6(a, b, c, d, e, f) (M5(a, b, c, d, e) && M(5, f))
+
+#define S1(a) (M1(a) && E(1))
+#define S2(a, b) (M2(a, b) && E(2))
+#define S3(a, b, c) (M3(a, b, c) && E(3))
+#define S4(a, b, c, d) (M4(a, b, c, d) && E(4))
+#define S5(a, b, c, d, e) (M5(a, b, c, d, e) && E(5))
+#define S6(a, b, c, d, e, f) (M6(a, b, c, d, e, f) && E(6))
+#define S7(a, b, c, d, e, f, g) (M7(a, b, c, d, e, f, g) && E(7))
+
+#define MATCH(id) \
+    do { \
+        *endptr = start + basic_token[id].d.string.len; \
+        return basic_token[id]; \
+    } while (0)
+
+/*
  * Parse string as keyword or identifier. First character should be
  * alphabetic or underscore.
  */
 static struct token strtoident(char *in, char **endptr)
 {
+    char *start = in;
     struct token ident = {IDENTIFIER};
 
-    *endptr = in;
-    switch (*(*endptr)++) {
+    switch (*in++) {
     case 'a':
-        if (S3('u', 't', 'o')) return basic_token[AUTO];
+        if (S3('u', 't', 'o')) MATCH(AUTO);
         break;
     case 'b':
-        if (S4('r', 'e', 'a', 'k')) return basic_token[BREAK];
+        if (S4('r', 'e', 'a', 'k')) MATCH(BREAK);
         break;
     case 'c':
-        if (S3('a', 's', 'e')) return basic_token[CASE];
-        if (S3('h', 'a', 'r')) return basic_token[CHAR];
-        if (at('o') && get('n')) {
-            if (S2('s', 't')) return basic_token[CONST];
-            if (S5('t', 'i', 'n', 'u', 'e')) return basic_token[CONTINUE];
+        if (S3('a', 's', 'e')) MATCH(CASE);
+        if (S3('h', 'a', 'r')) MATCH(CHAR);
+        if (M2('o', 'n')) {
+            in += 2;
+            if (S2('s', 't')) MATCH(CONST);
+            if (S5('t', 'i', 'n', 'u', 'e')) MATCH(CONTINUE);
         }
         break;
     case 'd':
-        if (S6('e', 'f', 'a', 'u', 'l', 't')) return basic_token[DEFAULT];
-        if (at('o')) {
-            if (S4('u', 'b', 'l', 'e')) return basic_token[DOUBLE];
-            if (end()) return basic_token[DO];
+        if (S6('e', 'f', 'a', 'u', 'l', 't')) MATCH(DEFAULT);
+        if (*in++ == 'o') {
+            if (S4('u', 'b', 'l', 'e')) MATCH(DOUBLE);
+            if (E(0)) MATCH(DO);
         }
         break;
     case 'e':
-        if (S3('l', 's', 'e')) return basic_token[ELSE];
-        if (S3('n', 'u', 'm')) return basic_token[ENUM];
-        if (S5('x', 't', 'e', 'r', 'n')) return basic_token[EXTERN];
+        if (S3('l', 's', 'e')) MATCH(ELSE);
+        if (S3('n', 'u', 'm')) MATCH(ENUM);
+        if (S5('x', 't', 'e', 'r', 'n')) MATCH(EXTERN);
         break;
     case 'f':
-        if (S4('l', 'o', 'a', 't')) return basic_token[FLOAT];
-        if (S2('o', 'r')) return basic_token[FOR];
+        if (S4('l', 'o', 'a', 't')) MATCH(FLOAT);
+        if (S2('o', 'r')) MATCH(FOR);
         break;
     case 'g':
-        if (S3('o', 't', 'o')) return basic_token[GOTO];
+        if (S3('o', 't', 'o')) MATCH(GOTO);
         break;
     case 'i':
-        if (S1('f')) return basic_token[IF];
-        if (S2('n', 't')) return basic_token[INT];
+        if (S1('f')) MATCH(IF);
+        if (S2('n', 't')) MATCH(INT);
         break;
     case 'l':
-        if (S3('o', 'n', 'g')) return basic_token[LONG];
+        if (S3('o', 'n', 'g')) MATCH(LONG);
         break;
     case 'r':
-        if (at('e')) {
-            if (S6('g', 'i', 's', 't', 'e', 'r')) return basic_token[REGISTER];
-            if (S4('t', 'u', 'r', 'n')) return basic_token[RETURN];
+        if (*in++ == 'e') {
+            if (S6('g', 'i', 's', 't', 'e', 'r')) MATCH(REGISTER);
+            if (S4('t', 'u', 'r', 'n')) MATCH(RETURN);
         }
         break;
     case 's':
-        if (S4('h', 'o', 'r', 't')) return basic_token[SHORT];
-        if (S5('w', 'i', 't', 'c', 'h')) return basic_token[SWITCH];
-        if (at('i')) {
-            if (S4('g', 'n', 'e', 'd')) return basic_token[SIGNED];
-            if (S4('z', 'e', 'o', 'f')) return basic_token[SIZEOF];
-        }
-        if (at('t')) {
-            if (S4('a', 't', 'i', 'c')) return basic_token[STATIC];
-            if (S4('r', 'u', 'c', 't')) return basic_token[STRUCT];
+        if (S4('h', 'o', 'r', 't')) MATCH(SHORT);
+        if (S5('w', 'i', 't', 'c', 'h')) MATCH(SWITCH);
+        switch (*in++) {
+        case 'i':
+            if (S4('g', 'n', 'e', 'd')) MATCH(SIGNED);
+            if (S4('z', 'e', 'o', 'f')) MATCH(SIZEOF);
+            break;
+        case 't':
+            if (S4('a', 't', 'i', 'c')) MATCH(STATIC);
+            if (S4('r', 'u', 'c', 't')) MATCH(STRUCT);
+            break;
+        default: break;
         }
         break;
     case 't':
-        if (S6('y', 'p', 'e', 'd', 'e', 'f')) return basic_token[TYPEDEF];
+        if (S6('y', 'p', 'e', 'd', 'e', 'f')) MATCH(TYPEDEF);
         break;
     case 'u':
-        if (at('n')) {
-            if (S3('i', 'o', 'n')) return basic_token[UNION];
-            if (S6('s', 'i', 'g', 'n', 'e', 'd')) return basic_token[UNSIGNED];
+        if (*in++ == 'n') {
+            if (S3('i', 'o', 'n')) MATCH(UNION);
+            if (S6('s', 'i', 'g', 'n', 'e', 'd')) MATCH(UNSIGNED);
         }
         break;
     case 'v':
-        if (at('o')) {
-            if (S2('i', 'd')) return basic_token[VOID];
-            if (S6('l', 'a', 't', 'i', 'l', 'e')) return basic_token[VOLATILE];
+        if (*in++ == 'o') {
+            if (S2('i', 'd')) MATCH(VOID);
+            if (S6('l', 'a', 't', 'i', 'l', 'e')) MATCH(VOLATILE);
         }
         break;
     case 'w':
-        if (S4('h', 'i', 'l', 'e')) return basic_token[WHILE];
+        if (S4('h', 'i', 'l', 'e')) MATCH(WHILE);
     default:
         break;
     }
 
-    *endptr = in + 1;
-    while (isident(**endptr)) {
-        (*endptr)++;
+    in--;
+    while (isident(*in)) {
+        in++;
     }
 
-    ident.d.string = str_register(in, *endptr - in);
+    ident.d.string = str_register(start, in - start);
+    *endptr = in;
     return ident;
 }
 
 static struct token strtoop(char *in, char **endptr)
 {
-    *endptr = in;
-    switch (*(*endptr)++) {
+    char *start = in;
+
+    switch (*in++) {
     case '*':
-        if (at('=')) return basic_token[MUL_ASSIGN];
+        if (*in == '=') MATCH(MUL_ASSIGN);
         break;
     case '/':
-        if (at('=')) return basic_token[DIV_ASSIGN];
+        if (*in == '=') MATCH(DIV_ASSIGN);
         break;
     case '%':
-        if (at('=')) return basic_token[MOD_ASSIGN];
+        if (*in == '=') MATCH(MOD_ASSIGN);
         break;
     case '+':
-        if (at('+')) return basic_token[INCREMENT];
-        if (at('=')) return basic_token[PLUS_ASSIGN];
+        if (*in == '+') MATCH(INCREMENT);
+        if (*in == '=') MATCH(PLUS_ASSIGN);
         break;
     case '-':
-        if (at('>')) return basic_token[ARROW];
-        if (at('-')) return basic_token[DECREMENT];
-        if (at('=')) return basic_token[MINUS_ASSIGN];
+        if (*in == '>') MATCH(ARROW);
+        if (*in == '-') MATCH(DECREMENT);
+        if (*in == '=') MATCH(MINUS_ASSIGN);
         break;
     case '<':
-        if (at('=')) return basic_token[LEQ];
-        if (at('<')) {
-            if (at('=')) return basic_token[LSHIFT_ASSIGN];
-            return basic_token[LSHIFT];
+        if (*in == '=') MATCH(LEQ);
+        if (*in++ == '<') {
+            if (*in == '=') MATCH(LSHIFT_ASSIGN);
+            MATCH(LSHIFT);
         }
         break;
     case '>':
-        if (at('=')) return basic_token[GEQ];
-        if (at('>')) {
-            if (at('=')) return basic_token[RSHIFT_ASSIGN];
-            return basic_token[RSHIFT];
+        if (*in == '=') MATCH(GEQ);
+        if (*in++ == '>') {
+            if (*in == '=') MATCH(RSHIFT_ASSIGN);
+            MATCH(RSHIFT);
         }
         break;
     case '&':
-        if (at('=')) return basic_token[AND_ASSIGN];
-        if (at('&')) return basic_token[LOGICAL_AND];
+        if (*in == '=') MATCH(AND_ASSIGN);
+        if (*in == '&') MATCH(LOGICAL_AND);
         break;
     case '^':
-        if (at('=')) return basic_token[XOR_ASSIGN];
+        if (*in == '=') MATCH(XOR_ASSIGN);
         break;
     case '|':
-        if (at('=')) return basic_token[OR_ASSIGN];
-        if (at('|')) return basic_token[LOGICAL_OR];
+        if (*in == '=') MATCH(OR_ASSIGN);
+        if (*in == '|') MATCH(LOGICAL_OR);
         break;
     case '.':
-        if (at('.') && get('.')) return basic_token[DOTS];
+        if (*in++ == '.' && *in == '.') MATCH(DOTS);
         break;
     case '=':
-        if (at('=')) return basic_token[EQ];
+        if (*in == '=') MATCH(EQ);
         break;
     case '!':
-        if (at('=')) return basic_token[NEQ];
+        if (*in == '=') MATCH(NEQ);
         break;
     case '#':
-        if (at('#')) return basic_token[TOKEN_PASTE];
+        if (*in == '#') MATCH(TOKEN_PASTE);
         break;
     default:
         break;
     }
 
-    *endptr = in + 1;
-    return basic_token[(int) *in];
+    *endptr = start + 1;
+    return basic_token[(int) *start];
 }
 
 static int skip_spaces(char *in, char **endptr)
