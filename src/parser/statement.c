@@ -219,7 +219,6 @@ static struct block *for_statement(
         *old_continue_target;
 
     set_break_target(old_break_target, next);
-    set_continue_target(old_continue_target, increment);
 
     consume(FOR);
     consume('(');
@@ -256,11 +255,16 @@ static struct block *for_statement(
     consume(';');
     if (peek().token != ')') {
         expression(def, increment)->jump[0] = top;
+        consume(')');
+        set_continue_target(old_continue_target, increment);
+        body = statement(def, body);
+        body->jump[0] = increment;
+    } else {
+        consume(')');
+        set_continue_target(old_continue_target, top);
+        body = statement(def, body);
+        body->jump[0] = top;
     }
-
-    consume(')');
-    body = statement(def, body);
-    body->jump[0] = increment;
 
     restore_break_target(old_break_target);
     restore_continue_target(old_continue_target);
