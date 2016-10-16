@@ -277,6 +277,10 @@ struct token convert_preprocessing_number(struct token t)
  */
 static char escpchar(char *in, char **endptr)
 {
+    static char buf[4];
+    long n;
+    int i;
+
     if (*in == '\\') {
         *endptr = in + 2;
         switch (in[1]) {
@@ -291,16 +295,30 @@ static char escpchar(char *in, char **endptr)
         case '?': return '\?';
         case '\'': return '\'';
         case '\"': return '\"';
-        case 'x': return (char) strtol(&in[2], endptr, 16);
-        default:
-            if (isoctal(in[1])) {
-                if (in[1] == '0' && !isoctal(in[2]))
-                    return '\0';
-            } else {
-                error("Invalid escape sequence '\\%c'.", in[1]);
+        case 'x':
+            return (char) strtol(&in[2], endptr, 16);
+        case '0':
+            if (!isoctal(in[2])) {
+                return '\0';
             }
-
-            return (char) strtol(&in[1], endptr, 8);
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+            buf[0] = in[1];
+            for (i = 1; i < 3 && isoctal(in[1 + i]); ++i) {
+                buf[i] = in[1 + i];
+            }
+            buf[i] = '\0';
+            n = strtol(buf, endptr, 8);
+            *endptr = in + i + 1;
+            return (char) n;
+        default:
+            error("Invalid escape sequence '\\%c'.", in[1]);
+            break;
         }
     }
 
