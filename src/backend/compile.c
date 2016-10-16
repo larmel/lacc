@@ -647,6 +647,7 @@ static void move_to_from_registers(
     n = EIGHTBYTES(type);
     for (i = 0; i < n; ++i) {
         switch (pc.eightbyte[i]) {
+        default: assert(0);
         case PC_INTEGER:
             r = *intregs++;
             if (!is_scalar(type)) {
@@ -664,7 +665,6 @@ static void move_to_from_registers(
                 var.type = &basic_type__double;
             }
             break;
-        default: assert(0);
         }
 
         if (toggle_load) {
