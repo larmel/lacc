@@ -267,7 +267,6 @@ static struct token paste(struct token left, struct token right)
     char *buf, *endptr;
     String ls, rs;
 
-    assert(left.token != EMPTY_ARG || right.token != EMPTY_ARG);
     if (left.token == EMPTY_ARG) {
         return right;
     } else if (right.token == EMPTY_ARG) {
@@ -291,111 +290,166 @@ static struct token paste(struct token left, struct token right)
     return res;
 }
 
-/*
- * In-place expansion of token paste operators.
- *
- * Example:
- *    ['f', '##', 'u', '##', 'nction'] -> ['function'].
- */
-static void expand_paste_operators(TokenArray *list)
+static enum token_type peek_token(const TokenArray *list, int i)
 {
-    unsigned i, j, len;
-    struct token t, l, r;
+    if (i < array_len(list)) {
+        return array_get(list, i).token;
+    }
 
-    len = array_len(list);
-    if (len && array_get(list, 0).token == TOKEN_PASTE) {
-        error("Unexpected token paste operator at beginning of line.");
+    return END;
+}
+
+/*
+ * Replace content of list in segment [start, start + gaplength] with
+ * contents of slice. The gap is from reading arguments from list, and
+ * the slice is result of expanding it. Slice might be smaller or larger
+ * than the gap.
+ */ 
+static void array_replace_slice(
+    TokenArray *list,
+    unsigned start,
+    unsigned gaplength,
+    TokenArray *slice)
+{
+    unsigned length;
+    assert(start + gaplength <= array_len(list));
+
+    length = array_len(list) - gaplength + array_len(slice);
+    array_realloc(list, length);
+
+    /*
+     * Move trailing data out of the way, or move closer to prefix, to
+     * align exactly where slice is inserted.
+     */
+    if (array_len(slice) != gaplength) {
+        memmove(
+            list->data + start + array_len(slice),
+            list->data + start + gaplength,
+            (array_len(list) - (start + gaplength)) * sizeof(*list->data));
+    }
+
+    /* Copy slice directly into now vacant space in list. */
+    if (array_len(slice)) {
+        memcpy(
+            list->data + start,
+            slice->data,
+            array_len(slice) * sizeof(*list->data));
+    }
+
+    list->length = length;
+}
+
+/*
+ * Replacing # <param> and <a> ## <b> is done in an initial scan of
+ * the replacement list. This pass requires the parameters to not be
+ * expanded.
+ *
+ * Return an array which still can contain PARAM tokens that needs
+ * further expansion.
+ */
+static TokenArray expand_stringify_and_paste(
+    const struct macro *def,
+    TokenArray *args)
+{
+    int len, d, i;
+    struct token t, s;
+    TokenArray list = get_token_array();
+
+    len = array_len(&def->replacement);
+    if (len && array_get(&def->replacement, 0).token == TOKEN_PASTE) {
+        error("Unexpected '##' operator at beginning of line.");
         exit(1);
     } else if (len > 2) {
-        if (array_get(list, len - 1).token == TOKEN_PASTE) {
-            error("Unexpected token paste operator at end of line.");
+        if (array_get(&def->replacement, len - 1).token == TOKEN_PASTE) {
+            error("Unexpected '##' operator at end of line.");
             exit(1);
         }
-
-        for (i = 0, j = 1; j < len; ++j) {
-            assert(i < len);
-            t = array_get(list, j);
-            if (t.token == TOKEN_PASTE) {
-                l = array_get(list, i);
-                r = array_get(list, j + 1);
-                if (l.token == EMPTY_ARG && r.token == EMPTY_ARG) {
-                    /*
-                     * Pasting together two arguments that are not given
-                     * will result in no token.
-                     */
-                    i--;
-                } else {
-                    array_get(list, i) = paste(l, r);
-                }
-                j++;
-            } else if (t.token != EMPTY_ARG) {
-                if (i < j - 1) {
-                    i++;
-                    array_get(list, i) = array_get(list, j);
-                } else {
-                    i++;
-                }
-            }
-        }
-
-        list->length = i + 1;
     }
+
+    for (i = 0; i < len; ++i) {
+        t = array_get(&def->replacement, i);
+        switch (t.token) {
+        case TOKEN_PASTE:
+            i += 1;
+            t = array_get(&list, array_len(&list) - 1);
+            if (t.token == PARAM) {
+                (void) array_pop_back(&list);
+                array_concat(&list, &args[t.d.number.val.i]);
+                t = array_get(&list, array_len(&list) - 1);
+            }
+            s = array_get(&def->replacement, i);
+            if (s.token == PARAM) {
+                d = s.d.number.val.i;
+                s = array_get(&args[d], 0);
+                t = paste(t, s);
+                (void) array_pop_back(&list);
+                if (t.token != EMPTY_ARG) {
+                    array_concat(&list, &args[d]);
+                    d = array_len(&list) - array_len(&args[d]);
+                    array_get(&list, d) = t;
+                }
+            } else {
+                t = paste(t, s);
+                list.data[array_len(&list) - 1] = t;
+            }
+            break;
+        case '#':
+            i += 1;
+            if (peek_token(&def->replacement, i) == PARAM) {
+                d = array_get(&def->replacement, i).d.number.val.i;
+                t = stringify(&args[d]);
+                array_push_back(&list, t);
+            } else {
+                error("Stray '#' in replacement list.");
+                exit(1);
+            }
+            break;
+        default:
+            array_push_back(&list, t);
+            break;
+        }
+    }
+
+    return list;
 }
 
 static TokenArray expand_macro(const struct macro *def, TokenArray *args)
 {
-    int i, param;
+    int d, i;
     struct token t;
-    TokenArray
-        strings = get_token_array(),
-        list = get_token_array();
+    TokenArray list = expand_stringify_and_paste(def, args);
+
+    for (i = 0; i < def->params; ++i) {
+        expand(&args[i]);
+        if (!args[i].data[0].leading_whitespace) {
+            args[i].data[0].leading_whitespace = 1;
+        }
+    }
 
     if (def->params) {
-        if (def->stringify) {
-            for (i = 0; i < def->params; ++i) {
-                t = stringify(&args[i]);
-                array_push_back(&strings, t);
-            }
-        }
-        for (i = 0; i < def->params; ++i) {
-            expand(&args[i]);
-            if (!args[i].data[0].leading_whitespace) {
-                args[i].data[0].leading_whitespace = 1;
+        for (i = 0; i < array_len(&list); ++i) {
+            t = array_get(&list, i);
+            if (t.token == PARAM) {
+                d = t.d.number.val.i;
+                if (array_get(&args[d], 0).token == EMPTY_ARG) {
+                    array_erase(&list, i);
+                } else {
+                    array_replace_slice(&list, i, 1, &args[d]);
+                }
             }
         }
     }
 
-    array_push_back(&expand_stack, def->name);
-    for (i = 0; i < array_len(&def->replacement); ++i) {
-        t = array_get(&def->replacement, i);
-        if (t.token == PARAM) {
-            param = t.d.number.val.i;
-            assert(param < def->params);
-            array_concat(&list, &args[param]);
-        } else if (t.token == '#'
-            && i < array_len(&def->replacement) - 1
-            && array_get(&def->replacement, i + 1).token == PARAM)
-        {
-            i++;
-            param = array_get(&def->replacement, i).d.number.val.i;
-            assert(param < array_len(&strings));
-            t = array_get(&strings, param);
-            assert(t.token == STRING);
-            array_push_back(&list, t);
-        } else {
-            array_push_back(&list, t);
-        }
+    if (array_len(&list)) {
+        array_push_back(&expand_stack, def->name);
+        expand(&list);
+        (void) array_pop_back(&expand_stack);
     }
 
-    expand_paste_operators(&list);
-    expand(&list);
-    (void) array_pop_back(&expand_stack);
-    for (i = 0; i < def->params; ++i) {
+    for (i = 0; i < def->params; ++i)
         release_token_array(args[i]);
-    }
-
     free(args);
-    release_token_array(strings);
+
     return list;
 }
 
@@ -473,46 +527,6 @@ static TokenArray *read_args(
 
     *endptr = list;
     return args;
-}
-
-/*
- * Replace content of list in segment [start, start + gaplength] with
- * contents of slice. The gap is from reading arguments from list, and
- * the slice is result of expanding it. Slice might be smaller or larger
- * than the gap.
- */ 
-static void array_replace_slice(
-    TokenArray *list,
-    unsigned start,
-    unsigned gaplength,
-    TokenArray *slice)
-{
-    unsigned length;
-    assert(start + gaplength <= array_len(list));
-
-    length = array_len(list) - gaplength + array_len(slice);
-    array_realloc(list, length);
-
-    /*
-     * Move trailing data out of the way, or move closer to prefix, to
-     * align exactly where slice is inserted.
-     */
-    if (array_len(slice) != gaplength) {
-        memmove(
-            list->data + start + array_len(slice),
-            list->data + start + gaplength,
-            (array_len(list) - (start + gaplength)) * sizeof(*list->data));
-    }
-
-    /* Copy slice directly into now vacant space in list. */
-    if (array_len(slice)) {
-        memcpy(
-            list->data + start,
-            slice->data,
-            array_len(slice) * sizeof(*list->data));
-    }
-
-    list->length = length;
 }
 
 int expand(TokenArray *list)
