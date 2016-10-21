@@ -12,4 +12,7 @@
  */
 String str_register(const char *str, size_t len);
 
+/* Concatenate two strings together. */
+String str_cat(String a, String b);
+
 #endif

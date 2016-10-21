@@ -596,10 +596,13 @@ int tok_cmp(struct token a, struct token b)
 }
 
 /*
- * From GCC documentation: All leading and trailing whitespace in text
- * being stringified is ignored. Any sequence of whitespace in the
- * middle of the text is converted to a single space in the stringified
- * result.
+ * Convert list of tokens to a single STRING token.
+ *
+ * - All leading and trailing whitespace in text being stringified is
+ *   ignored.
+ * - Any sequence of whitespace in the middle of the text is converted
+ *   to a single space in the stringified result.
+ * - Quotes and special characters in STRING tokens are escaped.
  */
 struct token stringify(const TokenArray *list)
 {
@@ -614,15 +617,8 @@ struct token stringify(const TokenArray *list)
     } else if (array_len(list) == 1) {
         tok = array_get(list, 0);
         str.d.string = tokstr(tok);
-        if (tok.token == NUMBER) {
-            str.d.string =
-                str_register(str_raw(str.d.string), str.d.string.len);
-        }
     } else {
-        /*
-         * Estimate 7 characters per token, trying to avoid unnecessary
-         * reallocations.
-         */
+        /* Estimate 7 characters per token. */
         cap = array_len(list) * 7 + 1;
         buf = malloc(cap);
         len = ptr = 0;

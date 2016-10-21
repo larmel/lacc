@@ -69,12 +69,34 @@ String str_register(const char *str, size_t len)
             atexit(strtab_free);
             initialized = 1;
         }
-
         data.p.str = str;
         data.p.len = len;
-
         ref = hash_insert(&strtab, &data);
     }
 
     return *ref;
+}
+
+String str_cat(String a, String b)
+{
+    static char buf[SHORT_STRING_LEN + 1];
+    int len;
+    char *str;
+    String s;
+
+    len = a.len + b.len;
+    if (len < SHORT_STRING_LEN) {
+        str = buf;
+    } else {
+        str = calloc(len + 1, sizeof(*str));
+    }
+
+    memcpy(str, str_raw(a), a.len);
+    memcpy(str + a.len, str_raw(b), b.len);
+    s = str_register(str, len);
+    if (str != buf) {
+        free(str);
+    }
+
+    return s;
 }

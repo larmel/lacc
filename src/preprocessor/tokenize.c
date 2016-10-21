@@ -16,7 +16,7 @@
  * Static initializer for token. Only works with string representation
  * that can fit inline.
  */
-#define TOK(t, s) {(t), 0, {SHORT_STRING_INIT(s)}}
+#define TOK(t, s) {(t), 0, 0, {SHORT_STRING_INIT(s)}}
 
 const struct token basic_token[] = {
 /* 0x00 */  TOK(END, "$"),              TOK(AUTO, "auto"),
@@ -344,14 +344,14 @@ static struct token strtochar(char *in, char **endptr)
         error("Invalid character constant %c.", *in);
 
     *endptr += 1;
+    tok.is_char_literal = 1;
     return tok;
 }
 
 /*
  * Parse string literal inputs delimited by quotation marks, handling
  * escaped quotes. The input buffer is destructively overwritten while
- * resolving escape sequences. Concatenate string literals separated by
- * whitespace.
+ * resolving escape sequences.
  */
 static struct token strtostr(char *in, char **endptr)
 {
@@ -362,24 +362,17 @@ static struct token strtostr(char *in, char **endptr)
     start = str = in;
     *endptr = in;
 
-    do {
-        if (*in++ == '"') {
-            while (*in != '"' && *in) {
-                *str++ = escpchar(in, &in);
-                len++;
-            }
-
-            if (*in++ == '"') {
-                *str = '\0';
-                *endptr = in;
-            }
+    if (*in++ == '"') {
+        while (*in != '"' && *in) {
+            *str++ = escpchar(in, &in);
+            len++;
         }
 
-        /* See if there is another string after this one. */
-        while (isspace(*in)) in++;
-        if (*in != '"')
-            break;
-    } while (1);
+        if (*in++ == '"') {
+            *str = '\0';
+            *endptr = in;
+        }
+    }
 
     if (*endptr == start) {
         error("Invalid string literal.");
@@ -606,66 +599,116 @@ static int skip_spaces(char *in, char **endptr)
     return in - start;
 }
 
+static size_t write_escaped_char(int c, char *buf)
+{
+    int i = 0;
+
+    switch (c) {
+    case '\a':
+        buf[i++] = '\\';
+        buf[i++] = 'a';
+        break;
+    case '\b':
+        buf[i++] = '\\';
+        buf[i++] = 'b';
+        break;
+    case '\t':
+        buf[i++] = '\\';
+        buf[i++] = 't';
+        break;
+    case '\n':
+        buf[i++] = '\\';
+        buf[i++] = 'n';
+        break;
+    case '\v':
+        buf[i++] = '\\';
+        buf[i++] = 'v';
+        break;
+    case '\f':
+        buf[i++] = '\\';
+        buf[i++] = 'f';
+        break;
+    case '\r':
+        buf[i++] = '\\';
+        buf[i++] = 'r';
+        break;
+    case '\0':
+        buf[i++] = '\\';
+        buf[i++] = '0';
+        break;
+    case '\\':
+    case '\"':
+        buf[i++] = '\\';
+    default:
+        buf[i++] = c;
+        break;
+    }
+
+    return i;
+}
+
+static size_t write_escaped_string(String str, char *buf)
+{
+    const char *raw;
+    size_t i = 0, j = 0;
+
+    raw = str_raw(str);
+    buf[j++] = '\"';
+    for (i = 0; i < str.len; ++i) {
+        j += write_escaped_char(raw[i], buf + j);
+    }
+
+    buf[j++] = '\"';
+    return j;
+}
+
 String tokstr(struct token tok)
 {
     static char buf[64];
+    char *str;
+    size_t len;
     struct number num;
-    int w = 0;
+
     assert(tok.token != PARAM);
     assert(tok.token != EMPTY_ARG);
 
-    if (tok.token == NUMBER) {
-        /*
-         * The string representation is lost during tokenization, so we
-         * cannot necessarily reconstruct the same suffixes.
-         */
+    switch (tok.token) {
+    case NUMBER:
         num = tok.d.number;
-        switch (num.type->type) {
-        case T_UNSIGNED:
-            w += snprintf(buf + w, sizeof(buf) - w, "%luu", num.val.u);
-            if (num.type->size == 8) {
-                w += snprintf(buf + w, sizeof(buf) - w, "l");
+        if (tok.is_char_literal) {
+            assert(num.type->type == T_SIGNED);
+            len = 0;
+            buf[len++] = '\'';
+            len += write_escaped_char(num.val.i, buf + len);
+            buf[len++] = '\'';
+        } else {
+            switch (num.type->type) {
+            case T_UNSIGNED:
+                len = sprintf(buf,
+                    (num.type->size == 8) ? "%lul" : "%lu", num.val.u);
+                break;
+            case T_SIGNED:
+                len = sprintf(buf,
+                    (num.type->size == 8) ? "%ldl" : "%ld", num.val.i);
+                break;
+            case T_REAL:
+                len = sprintf(buf,
+                    is_float(num.type) ? "%ff" : "%f", num.val.f);
+                break;
+            default: assert(0);
             }
-            break;
-        case T_SIGNED:
-            w += snprintf(buf + w, sizeof(buf) - w, "%ld", num.val.i);
-            if (num.type->size == 8) {
-                w += snprintf(buf + w, sizeof(buf) - w, "l");
-            }
-            break;
-        case T_REAL:
-            if (is_float(num.type)) {
-                w += snprintf(buf + w, sizeof(buf) - w, "%f", num.val.f);
-                w += snprintf(buf + w, sizeof(buf) - w, "f");
-            } else {
-                w += snprintf(buf + w, sizeof(buf) - w, "%f", num.val.d);                
-            }
-            break;
-        default:
-            assert(0);
-            break;
         }
-        return str_init(buf);
+        tok.d.string = str_register(buf, len);
+        break;
+    case STRING:
+        str = malloc((tok.d.string.len * 2 + 2) * sizeof(*str));
+        len = write_escaped_string(tok.d.string, str);
+        tok.d.string = str_register(str, len);
+        free(str);
+    default: break;
     }
 
     return tok.d.string;
-}
-
-struct token pastetok(struct token a, struct token b)
-{
-    char *str;
-    size_t len;
-    String as = tokstr(a), bs = tokstr(b);
-    struct token tok = {STRING};
-
-    len = as.len + bs.len;
-    str = calloc(len + 1, sizeof(*str));
-    memcpy(str, str_raw(as), as.len);
-    memcpy(str + as.len, str_raw(bs), bs.len);
-
-    tok.d.string = str_register(str, len);
-    free(str);
-    return tok;
 }
 
 struct token tokenize(char *in, char **endptr)

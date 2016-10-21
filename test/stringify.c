@@ -1,7 +1,13 @@
-#define STR(s) #s
-
 int puts(const char *);
 
+#define STR(s) #s
+
 int main(void) {
-	return puts(STR(   this   is some   string  ));
+	int n = 0;
+
+	n += puts(STR(   this   is some   string  ));
+	n += puts(STR(this -= '8' 2u '\a' "i\ns\t"
+		'\n' a "te\0st"));
+
+	return n;
 }

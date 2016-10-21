@@ -304,7 +304,8 @@ static void add_to_lookahead(struct token t)
     if (t.token == STRING && len) {
         prev = deque_get(&lookahead, len - 1);
         if (prev.token == STRING) {
-            deque_get(&lookahead, len - 1) = pastetok(prev, t);
+            t.d.string = str_cat(prev.d.string, t.d.string);
+            deque_get(&lookahead, len - 1) = t;
             added = 1;
         }
     }

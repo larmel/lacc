@@ -1,13 +1,14 @@
 #include "directive.h"
 #include "input.h"
 #include "macro.h"
+#include "strtab.h"
 #include "tokenize.h"
 #include <lacc/array.h>
 #include <lacc/context.h>
 
 #include <assert.h>
 
-#define IDENT(s) {IDENTIFIER, 0, {SHORT_STRING_INIT(s)}}
+#define IDENT(s) {IDENTIFIER, 0, 0, {SHORT_STRING_INIT(s)}}
 
 struct token
     ident__include = IDENT("include"),
@@ -341,25 +342,25 @@ static int expression(const struct token *list, const struct token **endptr)
 
 static void preprocess_include(const struct token line[])
 {
-    struct token t = {STRING, 0, {SHORT_STRING_INIT("")}};
+    String path;
 
     if (line->token == STRING) {
-        include_file(str_raw(line->d.string));
+        path = line->d.string;
+        include_file(str_raw(path));
     } else if (line->token == '<') {
         line++;
+        path = str_init("");
         while (line->token != NEWLINE) {
             if (line->token == '>') {
                 break;
             }
-            t = pastetok(t, *line++);
+            path = str_cat(path, tokstr(*line++));
         }
-
-        if (!t.d.string.len || line->token != '>') {
+        if (!path.len || line->token != '>') {
             error("Invalid include directive.");
             exit(1);
         }
-
-        include_system_file(str_raw(t.d.string));
+        include_system_file(str_raw(path));
     }
 }
 

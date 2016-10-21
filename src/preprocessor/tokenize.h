@@ -10,11 +10,8 @@
  */
 extern const struct token basic_token[128];
 
-/* String representation of token. */
+/* Reconstruct string representation of token. */
 String tokstr(struct token tok);
-
-/* Concatenate two tokens to produce a new string token. */
-struct token pastetok(struct token a, struct token b);
 
 /* Transform preprocessing number to actual numeric literal. */
 struct token convert_preprocessing_number(struct token t);

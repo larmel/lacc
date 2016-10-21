@@ -148,7 +148,8 @@ struct number {
  */
 struct token {
     enum token_type token;
-    int leading_whitespace;
+    unsigned int leading_whitespace : 16;
+    unsigned int is_char_literal : 1;
     union {
         String string;
         struct number number;
