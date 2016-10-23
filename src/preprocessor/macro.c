@@ -17,22 +17,21 @@
 static struct hash_table macro_hash_table;
 static int new_macro_added;
 
-/*
- * Keep track of which macros have been expanded, avoiding recursion by
- * looking up in this list for each new expansion.
- */
-static array_of(String) expand_stack;
+typedef array_of(String) ExpandStack;
 
 /* Keep track of arrays being recycled. */
 static array_of(TokenArray) arrays;
+static array_of(ExpandStack) stacks;
 
-static int is_macro_expanded(const struct macro *macro)
+static int is_macro_expanded(
+    const ExpandStack *scope,
+    const struct macro *macro)
 {
     int i;
     String name;
 
-    for (i = 0; i < array_len(&expand_stack); ++i) {
-        name = array_get(&expand_stack, i);
+    for (i = 0; i < array_len(scope); ++i) {
+        name = array_get(scope, i);
         if (!str_cmp(name, macro->name)) {
             return 1;
         }
@@ -56,6 +55,23 @@ TokenArray get_token_array(void)
 void release_token_array(TokenArray list)
 {
     array_push_back(&arrays, list);
+}
+
+static ExpandStack get_expand_stack(void)
+{
+    ExpandStack stack = {0};
+    if (array_len(&stacks)) {
+        stack = array_pop_back(&stacks);
+        array_zero(&stack);
+        array_empty(&stack);
+    }
+
+    return stack;
+}
+
+static void release_expand_stack(ExpandStack stack)
+{
+    array_push_back(&stacks, stack);
 }
 
 static int macrocmp(const struct macro *a, const struct macro *b)
@@ -112,16 +128,19 @@ static void cleanup(void)
 {
     int i;
     TokenArray list;
+    ExpandStack stack;
 
-    array_clear(&expand_stack);
     hash_destroy(&macro_hash_table);
-
     for (i = 0; i < array_len(&arrays); ++i) {
         list = array_get(&arrays, i);
         array_clear(&list);
     }
-
+    for (i = 0; i < array_len(&stacks); ++i) {
+        stack = array_get(&stacks, i);
+        array_clear(&stack);
+    }
     array_clear(&arrays);
+    array_clear(&stacks);
 }
 
 static void ensure_initialized(void)
@@ -413,20 +432,25 @@ static TokenArray expand_stringify_and_paste(
     return list;
 }
 
-static TokenArray expand_macro(const struct macro *def, TokenArray *args)
+static int expand_with_scope(ExpandStack *scope, TokenArray *list);
+
+static TokenArray expand_macro(
+    ExpandStack *scope,
+    const struct macro *def,
+    TokenArray *args)
 {
     int d, i;
     struct token t;
     TokenArray list = expand_stringify_and_paste(def, args);
 
-    for (i = 0; i < def->params; ++i) {
-        expand(&args[i]);
-        if (!args[i].data[0].leading_whitespace) {
-            args[i].data[0].leading_whitespace = 1;
-        }
-    }
-
     if (def->params) {
+        for (i = 0; i < def->params; ++i) {
+            expand(&args[i]);
+            if (!args[i].data[0].leading_whitespace) {
+                args[i].data[0].leading_whitespace = 1;
+            }
+        }
+
         for (i = 0; i < array_len(&list); ++i) {
             t = array_get(&list, i);
             if (t.token == PARAM) {
@@ -438,18 +462,13 @@ static TokenArray expand_macro(const struct macro *def, TokenArray *args)
                 }
             }
         }
+
+        for (i = 0; i < def->params; ++i)
+            release_token_array(args[i]);
+        free(args);
     }
 
-    if (array_len(&list)) {
-        array_push_back(&expand_stack, def->name);
-        expand(&list);
-        (void) array_pop_back(&expand_stack);
-    }
-
-    for (i = 0; i < def->params; ++i)
-        release_token_array(args[i]);
-    free(args);
-
+    expand_with_scope(scope, &list);
     return list;
 }
 
@@ -529,50 +548,60 @@ static TokenArray *read_args(
     return args;
 }
 
-int expand(TokenArray *list)
+static int expand_with_scope(ExpandStack *scope, TokenArray *list)
 {
-    int n = 0;
+    int size, i, n;
     struct token t;
-    unsigned i = 0, size;
     const struct macro *def;
     const struct token *endptr;
     TokenArray *args, expn;
 
-    while (i < array_len(list)) {
+    for (n = 0, i = 0; i < array_len(list); ++i) {
         t = array_get(list, i);
-        if (t.token == IDENTIFIER) {
-            def = definition(t.d.string);
-            /*
-             * Only expand function-like macros if they appear as func-
-             * tion invocations, beginning with an open paranthesis.
-             */
-            if (def && !is_macro_expanded(def) &&
-                (def->type != FUNCTION_LIKE ||
-                    array_get(list, i + 1).token == '('))
-            {
-                args = read_args(def, list->data + i + 1, &endptr);
-                expn = expand_macro(def, args);
-                size = (endptr - list->data) - i;
-
-                /* Fix leading whitespace after expansion. */
-                if (array_len(&expn)) {
-                    expn.data[0].leading_whitespace = t.leading_whitespace;
-                }
-
-                /*
-                 * Squeeze in expn in list, starting from index i and
-                 * extending size elements.
-                 */
-                array_replace_slice(list, i, size, &expn);
-                i += array_len(&expn);
-                release_token_array(expn);
-                n += 1;
-                continue;
-            }
+        if (t.token != IDENTIFIER || t.disable_expand) {
+            continue;
         }
-        i++;
+
+        def = definition(t.d.string);
+        if (!def)
+            continue;
+
+        if (is_macro_expanded(scope, def)) {
+            array_get(list, i).disable_expand = 1;
+            continue;
+        }
+
+        if (def->type == FUNCTION_LIKE && array_get(list, i + 1).token != '(')
+            continue;
+
+        array_push_back(scope, def->name);
+        args = read_args(def, list->data + i + 1, &endptr);
+        expn = expand_macro(scope, def, args);
+        size = (endptr - list->data) - i;
+        (void) array_pop_back(scope);
+
+        /* Fix leading whitespace after expansion. */
+        if (array_len(&expn)) {
+            expn.data[0].leading_whitespace = t.leading_whitespace;
+        }
+
+        /* Squeeze in expansion in list. */
+        array_replace_slice(list, i, size, &expn);
+        i += array_len(&expn) - 1;
+        release_token_array(expn);
+        n += 1;
     }
 
+    return n;
+}
+
+int expand(TokenArray *list)
+{
+    int n;
+    ExpandStack stack = get_expand_stack();
+
+    n = expand_with_scope(&stack, list);
+    release_expand_stack(stack);
     return n;
 }
 

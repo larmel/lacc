@@ -8,7 +8,7 @@
 
 #include <assert.h>
 
-#define IDENT(s) {IDENTIFIER, 0, 0, {SHORT_STRING_INIT(s)}}
+#define IDENT(s) {IDENTIFIER, 0, 0, 0, {SHORT_STRING_INIT(s)}}
 
 struct token
     ident__include = IDENT("include"),

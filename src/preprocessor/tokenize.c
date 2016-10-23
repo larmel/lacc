@@ -16,7 +16,7 @@
  * Static initializer for token. Only works with string representation
  * that can fit inline.
  */
-#define TOK(t, s) {(t), 0, 0, {SHORT_STRING_INIT(s)}}
+#define TOK(t, s) {(t), 0, 0, 0, {SHORT_STRING_INIT(s)}}
 
 const struct token basic_token[] = {
 /* 0x00 */  TOK(END, "$"),              TOK(AUTO, "auto"),

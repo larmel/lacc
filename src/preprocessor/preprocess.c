@@ -218,9 +218,9 @@ static int skip_or_read_expansion(
  * line. Always ends with a newline (\n) token, but never contains any
  * newlines in the array itself.
  */
-static void read_complete_line(TokenArray *line, struct token t, int directive)
+static int read_complete_line(TokenArray *line, struct token t, int directive)
 {
-    int expandable = 1;
+    int expandable = 1, macros = 0;
     const struct macro *def;
 
     if (directive) {
@@ -239,6 +239,7 @@ static void read_complete_line(TokenArray *line, struct token t, int directive)
                 if (def && def->type == FUNCTION_LIKE) {
                     array_push_back(line, t);
                     read_macro_invocation(line, def);
+                    macros += 1;
                 } else {
                     array_push_back(line, t);
                 }
@@ -252,6 +253,7 @@ static void read_complete_line(TokenArray *line, struct token t, int directive)
 
     assert(t.token == NEWLINE);
     array_push_back(line, t);
+    return macros;
 }
 
 /*
@@ -270,7 +272,7 @@ static int refill_expanding_line(TokenArray *line)
 
     for (n = 0, i = 0; i < array_len(line); i++) {
         t = array_get(line, i);
-        if (t.token == IDENTIFIER) {
+        if (t.token == IDENTIFIER && !t.disable_expand) {
             def = definition(t.d.string);
             if (def && def->type == FUNCTION_LIKE) {
                 i += skip_or_read_expansion(def, line, i + 1);
@@ -282,7 +284,7 @@ static int refill_expanding_line(TokenArray *line)
     /* Make sure a complete line is read, not to mix directives. */
     if (t.token != NEWLINE) {
         t = get_token();
-        read_complete_line(line, t, 0);
+        n += read_complete_line(line, t, 0);
     }
 
     return n;
