@@ -427,10 +427,14 @@ static struct expression add(
             l.imm.i += r.imm.i;
             expr = as_expr(l);
         } else if (r.kind != IMMEDIATE || r.imm.i) {
+            type = l.type;
+            l = eval_cast(def, block, l, &basic_type__long);
+            r = eval_cast(def, block, r, &basic_type__long);
             r = eval(def, block,
                     eval_expr(def, block, IR_OP_MUL,
-                        var_int(size_of(l.type->next)), r));
+                        var_int(size_of(type->next)), r));
             expr = create_expr(IR_OP_ADD, l, r);
+            expr.type = type;
         } else {
             expr = as_expr(l);
         }
@@ -497,14 +501,9 @@ static struct expression sub(
             error("Referenced type is incomplete.");
             exit(1);
         }
-        /*
-         * Result is ptrdiff_t, which will be signed 64 bit integer.
-         * Reinterpret cast both pointers to unsigned long (no codegen),
-         * and store result as signed long. Then divide by element size
-         * to get diff.
-         */
-        l = eval_cast(def, block, l, &basic_type__unsigned_long);
-        r = eval_cast(def, block, r, &basic_type__unsigned_long);
+        /* Result is ptrdiff_t, which will be signed 64 bit integer. */
+        l = eval_cast(def, block, l, &basic_type__long);
+        r = eval_cast(def, block, r, &basic_type__long);
         l = eval(def, block, eval_expr(def, block, IR_OP_SUB, l, r));
         expr = eval_expr(def, block, IR_OP_DIV, l, var_int(size));
     } else {
@@ -550,15 +549,13 @@ static void prepare_comparison_operands(
             warning("Comparison between pointer and non-zero integer.");
         }
 
-        /* Left operand has the most specific type. */
-        *r = eval_cast(def, block, *r, l->type);
+        *l = eval_cast(def, block, *l, &basic_type__unsigned_long);
+        *r = eval_cast(def, block, *r, &basic_type__unsigned_long);
     } else {
         error("Illegal comparison between types '%t' and '%t'.",
             l->type, r->type);
         exit(1);
     }
-
-    assert(type_equal(l->type, r->type));
 }
 
 static struct expression cmp_eq(
@@ -603,22 +600,18 @@ static const struct typetree *common_compare_type(
     const struct typetree *left,
     const struct typetree *right)
 {
-    const struct typetree *type = NULL;
-
     if (is_arithmetic(left) && is_arithmetic(right)) {
-        type = usual_arithmetic_conversion(left, right);
+        return usual_arithmetic_conversion(left, right);
     } else if (is_pointer(left)
         && is_pointer(right)
         && size_of(left->next)
         && size_of(left->next) == size_of(right->next))
     {
-        type = left;
+        return &basic_type__unsigned_long;
     } else {
         error("Invalid operands in relational expression.");
         exit(1);
     }
-
-    return type;
 }
 
 static struct expression cmp_ge(
