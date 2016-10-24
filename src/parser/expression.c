@@ -405,9 +405,8 @@ static struct block *unary_expression(
     case '+':
         consume('+');
         block = cast_expression(def, block);
-        if (is_identity(block->expr)) {
-            block->expr.l.lvalue = 0;
-        }
+        value = eval(def, block, block->expr);
+        block->expr = eval_expr(def, block, IR_OP_ADD, var_int(0), value);
         break;
     case '-':
         consume('-');

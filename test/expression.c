@@ -1,5 +1,6 @@
+int printf(const char *, ...);
 
-int main() {
+int main(void) {
 	int a = -1;
 	int b = 2;
 
@@ -12,6 +13,8 @@ int main() {
 
 	c = !c + +a != -7;
 	(g)[b - 1] = 1;
+
+	printf("%lu\n", sizeof(+(char) a));
 
 	return - -c + d + e + f;
 }
