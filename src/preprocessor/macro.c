@@ -23,20 +23,14 @@ typedef array_of(String) ExpandStack;
 static array_of(TokenArray) arrays;
 static array_of(ExpandStack) stacks;
 
-static int is_macro_expanded(
-    const ExpandStack *scope,
-    const struct macro *macro)
+static int is_expanded(const ExpandStack *scope, String name)
 {
     int i;
-    String name;
-
     for (i = 0; i < array_len(scope); ++i) {
-        name = array_get(scope, i);
-        if (!str_cmp(name, macro->name)) {
+        if (!str_cmp(array_get(scope, i), name)) {
             return 1;
         }
     }
-
     return 0;
 }
 
@@ -432,14 +426,14 @@ static TokenArray expand_stringify_and_paste(
     return list;
 }
 
-static int expand_with_scope(ExpandStack *scope, TokenArray *list);
+static int expand_line(ExpandStack *scope, TokenArray *list);
 
 static TokenArray expand_macro(
     ExpandStack *scope,
     const struct macro *def,
     TokenArray *args)
 {
-    int d, i;
+    int i, j;
     struct token t;
     TokenArray list = expand_stringify_and_paste(def, args);
 
@@ -449,16 +443,22 @@ static TokenArray expand_macro(
             if (!args[i].data[0].leading_whitespace) {
                 args[i].data[0].leading_whitespace = 1;
             }
+            for (j = 0; j < array_len(&args[i]); ++j) {
+                t = array_get(&args[i], j);
+                if (t.token == IDENTIFIER) {
+                    args[i].data[j].disable_expand = 1;
+                }
+            }
         }
 
         for (i = 0; i < array_len(&list); ++i) {
             t = array_get(&list, i);
             if (t.token == PARAM) {
-                d = t.d.number.val.i;
-                if (array_get(&args[d], 0).token == EMPTY_ARG) {
+                j = t.d.number.val.i;
+                if (array_get(&args[j], 0).token == EMPTY_ARG) {
                     array_erase(&list, i);
                 } else {
-                    array_replace_slice(&list, i, 1, &args[d]);
+                    array_replace_slice(&list, i, 1, &args[j]);
                 }
             }
         }
@@ -468,7 +468,7 @@ static TokenArray expand_macro(
         free(args);
     }
 
-    expand_with_scope(scope, &list);
+    expand_line(scope, &list);
     return list;
 }
 
@@ -491,10 +491,12 @@ static const struct token *skip(const struct token *list, enum token_type token)
  * represented by a single EMPTY_ARG element.
  */
 static TokenArray read_arg(
+    ExpandStack *scope,
     const struct token *list,
     const struct token **endptr)
 {
     int nesting = 0;
+    struct token t;
     TokenArray arg = get_token_array();
 
     while (nesting || (list->token != ',' && list->token != ')')) {
@@ -502,7 +504,6 @@ static TokenArray read_arg(
             error("Unexpected end of input in expansion.");
             exit(1);
         }
-
         if (list->token == '(') {
             nesting++;
         } else if (list->token == ')') {
@@ -512,19 +513,22 @@ static TokenArray read_arg(
                 exit(1);
             }
         }
-
-        array_push_back(&arg, *list++);
+        t = *list++;
+        if (t.token == IDENTIFIER && is_expanded(scope, t.d.string)) {
+            t.disable_expand = 1;
+        }
+        array_push_back(&arg, t);
     }
 
     if (!array_len(&arg)) {
         array_push_back(&arg, basic_token[EMPTY_ARG]);
     }
-
     *endptr = list;
     return arg;
 }
 
 static TokenArray *read_args(
+    ExpandStack *scope,
     const struct macro *def,
     const struct token *list,
     const struct token **endptr)
@@ -533,12 +537,14 @@ static TokenArray *read_args(
     TokenArray *args = NULL;
 
     if (def->type == FUNCTION_LIKE) {
-        args = malloc(def->params * sizeof(*args));
         list = skip(list, '(');
-        for (i = 0; i < def->params; ++i) {
-            args[i] = read_arg(list, &list);
-            if (i < def->params - 1) {
-                list = skip(list, ',');
+        if (def->params) {
+            args = malloc(def->params * sizeof(*args));
+            for (i = 0; i < def->params; ++i) {
+                args[i] = read_arg(scope, list, &list);
+                if (i < def->params - 1) {
+                    list = skip(list, ',');
+                }
             }
         }
         list = skip(list, ')');
@@ -548,7 +554,7 @@ static TokenArray *read_args(
     return args;
 }
 
-static int expand_with_scope(ExpandStack *scope, TokenArray *list)
+static int expand_line(ExpandStack *scope, TokenArray *list)
 {
     int size, i, n;
     struct token t;
@@ -566,7 +572,7 @@ static int expand_with_scope(ExpandStack *scope, TokenArray *list)
         if (!def)
             continue;
 
-        if (is_macro_expanded(scope, def)) {
+        if (is_expanded(scope, t.d.string)) {
             array_get(list, i).disable_expand = 1;
             continue;
         }
@@ -574,8 +580,8 @@ static int expand_with_scope(ExpandStack *scope, TokenArray *list)
         if (def->type == FUNCTION_LIKE && array_get(list, i + 1).token != '(')
             continue;
 
+        args = read_args(scope, def, list->data + i + 1, &endptr);
         array_push_back(scope, def->name);
-        args = read_args(def, list->data + i + 1, &endptr);
         expn = expand_macro(scope, def, args);
         size = (endptr - list->data) - i;
         (void) array_pop_back(scope);
@@ -600,7 +606,7 @@ int expand(TokenArray *list)
     int n;
     ExpandStack stack = get_expand_stack();
 
-    n = expand_with_scope(&stack, list);
+    n = expand_line(&stack, list);
     release_expand_stack(stack);
     return n;
 }
