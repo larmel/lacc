@@ -197,37 +197,6 @@ struct expression as_expr(struct var val)
         is_float(t) ? (l).imm.f op (r).imm.f : (l).imm.d op (r).imm.d)
 
 /*
- * Add a statement to the list of ir operations in the block. Parameters
- * are given by the statement opcode.
- *
- * Current block can be NULL when parsing an expression that should not
- * be evaluated, for example argument to sizeof.
- */
-static void emit_ir(struct block *block, enum sttype st, ...)
-{
-    va_list args;
-    struct statement stmt = {0};
-
-    if (block) {
-        va_start(args, st);
-        stmt.st = st;
-        stmt.t = var_void();
-        switch (st) {
-        case IR_ASSIGN:
-            stmt.t = va_arg(args, struct var);
-        case IR_EXPR:
-        case IR_PARAM:
-        case IR_VA_START:
-            stmt.expr = va_arg(args, struct expression);
-            break;
-        }
-
-        array_push_back(&block->code, stmt);
-        va_end(args);
-    }
-}
-
-/*
  * Construct a struct expression object, setting the correct type and
  * doing basic sanity checking of the input.
  */
@@ -282,6 +251,37 @@ static struct expression create_expr(enum optype op, struct var l, ...)
     return expr;
 }
 
+/*
+ * Add a statement to the list of ir operations in the block. Parameters
+ * are given by the statement opcode.
+ *
+ * Current block can be NULL when parsing an expression that should not
+ * be evaluated, for example argument to sizeof.
+ */
+static void emit_ir(struct block *block, enum sttype st, ...)
+{
+    va_list args;
+    struct statement stmt = {0};
+
+    if (block) {
+        va_start(args, st);
+        stmt.st = st;
+        stmt.t = var_void();
+        switch (st) {
+        case IR_ASSIGN:
+            stmt.t = va_arg(args, struct var);
+        case IR_EXPR:
+        case IR_PARAM:
+        case IR_VA_START:
+            stmt.expr = va_arg(args, struct expression);
+            break;
+        }
+
+        array_push_back(&block->code, stmt);
+        va_end(args);
+    }
+}
+
 struct var eval(
     struct definition *def,
     struct block *block,
@@ -301,6 +301,106 @@ struct var eval(
     }
 
     return res;
+}
+
+#define cast_immediate(v, T) ( \
+    is_float((v).type) ? (T) (v).imm.f : \
+    is_double((v).type) ? (T) (v).imm.d : \
+    is_signed((v).type) ? (T) (v).imm.i : (T) (v).imm.u)
+
+#define is_float_above(v, n) \
+    ((is_float((v).type) && (v).imm.f > n) \
+            || (is_double((v).type) && (v).imm.d > n))
+
+#define is_float_below(v, n) \
+    ((is_float((v).type) && (v).imm.f < n) \
+        || (is_double((v).type) && (v).imm.d < n))
+
+/*
+ * All immediate conversions must be evaluated compile time. Also handle
+ * conversion which can be done by reinterpreting memory.
+ */
+static struct expression cast(
+    struct definition *def,
+    struct block *block,
+    struct var var,
+    const struct typetree *type)
+{
+    struct expression expr;
+
+    if (is_void(type)) {
+        return as_expr(var_void());
+    } else if (!is_scalar(var.type) || !is_scalar(type)) {
+        error(
+            "Invalid type parameters to cast expression, "
+            "cannot convert from %t to %t.",
+            var.type, type);
+        exit(1);
+    }
+
+    if (var.kind == IMMEDIATE) {
+        if (is_float(type)) {
+            var.imm.f =
+                (is_double(var.type)) ? (float) var.imm.d :
+                (is_signed(var.type)) ? (float) var.imm.i :
+                (is_unsigned(var.type)) ? (float) var.imm.u : var.imm.f;
+        } else if (is_double(type)) {
+            var.imm.d =
+                (is_float(var.type)) ? (double) var.imm.f :
+                (is_signed(var.type)) ? (double) var.imm.i :
+                (is_unsigned(var.type)) ? (double) var.imm.u : var.imm.d;
+        } else if (is_unsigned(type) || is_pointer(type)) {
+            if (is_float_below(var, 0)) {
+                var.imm.u = 0;
+            } else if (size_of(type) == 1) {
+                var.imm.u = is_float_above(var, UCHAR_MAX) ? UCHAR_MAX
+                    : cast_immediate(var, unsigned char);
+            } else if (size_of(type) == 2) {
+                var.imm.u = is_float_above(var, USHRT_MAX) ? USHRT_MAX
+                    : cast_immediate(var, unsigned short);
+            } else if (size_of(type) == 4) {
+                var.imm.u = is_float_above(var, UINT_MAX) ? UINT_MAX
+                    : cast_immediate(var, unsigned int);
+            } else {
+                var.imm.u = is_float_above(var, ULONG_MAX) ? ULONG_MAX
+                    : cast_immediate(var, unsigned long);
+            }
+        } else {
+            assert(is_signed(type));
+            if (size_of(type) == 1) {
+                var.imm.i = is_float_below(var, CHAR_MIN) ? CHAR_MIN
+                    : is_float_above(var, CHAR_MAX) ? CHAR_MAX
+                    : cast_immediate(var, signed char);
+            } else if (size_of(type) == 2) {
+                var.imm.i = is_float_below(var, SHRT_MIN) ? SHRT_MIN
+                    : is_float_above(var, SHRT_MAX) ? SHRT_MAX
+                    : cast_immediate(var, signed short);
+            } else if (size_of(type) == 4) {
+                var.imm.i = is_float_below(var, INT_MIN) ? INT_MIN
+                    : is_float_above(var, INT_MAX) ? INT_MAX
+                    : cast_immediate(var, signed int);
+            } else {
+                var.imm.i = is_float_below(var, LONG_MIN) ? LONG_MIN
+                    : is_float_above(var, LONG_MAX) ? LONG_MAX
+                    : cast_immediate(var, signed long);
+            }
+        }
+        var.type = type;
+        expr = as_expr(var);
+    } else if (size_of(var.type) == size_of(type)
+        && (is_pointer(var.type) || is_pointer(type)))
+    {
+        var.type = type;
+        expr = as_expr(var);
+    } else if (!type_equal(var.type, type)) {
+        expr = create_expr(IR_OP_CAST, var, type);
+    } else {
+        assert(type_equal(var.type, type));
+        expr = as_expr(var);
+    }
+
+    assert(type_equal(expr.type, type));
+    return expr;
 }
 
 static struct var eval_cast(
@@ -327,7 +427,7 @@ static struct expression mul(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_arithmetic_immediate(type, l, *, r);
-        expr = as_expr(l);
+        expr = cast(def, block, l, type);
     } else {
         expr = create_expr(IR_OP_MUL, l, r);
     }
@@ -349,7 +449,7 @@ static struct expression ediv(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_arithmetic_immediate(type, l, /, r);
-        expr = as_expr(l);
+        expr = cast(def, block, l, type);
     } else {
         expr = create_expr(IR_OP_DIV, l, r);
     }
@@ -376,7 +476,7 @@ static struct expression mod(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, %, r);
-        expr = as_expr(l);
+        expr = cast(def, block, l, type);
     } else {
         expr = create_expr(IR_OP_MOD, l, r);
     }
@@ -399,7 +499,7 @@ static struct expression add(
         r = eval_cast(def, block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l = eval_arithmetic_immediate(type, l, +, r);
-            expr = as_expr(l);
+            expr = cast(def, block, l, type);
         } else {
             expr = create_expr(IR_OP_ADD, l, r);
         }
@@ -463,7 +563,7 @@ static struct expression sub(
         r = eval_cast(def, block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l = eval_arithmetic_immediate(type, l, -, r);
-            expr = as_expr(l);
+            expr = cast(def, block, l, type);
         } else {
             expr = create_expr(IR_OP_SUB, l, r);
         }
@@ -677,7 +777,7 @@ static struct expression or(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, |, r);
-        expr = as_expr(l);
+        expr = cast(def, block, l, type);
     } else {
         expr = create_expr(IR_OP_OR, l, r);
     }
@@ -704,7 +804,7 @@ static struct expression xor(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, ^, r);
-        expr = as_expr(l);
+        expr = cast(def, block, l, type);
     } else {
         expr = create_expr(IR_OP_XOR, l, r);
     }
@@ -757,7 +857,7 @@ static struct expression shiftl(
     l = eval_cast(def, block, l, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, <<, r);
-        expr = as_expr(l);
+        expr = cast(def, block, l, type);
     } else {
         expr = create_expr(IR_OP_SHL, l, r);
     }
@@ -783,7 +883,7 @@ static struct expression shiftr(
     l = eval_cast(def, block, l, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, >>, r);
-        expr = as_expr(l);
+        expr = cast(def, block, l, type);
     } else {
         expr = create_expr(IR_OP_SHR, l, r);
     }
@@ -818,106 +918,6 @@ static struct expression not(
         expr = create_expr(IR_OP_NOT, var);
     }
 
-    return expr;
-}
-
-#define cast_immediate(v, T) ( \
-    is_float((v).type) ? (T) (v).imm.f : \
-    is_double((v).type) ? (T) (v).imm.d : \
-    is_signed((v).type) ? (T) (v).imm.i : (T) (v).imm.u)
-
-#define is_float_above(v, n) \
-    ((is_float((v).type) && (v).imm.f > n) \
-            || (is_double((v).type) && (v).imm.d > n))
-
-#define is_float_below(v, n) \
-    ((is_float((v).type) && (v).imm.f < n) \
-        || (is_double((v).type) && (v).imm.d < n))
-
-/*
- * All immediate conversions must be evaluated compile time. Also handle
- * conversion which can be done by reinterpreting memory.
- */
-static struct expression cast(
-    struct definition *def,
-    struct block *block,
-    struct var var,
-    const struct typetree *type)
-{
-    struct expression expr;
-
-    if (is_void(type)) {
-        return as_expr(var_void());
-    } else if (!is_scalar(var.type) || !is_scalar(type)) {
-        error(
-            "Invalid type parameters to cast expression, "
-            "cannot convert from %t to %t.",
-            var.type, type);
-        exit(1);
-    }
-
-    if (var.kind == IMMEDIATE) {
-        if (is_float(type)) {
-            var.imm.f =
-                (is_double(var.type)) ? (float) var.imm.d :
-                (is_signed(var.type)) ? (float) var.imm.i :
-                (is_unsigned(var.type)) ? (float) var.imm.u : var.imm.f;
-        } else if (is_double(type)) {
-            var.imm.d =
-                (is_float(var.type)) ? (double) var.imm.f :
-                (is_signed(var.type)) ? (double) var.imm.i :
-                (is_unsigned(var.type)) ? (double) var.imm.u : var.imm.d;
-        } else if (is_unsigned(type) || is_pointer(type)) {
-            if (is_float_below(var, 0)) {
-                var.imm.u = 0;
-            } else if (size_of(type) == 1) {
-                var.imm.u = is_float_above(var, UCHAR_MAX) ? UCHAR_MAX
-                    : cast_immediate(var, unsigned char);
-            } else if (size_of(type) == 2) {
-                var.imm.u = is_float_above(var, USHRT_MAX) ? USHRT_MAX
-                    : cast_immediate(var, unsigned short);
-            } else if (size_of(type) == 4) {
-                var.imm.u = is_float_above(var, UINT_MAX) ? UINT_MAX
-                    : cast_immediate(var, unsigned int);
-            } else {
-                var.imm.u = is_float_above(var, ULONG_MAX) ? ULONG_MAX
-                    : cast_immediate(var, unsigned long);
-            }
-        } else {
-            assert(is_signed(type));
-            if (size_of(type) == 1) {
-                var.imm.i = is_float_below(var, CHAR_MIN) ? CHAR_MIN
-                    : is_float_above(var, CHAR_MAX) ? CHAR_MAX
-                    : cast_immediate(var, signed char);
-            } else if (size_of(type) == 2) {
-                var.imm.i = is_float_below(var, SHRT_MIN) ? SHRT_MIN
-                    : is_float_above(var, SHRT_MAX) ? SHRT_MAX
-                    : cast_immediate(var, signed short);
-            } else if (size_of(type) == 4) {
-                var.imm.i = is_float_below(var, INT_MIN) ? INT_MIN
-                    : is_float_above(var, INT_MAX) ? INT_MAX
-                    : cast_immediate(var, signed int);
-            } else {
-                var.imm.i = is_float_below(var, LONG_MIN) ? LONG_MIN
-                    : is_float_above(var, LONG_MAX) ? LONG_MAX
-                    : cast_immediate(var, signed long);
-            }
-        }
-        var.type = type;
-        expr = as_expr(var);
-    } else if (size_of(var.type) == size_of(type)
-        && (is_pointer(var.type) || is_pointer(type)))
-    {
-        var.type = type;
-        expr = as_expr(var);
-    } else if (!type_equal(var.type, type)) {
-        expr = create_expr(IR_OP_CAST, var, type);
-    } else {
-        assert(type_equal(var.type, type));
-        expr = as_expr(var);
-    }
-
-    assert(type_equal(expr.type, type));
     return expr;
 }
 

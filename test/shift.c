@@ -1,45 +1,43 @@
-#include <stdio.h>
+int printf(const char *, ...);
 
-void shift_unsigned_char(void)
-{
+static int unsigned_char(void) {
 	unsigned char a = 0xE8u;
 	char b = 2;
 
-	printf("%lu\n", sizeof(a << b));
-	printf("%d\n", a << b);
-	printf("%d\n", a >> b);
+	return printf("%lu, %d, %d\n", sizeof(a << b), a << b, a >> b);
 }
 
-void shift_signed_char(void)
-{
+static int signed_char(void) {
 	signed char a = 0x65;
 	int b = 3;
 
-	printf("%lu\n", sizeof(a << b));
-	printf("%d\n", a << b);
-	printf("%d\n", a >> b);
+	return printf("%lu, %d, %d\n", sizeof(a << b), a << b, a >> b);
 }
 
-void shift_signed_long(void)
-{
+static int signed_long(void) {
 	long a = 0x7E00FF0F;
 	short b = 33;
 
-	printf("%lu\n", sizeof(a << b));
-	printf("%ld\n", a << b);
-	printf("%ld\n", a >> 4);
+	return printf("%lu, %ld, %ld\n", sizeof(a << b), a << b, a >> 4);
 }
 
-void shift_chained(void)
+static int chained(void)
 {
 	unsigned a = 0x7EABCDF4;
-	printf("%u\n", a << 3 >> 1);
+	return printf("%u\n", a << 3 >> 1);
 }
 
-int main() {
-	shift_unsigned_char();
-	shift_signed_char();
-	shift_signed_long();
-	shift_chained();
-	return 0;
+static int overflow(void) {
+	long a, b = 0x567895;
+	a = 0x567895 << 10;
+	b = b << 10;
+	return printf("%ld, %ld\n", a, b);
+}
+
+int main(void) {
+	return unsigned_char()
+		+ signed_char()
+		+ signed_long()
+		+ chained()
+		+ overflow();
 }
