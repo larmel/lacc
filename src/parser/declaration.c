@@ -15,6 +15,18 @@ static struct block *initializer(
     struct block *block,
     struct var target);
 
+static const struct typetree *get_typedef(String str)
+{
+    struct symbol *tag;
+
+    tag = sym_lookup(&ns_ident, str);
+    if (tag && tag->symtype == SYM_TYPEDEF) {
+        return &tag->type;
+    }
+
+    return NULL;
+}
+
 /*
  * FOLLOW(parameter-list) = { ')' }, peek to return empty list; even
  * though K&R require at least specifier: (void)
@@ -54,6 +66,36 @@ static struct typetree *parameter_list(const struct typetree *base)
     }
 
     return func;
+}
+
+/*
+ * Old-style function definitions with separate identifiers list and
+ * type declarations.
+ *
+ * Return a function type where all members have NULL type.
+ */
+static struct typetree *identifier_list(const struct typetree *base)
+{
+    struct token t;
+    struct typetree *type;
+
+    type = type_init(T_FUNCTION);
+    type->next = base;
+    if (peek().token != ')') {
+        while (1) {
+            t = consume(IDENTIFIER);
+            if (get_typedef(t.d.string)) {
+                error("Unexpected type '%t' in identifier list.");
+                exit(1);
+            }
+            type_add_member(type, t.d.string, NULL);
+            if (peek().token == ',') {
+                next();
+            } else break;
+        }
+    }
+
+    return type;
 }
 
 /*
@@ -142,11 +184,15 @@ static struct typetree *direct_declarator(
             break;
         case '(':
             consume('(');
-            type = parameter_list(base);
+            t = peek();
+            if (t.token == IDENTIFIER && !get_typedef(t.d.string)) {
+                type = identifier_list(base);
+            } else {
+                type = parameter_list(base);
+            }
             consume(')');
             break;
-        default:
-            assert(0);
+        default: assert(0);
         }
         if (tail) {
             assert(head);
@@ -481,11 +527,11 @@ struct typetree *declaration_specifiers(int *stc)
         case CONST:     set_qualifier(Q_CONST); break;
         case VOLATILE:  set_qualifier(Q_VOLATILE); break;
         case IDENTIFIER: {
-            struct symbol *tag = sym_lookup(&ns_ident, tok.d.string);
-            if (tag && tag->symtype == SYM_TYPEDEF && !type) {
+            const struct typetree *tagged = get_typedef(tok.d.string);
+            if (tagged && !type) {
                 consume(IDENTIFIER);
                 type = type_init(T_STRUCT);
-                *type = tag->type;
+                *type = *tagged;
             } else {
                 done = 1;
             }
@@ -864,11 +910,44 @@ static void define_builtin__func__(String name)
 }
 
 /*
- * Cover both external declarations, functions, and local declarations
+ * Parse old-style function definition parameter declarations. Verify in
+ * the end that all variables have been declared.
+ */
+static void parameter_declaration_list(
+    struct definition *def,
+    const struct typetree *type)
+{
+    int i;
+    const struct member *param;
+
+    assert(is_function(type));
+    assert(current_scope_depth(&ns_ident) == 1);
+    while (peek().token != '{') {
+        declaration(def, NULL);
+    }
+
+    for (i = 0; i < nmembers(type); ++i) {
+        param = get_member(type, i);
+        if (param->type == NULL) {
+            error("Missing type declaration for parameter %s.",
+                str_raw(param->name));
+            exit(1);
+        }
+    }
+}
+
+/*
+ * Cover external declarations, functions, and local declarations
  * (with optional initialization code) inside functions.
  */
 struct block *declaration(struct definition *def, struct block *parent)
 {
+    int i;
+    String name;
+    struct token t;
+    struct symbol *sym;
+    const struct member *param;
+    const struct typetree *type;
     struct typetree *base;
     enum symtype symtype;
     enum linkage linkage;
@@ -900,10 +979,6 @@ struct block *declaration(struct definition *def, struct block *parent)
     }
 
     while (1) {
-        String name;
-        const struct typetree *type;
-        struct symbol *sym;
-
         name.len = 0;
         type = declarator(base, &name);
         if (!name.len) {
@@ -916,13 +991,24 @@ struct block *declaration(struct definition *def, struct block *parent)
         }
 
         sym = sym_add(&ns_ident, name, type, symtype, linkage);
-        if (current_scope_depth(&ns_ident)) {
-            assert(current_scope_depth(&ns_ident) > 1);
-            assert(def);
+        switch (current_scope_depth(&ns_ident)) {
+        case 0: break;
+        case 1: /* Parameters from old-style function definitions. */
+            array_push_back(&def->params, sym);
+            param = find_type_member(&def->symbol->type, name);
+            if (param && param->type == NULL) {
+                ((struct member *) param)->type = type;
+            } else {
+                error("Invalid parameter declaration of %s.", str_raw(name));
+                exit(1);
+            }
+            break;
+        default:
             array_push_back(&def->locals, sym);
+            break;
         }
 
-        switch (peek().token) {
+        switch ((t = peek()).token) {
         case ';':
             consume(';');
             return parent;
@@ -953,40 +1039,49 @@ struct block *declaration(struct definition *def, struct block *parent)
                 return parent;
             }
             break;
-        case '{': {
-            int i;
-            if (!is_function(&sym->type) || sym->depth) {
-                error("Invalid function definition.");
-                exit(1);
-            }
-            assert(!parent);
-            assert(sym->linkage != LINK_NONE);
+        case IDENTIFIER:
+        case FIRST(type_specifier):
+        case FIRST(type_qualifier):
+        case REGISTER:
+            push_scope(&ns_ident);
             sym->symtype = SYM_DEFINITION;
             def = cfg_init(sym);
-            push_scope(&ns_ident);
+            parameter_declaration_list(def, type);
+        case '{':
+            assert(!parent);
+            assert(is_function(&sym->type));
+            assert(sym->linkage != LINK_NONE);
+            if (!def) {
+                sym->symtype = SYM_DEFINITION;
+                def = cfg_init(sym);
+            } else {
+                assert(def->symbol == sym);
+            }
             push_scope(&ns_label);
+            if (current_scope_depth(&ns_ident) == 0) {
+                push_scope(&ns_ident);
+                for (i = 0; i < nmembers(&sym->type); ++i) {
+                    param = get_member(&sym->type, i);
+                    if (!param->name.len) {
+                        error("Missing parameter name at position %d.", i + 1);
+                        exit(1);
+                    }
+                    array_push_back(&def->params,
+                        sym_add(&ns_ident,
+                            param->name,
+                            param->type,
+                            SYM_DEFINITION,
+                            LINK_NONE));
+                }
+            }
             if (context.standard >= STD_C99) {
                 define_builtin__func__(sym->name);
-            }
-            for (i = 0; i < nmembers(&sym->type); ++i) {
-                name = get_member(&sym->type, i)->name;
-                type = get_member(&sym->type, i)->type;
-                symtype = SYM_DEFINITION;
-                linkage = LINK_NONE;
-                if (!name.len) {
-                    error("Missing parameter name at position %d.", i + 1);
-                    exit(1);
-                }
-                array_push_back(&def->params,
-                    sym_add(&ns_ident, name, type, symtype, linkage));
             }
             parent = block(def, def->body);
             pop_scope(&ns_label);
             pop_scope(&ns_ident);
             return parent;
-        }
-        default:
-            break;
+        default: break;
         }
         consume(',');
     }

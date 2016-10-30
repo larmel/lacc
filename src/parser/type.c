@@ -144,7 +144,7 @@ static void add_member(struct typetree *parent, struct member m)
             exit(1);
         }
         array_push_back(&sig->members, m);
-        if (parent->size < m.offset + size_of(m.type)) {
+        if (is_object(parent) && parent->size < m.offset + size_of(m.type)) {
             parent->size = m.offset + size_of(m.type);
         }
     }
@@ -182,7 +182,6 @@ void type_add_member(
     struct member m = {{{0}}};
 
     assert(is_struct_or_union(parent) || is_function(parent));
-    assert(!str_cmp(name, str_init("...")) || is_object(type));
     assert(!is_tagged(parent));
     if (is_function(parent)) {
         if (type && is_array(type)) {
