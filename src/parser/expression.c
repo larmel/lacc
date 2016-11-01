@@ -281,7 +281,7 @@ static struct block *postfix_expression(
             }
             consume(')');
             for (i = 0; i < array_len(args); ++i) {
-                param(def, block, array_get(args, i));
+                param(block, array_get(args, i));
             }
             value = eval(def, block, root);
             block->expr = eval_expr(def, block, IR_OP_CALL, value);

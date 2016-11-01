@@ -320,11 +320,7 @@ struct var eval(
  * All immediate conversions must be evaluated compile time. Also handle
  * conversion which can be done by reinterpreting memory.
  */
-static struct expression cast(
-    struct definition *def,
-    struct block *block,
-    struct var var,
-    const struct typetree *type)
+static struct expression cast(struct var var, const struct typetree *type)
 {
     struct expression expr;
 
@@ -427,7 +423,7 @@ static struct expression mul(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_arithmetic_immediate(type, l, *, r);
-        expr = cast(def, block, l, type);
+        expr = cast(l, type);
     } else {
         expr = create_expr(IR_OP_MUL, l, r);
     }
@@ -449,7 +445,7 @@ static struct expression ediv(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_arithmetic_immediate(type, l, /, r);
-        expr = cast(def, block, l, type);
+        expr = cast(l, type);
     } else {
         expr = create_expr(IR_OP_DIV, l, r);
     }
@@ -476,7 +472,7 @@ static struct expression mod(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, %, r);
-        expr = cast(def, block, l, type);
+        expr = cast(l, type);
     } else {
         expr = create_expr(IR_OP_MOD, l, r);
     }
@@ -499,7 +495,7 @@ static struct expression add(
         r = eval_cast(def, block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l = eval_arithmetic_immediate(type, l, +, r);
-            expr = cast(def, block, l, type);
+            expr = cast(l, type);
         } else {
             expr = create_expr(IR_OP_ADD, l, r);
         }
@@ -563,7 +559,7 @@ static struct expression sub(
         r = eval_cast(def, block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l = eval_arithmetic_immediate(type, l, -, r);
-            expr = cast(def, block, l, type);
+            expr = cast(l, type);
         } else {
             expr = create_expr(IR_OP_SUB, l, r);
         }
@@ -777,7 +773,7 @@ static struct expression or(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, |, r);
-        expr = cast(def, block, l, type);
+        expr = cast(l, type);
     } else {
         expr = create_expr(IR_OP_OR, l, r);
     }
@@ -804,7 +800,7 @@ static struct expression xor(
     r = eval_cast(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, ^, r);
-        expr = cast(def, block, l, type);
+        expr = cast(l, type);
     } else {
         expr = create_expr(IR_OP_XOR, l, r);
     }
@@ -857,7 +853,7 @@ static struct expression shiftl(
     l = eval_cast(def, block, l, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, <<, r);
-        expr = cast(def, block, l, type);
+        expr = cast(l, type);
     } else {
         expr = create_expr(IR_OP_SHL, l, r);
     }
@@ -883,7 +879,7 @@ static struct expression shiftr(
     l = eval_cast(def, block, l, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
         l = eval_integer_immediate(type, l, >>, r);
-        expr = cast(def, block, l, type);
+        expr = cast(l, type);
     } else {
         expr = create_expr(IR_OP_SHR, l, r);
     }
@@ -921,10 +917,7 @@ static struct expression not(
     return expr;
 }
 
-static struct expression call(
-    struct definition *def,
-    struct block *block,
-    struct var var)
+static struct expression call(struct var var)
 {
     if (!is_pointer(var.type) || !is_function(var.type->next)) {
         error("Calling non-function type %t.", var.type);
@@ -935,8 +928,6 @@ static struct expression call(
 }
 
 static struct expression eval_va_arg(
-    struct definition *def,
-    struct block *block,
     struct var var,
     const struct typetree *type)
 {
@@ -1038,9 +1029,9 @@ struct expression eval_expr(
 
     switch (optype) {
     default: assert(0);
-    case IR_OP_CAST: return cast(def, block, l, type);
-    case IR_OP_CALL: return call(def, block, l);
-    case IR_OP_VA_ARG: return eval_va_arg(def, block, l, type);
+    case IR_OP_CAST: return cast(l, type);
+    case IR_OP_CALL: return call(l);
+    case IR_OP_VA_ARG: return eval_va_arg(l, type);
     case IR_OP_NOT:  return not(def, block, l);
     case IR_OP_MOD:  return mod(def, block, l, r);
     case IR_OP_MUL:  return mul(def, block, l, r);
@@ -1585,17 +1576,12 @@ struct expression eval_param(
     return expr;
 }
 
-void param(
-    struct definition *def,
-    struct block *block,
-    struct expression expr)
+void param(struct block *block, struct expression expr)
 {
     emit_ir(block, IR_PARAM, expr);
 }
 
-void eval__builtin_va_start(
-    struct block *block,
-    struct expression arg)
+void eval__builtin_va_start(struct block *block, struct expression arg)
 {
     emit_ir(block, IR_VA_START, arg);
 }

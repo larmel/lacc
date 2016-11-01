@@ -79,10 +79,7 @@ struct expression eval_param(
  * Push given parameter in preparation of a function call. Invoke in
  * left to right order, as argument appear in parameter list.
  */
-void param(
-    struct definition *def,
-    struct block *block,
-    struct expression arg);
+void param(struct block *block, struct expression arg);
 
 /*
  * Evaluate return (expr).
@@ -116,9 +113,7 @@ struct block *eval_logical_and(
     struct block *right);
 
 /* Evaluate va_start builtin function. */
-void eval__builtin_va_start(
-    struct block *block,
-    struct expression arg);
+void eval__builtin_va_start(struct block *block, struct expression arg);
 
 /*
  * Return 1 iff expression evaluates to an immediate non-zero value.
