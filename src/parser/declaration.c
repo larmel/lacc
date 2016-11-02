@@ -672,98 +672,10 @@ static void zero_initialize(
     }
 }
 
-static struct block *object_initializer(
+static struct block *initialize_field(
     struct definition *def,
     struct block *block,
-    struct var target)
-{
-    int i, filled = target.offset;
-    const struct typetree *type = target.type;
-    const struct member *member = NULL;
-
-    assert(!is_tagged(type));
-    consume('{');
-    target.lvalue = 1;
-    switch (type->type) {
-    case T_UNION:
-        member = get_member(type, 0);
-        target.type = member->type;
-        block = initializer(def, block, target);
-        if (size_of(member->type) < type->size) {
-            /*
-             * Only the first element of a union can be initialized.
-             * Zero the remaining memory if there is padding, or the
-             * first member is not the largest one.
-             */
-            target.type =
-                type_init(T_ARRAY, &basic_type__char,
-                    type->size - size_of(member->type));
-            target.offset += size_of(member->type);
-            zero_initialize(def, block, target);
-        }
-        if (peek().token != '}') {
-            error("Excess elements in union initializer.");
-            exit(1);
-        }
-        break;
-    case T_STRUCT:
-        for (i = 0; i < nmembers(type); ++i) {
-            member = get_member(type, i);
-            target.type = member->type;
-            target.offset = filled + member->offset;
-            block = initializer(def, block, target);
-            if (peek().token == ',') {
-                consume(',');
-            } else break;
-            if (peek().token == '}') {
-                break;
-            }
-        }
-        if (i < nmembers(type) - 1) {
-            assert(member);
-            target.offset += size_of(member->type);
-            target.type =
-                type_init(T_ARRAY, &basic_type__char,
-                    size_of(type) - (member->offset + size_of(member->type)));
-            zero_initialize(def, block, target);
-        }
-        break;
-    case T_ARRAY:
-        target.type = type->next;
-        for (i = 0; !type->size || i < type->size / size_of(type->next); ++i) {
-            target.offset = filled + i * size_of(type->next);
-            block = initializer(def, block, target);
-            if (peek().token == ',') {
-                consume(',');
-            } else break;
-            if (peek().token == '}') {
-                break;
-            }
-        }
-        if (!type->size) {
-            assert(!target.symbol->type.size);
-            assert(is_array(&target.symbol->type));
-            /*
-             * Incomplete array type can only be in the root level of
-             * target type tree, overwrite type directly in symbol.
-             */
-            ((struct symbol *) target.symbol)->type.size =
-                (i + 1) * size_of(type->next);
-        } else {
-            while (++i < type->size / size_of(type->next)) {
-                target.offset = filled + i * size_of(type->next);
-                zero_initialize(def, block, target);
-            }
-        }
-        break;
-    default:
-        error("Block initializer only apply to aggregate or union type.");
-        exit(1);
-    }
-
-    consume('}');
-    return block;
-}
+    struct var target);
 
 static int is_string(struct expression expr)
 {
@@ -772,13 +684,108 @@ static int is_string(struct expression expr)
         && expr.l.symbol->symtype == SYM_STRING_VALUE;
 }
 
+static struct block *read_initializer_element(
+    struct definition *def,
+    struct block *block,
+    struct var target)
+{
+    int ops;
+    struct var value;
+
+    ops = array_len(&block->code);
+    block = assignment_expression(def, block);
+    value = block->expr.l;
+    if (target.symbol->linkage != LINK_NONE
+        && (array_len(&block->code) - ops > 0
+            || !is_identity(block->expr)
+            || (!is_constant(value) && value.kind != ADDRESS
+                && !(value.kind == DIRECT && is_function(value.type)))
+            || (value.kind == ADDRESS
+                && value.symbol->linkage == LINK_NONE)))
+    {
+        error("Initializer must be computable at load time.");
+        exit(1);
+    }
+
+    return block;
+}
+
+static int next_element(void)
+{
+    struct token t = peek();
+    if (t.token == ',') {
+        if (peekn(2).token != '}') {
+            next();
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 /*
- * Assignment between array and string literal. Handle special case of
- * incomplete array type, and assignment to arrays which are longer than
- * the string itself. In that case, the rest of the array is initialized
- * to zero.
+ * Initialize members of a struct or union.
  *
- *      int foo[4] = "Hi"
+ * Only the first element of a union can be initialized. If the first
+ * element is not also the largest member, or if there is padding, the
+ * remaining memory is undefined.
+ *
+ * Members of structs can have overlapping offsets from anonymous union
+ * fields. Act as if only the first element is initialized by skipping
+ * all consecutive elements with the same offset.
+ */
+static struct block *initialize_struct_or_union(
+    struct definition *def,
+    struct block *block,
+    struct var target)
+{
+    int i = 0, last_offset = -1, filled = target.offset;
+    const struct typetree *type = target.type;
+    const struct member *member;
+
+    assert(!is_tagged(type));
+    assert(is_struct_or_union(type));
+    target.lvalue = 1;
+    if (is_union(type)) {
+        member = get_member(type, 0);
+        target.type = member->type;
+        block = initialize_field(def, block, target);
+    } else {
+        do {
+            do {
+                member = get_member(type, i++);
+                target.type = member->type;
+            } while (member->offset == last_offset);
+            last_offset = member->offset;
+            target.offset = filled + member->offset;
+            block = initialize_field(def, block, target);
+        } while (i < nmembers(type) && next_element());
+
+        while (i < nmembers(type)) {
+            member = get_member(type, i++);
+            target.type = member->type;
+            if (filled + member->offset > target.offset) {
+                target.offset = filled + member->offset;
+                zero_initialize(def, block, target);
+            }
+        }
+    }
+
+    return block;
+}
+
+/*
+ * Initialize array types with brace-enclosed values, or string literal.
+ *
+ *     a[] = {1, 2, 3};
+ *     b[] = "Hello world"
+ *     c[2][3] = {1, 2, 3, {4, 5, 6}}
+ *
+ * Handle special case of incomplete array type, and assignment to
+ * arrays which are longer than the string itself. In that case, the
+ * rest of the array is initialized to zero.
+ *
+ *      char foo[5] = "Hi"
  *
  * This will generates the following IR assignments:
  *
@@ -786,46 +793,82 @@ static int is_string(struct expression expr)
  *      foo[3] = 0
  *      foo[4] = 0
  */
-static struct block *string_initializer(
+static struct block *initialize_array(
     struct definition *def,
     struct block *block,
     struct var target)
 {
-    const struct typetree *type;
+    const struct typetree *type = target.type;
+    int filled = target.offset;
 
-    assert(target.kind == DIRECT);
-    assert(is_array(target.type));
-    assert(is_string(block->expr));
-
-    if (type_equal(target.type->next, block->expr.type->next) &&
-        size_of(target.type) > size_of(block->expr.type))
-    {
-        type = target.type;
-        target.type = type_init(
-            T_ARRAY,
-            target.type->next,
-            size_of(block->expr.type) / size_of(type->next));
-        eval_assign(def, block, target, block->expr);
-
-        assert(size_of(type) > size_of(target.type));
-        target.offset += size_of(target.type);
-        target.type = type_init(
-            T_ARRAY,
-            target.type->next,
-            (size_of(type) - size_of(target.type)) / size_of(type->next));
-        zero_initialize(def, block, target);
+    assert(is_array(type));
+    if (is_aggregate(target.type->next)) {
+        target.type = target.type->next;
+        do {
+            block = initialize_field(def, block, target);
+            target.offset += size_of(target.type);
+        } while (next_element());
     } else {
-        if (!target.type->size) {
-            assert(!target.offset);
-            /*
-             * Complete type based on string literal. Evaluation does
-             * not have the required context to do this logic.
-             */
-            ((struct symbol *) target.symbol)->type.size =
-                block->expr.type->size;
-            target.type = block->expr.type;
+        block = read_initializer_element(def, block, target);
+        if (is_char(target.type->next) && is_string(block->expr)) {
+            target = eval_assign(def, block, target, block->expr);
+        } else {
+            target.type = target.type->next;
+            eval_assign(def, block, target, block->expr);
+            target.offset += size_of(target.type);
+            while (next_element()) {
+                block = read_initializer_element(def, block, target);
+                eval_assign(def, block, target, block->expr);
+                target.offset += size_of(target.type);
+            }
         }
+    }
 
+    target.type = type;
+    if (!target.type->size) {
+        assert(target.kind == DIRECT);
+        assert(target.symbol->type.size == 0);
+        assert(is_array(&target.symbol->type));
+        ((struct symbol *) target.symbol)->type.size = target.offset;
+    } else {
+        target.type = target.type->next;
+        while (target.offset - filled < type->size) {
+            zero_initialize(def, block, target);
+            target.offset += size_of(target.type);
+        }
+    }
+
+    return block;
+}
+
+/* Initialize member of an aggregate type. */
+static struct block *initialize_field(
+    struct definition *def,
+    struct block *block,
+    struct var target)
+{
+    assert(target.kind == DIRECT);
+    target.type = unwrapped(target.type);
+    if (is_struct_or_union(target.type)) {
+        if (peek().token == '{') {
+            consume('{');
+            block = initialize_struct_or_union(def, block, target);
+            if (peek().token == ',') next();
+            consume('}');
+        } else {
+            block = initialize_struct_or_union(def, block, target);
+        }
+    } else if (is_array(target.type)) {
+        if (peek().token == '{') {
+            consume('{');
+            block = initialize_array(def, block, target);
+            if (peek().token == ',') next();
+            consume('}');
+        } else {
+            block = initialize_array(def, block, target);
+        }
+    } else {
+        block = read_initializer_element(def, block, target);
         eval_assign(def, block, target, block->expr);
     }
 
@@ -836,52 +879,33 @@ static struct block *string_initializer(
  * Parse and emit initializer code for target variable in statements
  * such as int b[] = {0, 1, 2, 3}. Generates a series of assignment
  * operations on references to target variable, with increasing offsets.
+ *
+ * An initializer can either be an assignment expression, or a brace-
+ * enclosed initializer list.
  */
 static struct block *initializer(
     struct definition *def,
     struct block *block,
     struct var target)
 {
-    int ops;
-    struct var value;
     assert(target.kind == DIRECT);
-
-    /* Do not care about cv-qualifiers here. */
     target.type = unwrapped(target.type);
-
     if (peek().token == '{') {
-        block = object_initializer(def, block, target);
-    } else {
-        ops = array_len(&block->code);
-        block = assignment_expression(def, block);
-        value = block->expr.l;
-        if (target.symbol->linkage != LINK_NONE
-            && (array_len(&block->code) - ops > 0
-                || !is_identity(block->expr)
-                || (!is_constant(value) && value.kind != ADDRESS
-                    && !(value.kind == DIRECT && is_function(value.type)))
-                || (value.kind == ADDRESS
-                    && value.symbol->linkage == LINK_NONE)))
-        {
-            error("Initializer must be computable at load time.");
-            exit(1);
-        }
-
-        if (is_array(target.type) && is_string(block->expr)) {
-            block = string_initializer(def, block, target);
+        consume('{');
+        if (is_struct_or_union(target.type)) {
+            block = initialize_struct_or_union(def, block, target);
+        } else if (is_array(target.type)) {
+            block = initialize_array(def, block, target);
         } else {
-            /*
-             * Make sure basic types are converted, but avoid invalid
-             * cast for struct or union types.
-             */
-            if (!type_equal(target.type, block->expr.type)) {
-                value = eval(def, block, block->expr);
-                block->expr =
-                    eval_expr(def, block, IR_OP_CAST, value, target.type);
-            }
-
-            eval_assign(def, block, target, block->expr);
+            block = initializer(def, block, target);
         }
+        if (peek().token == ',') next();
+        consume('}');
+    } else if (is_array(target.type)) {
+        block = initialize_array(def, block, target);
+    } else {
+        block = read_initializer_element(def, block, target);
+        eval_assign(def, block, target, block->expr);
     }
 
     return block;

@@ -1239,9 +1239,57 @@ static struct var mask_bitfield_immediate(struct var v, int w)
 }
 
 /*
- * Special case char [] = string in initializers. In this case we do
- * nothing here, but handle it in backend.
+ * Special case char [] = string in initializers.
+ *
+ * Variables with incomplete type gets a size assigned directly on the
+ * the symbol.
+ *
+ *  char foo[] = "Hello"
+ *
+ * Incomplete initialization leaves the resulting variables offset
+ * pointing to the first element that was not initialized. In the
+ * following example, target.offset = 4 on return.
+ *
+ *  char bar[6] = "Hei"
+ *
  */
+static struct var eval_assign_string_literal(
+    struct block *block,
+    struct var target,
+    struct expression expr)
+{
+    const struct typetree *type;
+
+    assert(is_identity(expr));
+    assert(is_array(target.type));
+    assert(expr.l.symbol->symtype == SYM_STRING_VALUE);
+    if (!is_char(target.type->next)) {
+        error("Assigning string literal to non-char array.");
+        exit(1);
+    }
+
+    if (!target.type->size) {
+        assert(target.kind == DIRECT);
+        assert(target.offset == 0);
+        assert(target.symbol->type.size == 0);
+        ((struct symbol *) target.symbol)->type.size = expr.type->size;
+        target.type = expr.type;
+        emit_ir(block, IR_ASSIGN, target, expr);
+    } else {
+        if (expr.type->size > target.type->size) {
+            error("String literal length exceeds target array size.");
+            exit(1);
+        }
+        type = target.type;
+        target.type = expr.type;
+        emit_ir(block, IR_ASSIGN, target, expr);
+        target.type = type;
+    }
+
+    target.offset += expr.type->size;
+    return target;
+}
+
 struct var eval_assign(
     struct definition *def,
     struct block *block,
@@ -1256,26 +1304,17 @@ struct var eval_assign(
         exit(1);
     }
 
-    if (is_identity(expr) && !is_array(target.type)) {
+    if (is_array(target.type)) {
+        return eval_assign_string_literal(block, target, expr);
+    }
+
+    if (is_identity(expr)) {
         var = eval(def, block, expr);
         var = rvalue(def, block, var);
         expr = as_expr(var);
     }
 
-    if (is_array(target.type)) {
-        if (!type_equal(target.type, expr.type)
-            || !is_identity(expr)
-            || expr.l.kind != IMMEDIATE)
-        {
-            error("Invalid initializer assignment, was %s :: %t = %t.",
-                str_raw(target.symbol->name),
-                target.type,
-                expr.type);
-            exit(1);
-        }
-        assert(expr.l.symbol);
-        assert(expr.l.symbol->symtype == SYM_STRING_VALUE);
-    } else if (is_pointer(target.type) && is_pointer(expr.type)) {
+    if (is_pointer(target.type) && is_pointer(expr.type)) {
         cv = target.type->next->qualifier | expr.type->next->qualifier;
         if (!is_compatible(target.type, expr.type)) {
             if (!((is_identity(expr) && is_nullptr(expr.l))
@@ -1323,7 +1362,7 @@ struct var eval_assign(
     }
 
     emit_ir(block, IR_ASSIGN, target, expr);
-    if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
+    if (is_immediate(expr)) {
         target = expr.l;
     } else {
         target.lvalue = 0;
