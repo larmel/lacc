@@ -117,6 +117,12 @@ extern const struct typetree
     basic_type__float,
     basic_type__double;
 
+/* Get a singleton instance of basic numeric and void types. */
+const struct typetree *get_basic_type(
+    enum type type,
+    int size,
+    enum qualifier cv);
+
 /* A function takes variable arguments if last parameter is '...'. */
 int is_vararg(const struct typetree *type);
 

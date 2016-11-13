@@ -35,7 +35,7 @@ static const struct typetree *get_typedef(String str)
 static struct typetree *parameter_list(const struct typetree *base)
 {
     String name;
-    struct typetree *type;
+    const struct typetree *type;
     struct typetree *func = type_init(T_FUNCTION);
 
     func->next = base;
@@ -74,7 +74,7 @@ static struct typetree *parameter_list(const struct typetree *base)
  *
  * Return a function type where all members have NULL type.
  */
-static struct typetree *identifier_list(const struct typetree *base)
+static const struct typetree *identifier_list(const struct typetree *base)
 {
     struct token t;
     struct typetree *type;
@@ -106,7 +106,8 @@ static struct typetree *identifier_list(const struct typetree *base)
  * incomplete type. Incomplete types are represented by having size of
  * zero.
  */
-static struct typetree *direct_declarator_array(struct typetree *base)
+static const struct typetree *direct_declarator_array(
+    const struct typetree *base)
 {
     int length;
 
@@ -144,12 +145,12 @@ static struct typetree *direct_declarator_array(struct typetree *base)
  * The type returned from declarator has to be either array, function or
  * pointer, thus only need to check for type->next to find inner tail.
  */
-static struct typetree *direct_declarator(
-    struct typetree *base,
+static const struct typetree *direct_declarator(
+    const struct typetree *base,
     String *name)
 {
-    struct typetree *type = base;
-    struct typetree *head = NULL, *tail = NULL;
+    const struct typetree *type = base;
+    const struct typetree *head = NULL, *tail = NULL;
     struct token t;
 
     switch (peek().token) {
@@ -168,7 +169,7 @@ static struct typetree *direct_declarator(
             head = tail;
             type = tail;
             while (tail->next) {
-                tail = (struct typetree *) tail->next;
+                tail = tail->next;
             }
         }
         consume(')');
@@ -196,7 +197,7 @@ static struct typetree *direct_declarator(
         }
         if (tail) {
             assert(head);
-            tail->next = type;
+            ((struct typetree *) tail)->next = type;
             type = head;
         }
         base = type;
@@ -230,7 +231,7 @@ static struct typetree *pointer(const struct typetree *base)
     return type;
 }
 
-struct typetree *declarator(struct typetree *base, String *name)
+const struct typetree *declarator(const struct typetree *base, String *name)
 {
     while (peek().token == '*') {
         base = pointer(base);
@@ -243,7 +244,7 @@ static void member_declaration_list(struct typetree *type)
 {
     String name;
     struct var expr;
-    struct typetree *decl_base, *decl_type;
+    const struct typetree *decl_base, *decl_type;
 
     do {
         decl_base = declaration_specifiers(NULL);
@@ -332,7 +333,6 @@ static struct typetree *struct_or_union_declaration(void)
              */
             type = type_init(kind);
         }
-
         consume('{');
         member_declaration_list(type);
         assert(type->size);
@@ -357,7 +357,6 @@ static void enumerator_list(void)
     consume('{');
     do {
         name = consume(IDENTIFIER).d.string;
-
         if (peek().token == '=') {
             consume('=');
             val = constant_expression();
@@ -366,109 +365,57 @@ static void enumerator_list(void)
             }
             count = val.imm.i;
         }
-
         sym = sym_add(
             &ns_ident,
             name,
             &basic_type__int,
             SYM_CONSTANT,
             LINK_NONE);
-
         sym->constant_value.i = count++;
         if (peek().token != ',')
             break;
-
         consume(',');
     } while (peek().token != '}');
     consume('}');
 }
 
-static struct typetree *enum_declaration(void)
+/*
+ * Consume enum definition, which represents an int type.
+ *
+ * Use constant_value as a sentinel to represent definition, checked on
+ * lookup to detect duplicate definitions.
+ */
+static void enum_declaration(void)
 {
     String name;
     struct symbol *tag;
-    struct typetree *type = type_init(T_SIGNED, 4);
 
     consume(ENUM);
     if (peek().token == IDENTIFIER) {
         name = consume(IDENTIFIER).d.string;
         tag = sym_lookup(&ns_tag, name);
         if (!tag || tag->depth < current_scope_depth(&ns_tag)) {
-            tag = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
+            tag = sym_add(
+                &ns_tag,
+                name,
+                &basic_type__int,
+                SYM_TYPEDEF,
+                LINK_NONE);
         } else if (!is_integer(&tag->type)) {
             error("Tag '%s' was previously defined as aggregate type.",
                 str_raw(tag->name));
             exit(1);
         }
-        /*
-         * Use constant_value as a sentinel to represent definition,
-         * checked on  lookup to detect duplicate definitions.
-         */
         if (peek().token == '{') {
             if (tag->constant_value.i) {
                 error("Redefiniton of enum '%s'.", str_raw(tag->name));
+                exit(1);
             }
             enumerator_list();
             tag->constant_value.i = 1;
         }
     } else {
         enumerator_list();
-    }
-
-    /*
-     * Result is always integer. Do not care about the actual enum
-     * definition, all enums are ints and no type checking is done.
-     */
-    return type;
-}
-
-static struct typetree get_basic_type_from_specifier(unsigned short spec)
-{
-    switch (spec) {
-    case 0x0001: /* void */
-        return basic_type__void;
-    case 0x0002: /* char */
-    case 0x0012: /* signed char */
-        return basic_type__char;
-    case 0x0022: /* unsigned char */
-        return basic_type__unsigned_char;
-    case 0x0004: /* short */
-    case 0x0014: /* signed short */
-    case 0x000C: /* short int */
-    case 0x001C: /* signed short int */
-        return basic_type__short;
-    case 0x0024: /* unsigned short */
-    case 0x002C: /* unsigned short int */
-        return basic_type__unsigned_short;
-    case 0x0008: /* int */
-    case 0x0010: /* signed */
-    case 0x0018: /* signed int */
-        return basic_type__int;
-    case 0x0020: /* unsigned */
-    case 0x0028: /* unsigned int */
-        return basic_type__unsigned_int;
-    case 0x0040: /* long */
-    case 0x0048: /* long int */
-    case 0x00C0: /* long long */
-    case 0x00C8: /* long long int */
-    case 0x0050: /* signed long */
-    case 0x0058: /* signed long int */
-    case 0x00D0: /* signed long long */
-    case 0x00D8: /* signed long long int */
-        return basic_type__long;
-    case 0x0060: /* unsigned long */
-    case 0x0068: /* unsigned long int */
-    case 0x00E0: /* unsigned long long */
-    case 0x00E8: /* unsigned long long int */
-        return basic_type__unsigned_long;
-    case 0x0100: /* float */
-        return basic_type__float;
-    case 0x0200: /* double */
-    case 0x0240: /* long double */
-        return basic_type__double;
-    default:
-        error("Invalid type specification.");
-        exit(1); 
     }
 }
 
@@ -477,20 +424,17 @@ static struct typetree get_basic_type_from_specifier(unsigned short spec)
  * default, but require at least one type specifier. Storage class is
  * returned as token value, unless the provided pointer is NULL, in
  * which case the input is parsed as specifier-qualifier-list.
+ *
+ * Use a compact bit representation to hold state about declaration 
+ * specifiers. Initialize storage class to sentinel value.
  */
-struct typetree *declaration_specifiers(int *stc)
+const struct typetree *declaration_specifiers(int *stc)
 {
+    const struct typetree *tagged;
     struct typetree *type = NULL;
     struct token tok;
-    int done = 0;
-
-    /*
-     * Use a compact bit representation to hold state about declaration 
-     * specifiers. Initialize storage class to sentinel value.
-     */
-    unsigned short spec = 0x0000;
+    unsigned spec = 0x0000;
     enum qualifier qual = Q_NONE;
-    if (stc)       *stc =    '$';
 
     #define set_specifier(arg) \
         if (spec & arg)                                                        \
@@ -502,12 +446,8 @@ struct typetree *declaration_specifiers(int *stc)
             error("Duplicate type qualifier '%s'.", str_raw(tok.d.string));    \
         next(); qual |= arg;
 
-    #define set_storage_class(t) \
-        if (!stc) error("Unexpected storage class in qualifier list.");        \
-        else if (*stc != '$') error("Multiple storage class specifiers.");     \
-        next(); *stc = t;
-
-    do {
+    if (stc) *stc = '$';
+    while (1) {
         switch ((tok = peek()).token) {
         case VOID:      set_specifier(0x001); break;
         case CHAR:      set_specifier(0x002); break;
@@ -519,77 +459,118 @@ struct typetree *declaration_specifiers(int *stc)
             if (spec & 0x040) {
                 set_specifier(0x080);
             } else {
-                set_specifier(0x040);   
+                set_specifier(0x040);
             }
             break;
         case FLOAT:     set_specifier(0x100); break;
         case DOUBLE:    set_specifier(0x200); break;
         case CONST:     set_qualifier(Q_CONST); break;
         case VOLATILE:  set_qualifier(Q_VOLATILE); break;
-        case IDENTIFIER: {
-            const struct typetree *tagged = get_typedef(tok.d.string);
+        case IDENTIFIER:
+            tagged = get_typedef(tok.d.string);
             if (tagged && !type) {
                 consume(IDENTIFIER);
                 type = type_init(T_STRUCT);
                 *type = *tagged;
-            } else {
-                done = 1;
+                break;
             }
-            break;
-        }
+            goto done;
         case UNION:
         case STRUCT:
             if (!type) {
                 type = struct_or_union_declaration();
-            } else {
-                done = 1;
+                break;
             }
-            break;
+            goto done;
         case ENUM:
-            if (!type) {
-                type = enum_declaration();
-            } else {
-                done = 1;
+            if (spec & 0x400) {
+                error("Duplicate enum specifier in type declaration.");
+                exit(1);
             }
+            enum_declaration();
+            spec |= 0x400;
             break;
         case AUTO:
         case REGISTER:
         case STATIC:
         case EXTERN:
         case TYPEDEF:
-            set_storage_class(tok.token);
+            next();
+            if (!stc) {
+                error("Unexpected storage class in qualifier list.");
+            } else if (*stc != '$') {
+                error("Multiple storage class specifiers.");
+            } else {
+                *stc = tok.token;
+            }
             break;
         default:
-            done = 1;
-            break;
+            goto done;
         }
-
-        if (type && spec) {
-            error("Invalid combination of declaration specifiers.");
-            exit(1);
-        }
-    } while (!done);
+    }
 
     #undef set_specifier
     #undef set_qualifier
-    #undef set_storage_class
 
+done:
     if (type) {
-        if (qual & type->qualifier) {
+        if (spec) {
+            error("Invalid combination of declaration specifiers.");
+        } else if (qual & type->qualifier) {
             error("Duplicate type qualifier:%s%s.",
                 (qual & Q_CONST) ? " const" : "",
                 (qual & Q_VOLATILE) ? " volatile" : "");
+        } else {
+            type->qualifier |= qual;
         }
-    } else if (spec) {
-        type = type_init(T_STRUCT);
-        *type = get_basic_type_from_specifier(spec);
-    } else {
-        error("Missing type specifier.");
+        return type;
+    } else switch (spec) {
+    case 0x0001: /* void */
+        return get_basic_type(T_VOID, 0, qual);
+    case 0x0002: /* char */
+    case 0x0012: /* signed char */
+        return get_basic_type(T_SIGNED, 1, qual);
+    case 0x0022: /* unsigned char */
+        return get_basic_type(T_UNSIGNED, 1, qual);
+    case 0x0004: /* short */
+    case 0x0014: /* signed short */
+    case 0x000C: /* short int */
+    case 0x001C: /* signed short int */
+        return get_basic_type(T_SIGNED, 2, qual);
+    case 0x0024: /* unsigned short */
+    case 0x002C: /* unsigned short int */
+        return get_basic_type(T_UNSIGNED, 2, qual);
+    case 0x0400: /* enum */
+    case 0x0008: /* int */
+    case 0x0010: /* signed */
+    case 0x0018: /* signed int */
+        return get_basic_type(T_SIGNED, 4, qual);
+    case 0x0020: /* unsigned */
+    case 0x0028: /* unsigned int */
+        return get_basic_type(T_UNSIGNED, 4, qual);
+    case 0x0040: /* long */
+    case 0x0048: /* long int */
+    case 0x00C0: /* long long */
+    case 0x00C8: /* long long int */
+    case 0x0050: /* signed long */
+    case 0x0058: /* signed long int */
+    case 0x00D0: /* signed long long */
+    case 0x00D8: /* signed long long int */
+        return get_basic_type(T_SIGNED, 8, qual);
+    case 0x0060: /* unsigned long */
+    case 0x0068: /* unsigned long int */
+    case 0x00E0: /* unsigned long long */
+    case 0x00E8: /* unsigned long long int */
+        return get_basic_type(T_UNSIGNED, 8, qual);
+    case 0x0100: /* float */
+        return get_basic_type(T_REAL, 4, qual);
+    case 0x0200: /* double */
+    case 0x0240: /* long double */
+        return get_basic_type(T_REAL, 8, qual);
+    default:
+        error("Invalid type specification.");
         exit(1);
     }
-
-    type->qualifier |= qual;
-    return type;
 }
 
 /* Constants representing immediate zero values of all basic types. */
@@ -971,8 +952,7 @@ struct block *declaration(struct definition *def, struct block *parent)
     struct token t;
     struct symbol *sym;
     const struct member *param;
-    const struct typetree *type;
-    struct typetree *base;
+    const struct typetree *base, *type;
     enum symtype symtype;
     enum linkage linkage;
     int stc = '$';

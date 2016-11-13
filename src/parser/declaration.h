@@ -5,9 +5,9 @@
 
 struct block *declaration(struct definition *def, struct block *parent);
 
-struct typetree *declarator(struct typetree *base, String *name);
+const struct typetree *declarator(const struct typetree *base, String *name);
 
-struct typetree *declaration_specifiers(int *stc);
+const struct typetree *declaration_specifiers(int *stc);
 
 #define FIRST_type_qualifier \
     CONST: case VOLATILE

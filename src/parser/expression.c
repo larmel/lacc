@@ -57,7 +57,7 @@ static struct block *parse__builtin_va_arg(
     struct block *block)
 {
     struct var value;
-    struct typetree *type;
+    const struct typetree *type;
 
     consume('(');
     block = assignment_expression(def, block);

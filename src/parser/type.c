@@ -8,6 +8,58 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define STAMP_TYPE(t, w) { \
+        {t, w}, \
+        {t, w, Q_CONST}, \
+        {t, w, Q_VOLATILE}, \
+        {t, w, Q_CONST | Q_VOLATILE} \
+    }
+
+static const struct typetree
+    basic_void_type[4] = STAMP_TYPE(T_VOID, 0),
+    basic_signed_type[][4] = {
+        STAMP_TYPE(T_SIGNED, 1),
+        STAMP_TYPE(T_SIGNED, 2),
+        {{0}},
+        STAMP_TYPE(T_SIGNED, 4),
+        {{0}},
+        {{0}},
+        {{0}},
+        STAMP_TYPE(T_SIGNED, 8)
+    },
+    basic_unsigned_type[][4] = {
+        STAMP_TYPE(T_UNSIGNED, 1),
+        STAMP_TYPE(T_UNSIGNED, 2),
+        {{0}},
+        STAMP_TYPE(T_UNSIGNED, 4),
+        {{0}},
+        {{0}},
+        {{0}},
+        STAMP_TYPE(T_UNSIGNED, 8)
+    },
+    basic_real_type[][4] = {
+        STAMP_TYPE(T_REAL, 4),
+        STAMP_TYPE(T_REAL, 8)
+    };
+
+const struct typetree *get_basic_type(
+    enum type type,
+    int size,
+    enum qualifier cv)
+{
+    switch (type) {
+    default: assert(0);
+    case T_SIGNED:
+        return &basic_signed_type[size - 1][cv];
+    case T_UNSIGNED:
+        return &basic_unsigned_type[size - 1][cv];
+    case T_REAL:
+        return &basic_real_type[(size / 4) - 1][cv];
+    case T_VOID:
+        return &basic_void_type[cv];
+    }
+}
+
 const struct typetree
     basic_type__void = { T_VOID },
     basic_type__const_void = { T_VOID, 0, Q_CONST },
