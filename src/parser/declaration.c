@@ -290,34 +290,40 @@ static void member_declaration_list(struct typetree *type)
     type_seal(type);
 }
 
+/*
+ * Parse and declare a new struct or union type, or retrieve type from
+ * existing symbol; possibly providing a complete definition that will
+ * be available for later declarations.
+ *
+ * Named types are return to the caller as a copy, which can be
+ * overwritten with new type qualifiers.
+ */
 static struct typetree *struct_or_union_declaration(void)
 {
+    static struct typetree template;
+
     struct symbol *sym = NULL;
     struct typetree *type = NULL;
     String name;
-    enum type kind =
-        (next().token == STRUCT) ? T_STRUCT : T_UNION;
+    enum type kind = (next().token == STRUCT) ? T_STRUCT : T_UNION;
 
     if (peek().token == IDENTIFIER) {
         name = consume(IDENTIFIER).d.string;
         sym = sym_lookup(&ns_tag, name);
         if (!sym) {
-            type = type_init(kind);
-            sym = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
+            template.type = kind;
+            sym = sym_add(&ns_tag, name, &template, SYM_TYPEDEF, LINK_NONE);
+            type = &sym->type;
         } else if (is_integer(&sym->type)) {
-            error("Tag '%s' was previously declared as enum.", str_raw(sym->name));
+            error("Tag '%s' was previously declared as enum.",
+                str_raw(sym->name));
             exit(1);
         } else if (sym->type.type != kind) {
             error("Tag '%s' was previously declared as %s.",
-                str_raw(sym->name), (is_struct(&sym->type)) ? "struct" : "union");
+                str_raw(sym->name),
+                (is_struct(&sym->type)) ? "struct" : "union");
             exit(1);
         }
-        /*
-         * Retrieve type from existing symbol, possibly providing a
-         * complete definition that will be available for later
-         * declarations. Overwrites existing type information from
-         * symbol table.
-         */
         type = &sym->type;
         if (peek().token == '{' && type->size) {
             error("Redefiniton of '%s'.", str_raw(sym->name));
@@ -327,10 +333,6 @@ static struct typetree *struct_or_union_declaration(void)
 
     if (peek().token == '{') {
         if (!type) {
-            /*
-             * Anonymous structure; allocate a new standalone type,
-             * not part of any symbol.
-             */
             type = type_init(kind);
         }
         consume('{');
@@ -339,11 +341,6 @@ static struct typetree *struct_or_union_declaration(void)
         consume('}');
     }
 
-    /*
-     * Return to the caller a copy of the root node, which can be
-     * overwritten with new type qualifiers without altering the tag
-     * registration.
-     */
     return (sym) ? type_tagged_copy(&sym->type, sym->name) : type;
 }
 
