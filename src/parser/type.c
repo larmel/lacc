@@ -375,40 +375,40 @@ struct typetree *type_tagged_copy(
 }
 
 /*
- * Determine whether two types are the same. Disregarding qualifiers,
- * and names of function parameters.
+ * Determine whether two types are the same. Disregard qualifiers, and
+ * names of function parameters.
  */
 int type_equal(const struct typetree *a, const struct typetree *b)
 {
+    int i;
+    const struct member *ma, *mb;
+
     if (!a && !b) return 1;
     if (!a || !b) return 0;
-    if (is_tagged(a) && is_tagged(b))
-        return a->next == b->next;
-
-    a = unwrapped(a);
-    b = unwrapped(b);
-
+    if (is_tagged(a)) a = unwrapped(a);
+    if (is_tagged(b)) b = unwrapped(b);
+    if (a == b) return 1;
     if (a->type == b->type
         && a->size == b->size
         && nmembers(a) == nmembers(b)
         && type_equal(a->next, b->next))
     {
-        int i;
         for (i = 0; i < nmembers(a); ++i) {
-            if (!type_equal(get_member(a, i)->type, get_member(b, i)->type)) {
+            ma = get_member(a, i);
+            mb = get_member(b, i);
+            if (!type_equal(ma->type, mb->type)) {
                 return 0;
-            }
-            if (is_struct_or_union(a)
-                && str_cmp(get_member(a, i)->name, get_member(b, i)->name))
-            {
+            } else if (is_struct_or_union(a) && str_cmp(ma->name, mb->name)) {
                 return 0;
+            } else {
+                assert(ma->offset == mb->offset);
             }
-            assert(get_member(a, i)->offset == get_member(b, i)->offset);
         }
-        return 1;   
+    } else {
+        return 0;
     }
 
-    return 0;
+    return 1;
 }
 
 static const struct typetree *remove_qualifiers(const struct typetree *type)
