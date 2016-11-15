@@ -236,10 +236,14 @@ static int read_complete_line(TokenArray *line, struct token t, int directive)
                 read_defined_operator(line);
             } else {
                 def = definition(t.d.string);
-                if (def && def->type == FUNCTION_LIKE) {
-                    array_push_back(line, t);
-                    read_macro_invocation(line, def);
+                if (def) {
                     macros += 1;
+                    if (def->type == FUNCTION_LIKE) {
+                        array_push_back(line, t);
+                        read_macro_invocation(line, def);
+                    } else {
+                        array_push_back(line, t);
+                    }
                 } else {
                     array_push_back(line, t);
                 }
@@ -339,7 +343,7 @@ static void preprocess_line(void)
 {
     static TokenArray line;
 
-    unsigned i;
+    int i;
     struct token t, u;
 
     ensure_initialized();
@@ -368,10 +372,9 @@ static void preprocess_line(void)
             }
         } else {
             assert(in_active_block());
-            read_complete_line(&line, t, 0);
-            while (expand(&line)) {
-                if (!refill_expanding_line(&line))
-                    break;
+            i = read_complete_line(&line, t, 0);
+            while (i && expand(&line)) {
+                i = refill_expanding_line(&line);
             }
             for (i = 0; i < array_len(&line); ++i) {
                 u = array_get(&line, i);
