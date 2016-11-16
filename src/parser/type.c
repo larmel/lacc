@@ -502,6 +502,10 @@ int fprinttype(FILE *stream, const struct typetree *type)
     const struct member *m;
     int i, n = 0;
 
+    if (type == NULL) {
+        return fprintf(stream, "(null)");
+    }
+
     if (is_const(type))
         n += fputs("const ", stream);
     if (is_volatile(type))
@@ -547,7 +551,7 @@ int fprinttype(FILE *stream, const struct typetree *type)
         break;
     case T_ARRAY:
         if (type->size > 0) {
-            n += fprintf(stream, "[%u]", type->size / size_of(type->next));
+            n += fprintf(stream, "[%u] ", type->size / size_of(type->next));
         } else {
             n += fputs("[] ", stream);
         }

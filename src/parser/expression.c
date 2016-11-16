@@ -13,6 +13,17 @@ static struct block *cast_expression(
     struct definition *def,
     struct block *block);
 
+static const struct symbol *find_symbol(String name)
+{
+    const struct symbol *sym = sym_lookup(&ns_ident, name);
+    if (!sym) {
+        error("Undefined symbol '%s'.", str_raw(name));
+        exit(1);
+    }
+
+    return sym;
+}
+
 /*
  * Parse call to builtin symbol __builtin_va_start, which is the result
  * of calling va_start(arg, s). Return type depends on second input
@@ -23,23 +34,26 @@ static struct block *parse__builtin_va_start(
     struct block *block)
 {
     const struct typetree *type;
-    struct symbol *sym;
+    const struct member *mb;
+    const struct symbol *sym;
     struct token param;
-    int is_invalid;
 
     consume('(');
     block = assignment_expression(def, block);
     consume(',');
     param = consume(IDENTIFIER);
-    sym = sym_lookup(&ns_ident, param.d.string);
 
+    sym = find_symbol(param.d.string);
     type = &def->symbol->type;
-    is_invalid = !sym || sym->depth != 1 || !is_function(type);
-    is_invalid = is_invalid || !nmembers(type) || str_cmp(
-        get_member(type, nmembers(type) - 1)->name, param.d.string);
+    if (!is_vararg(type)) {
+        error("Function must be vararg to use va_start.");
+        exit(1);
+    }
 
-    if (is_invalid) {
-        error("Second parameter of va_start must be last function argument.");
+    mb = get_member(type, nmembers(type) - 1);
+    if (str_cmp(mb->name, sym->name) || sym->depth != 1) {
+        error("Expected last function argument %s as va_start argument.",
+            str_raw(mb->name));
         exit(1);
     }
 
@@ -73,6 +87,12 @@ static struct block *parse__builtin_va_arg(
     return block;
 }
 
+/*
+ * Special handling for builtin pseudo functions. These are expected to
+ * behave as macros, thus should be no problem parsing as function call
+ * in primary expression. Constructs like (va_arg)(args, int) will not
+ * work with this scheme.
+ */
 static struct block *primary_expression(
     struct definition *def,
     struct block *block)
@@ -82,17 +102,7 @@ static struct block *primary_expression(
 
     switch ((tok = next()).token) {
     case IDENTIFIER:
-        sym = sym_lookup(&ns_ident, tok.d.string);
-        if (!sym) {
-            error("Undefined symbol '%s'.", str_raw(tok.d.string));
-            exit(1);
-        }
-        /*
-         * Special handling for builtin pseudo functions. These are
-         * expected to behave as macros, thus should be no problem
-         * parsing as function call in primary expression. Constructs
-         * like (va_arg)(args, int) will not work with this scheme.
-         */
+        sym = find_symbol(tok.d.string);
         if (!strcmp("__builtin_va_start", str_raw(sym->name))) {
             block = parse__builtin_va_start(def, block);
         } else if (!strcmp("__builtin_va_arg", str_raw(sym->name))) {
@@ -326,7 +336,7 @@ static struct block *postfix_expression(
                 block->expr = as_expr(value);
                 root = block->expr;
             } else {
-                error("Invalid member access.");
+                error("Invalid member access to type %t.", root.type);
                 exit(1);
             }
             break;

@@ -537,6 +537,7 @@ done:
     case 0x0024: /* unsigned short */
     case 0x002C: /* unsigned short int */
         return get_basic_type(T_UNSIGNED, 2, qual);
+    case 0x0000: /* (default) */
     case 0x0400: /* enum */
     case 0x0008: /* int */
     case 0x0010: /* signed */
@@ -912,29 +913,47 @@ static void define_builtin__func__(String name)
 }
 
 /*
- * Parse old-style function definition parameter declarations. Verify in
- * the end that all variables have been declared.
+ * Parse old-style function definition parameter declarations if present
+ * before opening bracket.
+ *
+ * Verify in the end that all variables have been declared, and add to
+ * symbol table parameters that have not been declared old-style.
+ * Default to int for parameters that are given without type in the
+ * function signature.
  */
 static void parameter_declaration_list(
     struct definition *def,
     const struct typetree *type)
 {
     int i;
+    struct symbol *sym;
     const struct member *param;
 
     assert(is_function(type));
     assert(current_scope_depth(&ns_ident) == 1);
+
     while (peek().token != '{') {
         declaration(def, NULL);
     }
 
     for (i = 0; i < nmembers(type); ++i) {
         param = get_member(type, i);
-        if (param->type == NULL) {
-            error("Missing type declaration for parameter %s.",
-                str_raw(param->name));
+        if (!param->name.len) {
+            error("Missing parameter name at position %d.", i + 1);
             exit(1);
         }
+        if (!param->type) {
+            ((struct member *) param)->type = &basic_type__int;
+        }
+        sym = sym_lookup(&ns_ident, param->name);
+        if (!sym || sym->depth != 1) {
+            sym = sym_add(&ns_ident,
+                param->name,
+                param->type,
+                SYM_DEFINITION,
+                LINK_NONE);
+        }
+        array_push_back(&def->params, sym);
     }
 }
 
@@ -944,7 +963,6 @@ static void parameter_declaration_list(
  */
 struct block *declaration(struct definition *def, struct block *parent)
 {
-    int i;
     String name;
     struct token t;
     struct symbol *sym;
@@ -995,7 +1013,6 @@ struct block *declaration(struct definition *def, struct block *parent)
         switch (current_scope_depth(&ns_ident)) {
         case 0: break;
         case 1: /* Parameters from old-style function definitions. */
-            array_push_back(&def->params, sym);
             param = find_type_member(&def->symbol->type, name);
             if (param && param->type == NULL) {
                 ((struct member *) param)->type = type;
@@ -1044,37 +1061,15 @@ struct block *declaration(struct definition *def, struct block *parent)
         case FIRST(type_specifier):
         case FIRST(type_qualifier):
         case REGISTER:
-            push_scope(&ns_ident);
-            sym->symtype = SYM_DEFINITION;
-            def = cfg_init(sym);
-            parameter_declaration_list(def, type);
         case '{':
             assert(!parent);
             assert(is_function(&sym->type));
             assert(sym->linkage != LINK_NONE);
-            if (!def) {
-                sym->symtype = SYM_DEFINITION;
-                def = cfg_init(sym);
-            } else {
-                assert(def->symbol == sym);
-            }
+            sym->symtype = SYM_DEFINITION;
+            def = cfg_init(sym);
             push_scope(&ns_label);
-            if (current_scope_depth(&ns_ident) == 0) {
-                push_scope(&ns_ident);
-                for (i = 0; i < nmembers(&sym->type); ++i) {
-                    param = get_member(&sym->type, i);
-                    if (!param->name.len) {
-                        error("Missing parameter name at position %d.", i + 1);
-                        exit(1);
-                    }
-                    array_push_back(&def->params,
-                        sym_add(&ns_ident,
-                            param->name,
-                            param->type,
-                            SYM_DEFINITION,
-                            LINK_NONE));
-                }
-            }
+            push_scope(&ns_ident);
+            parameter_declaration_list(def, type);
             if (context.standard >= STD_C99) {
                 define_builtin__func__(sym->name);
             }
