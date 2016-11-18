@@ -326,6 +326,9 @@ struct symbol *sym_add(
     sym->type = *type;
     sym->symtype = symtype;
     sym->linkage = linkage;
+    if (!decl_memcpy && !str_cmp(str_init("memcpy"), sym->name)) {
+        decl_memcpy = sym;
+    }
 
     /*
      * Scoped static variable must get unique name in order to not
@@ -389,56 +392,6 @@ struct symbol *sym_create_constant(const struct typetree *type, union value val)
     sym->constant_value = val;
     sym->referenced = 1;
     return sym;
-}
-
-void register_builtin_types(struct namespace *ns)
-{
-    struct typetree *type;
-    const struct typetree
-        *voidptr = type_init(T_POINTER, &basic_type__void),
-        *constvoidptr = type_init(T_POINTER, &basic_type__const_void);
-
-    /* Define va_list as described in System V ABI. */
-    type = type_init(T_STRUCT);
-    type_add_member(type, str_init("gp_offset"), &basic_type__unsigned_int);
-    type_add_member(type, str_init("fp_offset"), &basic_type__unsigned_int);
-    type_add_member(type, str_init("overflow_arg_area"), voidptr);
-    type_add_member(type, str_init("reg_save_area"), voidptr);
-    sym_add(ns,
-        str_init("__builtin_va_list"),
-        type_init(T_ARRAY, type, 1),
-        SYM_TYPEDEF,
-        LINK_NONE);
-
-    /*
-     * Add symbols with dummy types just to reserve them, and make them
-     * resolve during parsing. These are implemented as compiler
-     * intrinsics.
-     */
-    sym_add(ns,
-        str_init("__builtin_va_start"),
-        &basic_type__void,
-        SYM_DECLARATION,
-        LINK_NONE);
-
-    sym_add(ns,
-        str_init("__builtin_va_arg"),
-        &basic_type__void,
-        SYM_DECLARATION,
-        LINK_NONE);
-
-    /* Make sure memcpy is registered, as it is required for codegen. */
-    type = type_init(T_FUNCTION);
-    type->next = voidptr;
-    type_add_member(type, str_init("dest"), voidptr);
-    type_add_member(type, str_init("src"), constvoidptr);
-    type_add_member(type, str_init("n"), &basic_type__unsigned_long);
-    decl_memcpy =
-        sym_add(ns,
-            str_init("memcpy"),
-            type,
-            SYM_DECLARATION,
-            LINK_EXTERN);
 }
 
 const struct symbol *yield_declaration(struct namespace *ns)

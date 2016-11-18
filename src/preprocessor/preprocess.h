@@ -10,12 +10,12 @@
 void preprocess(FILE *output);
 
 /*
- * Preprocess line specified by command line parameter. This should
- * happen before any input file is read.
+ * Preprocess a single line, adding any resulting tokens to the
+ * lookahead buffer. This should happen before any input file is read.
  *
  * The string is destructively tokenized. It should contain no newlines,
  * comments, or line continuations.
  */
-void preprocess_parameter_directive(char *line);
+void inject_line(char *line);
 
 #endif

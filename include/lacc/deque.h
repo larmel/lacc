@@ -29,6 +29,9 @@
         array_push_back(&(deq)->array, elem);                                  \
     } while (0)
 
+#define deque_back(deq) \
+    array_get(&(deq)->array, deque_len(deq) - 1)
+
 #define deque_pop_back(deq) \
     array_pop_back(&(deq)->array)
 

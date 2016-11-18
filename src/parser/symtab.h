@@ -93,12 +93,6 @@ struct symbol *sym_create_temporary(const struct typetree *type);
 void sym_release_temporary(struct symbol *sym);
 
 /*
- * Register compiler internal builtin symbols, that are assumed to
- * exists by standard library headers.
- */
-void register_builtin_types(struct namespace *ns);
-
-/*
  * Retrieve next tentative definition or declaration from given scope.
  */
 const struct symbol *yield_declaration(struct namespace *ns);

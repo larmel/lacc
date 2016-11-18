@@ -392,26 +392,16 @@ static void preprocess_line(void)
     }
 }
 
-/*
- * Invoke preprocessor on a plain string, acting as if it occurred in
- * the source code. This only works when invoked before init(1) is
- * called on input, and getprepline(0) no longer returns NULL.
- *
- * Need to empty the lookahead buffer as cleanup, as it otherwise will
- * contain END tokens signifying end of input (which has not started).
- */
-void preprocess_parameter_directive(char *line)
+void inject_line(char *line)
 {
-    assert(!deque_len(&lookahead));
-    assert(line_buffer == NULL);
+    assert(!line_buffer);
     line_buffer = line;
     preprocess_line();
-    while (deque_len(&lookahead)) {
-        if (deque_pop_front(&lookahead).token != END) {
-            error("Unhandled part of directive.");
-            exit(1);
-        }
+    while (deque_len(&lookahead) && deque_back(&lookahead).token == END) {
+        (void) deque_pop_back(&lookahead);
     }
+
+    line_buffer = NULL;
 }
 
 struct token next(void)

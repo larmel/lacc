@@ -88,7 +88,7 @@ static void define_macro(const char *arg)
         snprintf(line, sizeof(line), "#define %s 1", arg);
     }
 
-    preprocess_parameter_directive(line);
+    inject_line(line);
 }
 
 static char *parse_program_arguments(int argc, char *argv[])
@@ -127,25 +127,46 @@ static char *parse_program_arguments(int argc, char *argv[])
     return input;
 }
 
-int main(int argc, char *argv[])
+/*
+ * Register compiler internal builtin symbols, that are assumed to
+ * exists by standard library headers.
+ */
+static void register_builtin_declarations(void)
+{
+    inject_line("void *memcpy(void *dest, const void *src, unsigned long n);");
+    inject_line("void __builtin_va_start(void);");
+    inject_line("void __builtin_va_arg(void);");
+    inject_line(
+        "typedef struct {"
+        "   unsigned int gp_offset;"
+        "   unsigned int fp_offset;"
+        "   void *overflow_arg_area;"
+        "   void *reg_save_area;"
+        "} __builtin_va_list[1];");
+}
+
+/*
+ * Add default search paths last, with lowest priority. These are
+ * searched after anything specified with -I, and in the order listed.
+ */
+static void setup(int argc, char *argv[])
 {
     char *input;
-    struct definition *def;
-    const struct symbol *sym;
 
     input = parse_program_arguments(argc, argv);
-
-    /*
-     * Add default search paths last, with lowest priority. These are
-     * searched after anything specified with -I, and in the order
-     * listed here.
-     */
     add_include_search_path("/usr/local/include");
     add_include_search_path("/usr/lib/lacc/include");
     add_include_search_path("/usr/include/x86_64-linux-gnu");
     add_include_search_path("/usr/include");
-
     init(input);
+}
+
+int main(int argc, char *argv[])
+{
+    struct definition *def;
+    const struct symbol *sym;
+
+    setup(argc, argv);
     register_builtin_definitions();
     set_compile_target(output);
 
@@ -154,7 +175,7 @@ int main(int argc, char *argv[])
     } else {
         push_scope(&ns_ident);
         push_scope(&ns_tag);
-        register_builtin_types(&ns_ident);
+        register_builtin_declarations();
         push_optimization(optimization_level);
 
         while ((def = parse()) != NULL) {
