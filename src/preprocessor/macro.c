@@ -733,6 +733,12 @@ void register_builtin_definitions(void)
     register_macro("__LINE__", "0");
     register_macro("__x86_64__", "1");
     register_macro("__inline", "");
+    register_macro("__SIZE_TYPE__", "unsigned long");
+    register_macro("__WCHAR_TYPE__", "signed int");
+    register_macro("__PTRDIFF_TYPE__", "signed long");
+    register_macro("__CHAR_BIT__", "8");
+    register_macro("__SIZEOF_LONG__", "8");
+    register_macro("__SIZEOF_POINTER__", "8");
 
     switch (context.standard) {
     case STD_C89:
