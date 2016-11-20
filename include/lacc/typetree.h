@@ -55,15 +55,15 @@ struct typetree {
         T_VOID
     } type;
 
-    /* Total storage size in bytes, returned for sizeof. */
-    int size;
-
     enum qualifier {
         Q_NONE = 0,
         Q_CONST = 1,
         Q_VOLATILE = 2,
         Q_CONST_VOLATILE = Q_CONST | Q_VOLATILE
     } qualifier;
+
+    /* Total storage size in bytes, returned for sizeof. */
+    size_t size;
 
     /* Function parameters, or struct/union members. */
     const struct signature *signature;
@@ -87,12 +87,9 @@ struct member {
     const struct typetree *type;
 
     /* Member offset into aggregate, in bytes. */
-    int offset;
+    size_t offset;
 
-    /*
-     * Field width in bits, for bitfield member of type int or unsigned
-     * int.
-     */
+    /* Bitfield width in bits. */
     int width;
 };
 
@@ -127,18 +124,15 @@ const struct typetree *get_basic_type(
 int is_vararg(const struct typetree *type);
 
 /* Return size of type. If indirection, return size of tagged type. */
-int size_of(const struct typetree *type);
+size_t size_of(const struct typetree *type);
 
 /* Alignment in bytes. */
-int type_alignment(const struct typetree *type);
+size_t type_alignment(const struct typetree *type);
 
 /* Returns 1 if types are equal, 0 otherwise. */
 int type_equal(const struct typetree *l, const struct typetree *r);
 
-/*
- * Return tagged type if this is an indirection, ignoring cv-qualifiers.
- * The tag is immutable.
- */
+/* Return tagged type if this is an indirection. */
 const struct typetree *unwrapped(const struct typetree *type);
 
 /* Print type to stream, returning number of characters written. */

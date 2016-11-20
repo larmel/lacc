@@ -66,8 +66,8 @@ static char *vartostr(const struct var var)
             if (var.symbol) {
                 assert(var.symbol->symtype == SYM_STRING_VALUE);
                 if (var.offset) {
-                    sprintf(buffer, "$%s%s%d", sym_name(var.symbol),
-                        (var.offset > 0) ? "+" : "", var.offset);
+                    sprintf(buffer, "$%s+%lu",
+                        sym_name(var.symbol), var.offset);
                 } else {
                     sprintf(buffer, "$%s", sym_name(var.symbol));
                 }
@@ -90,15 +90,12 @@ static char *vartostr(const struct var var)
             assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
             sprintf(buffer, "\\\"%s\\\"", str_raw(var.symbol->string_value));
             break;
-        default:
-            assert(0);
+        default: assert(0);
         }
         break;
     case DIRECT:
-        if (var.offset > 0) {
-            sprintf(buffer, "*(&%s + %d)", sym_name(var.symbol), var.offset);
-        } else if (var.offset < 0) {
-            sprintf(buffer, "*(&%s - %d)", sym_name(var.symbol), -var.offset);
+        if (var.offset) {
+            sprintf(buffer, "*(&%s + %lu)", sym_name(var.symbol), var.offset);
         } else {
             if (is_field(var)) {
                 sprintf(buffer, "%s:%d", sym_name(var.symbol), var.width);
@@ -108,19 +105,15 @@ static char *vartostr(const struct var var)
         }
         break;
     case ADDRESS:
-        if (var.offset > 0) {
-            sprintf(buffer, "(&%s + %d)", sym_name(var.symbol), var.offset);
-        } else if (var.offset < 0) {
-            sprintf(buffer, "(&%s - %d)", sym_name(var.symbol), -var.offset);
+        if (var.offset) {
+            sprintf(buffer, "(&%s + %lu)", sym_name(var.symbol), var.offset);
         } else {
             sprintf(buffer, "&%s", sym_name(var.symbol));
         }
         break;
     case DEREF:
-        if (var.offset > 0) {
-            sprintf(buffer, "*(%s + %d)", sym_name(var.symbol), var.offset);
-        } else if (var.offset < 0) {
-            sprintf(buffer, "*(%s - %d)", sym_name(var.symbol), -var.offset);
+        if (var.offset) {
+            sprintf(buffer, "*(%s + %lu)", sym_name(var.symbol), var.offset);
         } else {
             sprintf(buffer, "*%s", sym_name(var.symbol));
         }

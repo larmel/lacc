@@ -130,6 +130,16 @@ static int is_string(struct var val)
         val.symbol->symtype == SYM_STRING_VALUE;
 }
 
+static int displacement_from_offset(size_t offset)
+{
+    if (offset > INT_MAX) {
+        error("Offset %lu exceeds limit of %d\n", offset, INT_MAX);
+        exit(1);
+    }
+
+    return (int) offset;
+}
+
 static struct immediate value_of(struct var var, int w)
 {
     struct immediate imm = {0};
@@ -139,7 +149,7 @@ static struct immediate value_of(struct var var, int w)
     if (is_string(var)) {
         imm.type = IMM_ADDR;
         imm.d.addr.sym = var.symbol;
-        imm.d.addr.disp = var.offset;
+        imm.d.addr.disp = displacement_from_offset(var.offset);
     } else {
         assert(!var.offset);
         assert(is_scalar(var.type));
@@ -164,16 +174,16 @@ static struct address address_of(struct var var)
     struct address addr = {0};
     assert(var.kind != DEREF);
 
+    addr.disp = displacement_from_offset(var.offset);
     if (var.kind == IMMEDIATE) {
         assert(is_string(var));
         addr.sym = var.symbol;
-        addr.disp = var.offset;
     } else if (var.symbol->linkage != LINK_NONE) {
         addr.base = IP;
-        addr.disp = var.offset;
+        addr.disp = displacement_from_offset(var.offset);
         addr.sym = var.symbol;
     } else {
-        addr.disp = var.symbol->stack_offset + var.offset;
+        addr.disp += var.symbol->stack_offset;
         addr.base = BP;
     }
 
@@ -275,7 +285,9 @@ static void emit_load(
             emit(INSTR_MOV, OPT_MEM_REG, location_of(ptr, 8), reg(R11, 8));
             emit(opcode,
                 OPT_MEM_REG,
-                location(address(source.offset, R11, 0, 0), w),
+                location(
+                    address(
+                        displacement_from_offset(source.offset), R11, 0, 0), w),
                 dest);
         }
         break;
@@ -572,7 +584,8 @@ static void store(enum reg r, struct var v)
             load_int(var_direct(v.symbol), R11, size_of(&v.symbol->type));
         }
         emit(op, OPT_REG_MEM,
-            reg(r, w), location(address(v.offset, R11, 0, 0), w));
+            reg(r, w), location(
+                address(displacement_from_offset(v.offset), R11, 0, 0), w));
     }
 }
 
@@ -1767,7 +1780,7 @@ static void compile_data_assign(struct var target, struct var val)
             if (is_string(val)) {
                 imm.type = IMM_ADDR;
                 imm.d.addr.sym = val.symbol;
-                imm.d.addr.disp = val.offset;
+                imm.d.addr.disp = displacement_from_offset(val.offset);
                 break;
             }
         case T_SIGNED:
@@ -1790,7 +1803,7 @@ static void compile_data_assign(struct var target, struct var val)
         assert(val.symbol->linkage != LINK_NONE);
         imm.type = IMM_ADDR;
         imm.d.addr.sym = val.symbol;
-        imm.d.addr.disp = val.offset;
+        imm.d.addr.disp = displacement_from_offset(val.offset);
     }
 
     emit_data(imm);
@@ -1813,8 +1826,9 @@ static void zero_fill_data(size_t bytes)
 
 static void compile_data(struct definition *def)
 {
+    int i;
     struct statement stmt;
-    int i,
+    size_t
         total_size = size_of(&def->symbol->type),
         initialized = 0;
 

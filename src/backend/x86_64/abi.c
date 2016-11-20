@@ -137,7 +137,7 @@ void dump_classification(struct param_class pc, const struct typetree *type)
     printf("TYPE: ");
     fprinttype(stdout, type);
     printf("\n");
-    printf("CLASS: %d eightbyte\n", EIGHTBYTES(type));
+    printf("CLASS: %lu eightbyte\n", EIGHTBYTES(type));
     if (pc.eightbyte[0] == PC_MEMORY) {
         printf("\tMEMORY\n");
     } else {

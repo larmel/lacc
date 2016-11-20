@@ -441,7 +441,7 @@ exprsize:
         if (!size_of(type)) {
             error("Cannot apply 'sizeof' to incomplete type.");
         }
-        value = var_int(size_of(type));
+        value = imm_unsigned(&basic_type__unsigned_long, size_of(type));
         block->expr = as_expr(value);
         break;
     }

@@ -109,28 +109,27 @@ static const struct typetree *identifier_list(const struct typetree *base)
 static const struct typetree *direct_declarator_array(
     const struct typetree *base)
 {
-    int length;
+    size_t length = 0;
+    struct var val;
 
     if (peek().token == '[') {
-        length = 0;
         consume('[');
         if (peek().token != ']') {
-            struct var expr = constant_expression();
-            assert(expr.kind == IMMEDIATE);
-            if (!is_integer(expr.type) || expr.imm.i < 1) {
+            val = constant_expression();
+            assert(val.kind == IMMEDIATE);
+            if (!is_integer(val.type)
+                || (is_signed(val.type) && val.imm.i < 1)) {
                 error("Array dimension must be a natural number.");
                 exit(1);
             }
-            length = expr.imm.i;
+            length = is_signed(val.type) ? (size_t) val.imm.i : val.imm.u;
         }
-
         consume(']');
         base = direct_declarator_array(base);
         if (!size_of(base)) {
             error("Array has incomplete element type.");
             exit(1);
         }
-
         base = type_init(T_ARRAY, base, length);
     }
 

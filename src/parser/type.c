@@ -3,16 +3,17 @@
 #include <lacc/context.h>
 
 #include <assert.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define STAMP_TYPE(t, w) { \
-        {t, w}, \
-        {t, w, Q_CONST}, \
-        {t, w, Q_VOLATILE}, \
-        {t, w, Q_CONST | Q_VOLATILE} \
+        {t, Q_NONE, w}, \
+        {t, Q_CONST, w}, \
+        {t, Q_VOLATILE, w}, \
+        {t, Q_CONST | Q_VOLATILE, w} \
     }
 
 static const struct typetree
@@ -61,18 +62,18 @@ const struct typetree *get_basic_type(
 }
 
 const struct typetree
-    basic_type__void = { T_VOID },
-    basic_type__const_void = { T_VOID, 0, Q_CONST },
-    basic_type__char = { T_SIGNED, 1 },
-    basic_type__short = { T_SIGNED, 2 },
-    basic_type__int = { T_SIGNED, 4 },
-    basic_type__long = { T_SIGNED, 8 },
-    basic_type__unsigned_char = { T_UNSIGNED, 1 },
-    basic_type__unsigned_short = { T_UNSIGNED, 2 },
-    basic_type__unsigned_int = { T_UNSIGNED, 4 },
-    basic_type__unsigned_long = { T_UNSIGNED, 8 },
-    basic_type__float = { T_REAL, 4 },
-    basic_type__double = { T_REAL, 8 };
+    basic_type__void            = { T_VOID },
+    basic_type__const_void      = { T_VOID, Q_CONST, 0 },
+    basic_type__char            = { T_SIGNED, Q_NONE, 1 },
+    basic_type__short           = { T_SIGNED, Q_NONE, 2 },
+    basic_type__int             = { T_SIGNED, Q_NONE, 4 },
+    basic_type__long            = { T_SIGNED, Q_NONE, 8 },
+    basic_type__unsigned_char   = { T_UNSIGNED, Q_NONE, 1 },
+    basic_type__unsigned_short  = { T_UNSIGNED, Q_NONE, 2 },
+    basic_type__unsigned_int    = { T_UNSIGNED, Q_NONE, 4 },
+    basic_type__unsigned_long   = { T_UNSIGNED, Q_NONE, 8 },
+    basic_type__float           = { T_REAL, Q_NONE, 4 },
+    basic_type__double          = { T_REAL, Q_NONE, 8 };
 
 /*
  * Store member list separate from type to make memory ownership easier,
@@ -134,9 +135,10 @@ static struct signature *mksignature(void)
     return sig;
 }
 
-int type_alignment(const struct typetree *type)
+size_t type_alignment(const struct typetree *type)
 {
-    int i = 0, m = 0, d;
+    int i;
+    size_t m = 0, d;
     assert(is_object(type));
 
     switch (type->type) {
@@ -145,7 +147,7 @@ int type_alignment(const struct typetree *type)
     case T_STRUCT:
     case T_UNION:
         type = unwrapped(type);
-        for (; i < nmembers(type); ++i) {
+        for (i = 0; i < nmembers(type); ++i) {
             d = type_alignment(get_member(type, i)->type);
             if (d > m) m = d;
         }
@@ -196,8 +198,14 @@ static void add_member(struct typetree *parent, struct member m)
             exit(1);
         }
         array_push_back(&sig->members, m);
-        if (is_object(parent) && parent->size < m.offset + size_of(m.type)) {
-            parent->size = m.offset + size_of(m.type);
+        if (is_object(parent)) {
+            if (LONG_MAX - m.offset < size_of(m.type)) {
+                error("Object is too large.");
+                exit(1);
+            }
+            if (parent->size < m.offset + size_of(m.type)) {
+                parent->size = m.offset + size_of(m.type);
+            }
         }
     }
 }
@@ -206,11 +214,11 @@ static void add_member(struct typetree *parent, struct member m)
  * Add necessary padding to parent struct such that new member type can
  * be added. Union types need no padding.
  */
-static int adjust_member_alignment(
+static size_t adjust_member_alignment(
     struct typetree *parent,
     const struct typetree *type)
 {
-    int alignment = 0;
+    size_t alignment = 0;
 
     assert(is_struct_or_union(parent));
     if (is_struct(parent)) {
@@ -231,7 +239,7 @@ void type_add_member(
     String name,
     const struct typetree *type)
 {
-    struct member m = {{{0}}};
+    struct member m = {0};
 
     assert(is_struct_or_union(parent) || is_function(parent));
     assert(!is_tagged(parent));
@@ -254,7 +262,7 @@ void type_add_field(
     const struct typetree *type,
     int width)
 {
-    struct member m = {{{0}}};
+    struct member m = {0};
 
     assert(is_struct_or_union(parent));
     assert(!is_tagged(parent));
@@ -274,7 +282,8 @@ void type_add_anonymous_member(
     struct typetree *parent,
     const struct typetree *type)
 {
-    int i, offset;
+    int i;
+    size_t offset;
     struct member m;
 
     assert(is_struct_or_union(parent));
@@ -305,7 +314,8 @@ void type_add_anonymous_member(
  */
 void type_seal(struct typetree *parent)
 {
-    int i, align, maxalign = 0;
+    int i;
+    size_t align, maxalign = 0;
     struct member m;
 
     for (i = 0; i < nmembers(parent); ++i) {
@@ -324,7 +334,6 @@ void type_seal(struct typetree *parent)
 int is_vararg(const struct typetree *type)
 {
     assert(is_function(type));
-
     return (type->signature) ? type->signature->is_vararg : 0;
 }
 
@@ -340,10 +349,16 @@ struct typetree *type_init(enum type tt, ...)
         type->next = va_arg(args, const struct typetree *);
         type->size = 8;
         if (tt == T_ARRAY) {
-            type->size = size_of(type->next) * va_arg(args, int);
+            type->size = va_arg(args, size_t);
+            if (type->size > LONG_MAX / size_of(type->next)) {
+                error("Array is too large (%lu elements).", type->size);
+                exit(1);
+            } else {
+                type->size *= size_of(type->next);
+            }
         }
     } else if (tt == T_UNSIGNED || tt == T_SIGNED) {
-        type->size = va_arg(args, int);
+        type->size = va_arg(args, size_t);
         assert(
             type->size == 8 || type->size == 4 ||
             type->size == 2 || type->size == 1);
@@ -413,12 +428,13 @@ int type_equal(const struct typetree *a, const struct typetree *b)
 
 static const struct typetree *remove_qualifiers(const struct typetree *type)
 {
-    if (type->qualifier) {
-        struct typetree *copy = mktype();
-        assert(!nmembers(type));
+    struct typetree *copy;
 
+    if (type->qualifier) {
+        copy = mktype();
+        assert(!nmembers(type));
         *copy = *type;
-        copy->qualifier = 0;
+        copy->qualifier = Q_NONE;
         type = copy;
     }
 
@@ -467,7 +483,7 @@ int is_compatible(const struct typetree *l, const struct typetree *r)
     return type_equal(l, r);
 }
 
-int size_of(const struct typetree *type)
+size_t size_of(const struct typetree *type)
 {
     return is_tagged(type) ? type->next->size : type->size;
 }
@@ -484,8 +500,8 @@ const struct member *find_type_member(
 {
     int i;
     const struct member *member;
-    assert(is_struct_or_union(type) || is_function(type));
 
+    assert(is_struct_or_union(type) || is_function(type));
     type = unwrapped(type);
     for (i = 0; i < nmembers(type); ++i) {
         member = get_member(type, i);
@@ -550,8 +566,8 @@ int fprinttype(FILE *stream, const struct typetree *type)
         n += fprinttype(stream, type->next);
         break;
     case T_ARRAY:
-        if (type->size > 0) {
-            n += fprintf(stream, "[%u] ", type->size / size_of(type->next));
+        if (type->size) {
+            n += fprintf(stream, "[%lu] ", type->size / size_of(type->next));
         } else {
             n += fputs("[] ", stream);
         }
@@ -564,7 +580,7 @@ int fprinttype(FILE *stream, const struct typetree *type)
             m = get_member(type, i);
             n += fprintf(stream, ".%s::", str_raw(m->name));
             n += fprinttype(stream, m->type);
-            n += fprintf(stream, " (+%d)", m->offset);
+            n += fprintf(stream, " (+%lu)", m->offset);
             if (i < nmembers(type) - 1) {
                 n += fputs(", ", stream);
             }

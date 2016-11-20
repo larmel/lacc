@@ -363,8 +363,8 @@ int asm_data(struct immediate data)
     case IMM_ADDR:
         assert(data.d.addr.sym);
         if (data.d.addr.disp) {
-            out("\t.quad\t%s%c%d\n", sym_name(data.d.addr.sym),
-                data.d.addr.disp < 0 ? '-' : '+',
+            out("\t.quad\t%s%s%d\n", sym_name(data.d.addr.sym),
+                data.d.addr.disp < 0 ? "" : "+",
                 data.d.addr.disp);
         } else
             out("\t.quad\t%s\n", sym_name(data.d.addr.sym));

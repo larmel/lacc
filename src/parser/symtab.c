@@ -441,7 +441,7 @@ void output_symbols(FILE *stream, struct namespace *ns)
 
         fprintf(stream, "%s :: ", sym_name(sym));
         fprinttype(stream, &sym->type);
-        fprintf(stream, ", size=%d", size_of(&sym->type));
+        fprintf(stream, ", size=%lu", size_of(&sym->type));
         if (sym->stack_offset)
             fprintf(stream, " (stack_offset: %d)", sym->stack_offset);
 

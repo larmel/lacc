@@ -135,7 +135,7 @@ static struct var imm_signed(const struct typetree *type, long val)
     return var_numeric(num);
 }
 
-static struct var imm_unsigned(const struct typetree *type, unsigned long val)
+struct var imm_unsigned(const struct typetree *type, unsigned long val)
 {
     struct number num = {0};
 

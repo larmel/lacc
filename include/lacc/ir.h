@@ -47,17 +47,22 @@ struct var {
     } kind;
 
     /*
+     * Offset from symbol, which can only be positive. It is possible to
+     * construct expressions that would result in negative offset, like
+     * "Hello" - 3, but this is undefined behavior.
+     */
+    size_t offset;
+
+    /*
      * Width in bits of bitfield access. Direct or deref references to
      * fields in a struct are restricted to a number of bits, which is
      * used for masking evaluation of assignment. Normal references have
      * default value of 0.
      */
     int width;
+    int lvalue;
 
     union value imm;
-
-    int offset;
-    int lvalue;
 };
 
 #define is_field(v) ((v).width != 0)

@@ -127,4 +127,7 @@ int is_immediate_true(struct expression expr);
  */
 int is_immediate_false(struct expression expr);
 
+/* Create an immediate unsigned integer of the given type. */
+struct var imm_unsigned(const struct typetree *type, unsigned long val);
+
 #endif
