@@ -35,7 +35,7 @@ const struct token basic_token[] = {
             TOK(STRUCT, "struct"),      TOK(SWITCH, "switch"),
             TOK(TYPEDEF, "typedef"),    TOK(UNION, "union"),
             TOK(UNSIGNED, "unsigned"),  TOK(VOID, "void"),
-/* 0x20 */  {0},                        TOK(NOT, "!"),
+/* 0x20 */  TOK(INLINE, "inline"),      TOK(NOT, "!"),
             TOK(VOLATILE, "volatile"),  TOK(HASH, "#"),
             TOK(WHILE, "while"),        TOK(MODULO, "%"),
             TOK(AND, "&"),              {0},
@@ -463,7 +463,10 @@ static struct token strtoident(char *in, char **endptr)
         break;
     case 'i':
         if (S1('f')) MATCH(IF);
-        if (S2('n', 't')) MATCH(INT);
+        if (*in++ == 'n') {
+            if (S1('t')) MATCH(INT);
+            if (S4('l', 'i', 'n', 'e')) MATCH(INLINE);
+        }
         break;
     case 'l':
         if (S3('o', 'n', 'g')) MATCH(LONG);
@@ -724,6 +727,9 @@ struct token tokenize(char *in, char **endptr)
 
     if (isalpha(*in) || *in == '_') {
         tok = strtoident(in, endptr);
+        if (tok.token == INLINE && context.standard == STD_C89) {
+            tok.token = IDENTIFIER;
+        }
     } else if (*in == '\0') {
         tok = basic_token[END];
     } else if (isdigit(*in) || (*in == '.' && isdigit(in[1]))) {

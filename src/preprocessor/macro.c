@@ -732,7 +732,6 @@ void register_builtin_definitions(void)
     register_macro("__FILE__", "0");
     register_macro("__LINE__", "0");
     register_macro("__x86_64__", "1");
-    register_macro("__inline", "");
     register_macro("__SIZE_TYPE__", "unsigned long");
     register_macro("__WCHAR_TYPE__", "signed int");
     register_macro("__PTRDIFF_TYPE__", "signed long");

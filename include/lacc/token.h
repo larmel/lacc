@@ -41,6 +41,7 @@ enum token_type {
     UNION,
     UNSIGNED,
     VOID,
+    INLINE,
 
     NOT = '!',
     VOLATILE = NOT + 1,

@@ -41,7 +41,7 @@ static struct typetree *parameter_list(const struct typetree *base)
     func->next = base;
     while (peek().token != ')') {
         name.len = 0;
-        type = declaration_specifiers(NULL);
+        type = declaration_specifiers(NULL, NULL);
         type = declarator(type, &name);
         if (is_void(type)) {
             if (nmembers(func)) {
@@ -246,7 +246,7 @@ static void member_declaration_list(struct typetree *type)
     const struct typetree *decl_base, *decl_type;
 
     do {
-        decl_base = declaration_specifiers(NULL);
+        decl_base = declaration_specifiers(NULL, NULL);
         do {
             name.len = 0;
             decl_type = declarator(decl_base, &name);
@@ -424,7 +424,9 @@ static void enum_declaration(void)
  * Use a compact bit representation to hold state about declaration 
  * specifiers. Initialize storage class to sentinel value.
  */
-const struct typetree *declaration_specifiers(int *stc)
+const struct typetree *declaration_specifiers(
+    int *storage_class,
+    int *is_inline)
 {
     const struct typetree *tagged;
     struct typetree *type = NULL;
@@ -442,7 +444,7 @@ const struct typetree *declaration_specifiers(int *stc)
             error("Duplicate type qualifier '%s'.", str_raw(tok.d.string));    \
         next(); qual |= arg;
 
-    if (stc) *stc = '$';
+    if (storage_class) *storage_class = '$';
     while (1) {
         switch ((tok = peek()).token) {
         case VOID:      set_specifier(0x001); break;
@@ -486,18 +488,29 @@ const struct typetree *declaration_specifiers(int *stc)
             enum_declaration();
             spec |= 0x400;
             break;
+        case INLINE:
+            next();
+            if (!is_inline) {
+                error("Invalid 'inline' specifier.");
+                exit(1);
+            } else if (*is_inline) {
+                warning("Multiple 'inline' specifiers.");
+            } else {
+                *is_inline = 1;
+            }
+            break;
         case AUTO:
         case REGISTER:
         case STATIC:
         case EXTERN:
         case TYPEDEF:
             next();
-            if (!stc) {
+            if (!storage_class) {
                 error("Unexpected storage class in qualifier list.");
-            } else if (*stc != '$') {
+            } else if (*storage_class != '$') {
                 error("Multiple storage class specifiers.");
             } else {
-                *stc = tok.token;
+                *storage_class = tok.token;
             }
             break;
         default:
@@ -969,10 +982,10 @@ struct block *declaration(struct definition *def, struct block *parent)
     const struct typetree *base, *type;
     enum symtype symtype;
     enum linkage linkage;
-    int stc = '$';
+    int storage_class, is_inline;
 
-    base = declaration_specifiers(&stc);
-    switch (stc) {
+    base = declaration_specifiers(&storage_class, &is_inline);
+    switch (storage_class) {
     case EXTERN:
         symtype = SYM_DECLARATION;
         linkage = LINK_EXTERN;
@@ -1062,20 +1075,21 @@ struct block *declaration(struct definition *def, struct block *parent)
         case REGISTER:
         case '{':
             assert(!parent);
-            assert(is_function(&sym->type));
             assert(sym->linkage != LINK_NONE);
-            sym->symtype = SYM_DEFINITION;
-            def = cfg_init(sym);
-            push_scope(&ns_label);
-            push_scope(&ns_ident);
-            parameter_declaration_list(def, type);
-            if (context.standard >= STD_C99) {
-                define_builtin__func__(sym->name);
+            if (is_function(&sym->type)) {
+                sym->symtype = SYM_DEFINITION;
+                def = cfg_init(sym);
+                push_scope(&ns_label);
+                push_scope(&ns_ident);
+                parameter_declaration_list(def, type);
+                if (context.standard >= STD_C99) {
+                    define_builtin__func__(sym->name);
+                }
+                parent = block(def, def->body);
+                pop_scope(&ns_label);
+                pop_scope(&ns_ident);
+                return parent;
             }
-            parent = block(def, def->body);
-            pop_scope(&ns_label);
-            pop_scope(&ns_ident);
-            return parent;
         default: break;
         }
         consume(',');
