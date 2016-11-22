@@ -107,7 +107,7 @@ static void encode_addr(
         /* ModR/M */
         c->val[c->len++] =
             ((reg & 0x7) << 3) | ((!addr.offset) ? ((addr.base - 1) % 8) : 4);
-        if (addr.disp && in_byte_range(addr.disp)) {
+        if (in_byte_range(addr.disp)) {
             c->val[c->len - 1] |= 0x40;
         } else if (addr.disp) {
             c->val[c->len - 1] |= 0x80;
@@ -119,7 +119,7 @@ static void encode_addr(
         }
 
         /* Displacement */
-        if (addr.disp && in_byte_range(addr.disp)) {
+        if (in_byte_range(addr.disp)) {
             c->val[c->len++] = addr.disp;
         } else if (addr.disp) {
             memcpy(&c->val[c->len], &addr.disp, 4);
@@ -498,7 +498,7 @@ static struct code lea(
     union operand a,
     union operand b)
 {
-    struct code c = {{0}};
+    struct code c = {0};
     assert(optype == OPT_MEM_REG);
     assert(is_64_bit(b.reg));
 
