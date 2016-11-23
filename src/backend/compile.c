@@ -1228,7 +1228,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
      * do not fit in remaining registers.
      */
     load(var_overflow_arg_area, SI);
-    if (w <= 8 && res.kind == DIRECT) {
+    if (is_standard_register_width(w) && res.kind == DIRECT) {
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(0, SI, 0, 0), w), reg(AX, w));
         emit(INSTR_MOV, OPT_REG_MEM, reg(AX, w), location_of(res, w));
