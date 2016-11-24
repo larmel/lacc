@@ -215,9 +215,27 @@ static struct block *postfix_expression(
     struct var value, copy;
     const struct member *mbr;
     const struct typetree *type;
+    const struct symbol *sym;
     struct token tok;
     int i;
     ExprArray *args;
+
+    /*
+     * Special case for function calls directly on an identifier which
+     * is not declared. Add a declaration like 'extern int foo()' to the
+     * current scope.
+     */
+    if (context.standard == STD_C89) {
+        tok = peek();
+        if (tok.token == IDENTIFIER && peekn(2).token == '(') {
+            sym = sym_lookup(&ns_ident, tok.d.string);
+            if (!sym) {
+                type = type_init(T_FUNCTION, &basic_type__int);
+                sym_add(&ns_ident, tok.d.string, type,
+                    SYM_DECLARATION, LINK_EXTERN);
+            }
+        }
+    }
 
     block = primary_expression(def, block);
     root = block->expr;

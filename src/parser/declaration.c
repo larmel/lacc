@@ -36,9 +36,9 @@ static struct typetree *parameter_list(const struct typetree *base)
 {
     String name;
     const struct typetree *type;
-    struct typetree *func = type_init(T_FUNCTION);
+    struct typetree *func;
 
-    func->next = base;
+    func = type_init(T_FUNCTION, base);
     while (peek().token != ')') {
         name.len = 0;
         type = declaration_specifiers(NULL, NULL);
@@ -79,8 +79,7 @@ static const struct typetree *identifier_list(const struct typetree *base)
     struct token t;
     struct typetree *type;
 
-    type = type_init(T_FUNCTION);
-    type->next = base;
+    type = type_init(T_FUNCTION, base);
     if (peek().token != ')') {
         while (1) {
             t = consume(IDENTIFIER);

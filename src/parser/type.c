@@ -362,6 +362,8 @@ struct typetree *type_init(enum type tt, ...)
         assert(
             type->size == 8 || type->size == 4 ||
             type->size == 2 || type->size == 1);
+    } else if (tt == T_FUNCTION) {
+        type->next = va_arg(args, const struct typetree *);
     }
 
     va_end(args);
