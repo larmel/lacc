@@ -54,18 +54,18 @@ struct var {
     size_t offset;
 
     /*
-     * Width in bits of bitfield access. Direct or deref references to
-     * fields in a struct are restricted to a number of bits, which is
-     * used for masking evaluation of assignment. Normal references have
-     * default value of 0.
+     * Width and offset in bits for field access. Normal references have
+     * default values of 0.
      */
-    int width;
+    short field_width;
+    short field_offset;
+
     int lvalue;
 
     union value imm;
 };
 
-#define is_field(v) ((v).width != 0)
+#define is_field(v) ((v).field_width != 0)
 #define is_constant(v) \
     ((v).kind == IMMEDIATE || ((v).kind == DEREF && !(v).symbol))
 

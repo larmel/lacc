@@ -230,21 +230,32 @@ static struct code movsx(
     union operand a,
     union operand b)
 {
-    struct code c = {{0}};
-    assert(optype == OPT_MEM_REG);
+    struct code c = {0};
 
-    if (rrex(b.reg) || mrex(a.mem.addr)) {
-        c.val[c.len] = REX | W(b.reg) | R(b.reg);
-        c.val[c.len++] |= is_64_bit_reg(a.mem.addr.base); /* B(..) */
-    }
-    if (is_32_bit(a.mem) && is_64_bit(b.reg)) {
+    switch (optype) {
+    default: assert(0);
+    case OPT_REG_REG:
+        assert(a.reg.w == 4);
+        assert(b.reg.w == 8);
+        c.val[c.len++] = REX | W(b.reg) | R(b.reg) | B(a.reg);
         c.val[c.len++] = 0x63;
-    } else {
-        c.val[c.len++] = 0x0F;
-        c.val[c.len++] = 0xBE | w(a.mem);
+        c.val[c.len++] = 0xC0 | reg(b.reg) << 3 | reg(a.reg);
+        break;
+    case OPT_MEM_REG:
+        if (rrex(b.reg) || mrex(a.mem.addr)) {
+            c.val[c.len] = REX | W(b.reg) | R(b.reg);
+            c.val[c.len++] |= is_64_bit_reg(a.mem.addr.base);
+        }
+        if (is_32_bit(a.mem) && is_64_bit(b.reg)) {
+            c.val[c.len++] = 0x63;
+        } else {
+            c.val[c.len++] = 0x0F;
+            c.val[c.len++] = 0xBE | w(a.mem);
+        }
+        encode_addr(&c, reg(b.reg), a.mem.addr);
+        break;
     }
 
-    encode_addr(&c, reg(b.reg), a.mem.addr);
     return c;
 }
 
@@ -675,31 +686,19 @@ static struct code encode_bitwise(
     return c;
 }
 
-static struct code shl(
+/*
+ * shl: 0x00
+ * shr: 0x08
+ * sar: 0x18
+ */
+static struct code encode_shift(
     enum instr_optype optype,
     union operand a,
-    union operand b)
+    union operand b,
+    unsigned char opcode)
 {
-    struct code c = {{0}};
-    assert(optype == OPT_REG_REG);
-    assert(a.reg.r == CX && a.reg.w == 1);
+    struct code c = {0};
 
-    if (rrex(b.reg)) {
-        c.val[c.len++] = REX | W(b.reg) | B(b.reg);
-    }
-    c.val[c.len++] = 0xD2 | w(b.reg);
-    c.val[c.len++] = 0xE0 | reg(b.reg);
-    return c;
-}
-
-static struct code shr(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{0}};
-
-    /* First operand is shift amount. */
     if (optype == OPT_REG_REG) {
         assert(a.reg.r == CX);
         assert(a.reg.w == 1);
@@ -707,37 +706,24 @@ static struct code shr(
             c.val[c.len++] = REX | W(b.reg) | B(b.reg);
         }
         c.val[c.len++] = 0xD2 | w(b.reg);
-        c.val[c.len++] = 0xE8 | reg(b.reg);
+        c.val[c.len++] = (opcode + 0xE0) | reg(b.reg);
     } else {
         assert(optype == OPT_IMM_REG);
         assert(a.imm.type == IMM_INT);
-        assert(a.imm.w == 1);
-        if (a.imm.d.dword == 1) {
-            if (rrex(b.reg)) {
-                c.val[c.len++] = REX | W(b.reg) | B(b.reg);
-            }
+        assert(is_byte_imm(a.imm));
+        if (rrex(b.reg)) {
+            c.val[c.len++] = REX | W(b.reg) | B(b.reg);
+        }
+        if (a.imm.d.byte == 1) {
             c.val[c.len++] = 0xD0 | w(b.reg);
-            c.val[c.len++] = 0xE8 | reg(b.reg);
-        } else assert(0);
+            c.val[c.len++] = (opcode + 0xE0) | reg(b.reg);
+        } else {
+            c.val[c.len++] = 0xC0 | w(b.reg);
+            c.val[c.len++] = (opcode + 0xE0) | reg(b.reg);
+            c.val[c.len++] = a.imm.d.byte;
+        }
     }
 
-    return c;
-}
-
-static struct code sar(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{0}};
-    assert(optype == OPT_REG_REG);
-    assert(a.reg.r == CX && a.reg.w == 1);
-
-    if (rrex(b.reg)) {
-        c.val[c.len++] = REX | W(b.reg) | B(b.reg);
-    }
-    c.val[c.len++] = 0xD2 | w(b.reg);
-    c.val[c.len++] = 0xF8 | reg(b.reg);
     return c;
 }
 
@@ -928,11 +914,11 @@ struct code encode(struct instruction instr)
     case INSTR_OR:
         return encode_bitwise(instr.optype, instr.source, instr.dest, 0x08);
     case INSTR_SHL:
-        return shl(instr.optype, instr.source, instr.dest);
+        return encode_shift(instr.optype, instr.source, instr.dest, 0x00);
     case INSTR_SHR:
-        return shr(instr.optype, instr.source, instr.dest);
+        return encode_shift(instr.optype, instr.source, instr.dest, 0x08);
     case INSTR_SAR:
-        return sar(instr.optype, instr.source, instr.dest);
+        return encode_shift(instr.optype, instr.source, instr.dest, 0x18);
     case INSTR_CALL:
         return call(instr.optype, instr.source);
     case INSTR_CMP:

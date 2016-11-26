@@ -80,7 +80,7 @@ const struct typetree
  * types do not own their member list.
  */
 struct signature {
-    int is_vararg;
+    unsigned is_vararg : 1;
     array_of(struct member) members;
 };
 
@@ -90,7 +90,6 @@ struct signature {
  */
 static array_of(struct typetree *) types;
 static array_of(struct signature *) signatures;
-static int init;
 
 static void cleanup(void)
 {
@@ -115,23 +114,29 @@ static void cleanup(void)
 
 static struct typetree *mktype(void)
 {
+    static int init;
     struct typetree *type = calloc(1, sizeof(*type));
     array_push_back(&types, type);
     if (!init) {
         init = 1;
         atexit(cleanup);
     }
+
     return type;
 }
 
-static struct signature *mksignature(void)
+static struct signature *get_type_signature(struct typetree *type)
 {
-    struct signature *sig = calloc(1, sizeof(*sig));
-    array_push_back(&signatures, sig);
-    if (!init) {
-        init = 1;
-        atexit(cleanup);
+    struct signature *sig;
+
+    sig = (struct signature *) type->signature;
+    if (!sig) {
+        sig = calloc(1, sizeof(*sig));
+        array_push_back(&signatures, sig);
+        assert(array_len(&types));
+        type->signature = sig;
     }
+
     return sig;
 }
 
@@ -165,10 +170,9 @@ int nmembers(const struct typetree *type)
 
 const struct member *get_member(const struct typetree *type, int n)
 {
-    return
-        (!type->signature || array_len(&type->signature->members) <= n) ?
-            NULL :
-            &array_get(&type->signature->members, n);
+    return (!type->signature || array_len(&type->signature->members) <= n)
+        ? NULL
+        : &array_get(&type->signature->members, n);
 }
 
 /*
@@ -182,12 +186,7 @@ static void add_member(struct typetree *parent, struct member m)
 {
     struct signature *sig;
 
-    sig = (struct signature *) parent->signature;
-    if (!sig) {
-        sig = mksignature();
-        parent->signature = sig;
-    }
-
+    sig = get_type_signature(parent);
     if (!str_cmp(m.name, str_init("..."))) {
         assert(!sig->is_vararg);
         assert(is_function(parent));
@@ -256,6 +255,37 @@ void type_add_member(
     add_member(parent, m);
 }
 
+static int pack_field(const struct member *prev, struct member *m)
+{
+    int bits;
+
+    assert(prev);
+    bits = prev->field_offset + prev->field_width;
+    if (bits + m->field_width <= size_of(&basic_type__int) * 8) {
+        m->offset = prev->offset;
+        m->field_offset = bits;
+        return 1;
+    }
+
+    return 0;
+}
+
+const struct member *get_last_field_member(struct signature *sig)
+{
+    const struct member *prev;
+    int count;
+
+    count = array_len(&sig->members);
+    if (count) {
+        prev = &array_get(&sig->members, count - 1);
+        if (prev && prev->field_width) {
+            return prev;
+        }
+    }
+
+    return NULL;
+}
+
 void type_add_field(
     struct typetree *parent,
     String name,
@@ -263,19 +293,37 @@ void type_add_field(
     int width)
 {
     struct member m = {0};
+    struct signature *sig;
+    const struct member *prev;
 
     assert(is_struct_or_union(parent));
     assert(!is_tagged(parent));
     assert(type_equal(type, &basic_type__int)
         || type_equal(type, &basic_type__unsigned_int));
 
-    if (name.len && width) {
-        m.name = name;
-        m.type = type;
-        m.width = width;
-        m.offset = adjust_member_alignment(parent, type);
-        add_member(parent, m);
+    if (name.len && !width) {
+        error("Zero length field %s.", str_raw(name));
+        exit(1);
     }
+
+    /* Anonymous union fields are ignored, not needed for alignment. */
+    if (is_union(parent) && name.len == 0) {
+        return;
+    }
+
+    m.name = name;
+    m.type = type;
+    m.field_width = width;
+    if (is_struct(parent)) {
+        sig = get_type_signature(parent);
+        prev = get_last_field_member(sig);
+        if (!prev || !pack_field(prev, &m)) {
+            m.field_offset = 0;
+            m.offset = adjust_member_alignment(parent, type);
+        }
+    }
+
+    add_member(parent, m);
 }
 
 void type_add_anonymous_member(
@@ -312,22 +360,35 @@ void type_add_anonymous_member(
  * alignment. This function should only be called once all members have
  * been added.
  */
-void type_seal(struct typetree *parent)
+void type_seal(struct typetree *type)
 {
     int i;
-    size_t align, maxalign = 0;
+    size_t align, maxalign;
+    struct signature *sig;
     struct member m;
 
-    for (i = 0; i < nmembers(parent); ++i) {
-        m = array_get(&parent->signature->members, i);
+    maxalign = 0;
+    sig = (struct signature *) type->signature;
+    for (i = 0; i < nmembers(type); ++i) {
+        m = array_get(&sig->members, i);
+        if (is_struct(type) && m.name.len == 0) {
+            array_erase(&sig->members, i);
+            i -= 1;
+            continue;
+        }
         align = type_alignment(m.type);
         if (align > maxalign) {
             maxalign = align;
         }
     }
 
-    if (parent->size % maxalign) {
-        parent->size += maxalign - (parent->size % maxalign);
+    if (maxalign == 0) {
+        error("%s has no named members.", is_struct(type) ? "Struct" : "Union");
+        exit(1);
+    }
+
+    if (type->size % maxalign) {
+        type->size += maxalign - (type->size % maxalign);
     }
 }
 
@@ -582,7 +643,12 @@ int fprinttype(FILE *stream, const struct typetree *type)
             m = get_member(type, i);
             n += fprintf(stream, ".%s::", str_raw(m->name));
             n += fprinttype(stream, m->type);
-            n += fprintf(stream, " (+%lu)", m->offset);
+            if (m->field_width) {
+                n += fprintf(stream, " (+%lu:%d:%d)",
+                    m->offset, m->field_offset, m->field_width);
+            } else {
+                n += fprintf(stream, " (+%lu)", m->offset);
+            }
             if (i < nmembers(type) - 1) {
                 n += fputs(", ", stream);
             }

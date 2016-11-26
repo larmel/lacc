@@ -57,67 +57,72 @@ static const char *escape(const struct symbol *sym)
 
 static char *vartostr(const struct var var)
 {
+    int n = 0;
     char *buffer = get_buffer();
 
     switch (var.kind) {
     case IMMEDIATE:
         switch (var.type->type) {
+        default: assert(0);
         case T_POINTER:
             if (var.symbol) {
                 assert(var.symbol->symtype == SYM_STRING_VALUE);
                 if (var.offset) {
-                    sprintf(buffer, "$%s+%lu",
+                    n = sprintf(buffer, "$%s+%lu",
                         sym_name(var.symbol), var.offset);
                 } else {
-                    sprintf(buffer, "$%s", sym_name(var.symbol));
+                    n = sprintf(buffer, "$%s", sym_name(var.symbol));
                 }
                 break;
             }
         case T_UNSIGNED:
-            sprintf(buffer, "%lu", var.imm.u);
+            n = sprintf(buffer, "%lu", var.imm.u);
             break;
         case T_SIGNED:
-            sprintf(buffer, "%ld", var.imm.i);
+            n = sprintf(buffer, "%ld", var.imm.i);
             break;
         case T_REAL:
             if (is_float(var.type)) {
-                sprintf(buffer, "%ff", var.imm.f);
+                n = sprintf(buffer, "%ff", var.imm.f);
             } else {
-                sprintf(buffer, "%f", var.imm.d);
+                n = sprintf(buffer, "%f", var.imm.d);
             }
             break;
         case T_ARRAY:
             assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
-            sprintf(buffer, "\\\"%s\\\"", str_raw(var.symbol->string_value));
+            n = sprintf(buffer, "\\\"%s\\\"",
+                str_raw(var.symbol->string_value));
             break;
-        default: assert(0);
         }
         break;
     case DIRECT:
         if (var.offset) {
-            sprintf(buffer, "*(&%s + %lu)", sym_name(var.symbol), var.offset);
+            n = sprintf(buffer, "*(&%s + %lu)",
+                sym_name(var.symbol), var.offset);
         } else {
-            if (is_field(var)) {
-                sprintf(buffer, "%s:%d", sym_name(var.symbol), var.width);
-            } else {
-                sprintf(buffer, "%s", sym_name(var.symbol));
-            }
+            n = sprintf(buffer, "%s", sym_name(var.symbol));
         }
         break;
     case ADDRESS:
         if (var.offset) {
-            sprintf(buffer, "(&%s + %lu)", sym_name(var.symbol), var.offset);
+            n = sprintf(buffer, "(&%s + %lu)",
+                sym_name(var.symbol), var.offset);
         } else {
-            sprintf(buffer, "&%s", sym_name(var.symbol));
+            n = sprintf(buffer, "&%s", sym_name(var.symbol));
         }
         break;
     case DEREF:
         if (var.offset) {
-            sprintf(buffer, "*(%s + %lu)", sym_name(var.symbol), var.offset);
+            n = sprintf(buffer, "*(%s + %lu)",
+                sym_name(var.symbol), var.offset);
         } else {
-            sprintf(buffer, "*%s", sym_name(var.symbol));
+            n = sprintf(buffer, "*%s", sym_name(var.symbol));
         }
         break;
+    }
+
+    if (is_field(var)) {
+        sprintf(buffer + n, ":%d:%d", var.field_offset, var.field_width);
     }
 
     return buffer;

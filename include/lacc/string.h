@@ -31,7 +31,8 @@ typedef union {
  * type of string, whether it is short or long.
  */
 #define str_raw(s) \
-    ((s).len < SHORT_STRING_LEN ? (const char *) (s).a.str : (s).p.str)
+    ((s).len == 0 ? (const char *) "" \
+        : (s).len < SHORT_STRING_LEN ? (const char *) (s).a.str : (s).p.str)
 
 /* Initialize string, where the length can be determined by strlen. */
 String str_init(const char *str);

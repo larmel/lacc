@@ -82,15 +82,26 @@ struct typetree {
     String tag;
 };
 
+/*
+ * Represent a function parameter, or struct or union member.
+ *
+ * Offset is used for aggregate member position. Fields additionally
+ * have field_offset and field_width to specify location in containing
+ * type.
+ *
+ * struct {
+ *     char a;        // offset = 0
+ *     int  b : 5;    // offset = 4, field_width = 5, field_offset = 0
+ *     int  c : 7;    // offset = 4, field_width = 7, field_offset = 5
+ * }
+ *
+ */
 struct member {
     String name;
     const struct typetree *type;
-
-    /* Member offset into aggregate, in bytes. */
     size_t offset;
-
-    /* Bitfield width in bits. */
-    int width;
+    short field_width;
+    short field_offset;
 };
 
 /* Get the number of struct or union members, or function parameters. */

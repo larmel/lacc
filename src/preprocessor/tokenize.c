@@ -686,6 +686,7 @@ String tokstr(struct token tok)
             buf[len++] = '\'';
         } else {
             switch (num.type->type) {
+            default: assert(0);
             case T_UNSIGNED:
                 len = sprintf(buf,
                     (num.type->size == 8) ? "%lul" : "%lu", num.val.u);
@@ -698,7 +699,6 @@ String tokstr(struct token tok)
                 len = sprintf(buf,
                     is_float(num.type) ? "%ff" : "%f", num.val.f);
                 break;
-            default: assert(0);
             }
         }
         tok.d.string = str_register(buf, len);

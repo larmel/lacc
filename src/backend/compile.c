@@ -318,6 +318,33 @@ static void load_sse(struct var val, enum reg r, int w)
     emit_load(opcode, val, reg(r, w));
 }
 
+static void load_field(struct var v, enum reg r)
+{
+    int mask;
+
+    assert(is_field(v));
+    assert(size_of(v.type) == size_of(&basic_type__int));
+    assert(v.field_width > 0 && v.field_width < 32);
+    assert(v.field_offset + v.field_width <= 32);
+
+    emit_load(INSTR_MOV, v, reg(r, 4));
+    if (is_signed(v.type)) {
+        mask = 32 - (v.field_offset + v.field_width);
+        if (mask > 0) {
+            emit(INSTR_SHL, OPT_IMM_REG, constant(mask, 1), reg(r, 4));
+        }
+        emit(INSTR_SAR, OPT_IMM_REG,
+            constant(v.field_offset + mask, 1), reg(r, 4));
+    } else {
+        mask = ((1 << v.field_width) - 1) << v.field_offset;
+        emit(INSTR_AND, OPT_IMM_REG, constant(mask, 4), reg(r, 4));
+        if (v.field_offset) {
+            emit(INSTR_SHR, OPT_IMM_REG,
+                constant(v.field_offset, 1), reg(r, 4));
+        }
+    }
+}
+
 /*
  * Load integer variable v to register r, sign extended to fit register
  * size. Values are always sign extended to either 4 or 8 bytes on load.
@@ -329,31 +356,37 @@ static void load_int(struct var v, enum reg r, int w)
     assert(w == 4 || w == 8);
     assert(!is_real(v.type));
 
-    opcode = INSTR_MOV;
-    if (v.kind == ADDRESS) {
-        opcode = INSTR_LEA;
-        assert(w == 8);
-        assert(size_of(v.type) == w);
-    } else if (v.kind == IMMEDIATE) {
-        opcode = INSTR_MOV;
-    } else if (size_of(v.type) < w) {
-        if (is_unsigned(v.type)) {
-            if (size_of(v.type) < 4) {
-                opcode = INSTR_MOVZX;
-            } else if (size_of(v.type) == 4 && w == 8) {
-                /*
-                 * Special case for unsigned extension from 32 to 64
-                 * bit, as there is no instruction 'movzlq'.
-                 */
-                opcode = INSTR_MOV;
-                w = 4;
-            }
-        } else if (is_signed(v.type)) {
-            opcode = INSTR_MOVSX;
+    if (is_field(v)) {
+        load_field(v, r);
+        if (is_signed(v.type) && w == 8) {
+            emit(INSTR_MOVSX, OPT_REG_REG, reg(r, 4), reg(r, 8));
         }
+    } else {
+        opcode = INSTR_MOV;
+        if (v.kind == ADDRESS) {
+            opcode = INSTR_LEA;
+            assert(w == 8);
+            assert(size_of(v.type) == w);
+        } else if (v.kind == IMMEDIATE) {
+            opcode = INSTR_MOV;
+        } else if (size_of(v.type) < w) {
+            if (is_unsigned(v.type)) {
+                if (size_of(v.type) < 4) {
+                    opcode = INSTR_MOVZX;
+                } else if (size_of(v.type) == 4 && w == 8) {
+                    /*
+                     * Special case for unsigned extension from 32 to 64
+                     * bit, as there is no instruction 'movzlq'.
+                     */
+                    opcode = INSTR_MOV;
+                    w = 4;
+                }
+            } else if (is_signed(v.type)) {
+                opcode = INSTR_MOVSX;
+            }
+        }
+        emit_load(opcode, v, reg(r, w));
     }
-
-    emit_load(opcode, v, reg(r, w));
 }
 
 /*
@@ -451,7 +484,7 @@ static enum reg load_integer_as_float(
     xmm = get_sse_reg();
     opcode = (size_of(type) == 8) ? INSTR_CVTSI2SD : INSTR_CVTSI2SS;
     if (is_signed(val.type)) {
-        if (size_of(val.type) < 4) {
+        if (size_of(val.type) < 4 || is_field(val)) {
             ax = get_int_reg();
             load_int(val, ax, 4);
             emit(opcode, OPT_REG_REG, reg(ax, 4), reg(xmm, size_of(type)));
@@ -507,7 +540,6 @@ static enum reg load_integer_as_float(
  */
 static enum reg load_cast(struct var val, const struct typetree *type)
 {
-    unsigned int mask;
     enum reg r;
 
     if (size_of(type) < 4) {
@@ -524,20 +556,11 @@ static enum reg load_cast(struct var val, const struct typetree *type)
         } else {
             r = load_float_as_integer(val, type);
         }
+    } else if (is_real(type)) {
+        r = load_integer_as_float(val, type);
     } else {
-        if (is_real(type)) {
-            assert(!is_field(val));
-            r = load_integer_as_float(val, type);
-        } else {
-            r = get_int_reg();
-            load_int(val, r, size_of(type));
-            if (is_field(val)) {
-                assert(size_of(val.type) == size_of(&basic_type__int));
-                assert(val.width > 0 && val.width < 32);
-                mask = (0xFFFFFFFFu >> (32 - val.width));
-                emit(INSTR_AND, OPT_IMM_REG, constant(mask, 4), reg(r, 4));
-            }
-        }
+        r = get_int_reg();
+        load_int(val, r, size_of(type));
     }
 
     return r;
@@ -559,16 +582,27 @@ static void load_address(struct var v, enum reg r)
 static void store(enum reg r, struct var v)
 {
     const int w = size_of(v.type);
-    unsigned int mask;
+    struct var field;
+    int mask;
     enum opcode op = INSTR_MOV;
 
     if (is_real(v.type)) {
         op = (is_float(v.type)) ? INSTR_MOVSS : INSTR_MOVSD;
     } else if (is_field(v)) {
         assert(w == size_of(&basic_type__int));
-        assert(v.width > 0 && v.width < 32);
-        mask = (0xFFFFFFFFu >> (32 - v.width));
+        assert(v.field_width > 0 && v.field_width < 32);
+        field = v;
+        field.field_width = 0;
+        field.field_offset = 0;
+        load(field, R11);
+        mask = ((1 << v.field_width) - 1) << v.field_offset;
+        emit(INSTR_AND, OPT_IMM_REG, constant(~mask, w), reg(R11, w));
+        if (v.field_offset) {
+            emit(INSTR_SHL, OPT_IMM_REG,
+                constant(v.field_offset, w), reg(r, w));
+        }
         emit(INSTR_AND, OPT_IMM_REG, constant(mask, w), reg(r, w));
+        emit(INSTR_OR, OPT_REG_REG, reg(R11, w), reg(r, w));
     }
 
     if (v.kind == DIRECT) {
@@ -1830,40 +1864,74 @@ static void compile_data_assign(struct var target, struct var val)
 
 static void zero_fill_data(size_t bytes)
 {
-    struct immediate
+    static struct immediate
         zero_byte = {IMM_INT, 1},
+        zero_int = {IMM_INT, 4},
         zero_quad = {IMM_INT, 8};
 
-    while (bytes > size_of(&basic_type__long)) {
+    while (bytes >= size_of(&basic_type__long)) {
         emit_data(zero_quad);
         bytes -= size_of(&basic_type__long);
     }
 
-    while (bytes--)
+    while (bytes >= size_of(&basic_type__int)) {
+        emit_data(zero_int);
+        bytes -= size_of(&basic_type__int);
+    }
+
+    while (bytes > 0) {
+        bytes -= 1;
         emit_data(zero_byte);
+    }
 }
 
 static void compile_data(struct definition *def)
 {
-    int i;
-    struct statement stmt;
+    int i, value, mask;
+    struct statement st, fl;
     size_t
         total_size = size_of(&def->symbol->type),
         initialized = 0;
 
     enter_context(def->symbol);
     for (i = 0; i < array_len(&def->body->code); ++i) {
-        stmt = array_get(&def->body->code, i);
+        st = array_get(&def->body->code, i);
+        if (st.t.offset > initialized) {
+            zero_fill_data(st.t.offset - initialized);
+        }
 
-        assert(stmt.st == IR_ASSIGN);
-        assert(stmt.t.kind == DIRECT);
-        assert(stmt.t.symbol == def->symbol);
-        assert(stmt.t.offset >= initialized);
-        assert(is_identity(stmt.expr));
+        initialized = st.t.offset;
+        if (is_field(st.t)) {
+            value = 0;
+            fl = st;
+            do {
+                assert(fl.st == IR_ASSIGN);
+                assert(fl.t.kind == DIRECT);
+                assert(fl.t.symbol == def->symbol);
+                assert(is_identity(fl.expr));
+                assert(is_integer(fl.expr.type));
+                assert(fl.expr.l.kind == IMMEDIATE);
+                mask = ((1 << fl.t.field_width) - 1);
+                value |= (fl.expr.l.imm.i & mask) << fl.t.field_offset;
+                i += 1;
+                if (i == array_len(&def->body->code))
+                    break;
+                fl = array_get(&def->body->code, i);
+            } while (is_field(fl.t) && fl.t.offset == initialized);
+            i -= 1;
+            st.t.type = &basic_type__int;
+            st.t.field_offset = 0;
+            st.t.field_width = 0;
+            compile_data_assign(st.t, var_int(value));
+        } else {
+            assert(st.st == IR_ASSIGN);
+            assert(st.t.kind == DIRECT);
+            assert(st.t.symbol == def->symbol);
+            assert(is_identity(st.expr));
+            compile_data_assign(st.t, st.expr.l);
+        }
 
-        zero_fill_data(stmt.t.offset - initialized);
-        compile_data_assign(stmt.t, stmt.expr.l);
-        initialized = stmt.t.offset + size_of(stmt.t.type);
+        initialized = st.t.offset + size_of(st.t.type);
     }
 
     assert(total_size >= initialized);

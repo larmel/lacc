@@ -8,7 +8,8 @@ static int var_equal(struct var a, struct var b)
     return type_equal(a.type, b.type)
         && a.symbol == b.symbol
         && a.kind == b.kind
-        && a.width == b.width
+        && a.field_width == b.field_width
+        && a.field_offset == b.field_offset
         /* no compare of immediate numeric value, or lvalue. */
         && a.offset == b.offset;
 }

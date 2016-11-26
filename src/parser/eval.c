@@ -937,8 +937,9 @@ static struct expression eval_va_arg(
 
 /*
  * Convert variables of type ARRAY or FUNCTION to addresses when used
- * in expressions, and normalize bit-field values to whole integers.
- * 'array of T' is converted (decay) to pointer to T. Not the same as
+ * in expressions.
+ *
+ * Array of T is converted (decay) into pointer to T. Not the same as
  * taking the address of an array, which would give 'pointer to array
  * of T'.
  */
@@ -947,8 +948,6 @@ static struct var rvalue(
     struct block *block,
     struct var var)
 {
-    int bits;
-
     if (is_function(var.type)) {
         var = eval_addr(def, block, var);
     } else if (is_array(var.type)) {
@@ -972,38 +971,16 @@ static struct var rvalue(
             var.type = var.type->next;
             var = eval_addr(def, block, var);
         }
-    } else if (is_field(var)) {
-        assert(
-            type_equal(var.type, &basic_type__int) ||
-            type_equal(var.type, &basic_type__unsigned_int));
+    } else if (is_field(var) && is_unsigned(var.type)) {
         /*
-         * Bit field is loaded, and if needed sign extended, into a full
-         * width integer value. Set width = 0 to make nested calls to
-         * eval methods not recursively call rvalue.
+         * Fields of unsigned type are promoted to signed int if the
+         * signed type can represent all values of the unsigned type.
          */
-        if (var.width < size_of(&basic_type__int) * 8) {
-            bits = var.width;
-            var.width = 0;
-            var = eval(def, block,
-                and(def, block, var, var_int((1 << bits) - 1)));
-            if (is_signed(var.type)) {
-                bits = size_of(var.type) * 8 - bits;
-                var = eval(def, block, shiftl(def, block, var, var_int(bits)));
-                var = eval(def, block, shiftr(def, block, var, var_int(bits)));
-            } else {
-                /*
-                 * Fields of unsigned type are promoted to signed int
-                 * if the signed type can represent all values of the
-                 * unsigned type.
-                 */
-                var.type = &basic_type__int;
-            }
-        } else {
-            assert(var.width == size_of(&basic_type__int) * 8);
+        if (var.field_width < size_of(&basic_type__int) * 8) {
+            var = eval(def, block, cast(var, &basic_type__int));
         }
     }
 
-    assert(!var.width);
     return var;
 }
 
@@ -1225,14 +1202,17 @@ struct var eval_deref(
 
 static struct var mask_bitfield_immediate(struct var v, int w)
 {
+    long mask;
+
     assert(v.kind == IMMEDIATE);
     assert(is_integer(v.type));
     assert(w > 0);
-    assert(w < size_of(v.type) * 8);
+    assert(w < size_of(&basic_type__int) * 8);
 
-    v.imm.u = (v.imm.u & 0xFFFFFFFFFFFFFFFFul >> (64 - w));
-    if (is_signed(v.type) && (v.imm.u & (1 << (w - 1)))) {
-        v.imm.u |= (0xFFFFFFFFFFFFFFFFul << w);
+    mask = (1l << w) - 1;
+    v.imm.i &= mask;
+    if (is_signed(v.type) && (v.imm.i & (1l << (w - 1)))) {
+        v.imm.i |= ~mask;
     }
 
     return v;
@@ -1343,7 +1323,7 @@ struct var eval_assign(
         if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
             var = eval_cast(def, block, expr.l, target.type);
             if (is_field(target)) {
-                var = mask_bitfield_immediate(var, target.width);
+                var = mask_bitfield_immediate(var, target.field_width);
             }
             expr = as_expr(var);
         }

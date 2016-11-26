@@ -327,7 +327,8 @@ static struct block *postfix_expression(
             }
             value = eval(def, block, root);
             value.type = mbr->type;
-            value.width = mbr->width;
+            value.field_width = mbr->field_width;
+            value.field_offset = mbr->field_offset;
             value.offset += mbr->offset;
             block->expr = as_expr(value);
             root = block->expr;
@@ -349,7 +350,8 @@ static struct block *postfix_expression(
                 value = eval(def, block, root);
                 value.type = type_init(T_POINTER, mbr->type);
                 value = eval_deref(def, block, value);
-                value.width = mbr->width;
+                value.field_width = mbr->field_width;
+                value.field_offset = mbr->field_offset;
                 value.offset += mbr->offset;
                 block->expr = as_expr(value);
                 root = block->expr;

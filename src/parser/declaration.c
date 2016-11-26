@@ -729,33 +729,47 @@ static struct block *initialize_struct_or_union(
     struct block *block,
     struct var target)
 {
-    int i = 0, last_offset = -1, filled = target.offset;
+    int i, m;
+    size_t filled = target.offset;
     const struct typetree *type = target.type;
-    const struct member *member;
+    const struct member *member, *prev = NULL;
 
     assert(!is_tagged(type));
     assert(is_struct_or_union(type));
+    assert(nmembers(type) > 0);
     target.lvalue = 1;
     if (is_union(type)) {
         member = get_member(type, 0);
         target.type = member->type;
+        target.field_offset = member->field_offset;
+        target.field_width = member->field_width;
         block = initialize_field(def, block, target);
     } else {
+        m = nmembers(type);
+        i = 0;
         do {
-            do {
+            while (1) {
                 member = get_member(type, i++);
                 target.type = member->type;
-            } while (member->offset == last_offset);
-            last_offset = member->offset;
+                if (!prev
+                    || prev->offset != member->offset
+                    || prev->field_offset != member->field_offset)
+                    break;
+            }
+            prev = member;
             target.offset = filled + member->offset;
+            target.field_offset = member->field_offset;
+            target.field_width = member->field_width;
             block = initialize_field(def, block, target);
-        } while (i < nmembers(type) && next_element());
+        } while (i < m && next_element());
 
-        while (i < nmembers(type)) {
+        while (i < m) {
             member = get_member(type, i++);
             target.type = member->type;
             if (filled + member->offset > target.offset) {
                 target.offset = filled + member->offset;
+                target.field_offset = member->field_offset;
+                target.field_width = member->field_width;
                 zero_initialize(def, block, target);
             }
         }
