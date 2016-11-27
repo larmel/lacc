@@ -1273,6 +1273,34 @@ struct result {
     struct var var;
 };
 
+/* Translate INSTR_AND, INSTR_OR, INSTR_XOR. */
+static struct result compile_bitwise_expression(
+    enum opcode opcode,
+    struct var l,
+    struct var r)
+{
+    size_t w;
+    struct result res = {0};
+
+    w = size_of(l.type);
+    assert(size_of(r.type) == w);
+    if (is_constant(r) && w < 8) {
+        load(l, AX);
+        emit(opcode, OPT_IMM_REG, value_of(r, w), reg(AX, w));
+    } else if (is_constant(l) && w < 8) {
+        load(r, AX);
+        emit(opcode, OPT_IMM_REG, value_of(l, w), reg(AX, w));
+    } else {
+        load(l, AX);
+        load(r, CX);
+        emit(opcode, OPT_REG_REG, reg(CX, w), reg(AX, w));
+    }
+
+    res.kind = VAL_REG;
+    res.r = AX;
+    return res;
+}
+
 /*
  * Emit instructions for evaluating expression, and store the result in
  * a suitable register.
@@ -1402,22 +1430,13 @@ static struct result compile_expression(struct expression expr)
         res.r = (expr.op == IR_OP_DIV) ? AX : DX;
         break;
     case IR_OP_AND:
-        load(l, AX);
-        load(r, CX);
-        emit(INSTR_AND, OPT_REG_REG, reg(CX, 8), reg(AX, 8));
-        res.r = AX;
+        res = compile_bitwise_expression(INSTR_AND, l, r);
         break;
     case IR_OP_OR:
-        load(l, AX);
-        load(r, CX);
-        emit(INSTR_OR, OPT_REG_REG, reg(CX, 8), reg(AX, 8));
-        res.r = AX;
+        res = compile_bitwise_expression(INSTR_OR, l, r);
         break;
     case IR_OP_XOR:
-        load(l, AX);
-        load(r, CX);
-        emit(INSTR_XOR, OPT_REG_REG, reg(CX, 8), reg(AX, 8));
-        res.r = AX;
+        res = compile_bitwise_expression(INSTR_XOR, l, r);
         break;
     case IR_OP_SHL:
         load(l, AX);

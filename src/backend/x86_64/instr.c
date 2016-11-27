@@ -627,59 +627,52 @@ static struct code encode_signed_div(enum instr_optype optype, union operand op)
     return c;
 }
 
-static struct code basic_register_only_encode(
-    unsigned int opcode,
-    struct registr a,
-    struct registr b)
-{
-    struct code c = {{0}};
-    if (rrex(a)) {
-        c.val[c.len++] = REX | W(a) | R(a) | B(b);
-    }
-    c.val[c.len++] = opcode | w(a);
-    c.val[c.len++] = 0xC0 | reg(a) << 3 | reg(b);
-    return c;
-}
-
-static struct code xor(
+/*
+ * Common encoding for bitwise and, or, and xor operations. Use compact
+ * representation for byte sized immediate and AX operands.
+ */
+static struct code encode_bitwise(
     enum instr_optype optype,
     union operand a,
-    union operand b)
+    union operand b,
+    unsigned char opcode)
 {
-    assert(optype == OPT_REG_REG);
-    return basic_register_only_encode(0x30, a.reg, b.reg);
-}
+    struct code c = {0};
 
-static struct code and(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{0}};
-
-    if (optype == OPT_REG_REG) {
-        c = basic_register_only_encode(0x20, a.reg, b.reg);
-    } else {
-        assert(optype == OPT_IMM_REG);
+    switch (optype) {
+    default: assert(0);
+    case OPT_REG_REG:
+        if (rrex(a.reg)) {
+            c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
+        }
+        c.val[c.len++] = opcode | w(a.reg);
+        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        break;
+    case OPT_IMM_REG:
         assert(a.imm.w == b.reg.w);
         assert(a.imm.w == 4 || a.imm.w == 1);
-        if (b.reg.r == AX) {
-            c.val[c.len++] = 0x24 | w(a.imm);
+        assert(a.imm.w != 1 || b.reg.r == AX);
+        if (b.reg.r == AX && (!is_byte_imm(a.imm) || b.reg.w < 4)) {
+            c.val[c.len++] = (opcode + 0x04) | w(a.imm);
             memcpy(&c.val[c.len], &a.imm.d.dword, a.imm.w);
             c.len += a.imm.w;
-        } else assert(0);
+        } else  {
+            if (is_64_bit_reg(b.reg.r)) {
+                c.val[c.len++] = REX | B(b.reg);
+            }
+            c.val[c.len++] = 0x80 | is_byte_imm(a.imm) << 1 | w(a.imm);
+            c.val[c.len++] = (opcode + 0xC0) | reg(b.reg);
+            if (is_byte_imm(a.imm)) {
+                c.val[c.len++] = a.imm.d.byte;
+            } else {
+                memcpy(&c.val[c.len], &a.imm.d.dword, a.imm.w);
+                c.len += a.imm.w;
+            }
+        }
+        break;
     }
 
     return c;
-}
-
-static struct code or(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    assert(optype == OPT_REG_REG);
-    return basic_register_only_encode(0x08, a.reg, b.reg);
 }
 
 static struct code shl(
@@ -923,7 +916,7 @@ struct code encode(struct instruction instr)
     case INSTR_MULSS:
         return sse_generic(instr.optype, 0xF3, 0x59, instr.source, instr.dest);
     case INSTR_XOR:
-        return xor(instr.optype, instr.source, instr.dest);
+        return encode_bitwise(instr.optype, instr.source, instr.dest, 0x30);
     case INSTR_DIV:
         return encode_div(instr.optype, instr.source);
     case INSTR_DIVSD:
@@ -931,9 +924,9 @@ struct code encode(struct instruction instr)
     case INSTR_DIVSS:
         return sse_generic(instr.optype, 0xF3, 0x5E, instr.source, instr.dest);
     case INSTR_AND:
-        return and(instr.optype, instr.source, instr.dest);
+        return encode_bitwise(instr.optype, instr.source, instr.dest, 0x20);
     case INSTR_OR:
-        return or(instr.optype, instr.source, instr.dest);
+        return encode_bitwise(instr.optype, instr.source, instr.dest, 0x08);
     case INSTR_SHL:
         return shl(instr.optype, instr.source, instr.dest);
     case INSTR_SHR:
