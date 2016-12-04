@@ -642,7 +642,7 @@ int tok_cmp(struct token a, struct token b)
 struct token stringify(const TokenArray *list)
 {
     int i;
-    struct token str, tok;
+    struct token str = {0}, tok;
     String strval;
     char *buf;
     size_t cap, len, ptr;
@@ -692,7 +692,6 @@ struct token stringify(const TokenArray *list)
     }
 
     str.token = STRING;
-    str.leading_whitespace = 0;
     return str;
 }
 
