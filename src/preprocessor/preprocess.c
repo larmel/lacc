@@ -406,7 +406,7 @@ void inject_line(char *line)
 
 struct token next(void)
 {
-    if (deque_len(&lookahead) <= K) {
+    if (deque_len(&lookahead) < 1) {
         preprocess_line();
     }
 
@@ -418,14 +418,11 @@ struct token peek(void)
     return peekn(1);
 }
 
-struct token peekn(unsigned n)
+struct token peekn(int n)
 {
-    assert(n && n <= K);
-    if (!deque_len(&lookahead)) {
-        /*
-         * If peek() is the first call made, make sure there is an
-         * initial call to populate the lookahead buffer.
-         */
+    assert(n > 0);
+    assert(n <= K);
+    if (deque_len(&lookahead) < K) {
         preprocess_line();
     }
 

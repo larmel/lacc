@@ -162,7 +162,7 @@ struct token {
 struct token peek(void);
 
 /* Peek lookahead of n. */
-struct token peekn(unsigned n);
+struct token peekn(int n);
 
 /* Consume and return next token. */
 struct token next(void);
