@@ -738,6 +738,13 @@ void register_builtin_definitions(void)
     register_macro("__SIZEOF_LONG__", "8");
     register_macro("__SIZEOF_POINTER__", "8");
 
+#ifdef __linux__
+    register_macro("__linux__", "1");
+#endif
+#ifdef __unix__
+    register_macro("__unix__", "1");
+#endif
+
     switch (context.standard) {
     case STD_C89:
         register_macro("__STDC_VERSION__", "199409L");
