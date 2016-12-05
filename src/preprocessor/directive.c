@@ -8,7 +8,7 @@
 
 #include <assert.h>
 
-#define IDENT(s) {IDENTIFIER, 0, 0, 0, {SHORT_STRING_INIT(s)}}
+#define IDENT(s) {IDENTIFIER, 0, 1, 0, 0, {SHORT_STRING_INIT(s)}}
 
 struct token
     ident__include = IDENT("include"),
@@ -92,13 +92,17 @@ static void expect(const struct token *list, int token)
 
 static int expression(const struct token *list, const struct token **endptr);
 
+/*
+ * Macro expansions should already have been done. Stray identifiers are
+ * interpreted as zero constants.
+ */
 static int eval_primary(
     const struct token *list,
     const struct token **endptr)
 {
     String s;
     struct token n;
-    int value = 0;
+    int value;
 
     switch (list->token) {
     case PREP_NUMBER:
@@ -109,20 +113,19 @@ static int eval_primary(
     case NUMBER:
         value = list->d.number.val.i;
         break;
-    case IDENTIFIER:
-        /*
-         * Macro expansions should already have been done. Stray
-         * identifiers are interpreted as zero constants.
-         */
-        assert(!definition(list->d.string));
-        break;
     case '(':
         value = expression(list + 1, &list);
         expect(list, ')');
         break;
     default:
-        s = tokstr(*list);
-        error("Invalid primary expression '%s' in directive.", str_raw(s));
+        if (!list->is_expandable) {
+            s = tokstr(*list);
+            error("Invalid primary expression '%s' in directive.", str_raw(s));
+            exit(1);
+        }
+    case IDENTIFIER:
+        assert(!definition(list->d.string));
+        value = 0;
         break;
     }
 
@@ -364,24 +367,25 @@ static void preprocess_include(const struct token line[])
     }
 }
 
+/* Function-like macro iff parenthesis immediately after identifier. */
 static struct macro preprocess_define(
     const struct token *line,
     const struct token **endptr)
 {
-    struct macro macro = {{{0}}};
-    struct token param = {PARAM};
+    struct macro macro = {0};
+    struct token param = {PARAM}, t;
     TokenArray params = get_token_array();
     int i;
 
-    expect(line, IDENTIFIER);
-    macro.name = line->d.string;
+    t = *line++;
+    if (!t.is_expandable) {
+        error("Invalid definition of %s as a macro", str_raw(t.d.string));
+        exit(1);
+    }
+
+    macro.name = t.d.string;
     macro.type = OBJECT_LIKE;
     macro.replacement = get_token_array();
-    line++;
-
-    /*
-     * Function-like macro iff parenthesis immediately after identifier.
-     */
     if (line->token == '(' && !line->leading_whitespace) {
         macro.type = FUNCTION_LIKE;
         line++;
@@ -477,7 +481,11 @@ void preprocess_directive(TokenArray *array)
         pop();
     } else if (!tok_cmp(*line, ident__ifndef)) {
         if (in_active_block()) {
-            expect(++line, IDENTIFIER);
+            line++;
+            if (!line->is_expandable) {
+                error("Expected identifier in 'ifndef' clause.");
+                exit(1);
+            }
             expr = definition(line->d.string) == NULL;
             push(expr ? BRANCH_LIVE : BRANCH_DEAD);
         } else {
@@ -485,7 +493,11 @@ void preprocess_directive(TokenArray *array)
         }
     } else if (!tok_cmp(*line, ident__ifdef)) {
         if (in_active_block()) {
-            expect(++line, IDENTIFIER);
+            line++;
+            if (!line->is_expandable) {
+                error("Expected identifier in 'ifdef' clause.");
+                exit(1);
+            }
             expr = definition(line->d.string) != NULL;
             push(expr ? BRANCH_LIVE : BRANCH_DEAD);
         } else {
@@ -495,7 +507,11 @@ void preprocess_directive(TokenArray *array)
         if (!tok_cmp(*line, ident__define)) {
             define(preprocess_define(line + 1, &line));
         } else if (!tok_cmp(*line, ident__undef)) {
-            expect(++line, IDENTIFIER);
+            line++;
+            if (!line->is_expandable) {
+                error("Expected identifier in 'undef' clause.");
+                exit(1);
+            }
             undef(line->d.string);
         } else if (!tok_cmp(*line, ident__include)) {
             preprocess_include(line + 1);

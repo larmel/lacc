@@ -150,6 +150,7 @@ struct number {
 struct token {
     enum token_type token;
     unsigned int leading_whitespace : 16;
+    unsigned int is_expandable : 1;
     unsigned int is_char_literal : 1;
     unsigned int disable_expand : 1;
     union {

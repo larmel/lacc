@@ -445,7 +445,7 @@ static TokenArray expand_macro(
             }
             for (j = 0; j < array_len(&args[i]); ++j) {
                 t = array_get(&args[i], j);
-                if (t.token == IDENTIFIER) {
+                if (t.is_expandable) {
                     args[i].data[j].disable_expand = 1;
                 }
             }
@@ -514,7 +514,7 @@ static TokenArray read_arg(
             }
         }
         t = *list++;
-        if (t.token == IDENTIFIER && is_expanded(scope, t.d.string)) {
+        if (t.is_expandable && is_expanded(scope, t.d.string)) {
             t.disable_expand = 1;
         }
         array_push_back(&arg, t);
@@ -564,7 +564,7 @@ static int expand_line(ExpandStack *scope, TokenArray *list)
 
     for (n = 0, i = 0; i < array_len(list); ++i) {
         t = array_get(list, i);
-        if (t.token != IDENTIFIER || t.disable_expand) {
+        if (!t.is_expandable || t.disable_expand) {
             continue;
         }
 

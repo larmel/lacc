@@ -16,28 +16,29 @@
  * Static initializer for token. Only works with string representation
  * that can fit inline.
  */
-#define TOK(t, s) {(t), 0, 0, 0, {SHORT_STRING_INIT(s)}}
+#define TOK(t, s) {(t), 0, 0, 0, 0, {SHORT_STRING_INIT(s)}}
+#define IDN(t, s) {(t), 0, 1, 0, 0, {SHORT_STRING_INIT(s)}}
 
 const struct token basic_token[] = {
-/* 0x00 */  TOK(END, "$"),              TOK(AUTO, "auto"),
-            TOK(BREAK, "break"),        TOK(CASE, "case"),
-            TOK(CHAR, "char"),          TOK(CONST, "const"),
-            TOK(CONTINUE, "continue"),  TOK(DEFAULT, "default"),
-/* 0x08 */  TOK(DO, "do"),              TOK(DOUBLE, "double"),
-            TOK(NEWLINE, "\n"),         TOK(ELSE, "else"),
-            TOK(ENUM, "enum"),          TOK(EXTERN, "extern"),
-            TOK(FLOAT, "float"),        TOK(FOR, "for"), 
-/* 0x10 */  TOK(GOTO, "goto"),          TOK(IF, "if"),
-            TOK(INT, "int"),            TOK(LONG, "long"),
-            TOK(REGISTER, "register"),  TOK(RETURN, "return"),
-            TOK(SHORT, "short"),        TOK(SIGNED, "signed"),
-/* 0x18 */  TOK(SIZEOF, "sizeof"),      TOK(STATIC, "static"),
-            TOK(STRUCT, "struct"),      TOK(SWITCH, "switch"),
-            TOK(TYPEDEF, "typedef"),    TOK(UNION, "union"),
-            TOK(UNSIGNED, "unsigned"),  TOK(VOID, "void"),
-/* 0x20 */  TOK(INLINE, "inline"),      TOK(NOT, "!"),
-            TOK(VOLATILE, "volatile"),  TOK(HASH, "#"),
-            TOK(WHILE, "while"),        TOK(MODULO, "%"),
+/* 0x00 */  TOK(END, "$"),              IDN(AUTO, "auto"),
+            IDN(BREAK, "break"),        IDN(CASE, "case"),
+            IDN(CHAR, "char"),          IDN(CONST, "const"),
+            IDN(CONTINUE, "continue"),  IDN(DEFAULT, "default"),
+/* 0x08 */  IDN(DO, "do"),              IDN(DOUBLE, "double"),
+            TOK(NEWLINE, "\n"),         IDN(ELSE, "else"),
+            IDN(ENUM, "enum"),          IDN(EXTERN, "extern"),
+            IDN(FLOAT, "float"),        IDN(FOR, "for"), 
+/* 0x10 */  IDN(GOTO, "goto"),          IDN(IF, "if"),
+            IDN(INT, "int"),            IDN(LONG, "long"),
+            IDN(REGISTER, "register"),  IDN(RETURN, "return"),
+            IDN(SHORT, "short"),        IDN(SIGNED, "signed"),
+/* 0x18 */  IDN(SIZEOF, "sizeof"),      IDN(STATIC, "static"),
+            IDN(STRUCT, "struct"),      IDN(SWITCH, "switch"),
+            IDN(TYPEDEF, "typedef"),    IDN(UNION, "union"),
+            IDN(UNSIGNED, "unsigned"),  IDN(VOID, "void"),
+/* 0x20 */  IDN(INLINE, "inline"),      TOK(NOT, "!"),
+            IDN(VOLATILE, "volatile"),  TOK(HASH, "#"),
+            IDN(WHILE, "while"),        TOK(MODULO, "%"),
             TOK(AND, "&"),              {0},
 /* 0x28 */  TOK(OPEN_PAREN, "("),       TOK(CLOSE_PAREN, ")"),
             TOK(STAR, "*"),             TOK(PLUS, "+"),
@@ -77,7 +78,7 @@ const struct token basic_token[] = {
             {0},                        {0},
 /* 0x70 */  {0},                        {0},
             {0},                        {0},
-            {NUMBER},                   {IDENTIFIER},
+            {NUMBER},                   {IDENTIFIER, 1},
             {STRING},                   {PARAM},
 /* 0x78 */  {EMPTY_ARG},                {PREP_NUMBER},
             {0},                        TOK(OPEN_CURLY, "{"),
@@ -519,6 +520,7 @@ static struct token strtoident(char *in, char **endptr)
     }
 
     ident.d.string = str_register(start, in - start);
+    ident.is_expandable = 1;
     *endptr = in;
     return ident;
 }

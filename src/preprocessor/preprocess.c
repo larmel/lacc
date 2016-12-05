@@ -129,7 +129,7 @@ static void read_defined_operator(TokenArray *line)
         is_parens = 1;
     }
 
-    if (t.token != IDENTIFIER) {
+    if (!t.is_expandable) {
         error("Expected identifier in 'defined' clause, but got '%s'",
             str_raw(t.d.string));
         exit(1);
@@ -231,7 +231,7 @@ static int read_complete_line(TokenArray *line, struct token t, int directive)
 
     while (t.token != NEWLINE) {
         assert(t.token != END);
-        if (expandable && t.token == IDENTIFIER) {
+        if (expandable && t.is_expandable) {
             if (directive && !tok_cmp(t, ident__defined)) {
                 read_defined_operator(line);
             } else {
@@ -251,7 +251,6 @@ static int read_complete_line(TokenArray *line, struct token t, int directive)
         } else {
             array_push_back(line, t);
         }
-
         t = get_token();
     }
 
@@ -276,7 +275,7 @@ static int refill_expanding_line(TokenArray *line)
 
     for (n = 0, i = 0; i < array_len(line); i++) {
         t = array_get(line, i);
-        if (t.token == IDENTIFIER && !t.disable_expand) {
+        if (t.is_expandable && !t.disable_expand) {
             def = definition(t.d.string);
             if (def && def->type == FUNCTION_LIKE) {
                 i += skip_or_read_expansion(def, line, i + 1);
