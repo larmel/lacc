@@ -450,8 +450,13 @@ void output_symbols(FILE *stream, struct namespace *ns)
                 fprintf(stream, ", value=%ld", sym->constant_value.i);
             } else if (is_unsigned(&sym->type)) {
                 fprintf(stream, ", value=%lu", sym->constant_value.u);
-            } else {
+            } else if (is_float(&sym->type)) {
+                fprintf(stream, ", value=%ff", sym->constant_value.f);
+            } else if (is_double(&sym->type)) {
                 fprintf(stream, ", value=%f", sym->constant_value.d);
+            } else {
+                assert(is_long_double(&sym->type));
+                fprintf(stream, ", value=%Lf", sym->constant_value.ld);
             }
         }
 

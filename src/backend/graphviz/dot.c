@@ -84,8 +84,10 @@ static char *vartostr(const struct var var)
         case T_REAL:
             if (is_float(var.type)) {
                 n = sprintf(buffer, "%ff", var.imm.f);
-            } else {
+            } else if (is_double(var.type)) {
                 n = sprintf(buffer, "%f", var.imm.d);
+            } else {
+                n = sprintf(buffer, "%LfL", var.imm.ld);
             }
             break;
         case T_ARRAY:

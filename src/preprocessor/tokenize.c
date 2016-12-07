@@ -246,14 +246,23 @@ struct token convert_preprocessing_number(struct token t)
         /*
          * If the integer conversion did not consume the whole token,
          * try to read as floating point number.
+         *
+         * Note: not using strtold for long double conversion, so might
+         * get incorrect results compared to other compilers.
          */
         errno = 0;
         tok.d.number.type = &basic_type__double;
         tok.d.number.val.d = strtod(in, &endptr);
-        if (endptr - in < len && (*endptr == 'f' || *endptr == 'F')) {
-            tok.d.number.type = &basic_type__float;
-            tok.d.number.val.f = (float) tok.d.number.val.d;
-            endptr++;
+        if (endptr - in < len) {
+            if (*endptr == 'f' || *endptr == 'F') {
+                tok.d.number.type = &basic_type__float;
+                tok.d.number.val.f = (float) tok.d.number.val.d;
+                endptr++;
+            } else if (*endptr == 'l' || *endptr == 'L') {
+                tok.d.number.type = &basic_type__long_double;
+                tok.d.number.val.ld = (long double) tok.d.number.val.d;
+                endptr++;
+            }
         }
     }
 
@@ -669,7 +678,7 @@ static size_t write_escaped_string(String str, char *buf)
 
 String tokstr(struct token tok)
 {
-    static char buf[64];
+    static char buf[512];
     char *str;
     size_t len;
     struct number num;
@@ -698,8 +707,13 @@ String tokstr(struct token tok)
                     (num.type->size == 8) ? "%ldl" : "%ld", num.val.i);
                 break;
             case T_REAL:
-                len = sprintf(buf,
-                    is_float(num.type) ? "%ff" : "%f", num.val.f);
+                if (is_float(num.type)) {
+                    len = sprintf(buf, "%ff", num.val.f);
+                } else if (is_double(num.type)) {
+                    len = sprintf(buf, "%f", num.val.d);
+                } else {
+                    len = sprintf(buf, "%Lf", num.val.ld);
+                }
                 break;
             }
         }

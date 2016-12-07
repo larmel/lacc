@@ -21,9 +21,10 @@ int is_immediate_true(struct expression expr)
         type = expr.type;
         assert(is_scalar(type));
         return
-            (is_signed(type)) ? val.i != 0l :
-            (is_unsigned(type) || is_pointer(type)) ? val.u != 0ul :
-            (is_float(type)) ? val.f != 0.0f : val.d != 0.0;
+            is_signed(type) ? val.i != 0l :
+            is_unsigned(type) || is_pointer(type) ? val.u != 0ul :
+            is_float(type) ? val.f != 0.0f :
+            is_double(type) ? val.d != 0.0 : val.ld != 0.0L;
     }
 
     return 0;
@@ -41,7 +42,8 @@ int is_immediate_false(struct expression expr)
         return
             is_signed(type) ? val.i == 0l :
             is_unsigned(type) || is_pointer(type) ? val.u == 0ul :
-            is_float(type) ? val.f == 0.0f : val.d == 0.0;
+            is_float(type) ? val.f == 0.0f :
+            is_double(type) ? val.d == 0.0 : val.ld == 0.0L;
     }
 
     return 0;
@@ -168,6 +170,14 @@ static struct var imm_double(double val)
     return var_numeric(num);
 }
 
+static struct var imm_long_double(long double val)
+{
+    struct number num = {0};
+    num.type = &basic_type__long_double;
+    num.val.ld = val;
+    return var_numeric(num);
+}
+
 struct expression as_expr(struct var val)
 {
     struct expression expr = {0};
@@ -179,22 +189,25 @@ struct expression as_expr(struct var val)
     return expr;
 }
 
-#define eval_arithmetic_immediate(t, l, op, r) (                               \
-    is_signed(t) ? imm_signed(t, (l).imm.i op (r).imm.i) :                     \
-    is_unsigned(t) ? imm_unsigned(t, (l).imm.u op (r).imm.u) :                 \
-    is_float(t) ? imm_float((l).imm.f op (r).imm.f) :                          \
-        imm_double((l).imm.d op (r).imm.d))
+#define eval_arithmetic_immediate(t, l, op, r) ( \
+    is_signed(t)   ? imm_signed(t, (l).imm.i op (r).imm.i) : \
+    is_unsigned(t) || is_pointer(t) \
+                   ? imm_unsigned(t, (l).imm.u op (r).imm.u) : \
+    is_float(t)    ? imm_float((l).imm.f op (r).imm.f) : \
+    is_double(t)   ? imm_double((l).imm.d op (r).imm.d) \
+                   : imm_long_double((l).imm.ld op (r).imm.ld))
 
-#define eval_integer_immediate(t, l, op, r) (                                  \
-    is_signed(t) ?                                                             \
-        imm_signed(t, (l).imm.i op (r).imm.i) :                                \
-        imm_unsigned(t, (l).imm.u op (r).imm.u))
+#define eval_integer_immediate(t, l, op, r) ( \
+    is_signed(t)   ? imm_signed(t, (l).imm.i op (r).imm.i) \
+                   : imm_unsigned(t, (l).imm.u op (r).imm.u))
 
-#define eval_immediate_compare(t, l, op, r) \
-    var_int(                                                                   \
-        is_signed(t) ? (l).imm.i op (r).imm.i :                                \
-        is_unsigned(t) ? (l).imm.u op (r).imm.u :                              \
-        is_float(t) ? (l).imm.f op (r).imm.f : (l).imm.d op (r).imm.d)
+#define eval_immediate_compare(t, l, op, r) var_int( \
+    is_signed(t)   ? (l).imm.i op (r).imm.i : \
+    is_unsigned(t) || is_pointer(t) \
+                   ? (l).imm.u op (r).imm.u : \
+    is_float(t)    ? (l).imm.f op (r).imm.f : \
+    is_double(t)   ? (l).imm.d op (r).imm.d \
+                   : (l).imm.ld op (r).imm.ld)
 
 /*
  * Construct a struct expression object, setting the correct type and
@@ -304,17 +317,20 @@ struct var eval(
 }
 
 #define cast_immediate(v, T) ( \
+    is_signed((v).type) ? (T) (v).imm.i : \
+    is_unsigned((v).type) || is_pointer((v).type) ? (T) (v).imm.u : \
     is_float((v).type) ? (T) (v).imm.f : \
-    is_double((v).type) ? (T) (v).imm.d : \
-    is_signed((v).type) ? (T) (v).imm.i : (T) (v).imm.u)
+    is_double((v).type) ? (T) (v).imm.d : (T) (v).imm.ld)
 
 #define is_float_above(v, n) \
     ((is_float((v).type) && (v).imm.f > n) \
-            || (is_double((v).type) && (v).imm.d > n))
+        || (is_double((v).type) && (v).imm.d > n) \
+        || (is_long_double((v).type) && (v).imm.ld > n))
 
 #define is_float_below(v, n) \
     ((is_float((v).type) && (v).imm.f < n) \
-        || (is_double((v).type) && (v).imm.d < n))
+        || (is_double((v).type) && (v).imm.d < n) \
+        || (is_long_double((v).type) && (v).imm.ld < n))
 
 /*
  * All immediate conversions must be evaluated compile time. Also handle
@@ -337,14 +353,22 @@ static struct expression cast(struct var var, const struct typetree *type)
     if (var.kind == IMMEDIATE) {
         if (is_float(type)) {
             var.imm.f =
-                (is_double(var.type)) ? (float) var.imm.d :
-                (is_signed(var.type)) ? (float) var.imm.i :
-                (is_unsigned(var.type)) ? (float) var.imm.u : var.imm.f;
+                is_double(var.type) ? (float) var.imm.d :
+                is_signed(var.type) ? (float) var.imm.i :
+                is_unsigned(var.type) ? (float) var.imm.u :
+                is_long_double(var.type) ? (float) var.imm.ld : var.imm.f;
         } else if (is_double(type)) {
             var.imm.d =
-                (is_float(var.type)) ? (double) var.imm.f :
-                (is_signed(var.type)) ? (double) var.imm.i :
-                (is_unsigned(var.type)) ? (double) var.imm.u : var.imm.d;
+                is_float(var.type) ? (double) var.imm.f :
+                is_signed(var.type) ? (double) var.imm.i :
+                is_unsigned(var.type) ? (double) var.imm.u :
+                is_long_double(var.type) ? (double) var.imm.ld : var.imm.d;
+        } else if (is_long_double(type)) {
+            var.imm.ld =
+                is_float(var.type) ? (long double) var.imm.f :
+                is_double(var.type) ? (long double) var.imm.d :
+                is_signed(var.type) ? (long double) var.imm.i :
+                is_unsigned(var.type) ? (long double) var.imm.u : var.imm.ld;
         } else if (is_unsigned(type) || is_pointer(type)) {
             if (is_float_below(var, 0)) {
                 var.imm.u = 0;

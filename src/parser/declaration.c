@@ -574,8 +574,9 @@ done:
     case 0x0100: /* float */
         return get_basic_type(T_REAL, 4, qual);
     case 0x0200: /* double */
-    case 0x0240: /* long double */
         return get_basic_type(T_REAL, 8, qual);
+    case 0x0240: /* long double */
+        return get_basic_type(T_REAL, 16, qual);
     default:
         error("Invalid type specification.");
         exit(1);

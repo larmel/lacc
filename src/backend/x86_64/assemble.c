@@ -7,12 +7,18 @@
 #include <stdarg.h>
 
 #define SUFFIX(w) ((w) == 1 ? 'b' : (w) == 2 ? 'w' : (w) == 4 ? 'l' : 'q')
+#define X87SFX(w) ((w) == 4 ? 'f' : (w) == 8 ? 'l' : 't')
+#define X87IFX(w) ((w) == 2 ? 's' : (w) == 4 ? 'l' : 'q')
+#define X87FFX(w) ((w) == 4 ? 's' : (w) == 8 ? 'l' : 't')
 
 #define I0(instr)           out("\t%s\n", instr)
 #define I1(instr, a)        out("\t%s\t%s\n", instr, a)
 #define I2(instr, a, b)     out("\t%s\t%s, %s\n", instr, a, b)
 #define S1(instr, w, a)     out("\t%s%c\t%s\n", instr, SUFFIX(w), a)
 #define S2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
+#define X1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87SFX(w), a);
+#define Y1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87IFX(w), a);
+#define Z1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87FFX(w), a);
 
 #define MAX_OPERAND_TEXT_LENGTH 256
 
@@ -47,6 +53,11 @@ static const char *xmm_name[] = {
     "%xmm12", "%xmm13", "%xmm14", "%xmm15"
 };
 
+static const char *x87_name[] = {
+    "%st(0)", "%st(1)", "%st(2)", "%st(3)",
+    "%st(4)", "%st(5)", "%st(6)", "%st(7)"
+};
+
 static void out(const char *s, ...)
 {
     va_list args;
@@ -71,8 +82,11 @@ static const char *mnemonic(struct registr reg)
         if (j == 7) j = 3;
 
         return reg_name[i + j];
-    } else {
+    } else if (reg.r < ST0) {
         return xmm_name[reg.r - XMM0];
+    } else {
+        i = x87_stack_pos(reg.r);
+        return x87_name[i];
     }
 }
 
@@ -203,9 +217,16 @@ int asm_symbol(const struct symbol *sym)
         if (is_float(&sym->type)) {
             out("\t.long\t%lu\n", sym->constant_value.u & 0xFFFFFFFFu);
         } else if (is_double(&sym->type)) {
-            out("\t.quad\t%lu\n", sym->constant_value.u);
+            out("\t.quad\t%ld\n", sym->constant_value.i);
         } else {
-            assert(0);
+            union {
+                long double ld;
+                long i[2];
+            } conv = {0};
+            assert(is_long_double(&sym->type));
+            conv.ld = sym->constant_value.ld;
+            out("\t.quad\t%ld\n", conv.i[0]);
+            out("\t.quad\t%ld\n", conv.i[1] & 0xFFFF);
         }
         break;
     case SYM_LABEL:
@@ -323,6 +344,7 @@ int asm_text(struct instruction instr)
     case INSTR_CMP:      S2("cmp", wd, source, destin); break;
     case INSTR_LEA:      S2("lea", wd, source, destin); break;
     case INSTR_PUSH:     S1("push", ws, source); break;
+    case INSTR_POP:      S1("pop", ws, source); break;
     case INSTR_PXOR:     I2("pxor", source, destin); break;
     case INSTR_JMP:      I1("jmp", source); break;
     case INSTR_JZ:       I1("jz", source); break;
@@ -333,6 +355,7 @@ int asm_text(struct instruction instr)
     case INSTR_JAE:      I1("jae", source); break;
     case INSTR_JGE:      I1("jge", source); break;
     case INSTR_JNE:      I1("jne", source); break;
+    case INSTR_JNS:      I1("jns", source); break;
     case INSTR_CALL:
         if (instr.optype == OPT_REG)
             out("\tcall\t*%s\n", source);
@@ -342,6 +365,24 @@ int asm_text(struct instruction instr)
     case INSTR_LEAVE:    I0("leave"); break;
     case INSTR_RET:      I0("ret"); break;
     case INSTR_REP_MOVSQ:I0("rep movsq"); break;
+    case INSTR_FLD:      X1("fld", ws, source); break;
+    case INSTR_FILD:     Y1("fild", ws, source); break;
+    case INSTR_FSTP:
+        if (instr.optype == OPT_REG) {
+            I1("fstp", source);
+        } else {
+            Z1("fstp", ws, source);
+        }
+        break;
+    case INSTR_FXCH:     I1("fxch", source); break;
+    case INSTR_FNSTCW:   I1("fnstcw", source); break;
+    case INSTR_FLDCW:    I1("fldcw", source); break;
+    case INSTR_FISTP:    Y1("fistp", ws, source); break;
+    case INSTR_FUCOMIP:  I1("fucomip", source); break;
+    case INSTR_FADDP:    I1("faddp", source); break;
+    case INSTR_FSUBRP:   I1("fsubrp", source); break;
+    case INSTR_FMULP:    I1("fmulp", source); break;
+    case INSTR_FDIVRP:   I1("fdivrp", source); break;
     }
 
     return 0;
@@ -357,8 +398,10 @@ int asm_data(struct immediate data)
             out("\t.short\t%d\n", data.d.word);
         else if (data.w == 4)
             out("\t.int\t%d\n", data.d.dword);
-        else
+        else {
+            assert(data.w == 8);
             out("\t.quad\t%ld\n", data.d.qword);
+        }
         break;
     case IMM_ADDR:
         assert(data.d.addr.sym);

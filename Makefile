@@ -5,7 +5,7 @@ INSTALL_LIB_PATH := /usr/lib/lacc/
 INSTALL_BIN_PATH := /usr/bin/
 CSMITH_HOME_PATH := ~/Code/csmith
 
-CFLAGS := -Wall -pedantic -std=c89 -g -I include/
+CFLAGS := -Wall -pedantic -std=c89 -g -I include/ -Wno-missing-braces -Wno-psabi
 LACCFLAGS := -I include/
 
 all: bin/lacc

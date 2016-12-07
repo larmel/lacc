@@ -28,6 +28,8 @@ static unsigned char combine(unsigned char a, unsigned char b)
     if (b == PC_NO_CLASS) return a;
     if (a == PC_MEMORY || b == PC_MEMORY) return PC_MEMORY;
     if (a == PC_INTEGER || b == PC_INTEGER) return PC_INTEGER;
+    if (a == PC_X87 || b == PC_X87) return PC_MEMORY;
+    if (a == PC_X87UP || b == PC_X87UP) return PC_MEMORY;
     return PC_SSE;
 }
 
@@ -41,7 +43,14 @@ static struct param_class flatten(
 
     switch (type->type) {
     case T_REAL:
-        pc.eightbyte[i] = combine(pc.eightbyte[i], PC_SSE);
+        if (is_long_double(type)) {
+            pc.eightbyte[i] = combine(pc.eightbyte[i], PC_X87);
+            if (i < 3) {
+                pc.eightbyte[i + 1] = combine(pc.eightbyte[i + 1], PC_X87UP);
+            }
+        } else {
+            pc.eightbyte[i] = combine(pc.eightbyte[i], PC_SSE);
+        }
         break;
     case T_UNSIGNED:
     case T_SIGNED:
@@ -67,11 +76,11 @@ static struct param_class flatten(
     return pc;
 }
 
-static struct param_class merge(struct param_class pc)
+static struct param_class merge(struct param_class pc, int n)
 {
     int i, sseup = 0, memory = 0;
 
-    for (i = 0; i < 4 && pc.eightbyte[i] != PC_NO_CLASS; ++i) {
+    for (i = 0; i < n; ++i) {
         switch (pc.eightbyte[i]) {
         case PC_X87UP:
             if (i && pc.eightbyte[i - 1] == PC_X87)
@@ -96,20 +105,23 @@ static struct param_class merge(struct param_class pc)
 
 struct param_class classify(const struct typetree *type)
 {
-    struct param_class pc = {{PC_NO_CLASS}};
+    struct param_class pc = {PC_NO_CLASS};
     assert(type->type != T_FUNCTION);
 
     if (is_integer(type) || is_pointer(type)) {
         pc.eightbyte[0] = PC_INTEGER;
     } else if (is_double(type) || is_float(type)) {
         pc.eightbyte[0] = PC_SSE;
+    } else if (is_long_double(type)) {
+        pc.eightbyte[0] = PC_X87;
+        pc.eightbyte[1] = PC_X87UP;
     } else if (
         EIGHTBYTES(type) <= 4 &&
         is_struct_or_union(type) &&
         !has_unaligned_fields(type))
     {
         pc = flatten(pc, type, 0);
-        pc = merge(pc);
+        pc = merge(pc, EIGHTBYTES(type));
     } else if (!is_void(type)) {
         pc.eightbyte[0] = PC_MEMORY;
     }
@@ -142,7 +154,12 @@ void dump_classification(struct param_class pc, const struct typetree *type)
         printf("\tMEMORY\n");
     } else {
         for (i = 0; i < EIGHTBYTES(type); ++i) {
-            printf("\t%s\n", pc.eightbyte[i] == PC_INTEGER ? "INTEGER" : "SSE");
+            printf("\t%s\n",
+                pc.eightbyte[i] == PC_INTEGER ? "INTEGER" :
+                pc.eightbyte[i] == PC_SSE ? "SSE" :
+                pc.eightbyte[i] == PC_X87 ? "X87" :
+                pc.eightbyte[i] == PC_X87UP ? "X87UP" :
+                pc.eightbyte[i] == PC_NO_CLASS ? "NO_CLASS" : "<invalid>");
         }
     }
 }

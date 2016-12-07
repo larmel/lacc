@@ -23,6 +23,7 @@
 
 #define PREFIX_SSE 0x0F
 #define PREFIX_OPERAND_SIZE 0x66
+#define PREFIX_X87 0xD8
 
 /*
  * REX prefix contains bits [0, 1, 0, 0, W, R, X, B]
@@ -71,6 +72,12 @@
 #define in_32bit_range(arg) ((arg) >= -2147483648 && (arg) <= 2147483647)
 
 /*
+ * X87 registers are commonly referred to with ST(i) syntax, where ST(0)
+ * represents top of stack. Compute based on current stack position.
+ */
+#define ST(reg) (x87_stack_pos(reg.r))
+
+/*
  * Conditional test/jump codes. A nice reference is
  * http://unixwiz.net/techtips/x86-jumps.html
  */
@@ -80,6 +87,7 @@ enum tttn {
     TEST_NE = 0x5,
     TEST_A = 0x7,
     TEST_S = 0x8,
+    TEST_NS = 0x9,
     TEST_P = 0xA,
     TEST_NP = 0xB,
     TEST_GE = 0xD,
@@ -93,9 +101,10 @@ enum tttn {
  */
 static void encode_addr(
     struct code *c,
-    unsigned char reg,
+    unsigned int reg,
     struct address addr)
 {
+    unsigned int mod;
     assert(addr.mult == 1 || !addr.mult);
 
     if (addr.sym) {
@@ -103,13 +112,22 @@ static void encode_addr(
         elf_add_reloc_text(addr.sym, R_X86_64_PC32, c->len, addr.disp);
         memset(&c->val[c->len], 0, 4);
         c->len += 4;
+    } else if (addr.base == SP) {
+        assert(in_byte_range(addr.disp));
+        assert(addr.offset == 0);
+        mod = (addr.disp == 0) ? 0x00 : 0x40;
+        c->val[c->len++] = mod | (reg << 3) | 0x04; /* ModR/M */
+        c->val[c->len++] = 0x24; /* SIB */
+        if (addr.disp != 0) {
+            c->val[c->len++] = addr.disp;
+        }
     } else {
         /* ModR/M */
         c->val[c->len++] =
             ((reg & 0x7) << 3) | ((!addr.offset) ? ((addr.base - 1) % 8) : 4);
         if (in_byte_range(addr.disp)) {
             c->val[c->len - 1] |= 0x40;
-        } else if (addr.disp) {
+        } else {
             c->val[c->len - 1] |= 0x80;
         }
 
@@ -121,7 +139,7 @@ static void encode_addr(
         /* Displacement */
         if (in_byte_range(addr.disp)) {
             c->val[c->len++] = addr.disp;
-        } else if (addr.disp) {
+        } else {
             memcpy(&c->val[c->len], &addr.disp, 4);
             c->len += 4;
         }
@@ -289,12 +307,13 @@ static struct code movzx(
 
 static struct code push(enum instr_optype optype, union operand op)
 {
-    struct code c = {{0}};
+    struct code c = {0};
 
-    if (optype == OPT_REG) {
+    switch (optype) {
+    case OPT_REG:
         c.val[c.len++] = 0x50 + reg(op.reg);
-    } else {
-        assert(optype == OPT_IMM);
+        break;
+    case OPT_IMM:
         assert(op.imm.w == 8);
         if (is_byte_imm(op.imm)) {
             c.val[c.len++] = 0x6A;
@@ -304,8 +323,32 @@ static struct code push(enum instr_optype optype, union operand op)
             memcpy(&c.val[c.len], &op.imm.d.dword, 4);
             c.len += 4;
         } else assert(0);
+        break;
+    case OPT_MEM:
+        assert(op.mem.w == 8);
+        if (mrex(op.mem.addr)) {
+            c.val[c.len++] = REX  | W(op.mem);
+        }
+        c.val[c.len++] = 0xFF;
+        encode_addr(&c, 0x6, op.mem.addr);
+        break;
+    default: assert(0);
     }
 
+    return c;
+}
+
+static struct code pop(enum instr_optype optype, union operand op)
+{
+    struct code c = {0};
+
+    assert(optype == OPT_REG);
+    assert(op.reg.w == 8);
+    if (is_64_bit_reg(op.reg.r)) {
+        c.val[c.len++] = REX | W(op.reg) | R(op.reg);
+    }
+
+    c.val[c.len++] = 0x58 | ((op.reg.r - 1) % 8);
     return c;
 }
 
@@ -868,8 +911,143 @@ static struct code pxor(
     return c;
 }
 
+static struct code fucomip(union operand op)
+{
+    struct code c = {0};
+
+    c.val[c.len++] = PREFIX_X87 | 0x07;
+    c.val[c.len++] = 0xE8 | ST(op.reg);
+    return c;
+}
+
+/*
+ * fld:  0x00
+ * fstp: 0x03
+ */
+static struct code x87_encode_transfer(unsigned int op, union operand m)
+{
+    struct code c = {0};
+
+    switch (m.mem.w) {
+    case 4:
+        c.val[c.len++] = PREFIX_X87 | 0x01;
+        encode_addr(&c, op, m.mem.addr);
+        break;
+    case 8:
+        c.val[c.len++] = PREFIX_X87 | 0x05;
+        encode_addr(&c, op, m.mem.addr);
+        break;
+    default:
+        c.val[c.len++] = PREFIX_X87 | 0x03;
+        encode_addr(&c, op | 0x05, m.mem.addr);
+        break;
+    }
+
+    return c;
+}
+
+static struct code fstp(enum instr_optype optype, union operand op)
+{
+    struct code c = {0};
+
+    if (optype == OPT_MEM) {
+        c = x87_encode_transfer(0x03, op);
+    } else {
+        assert(optype == OPT_REG);
+        c.val[c.len++] = PREFIX_X87 | 0x05;
+        c.val[c.len++] = 0xD8 | ST(op.reg);
+    }
+
+    return c;
+}
+
+static struct code fild(unsigned int op, union operand m)
+{
+    struct code c = {0};
+
+    switch (m.mem.w) {
+    case 2:
+        c.val[c.len++] = PREFIX_X87 | 0x07;
+        encode_addr(&c, op, m.mem.addr);
+        break;
+    case 4:
+        c.val[c.len++] = PREFIX_X87 | 0x03;
+        encode_addr(&c, op, m.mem.addr);
+        break;
+    case 8:
+        c.val[c.len++] = PREFIX_X87 | 0x07;
+        encode_addr(&c, op | 0x05, m.mem.addr);
+        break;
+    }
+
+    return c;
+}
+
+static struct code fxch(union operand op)
+{
+    struct code c = {0};
+
+    c.val[c.len++] = PREFIX_X87 | 0x09;
+    c.val[c.len++] = 0xC8 | ST(op.reg);
+    return c;
+}
+
+static struct code fistp(union operand op)
+{
+    struct code c = {0};
+
+    if (op.mem.w == 2) {
+        c.val[c.len++] = PREFIX_X87 | 0x07;
+        encode_addr(&c, 0x03, op.mem.addr);
+    } else if (op.mem.w == 4) {
+        c.val[c.len++] = PREFIX_X87 | 0x03;
+        encode_addr(&c, 0x03, op.mem.addr);
+    } else {
+        assert(op.mem.w == 8);
+        c.val[c.len++] = PREFIX_X87 | 0x07;
+        encode_addr(&c, 0x07, op.mem.addr);
+    }
+
+    return c;
+}
+
+static struct code fnstcw(union operand op)
+{
+    struct code c = {0};
+
+    c.val[c.len++] = PREFIX_X87 | 0x09;
+    encode_addr(&c, 0x07, op.mem.addr);
+    return c;
+}
+
+static struct code fldcw(union operand op)
+{
+    struct code c = {0};
+
+    c.val[c.len++] = PREFIX_X87 | 0x09;
+    encode_addr(&c, 0x05, op.mem.addr);
+    return c;
+}
+
+/*
+ * faddp:  0xC0
+ * fsubrp: 0xE8
+ * fmulp:  0xC8
+ * fdivrp: 0xF8
+ */
+static struct code x87_encode_arithmetic(unsigned int op, union operand r)
+{
+    struct code c = {0};
+
+    c.val[c.len++] = PREFIX_X87 | 0x06;
+    c.val[c.len++] = op | ST(r.reg);
+    return c;
+}
+
 struct code encode(struct instruction instr)
 {
+    struct code c = {{0x90}, 1};
+
     switch (instr.opcode) {
     case INSTR_ADD:
         return add(instr.optype, instr.source, instr.dest);
@@ -939,6 +1117,8 @@ struct code encode(struct instruction instr)
         return sse_mov(instr.optype, 0xF3, instr.source, instr.dest);
     case INSTR_PUSH:
         return push(instr.optype, instr.source);
+    case INSTR_POP:
+        return pop(instr.optype, instr.source);
     case INSTR_PXOR:
         return pxor(instr.optype, instr.source, instr.dest);
     case INSTR_SUB:
@@ -978,6 +1158,8 @@ struct code encode(struct instruction instr)
         return jcc(instr.optype, TEST_GE, instr.source);
     case INSTR_JNE:
         return jcc(instr.optype, TEST_NE, instr.source);
+    case INSTR_JNS:
+        return jcc(instr.optype, TEST_NS, instr.source);
     case INSTR_SETZ:
         return setcc(instr.optype, TEST_Z, instr.source);
     case INSTR_SETA:
@@ -994,9 +1176,38 @@ struct code encode(struct instruction instr)
         return setcc(instr.optype, TEST_GE, instr.source);
     case INSTR_SETNP:
         return setcc(instr.optype, TEST_NP, instr.source);
-    default:
-        assert(0);
     case INSTR_TEST:
         return test(instr.optype, instr.source, instr.dest);
+    case INSTR_FLD:
+        return x87_encode_transfer(0x00, instr.source);
+    case INSTR_FILD:
+        return fild(0x00, instr.source);
+    case INSTR_FSTP:
+        return fstp(instr.optype, instr.source);
+    case INSTR_FISTP:
+        assert(instr.optype == OPT_MEM);
+        return fistp(instr.source);
+    case INSTR_FNSTCW:
+        assert(instr.optype == OPT_MEM);
+        return fnstcw(instr.source);
+    case INSTR_FLDCW:
+        assert(instr.optype == OPT_MEM);
+        return fldcw(instr.source);
+    case INSTR_FUCOMIP:
+        assert(instr.optype == OPT_REG);
+        return fucomip(instr.source);
+    case INSTR_FXCH:
+        assert(instr.optype == OPT_REG);
+        return fxch(instr.source);
+    case INSTR_FADDP:
+        return x87_encode_arithmetic(0xC0, instr.source);
+    case INSTR_FSUBRP:
+        return x87_encode_arithmetic(0xE8, instr.source);
+    case INSTR_FMULP:
+        return x87_encode_arithmetic(0xC8, instr.source);
+    case INSTR_FDIVRP:
+        return x87_encode_arithmetic(0xF8, instr.source);
     }
+
+    return c;
 }

@@ -35,8 +35,22 @@ enum reg {
     XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15,
 
     /* Instruction pointer. */
-    IP
+    IP,
+
+    /* X87 extended precision floating point registers. */
+    ST0,
+    ST1,
+    ST2,
+    ST3,
+    ST4,
+    ST5,
+    ST6,
+    ST7
 };
+
+/*
+ */
+int x87_stack_pos(enum reg r);
 
 /* Register and width, which is 1, 2, 4 or 8. */
 struct registr {
@@ -134,6 +148,7 @@ enum opcode {
     INSTR_CMP,
     INSTR_LEA,
     INSTR_PUSH,
+    INSTR_POP,
     INSTR_PXOR,         /* Bitwise xor with xmm register. */
     INSTR_JMP,
     INSTR_JA,
@@ -144,10 +159,23 @@ enum opcode {
     INSTR_JAE,
     INSTR_JGE,
     INSTR_JNE,          /* Jump if not equal. */
+    INSTR_JNS,          /* Jump if not sign. */
     INSTR_CALL,
     INSTR_LEAVE,
     INSTR_RET,
-    INSTR_REP_MOVSQ
+    INSTR_REP_MOVSQ,
+    INSTR_FLD,          /* Load x87 real to ST(0). */
+    INSTR_FILD,         /* Load integer to ST(0). */
+    INSTR_FISTP,        /* Store integer and pop. */
+    INSTR_FSTP,         /* Store x87 real from ST(0) to mem and pop. */
+    INSTR_FUCOMIP,      /* Compare x87 floating point. */
+    INSTR_FXCH,         /* Swap ST(0) with ST(i). */
+    INSTR_FNSTCW,       /* Store x87 FPU control word. */
+    INSTR_FLDCW,        /* Load x87 FPU control word. */
+    INSTR_FADDP,        /* Add x87 ST(0) to ST(i) and pop. */
+    INSTR_FSUBRP,       /* Subtract and pop. */
+    INSTR_FMULP,        /* Multiply and pop. */
+    INSTR_FDIVRP        /* Divide and pop. */
 };
 
 /* Instructions with register, memory or immediate operands. */

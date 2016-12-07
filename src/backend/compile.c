@@ -41,6 +41,32 @@ static array_of(struct var) func_args;
  */
 static unsigned int_regs_used, sse_regs_used;
 
+/* Number of registers pushed to x87 stack. */
+static int x87_stack;
+
+/*
+ * Convert x87 register (ST0 through ST7) to stack relative position,
+ * where top of stack means ST0.
+ */
+int x87_stack_pos(enum reg r)
+{
+    assert(r >= ST0);
+    assert(r <= ST7);
+    assert(x87_stack > 1);
+
+    return (x87_stack - 1) - (r - ST0);
+}
+
+static enum reg get_x87_reg(void)
+{
+    enum reg st;
+
+    st = ST0 + x87_stack;
+    x87_stack++;
+    assert(x87_stack <= 8);
+    return st;
+}
+
 static enum reg get_sse_reg(void)
 {
     assert(sse_regs_used < 8);
@@ -163,7 +189,7 @@ static struct immediate value_of(struct var var, int w)
 
 static struct memory location(struct address addr, int w)
 {
-    struct memory loc = {{0}};
+    struct memory loc = {0};
     loc.addr = addr;
     loc.w = w;
     return loc;
@@ -235,9 +261,7 @@ static void count_register_classifications(
             break;
         case PC_SSE:
             (*sseregs)++;
-        case PC_NO_CLASS:
-            break;
-        default: assert(0);
+        default: break;
         }
     }
 }
@@ -396,13 +420,149 @@ static void load_int(struct var v, enum reg r, int w)
 static enum reg load(struct var v, enum reg r)
 {
     const int w = size_of(v.type);
+
     if (is_real(v.type)) {
+        assert(!is_long_double(v.type));
         load_sse(v, r, w);
     } else {
         load_int(v, r, (w < 4) ? 4 : w);
     }
 
     return r;
+}
+
+static void load_address(struct var v, enum reg r)
+{
+    if (v.kind == DIRECT) {
+        emit(INSTR_LEA, OPT_MEM_REG, location_of(v, 8), reg(r, 8));
+    } else {
+        assert(v.kind == DEREF);
+        load(var_direct(v.symbol), r);
+        if (v.offset) {
+            emit(INSTR_ADD, OPT_IMM_REG, constant(v.offset, 8), reg(r, 8));
+        }
+    }
+}
+
+/*
+ * Use long double constant with value MAX_LONG + 1 in order to generate
+ * code for converting 64 bit unsigned to long double.
+ */
+static const struct symbol *get_x87_unsigned_adjust_constant(void)
+{
+    static const struct symbol *sym;
+    union value val = {0};
+
+    if (!sym) {
+        val.ld = 18446744073709551616.L;
+        sym = sym_create_constant(&basic_type__long_double, val);
+    }
+
+    return sym;
+}
+
+/* Push value to stack, rounded up to always be 8 byte aligned. */
+static void push(struct var v)
+{
+    int eb;
+
+    if (is_long_double(v.type)) {
+        if (v.kind == IMMEDIATE) {
+            v.symbol = sym_create_constant(v.type, v.imm);
+            v.kind = DIRECT;
+        }
+        if (v.kind == DIRECT) {
+            v.offset += 8;
+            emit(INSTR_PUSH, OPT_MEM, location_of(v, 8));
+            v.offset -= 8;
+            emit(INSTR_PUSH, OPT_MEM, location_of(v, 8));
+        } else {
+            load_address(v, SI);
+            emit(INSTR_PUSH, OPT_MEM, location(address(8, SI, 0, 0), 8));
+            emit(INSTR_PUSH, OPT_MEM, location(address(0, SI, 0, 0), 8));
+        }
+    } else if (is_scalar(v.type)) {
+        if (v.kind == IMMEDIATE && size_of(v.type) < 8) {
+            emit(INSTR_PUSH, OPT_IMM, value_of(v, 8));
+        } else {
+            /*
+             * Not possible to push SSE registers, so load as if normal
+             * integer and push that instead.
+             */
+            if (is_real(v.type)) {
+                v.type = (is_float(v.type))
+                    ? &basic_type__unsigned_int
+                    : &basic_type__unsigned_long;
+            }
+            load_int(v, AX, 8);
+            emit(INSTR_PUSH, OPT_REG, reg(AX, 8));
+        }
+    } else {
+        eb = EIGHTBYTES(v.type);
+        emit(INSTR_SUB, OPT_IMM_REG, constant(eb * 8, 8), reg(SP, 8));
+        emit(INSTR_MOV, OPT_IMM_REG, constant(eb, 4), reg(CX, 4));
+        emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(DI, 8));
+        load_address(v, SI);
+        emit(INSTR_REP_MOVSQ, OPT_NONE);
+    }
+}
+
+/*
+ * Load value to top of x87 floating point stack, ST(0). Convert from
+ * arbitrary source type.
+ */
+static enum reg load_x87(struct var v)
+{
+    enum reg ax, st;
+    const struct symbol *label;
+
+    st = get_x87_reg();
+    if (v.kind == IMMEDIATE) {
+        v.symbol = sym_create_constant(v.type, v.imm);
+        v.kind = DIRECT;
+    }
+
+    if (is_real(v.type)) {
+        if (v.kind == DIRECT) {
+            emit(INSTR_FLD, OPT_MEM, location_of(v, v.type->size));
+        } else {
+            push(v);
+            emit(INSTR_FLD, OPT_MEM,
+                location(address(0, SP, 0, 0), v.type->size));
+            emit(INSTR_ADD, OPT_IMM_REG,
+                constant(EIGHTBYTES(v.type) * 8, 8), reg(SP, 8));
+        }
+    } else if (is_unsigned(v.type) || v.type->size == 1) {
+        ax = get_int_reg();
+        load_int(v, ax, 8);
+        emit(INSTR_PUSH, OPT_REG, reg(ax, 8));
+        emit(INSTR_FILD, OPT_MEM, location(address(0, SP, 0, 0), 8));
+        emit(INSTR_ADD, OPT_IMM_REG, constant(8, 8), reg(SP, 8));
+        if (v.type->size == 8) {
+            label = sym_create_label();
+            emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
+            emit(INSTR_JNS, OPT_IMM, addr(label));
+            v.symbol = get_x87_unsigned_adjust_constant();
+            v.type = &basic_type__long_double;
+            load_x87(v);
+            emit(INSTR_FADDP, OPT_REG, reg(st, 16));
+            x87_stack--;
+            enter_context(label);
+        }
+    } else {
+        assert(is_signed(v.type));
+        assert(size_of(v.type) != 1);
+        if (v.kind == DIRECT) {
+            emit(INSTR_FILD, OPT_MEM, location_of(v, v.type->size));
+        } else {
+            push(v);
+            emit(INSTR_FILD, OPT_MEM,
+                location(address(0, SP, 0, 0), v.type->size));
+            emit(INSTR_ADD, OPT_IMM_REG, constant(v.type->size, 8), reg(SP, 8));
+        }
+    }
+
+    return st;
 }
 
 static enum reg load_float_as_integer(
@@ -533,6 +693,75 @@ static enum reg load_integer_as_float(
     return xmm;
 }
 
+static enum reg load_float_from_long_double(
+    struct var val,
+    const struct typetree *type)
+{
+    size_t w;
+    enum reg xmm;
+
+    assert(is_long_double(val.type));
+    assert(is_float(type) || is_double(type));
+    w = size_of(type);
+    xmm = get_sse_reg();
+    load_x87(val);
+    emit(INSTR_FSTP, OPT_MEM, location(address(-8, SP, 0, 0), w));
+    emit(is_float(type) ? INSTR_MOVSS : INSTR_MOVSD, OPT_MEM_REG,
+       location(address(-8, SP, 0, 0), w), reg(xmm, w));
+
+    assert(x87_stack == 1);
+    x87_stack = 0;
+    return xmm;
+}
+
+/*
+ * Load value of type long double converted to type another integer or
+ * floating type.
+ *
+ * How exactly this works is a mystery. We mimic what GCC and clang
+ * outputs, and hope for the best.
+ */
+static enum reg load_integer_from_long_double(
+    struct var val,
+    const struct typetree *type)
+{
+    int w;
+    enum reg ax;
+
+    assert(is_long_double(val.type));
+    assert(is_integer(type));
+    assert(!is_long_double(type));
+    if (size_of(type) < 2) {
+        type = &basic_type__short;
+    } else if (size_of(type) == 4 && is_unsigned(type)) {
+        type = &basic_type__long;
+    }
+
+    w = size_of(type);
+    load_x87(val);
+    ax = get_int_reg();
+
+    /* Store and modify control word using magic. */
+    emit(INSTR_FNSTCW, OPT_MEM, location(address(-16, SP, 0, 0), 2));
+    emit(INSTR_MOVZX, OPT_MEM_REG,
+        location(address(-16, SP, 0, 0), 2), reg(ax, 4));
+    emit(INSTR_OR, OPT_IMM_REG, constant(12 << 8, 4), reg(ax, 4));
+    emit(INSTR_MOV, OPT_REG_MEM,
+        reg(ax, 2), location(address(-14, SP, 0, 0), 2));
+
+    /* Load control word, and store integer. */
+    emit(INSTR_FLDCW, OPT_MEM, location(address(-14, SP, 0, 0), 2));
+    emit(INSTR_FISTP, OPT_MEM, location(address(-8, SP, 0, 0), w));
+    assert(x87_stack == 1);
+    x87_stack = 0;
+
+    /* Restore the old control word and load result to register. */
+    emit(INSTR_FLDCW, OPT_MEM, location(address(-16, SP, 0, 0), 2));
+    emit(INSTR_MOV, OPT_MEM_REG,
+        location(address(-8, SP, 0, 0), w), reg(ax, w));
+    return ax;
+}
+
 /*
  * Read value while doing type conversion (if necessary), returning a
  * register holding the value. Type is promoted to be at least 32 bit
@@ -542,40 +771,64 @@ static enum reg load_cast(struct var val, const struct typetree *type)
 {
     enum reg r;
 
-    if (size_of(type) < 4) {
-        type = is_integer(type)
-            ? &basic_type__int
-            : &basic_type__unsigned_int;
-    }
-
-    assert(size_of(type) == 4 || size_of(type) == 8);
-    if (is_real(val.type)) {
+    if (is_long_double(type)) {
+        r = load_x87(val);
+    } else if (is_long_double(val.type)) {
         if (is_real(type)) {
-            r = get_sse_reg();
-            load_sse(val, r, size_of(type));
+            r = load_float_from_long_double(val, type);
         } else {
-            r = load_float_as_integer(val, type);
+            r = load_integer_from_long_double(val, type);
         }
-    } else if (is_real(type)) {
-        r = load_integer_as_float(val, type);
     } else {
-        r = get_int_reg();
-        load_int(val, r, size_of(type));
+        if (size_of(type) < 4) {
+            type = is_integer(type)
+                ? &basic_type__int
+                : &basic_type__unsigned_int;
+        }
+        assert(size_of(type) == 4 || size_of(type) == 8);
+        if (is_real(val.type)) {
+            assert(!is_long_double(val.type));
+            if (is_real(type)) {
+                r = get_sse_reg();
+                load_sse(val, r, size_of(type));
+            } else {
+                r = load_float_as_integer(val, type);
+            }
+        } else if (is_real(type)) {
+            r = load_integer_as_float(val, type);
+        } else {
+            r = get_int_reg();
+            load_int(val, r, size_of(type));
+        }
     }
 
     return r;
 }
 
-static void load_address(struct var v, enum reg r)
+static void store_x87(struct var v)
 {
-    if (v.kind == DIRECT) {
-        emit(INSTR_LEA, OPT_MEM_REG, location_of(v, 8), reg(r, 8));
+    enum reg r1, r2;
+
+    assert(x87_stack > 0);
+    x87_stack--;
+
+    assert(size_of(v.type) == 16);
+    if (v.kind == DEREF) {
+        r1 = get_int_reg();
+        r2 = get_int_reg();
+        load_address(v, r2);
+        v.type = &basic_type__long;
+        emit(INSTR_SUB, OPT_IMM_REG, constant(16, 8), reg(SP, 8));
+        emit(INSTR_FSTP, OPT_MEM, location(address(0, SP, 0, 0), 16));
+        emit(INSTR_POP, OPT_REG, reg(r1, 8));
+        emit(INSTR_MOV, OPT_REG_MEM,
+            reg(r1, 8), location(address(0, r2, 0, 0), 8));
+        emit(INSTR_POP, OPT_REG, reg(r1, 8));
+        emit(INSTR_MOV, OPT_REG_MEM,
+            reg(r1, 8), location(address(8, r2, 0, 0), 8));
     } else {
-        assert(v.kind == DEREF);
-        load(var_direct(v.symbol), r);
-        if (v.offset) {
-            emit(INSTR_ADD, OPT_IMM_REG, constant(v.offset, 8), reg(r, 8));
-        }
+        assert(v.kind == DIRECT);
+        emit(INSTR_FSTP, OPT_MEM, location_of(v, 16));
     }
 }
 
@@ -586,8 +839,13 @@ static void store(enum reg r, struct var v)
     int mask;
     enum opcode op = INSTR_MOV;
 
+    if (is_long_double(v.type)) {
+        store_x87(v);
+        return;
+    }
+
     if (is_real(v.type)) {
-        op = (is_float(v.type)) ? INSTR_MOVSS : INSTR_MOVSD;
+        op  = is_float(v.type) ? INSTR_MOVSS : INSTR_MOVSD;
     } else if (is_field(v)) {
         assert(w == size_of(&basic_type__int));
         assert(v.field_width > 0 && v.field_width < 32);
@@ -623,40 +881,12 @@ static void store(enum reg r, struct var v)
     }
 }
 
-/* Push value to stack, rounded up to always be 8 byte aligned. */
-static void push(struct var v)
-{
-    int eb;
-
-    if (is_scalar(v.type)) {
-        if (v.kind == IMMEDIATE && size_of(v.type) < 8) {
-            emit(INSTR_PUSH, OPT_IMM, value_of(v, 8));
-        } else {
-            /*
-             * Not possible to push SSE registers, so load as if normal
-             * integer and push that instead.
-             */
-            if (is_real(v.type)) {
-                v.type = (is_float(v.type))
-                    ? &basic_type__unsigned_int
-                    : &basic_type__unsigned_long;
-            }
-            load_int(v, AX, 8);
-            emit(INSTR_PUSH, OPT_REG, reg(AX, 8));
-        }
-    } else {
-        eb = EIGHTBYTES(v.type);
-        emit(INSTR_SUB, OPT_IMM_REG, constant(eb * 8, 8), reg(SP, 8));
-        emit(INSTR_MOV, OPT_IMM_REG, constant(eb, 4), reg(CX, 4));
-        emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(DI, 8));
-        load_address(v, SI);
-        emit(INSTR_REP_MOVSQ, OPT_NONE);
-    }
-}
-
 /*
  * Determine if given parameter classification can fit in registers
  * available.
+ *
+ * Parameters of type long double are always passed by memory. Only
+ * integer and SSE classifications apply.
  */
 static int alloc_register_params(
     struct param_class pc,
@@ -665,7 +895,7 @@ static int alloc_register_params(
 {
     int ints, sses;
 
-    if (pc.eightbyte[0] != PC_MEMORY) {
+    if (pc.eightbyte[0] == PC_INTEGER || pc.eightbyte[0] == PC_SSE) {
         ints = *next_integer_reg;
         sses = *next_sse_reg;
         count_register_classifications(pc, &ints, &sses);
@@ -690,38 +920,46 @@ static void move_to_from_registers(
     enum reg r;
     const struct typetree *type;
 
-    type = var.type;
-    n = EIGHTBYTES(type);
-    for (i = 0; i < n; ++i) {
-        switch (pc.eightbyte[i]) {
-        default: assert(0);
-        case PC_INTEGER:
-            r = *intregs++;
-            if (!is_scalar(type)) {
-                var.type = (i < n - 1) ?
-                    &basic_type__unsigned_long :
-                    BASIC_TYPE_UNSIGNED(size_of(type) % 8);
+    if (pc.eightbyte[0] == PC_X87) {
+        assert(pc.eightbyte[1] == PC_X87UP);
+        assert(pc.eightbyte[2] == PC_NO_CLASS);
+        assert(toggle_load);
+        var.type = &basic_type__long_double;
+        load_x87(var);
+    } else {
+        type = var.type;
+        n = EIGHTBYTES(type);
+        for (i = 0; i < n; ++i) {
+            switch (pc.eightbyte[i]) {
+            case PC_INTEGER:
+                r = *intregs++;
+                if (!is_scalar(type)) {
+                    var.type = (i < n - 1) ?
+                        &basic_type__unsigned_long :
+                        BASIC_TYPE_UNSIGNED(size_of(type) % 8);
+                }
+                break;
+            case PC_SSE:
+                r = *sseregs++;
+                if (size_of(type) % 8 == 4) {
+                    var.type = &basic_type__float;
+                } else {
+                    assert(size_of(type) % 8 == 0);
+                    var.type = &basic_type__double;
+                }
+                break;
+            default:
+                assert(0);
+                break;
             }
-            break;
-        case PC_SSE:
-            r = *sseregs++;
-            if (size_of(type) % 8 == 4) {
-                var.type = &basic_type__float;
+            if (toggle_load) {
+                load(var, r);
             } else {
-                assert(size_of(type) % 8 == 0);
-                var.type = &basic_type__double;
+                store(r, var);
             }
-            break;
+            var.offset += 8;
         }
-
-        if (toggle_load) {
-            load(var, r);
-        } else {
-            store(r, var);
-        }
-
-        var.offset += 8;
-    }
+    }   
 }
 
 /*
@@ -889,8 +1127,13 @@ static void function_call(struct var res, struct var func)
     }
 
     call(func, n);
-    if (pc.eightbyte[0] != PC_MEMORY) {
+    if (pc.eightbyte[0] == PC_INTEGER || pc.eightbyte[0] == PC_SSE) {
         store_object_from_registers(res, pc, ret_int_reg, ret_sse_reg);
+    } else if (pc.eightbyte[0] == PC_X87) {
+        assert(x87_stack == 0);
+        x87_stack = 1;
+        store_x87(res);
+        assert(x87_stack == 0);
     }
 }
 
@@ -1147,7 +1390,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
      * enough of them left. Otherwise read from overflow area.
      */
     pc = classify(res.type);
-    if (pc.eightbyte[0] != PC_MEMORY) {
+    if (pc.eightbyte[0] == PC_INTEGER || pc.eightbyte[0] == PC_SSE) {
         struct var slice = res;
         int i,
             width,
@@ -1287,7 +1530,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         store(AX, var_overflow_arg_area);
     }
 
-    if (pc.eightbyte[0] != PC_MEMORY) {
+    if (pc.eightbyte[0] == PC_INTEGER || pc.eightbyte[0] == PC_SSE) {
         enter_context(done);
     }
 }
@@ -1360,26 +1603,31 @@ static struct result compile_expression(struct expression expr)
             assert(is_string(l));
             res.var = l;
             res.kind = VAL_VAR;
-        } else if (!is_standard_register_width(size_of(type))) {
-            res.var = l;
-            res.kind = VAL_VAR;
         } else {
-            if (is_struct_or_union(type)) {
-                pc = classify(type);
-                switch (pc.eightbyte[0]) {
-                case PC_INTEGER:
-                    type = BASIC_TYPE_UNSIGNED(size_of(type));
-                    break;
-                case PC_SSE:
-                    type = (size_of(type) == 4)
-                        ? &basic_type__float
-                        : &basic_type__double;
-                    break;
-                default: assert(0);
+            pc = classify(type);
+            if (pc.eightbyte[0] == PC_X87) {
+                if (is_struct_or_union(l.type)) {
+                    l.type = &basic_type__long_double;
                 }
-                l.type = type;
+                res.r = load_x87(l);
+            } else if (!is_standard_register_width(size_of(type))) {
+                res.var = l;
+                res.kind = VAL_VAR;
+            } else {
+                if (is_struct_or_union(type)) {
+                    assert(EIGHTBYTES(type) == 1);
+                    if (pc.eightbyte[0] == PC_INTEGER) {
+                        type = BASIC_TYPE_UNSIGNED(size_of(type));
+                    } else {
+                        assert(pc.eightbyte[0] == PC_SSE);
+                        type = (size_of(type) == 4)
+                            ? &basic_type__float
+                            : &basic_type__double;
+                    }
+                    l.type = type;
+                }
+                res.r = load_cast(l, type);
             }
-            res.r = load_cast(l, type);
         }
         break;
     case IR_OP_CALL:
@@ -1396,27 +1644,47 @@ static struct result compile_expression(struct expression expr)
         emit(INSTR_NOT, OPT_REG, reg(AX, w));
         break;
     case IR_OP_ADD:
-        opc = is_float(type) ? INSTR_ADDSS
-            : is_double(type) ? INSTR_ADDSD : INSTR_ADD;
         ax = load_cast(l, type);
         cx = load_cast(r, type);
-        emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        if (is_long_double(type)) {
+            emit(INSTR_FADDP, OPT_REG, reg(ax, w));
+            assert(x87_stack == 2);
+            x87_stack--;
+        } else {
+            opc = is_float(type) ? INSTR_ADDSS
+                : is_double(type) ? INSTR_ADDSD
+                : INSTR_ADD;
+            emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        }
         res.r = ax;
         break;
     case IR_OP_SUB:
-        opc = is_float(type) ? INSTR_SUBSS
-            : is_double(type) ? INSTR_SUBSD : INSTR_SUB;
         ax = load_cast(l, type);
         cx = load_cast(r, type);
-        emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        if (is_long_double(type)) {
+            emit(INSTR_FSUBRP, OPT_REG, reg(ax, w));
+            assert(x87_stack == 2);
+            x87_stack--;
+        } else {
+            opc = is_float(type) ? INSTR_SUBSS
+                : is_double(type) ? INSTR_SUBSD
+                : INSTR_SUB;
+            emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        }
         res.r = ax;
         break;
     case IR_OP_MUL:
         if (is_real(type)) {
             xmm0 = load_cast(l, type);
             xmm1 = load_cast(r, type);
-            opc = is_float(type) ? INSTR_MULSS : INSTR_MULSD;
-            emit(opc, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
+            if (is_long_double(type)) {
+                emit(INSTR_FMULP, OPT_REG, reg(xmm0, w));
+                assert(x87_stack == 2);
+                x87_stack--;
+            } else {
+                opc = is_float(type) ? INSTR_MULSS : INSTR_MULSD;
+                emit(opc, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
+            }
             res.r = xmm0;
         } else {
             res.r = load(r, AX);
@@ -1432,8 +1700,14 @@ static struct result compile_expression(struct expression expr)
         if (is_real(type)) {
             xmm0 = load_cast(l, type);
             xmm1 = load_cast(r, type);
-            opc = is_float(type) ? INSTR_DIVSS : INSTR_DIVSD;
-            emit(opc, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
+            if (is_long_double(type)) {
+                emit(INSTR_FDIVRP, OPT_REG, reg(xmm0, w));
+                assert(x87_stack == 2);
+                x87_stack--;
+            } else {
+                opc = is_float(type) ? INSTR_DIVSS : INSTR_DIVSD;
+                emit(opc, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
+            }
             res.r = xmm0;
             break;
         }
@@ -1513,8 +1787,17 @@ compare:
             xmm1 = load_cast(r, r.type);
             if (is_float(l.type)) {
                 emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
-            } else {
+            } else if (is_double(l.type)) {
                 emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
+            } else {
+                assert(is_long_double(l.type));
+                if (expr.op == IR_OP_GE || expr.op == IR_OP_GT) {
+                    emit(INSTR_FXCH, OPT_REG, reg(xmm0, 16));
+                }
+                emit(INSTR_FUCOMIP, OPT_REG, reg(xmm0, 16));
+                emit(INSTR_FSTP, OPT_REG, reg(xmm1, 16));
+                assert(x87_stack == 2);
+                x87_stack = 0;
             }
         } else {
             load(l, AX);
@@ -1739,6 +2022,11 @@ static void compile_block(struct block *block, const struct typetree *type)
                             reg(res.r, i), reg(ret_sse_reg[0], i));
                     }
                     break;
+                case PC_X87:
+                    assert(pc.eightbyte[1] == PC_X87UP);
+                    assert(x87_stack == 1);
+                    x87_stack = 0; /* Reset before next function. */
+                    break;
                 default: assert(0);
                 }
                 break;
@@ -1747,6 +2035,7 @@ static void compile_block(struct block *block, const struct typetree *type)
                 break;
             }
             relase_regs();
+            assert(x87_stack == 0);
         }
         emit(INSTR_LEAVE, OPT_NONE);
         emit(INSTR_RET, OPT_NONE);
@@ -1846,7 +2135,19 @@ static void compile_data_assign(struct var target, struct var val)
         case T_REAL:
             assert(type_equal(target.type, val.type));
             imm.type = IMM_INT;
-            imm.d.qword = val.imm.i;
+            if (is_long_double(val.type)) {
+                union {
+                    long double val;
+                    long arr[2];
+                } cast = {0};
+                imm.w = 8;
+                cast.val = val.imm.ld;
+                imm.d.qword = cast.arr[0];
+                emit_data(imm);
+                imm.d.qword = cast.arr[1] & 0xFFFF;
+            } else {
+                imm.d.qword = val.imm.i;
+            }
             break;
         case T_ARRAY:
             if (is_string(val)) {
@@ -1985,6 +2286,7 @@ int compile(struct definition *def)
 {
     assert(decl_memcpy);
     assert(def->symbol);
+    assert(x87_stack == 0);
 
     switch (context.target) {
     case TARGET_IR_DOT:
@@ -2000,6 +2302,7 @@ int compile(struct definition *def)
         break;
     }
 
+    assert(x87_stack == 0);
     return 0;
 }
 

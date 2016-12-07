@@ -9,7 +9,7 @@ if [[ -z "$file" || ! -f "$file" ]]; then
 fi
 
 if [[ -z "$comp" ]]; then
-	comp="cc -std=c89"
+	comp="cc -std=c89 -Wno-psabi"
 fi
 
 $comp $file -o ${file}.out

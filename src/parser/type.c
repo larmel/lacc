@@ -40,7 +40,8 @@ static const struct typetree
     },
     basic_real_type[][4] = {
         STAMP_TYPE(T_REAL, 4),
-        STAMP_TYPE(T_REAL, 8)
+        STAMP_TYPE(T_REAL, 8),
+        STAMP_TYPE(T_REAL, 16)
     };
 
 const struct typetree *get_basic_type(
@@ -55,25 +56,27 @@ const struct typetree *get_basic_type(
     case T_UNSIGNED:
         return &basic_unsigned_type[size - 1][cv];
     case T_REAL:
-        return &basic_real_type[(size / 4) - 1][cv];
+        return (size == sizeof(float)) ? &basic_real_type[0][cv]
+            : (size == sizeof(double)) ? &basic_real_type[1][cv]
+            : &basic_real_type[2][cv];
     case T_VOID:
         return &basic_void_type[cv];
     }
 }
 
 const struct typetree
-    basic_type__void            = { T_VOID },
-    basic_type__const_void      = { T_VOID, Q_CONST, 0 },
-    basic_type__char            = { T_SIGNED, Q_NONE, 1 },
-    basic_type__short           = { T_SIGNED, Q_NONE, 2 },
-    basic_type__int             = { T_SIGNED, Q_NONE, 4 },
-    basic_type__long            = { T_SIGNED, Q_NONE, 8 },
-    basic_type__unsigned_char   = { T_UNSIGNED, Q_NONE, 1 },
-    basic_type__unsigned_short  = { T_UNSIGNED, Q_NONE, 2 },
-    basic_type__unsigned_int    = { T_UNSIGNED, Q_NONE, 4 },
-    basic_type__unsigned_long   = { T_UNSIGNED, Q_NONE, 8 },
-    basic_type__float           = { T_REAL, Q_NONE, 4 },
-    basic_type__double          = { T_REAL, Q_NONE, 8 };
+    basic_type__void           = { T_VOID },
+    basic_type__char           = { T_SIGNED, Q_NONE, 1 },
+    basic_type__short          = { T_SIGNED, Q_NONE, 2 },
+    basic_type__int            = { T_SIGNED, Q_NONE, 4 },
+    basic_type__long           = { T_SIGNED, Q_NONE, 8 },
+    basic_type__unsigned_char  = { T_UNSIGNED, Q_NONE, 1 },
+    basic_type__unsigned_short = { T_UNSIGNED, Q_NONE, 2 },
+    basic_type__unsigned_int   = { T_UNSIGNED, Q_NONE, 4 },
+    basic_type__unsigned_long  = { T_UNSIGNED, Q_NONE, 8 },
+    basic_type__float          = { T_REAL, Q_NONE, 4 },
+    basic_type__double         = { T_REAL, Q_NONE, 8 },
+    basic_type__long_double    = { T_REAL, Q_NONE, 16 };
 
 /*
  * Store member list separate from type to make memory ownership easier,
@@ -521,7 +524,9 @@ const struct typetree *usual_arithmetic_conversion(
     const struct typetree *res;
 
     assert(is_arithmetic(t1) && is_arithmetic(t2));
-    if (is_double(t1) || is_double(t2)) {
+    if (is_long_double(t1) || is_long_double(t2)) {
+        res = &basic_type__long_double;
+    } else if (is_double(t1) || is_double(t2)) {
         res = &basic_type__double;
     } else if (is_float(t1) || is_float(t2)) {
         res = &basic_type__float;
@@ -605,7 +610,9 @@ int fprinttype(FILE *stream, const struct typetree *type)
             type->size == 4 ? "int" : "long", stream);
         break;
     case T_REAL:
-        n += fputs(is_float(type) ? "float" : "double", stream);
+        n += fputs(is_float(type) ? "float"
+            : is_double(type) ? "double"
+            : "long double", stream);
         break;
     case T_VOID:
         n += fputs("void", stream);

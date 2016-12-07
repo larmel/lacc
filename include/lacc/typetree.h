@@ -28,6 +28,7 @@
 #define is_real(t) ((t)->type == T_REAL)
 #define is_float(t) (is_real(t) && (t)->size == 4)
 #define is_double(t) (is_real(t) && (t)->size == 8)
+#define is_long_double(t) (is_real(t) && (t)->size == 16)
 #define is_arithmetic(t) (is_integer(t) || is_real(t))
 #define is_scalar(t) (is_arithmetic(t) || is_pointer(t))
 #define is_aggregate(t) (is_array(t) || is_struct_or_union(t))
@@ -113,7 +114,6 @@ const struct member *get_member(const struct typetree *type, int n);
 /* Singleton unqualified instances of common types. */
 extern const struct typetree
     basic_type__void,
-    basic_type__const_void,
     basic_type__char,
     basic_type__short,
     basic_type__int,
@@ -123,7 +123,8 @@ extern const struct typetree
     basic_type__unsigned_int,
     basic_type__unsigned_long,
     basic_type__float,
-    basic_type__double;
+    basic_type__double,
+    basic_type__long_double;
 
 /* Get a singleton instance of basic numeric and void types. */
 const struct typetree *get_basic_type(
