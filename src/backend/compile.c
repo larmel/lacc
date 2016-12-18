@@ -1658,12 +1658,15 @@ static void compile_statement(struct statement stmt)
 static void ret(struct var var, const struct typetree *type)
 {
     struct param_class pc;
+    const struct symbol *label;
 
     assert(is_function(type));
     pc = classify(type->next);
     if (pc.eightbyte[0] != PC_MEMORY) {
         load_object_to_registers(var, pc, ret_int_reg, ret_sse_reg);
     } else {
+        label = sym_create_label();
+        load_address(var, SI);
         if (is_vararg(type)) {
             emit(INSTR_MOV, OPT_MEM_REG,
                 location(address(-176, BP, 0, 0), 8), reg(DI, 8));
@@ -1671,12 +1674,14 @@ static void ret(struct var var, const struct typetree *type)
             emit(INSTR_MOV, OPT_MEM_REG,
                 location(address(-8, BP, 0, 0), 8), reg(DI, 8));
         }
-        load_address(var, SI);
+        emit(INSTR_CMP, OPT_REG_REG, reg(DI, 8), reg(SI, 8));
+        emit(INSTR_JZ, OPT_IMM, addr(label));
         emit(INSTR_MOV, OPT_IMM_REG,
             constant(size_of(type->next), 8), reg(DX, 4));
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(-8, BP, 0, 0), 8), reg(AX, 8));
+        enter_context(label);
     }
 }
 
