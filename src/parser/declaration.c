@@ -766,12 +766,10 @@ static struct block *initialize_struct_or_union(
         while (i < m) {
             member = get_member(type, i++);
             target.type = member->type;
-            if (filled + member->offset > target.offset) {
-                target.offset = filled + member->offset;
-                target.field_offset = member->field_offset;
-                target.field_width = member->field_width;
-                zero_initialize(def, block, target);
-            }
+            target.offset = filled + member->offset;
+            target.field_offset = member->field_offset;
+            target.field_width = member->field_width;
+            zero_initialize(def, block, target);
         }
     }
 
