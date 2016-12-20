@@ -1306,32 +1306,56 @@ static void enter(struct definition *def)
  * Execute call to va_start, initializing the provided va_list object.
  * Values are taken from static context set during enter(). Address of
  * va_args object is evaluated from expression.
+ *
+ * Produce code equivalent to four assignments:
+ *
+ *      args.gp_offset = ...
+ *      args.fp_offset = ...
+ *      args.overflow_arg_area = ...
+ *      args.reg_save_area = ...
+ *
  */
 static void compile__builtin_va_start(struct var args)
 {
-    assert(args.kind == DIRECT);
+    struct var
+        gp_offset = args,
+        fp_offset = args,
+        overflow_arg_area = args,
+        reg_save_area = args;
 
-    emit(INSTR_MOV, OPT_IMM_MEM,
-        constant(vararg.gp_offset, 4),
-        location_of(args, 4));
-    args.offset += 4;
-    emit(INSTR_MOV, OPT_IMM_MEM,
-        constant(vararg.fp_offset, 4),
-        location_of(args, 4));
-    args.offset += 4;
+    gp_offset.type = &basic_type__unsigned_int;
+    fp_offset.type = &basic_type__unsigned_int;
+    overflow_arg_area.type = &basic_type__unsigned_long;
+    reg_save_area.type = &basic_type__unsigned_long;
+
+    fp_offset.offset += 4;
+    overflow_arg_area.offset += 8;
+    reg_save_area.offset += 16;
+
+    if (args.kind == DEREF) {
+        emit(INSTR_MOV, OPT_IMM_REG, constant(vararg.gp_offset, 4), reg(AX, 4));
+        store(AX, gp_offset);
+        emit(INSTR_MOV, OPT_IMM_REG, constant(vararg.fp_offset, 4), reg(AX, 4));
+        store(AX, fp_offset);
+    } else {
+        assert(args.kind == DIRECT);
+        emit(INSTR_MOV, OPT_IMM_MEM,
+            constant(vararg.gp_offset, 4),
+            location_of(gp_offset, 4));
+        emit(INSTR_MOV, OPT_IMM_MEM,
+            constant(vararg.fp_offset, 4),
+            location_of(fp_offset, 4));
+    }
+
     emit(INSTR_LEA, OPT_MEM_REG,
         location(address(vararg.overflow_arg_area_offset, BP, 0, 0), 8),
         reg(AX, 8));
-    emit(INSTR_MOV, OPT_REG_MEM,
-        reg(AX, 8),
-        location_of(args, 8));
-    args.offset += 8;
+    store(AX, overflow_arg_area);
+
     emit(INSTR_LEA, OPT_MEM_REG,
         location(address(vararg.reg_save_area_offset, BP, 0, 0), 8),
         reg(AX, 8));
-    emit(INSTR_MOV, OPT_REG_MEM,
-        reg(AX, 8),
-        location_of(args, 8));
+    store(AX, reg_save_area);
 }
 
 /*
