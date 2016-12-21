@@ -415,7 +415,7 @@ static struct code add(
         }
         break;
     case OPT_IMM_MEM:
-        assert(a.imm.type == IMM_INT && a.imm.w == 4 && !mrex(b.mem.addr));
+        assert(a.imm.type == IMM_INT && !mrex(b.mem.addr));
         c.val[c.len++] = 0x80 | is_byte_imm(a.imm) << 1 | w(b.mem);
         encode_addr(&c, 0, b.mem.addr);
         if (is_byte_imm(a.imm)) {

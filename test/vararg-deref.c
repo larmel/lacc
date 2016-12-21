@@ -5,7 +5,7 @@
 static int sum(int n, va_list *args) {
 	int k = 0;
 	while (n--) {
-		k += va_arg(*args, int);
+		k += va_arg(*args, double);
 	}
 
 	return k;
@@ -22,7 +22,7 @@ static int test(int n, ...) {
 
 int main(void) {
 	return printf("%d, %d, %d\n",
-		test(1, 4),
-		test(3, 4567, 124, 5368),
-		test(4, 123, 2356, 5678, 2769));
+		test(1, 4.0),
+		test(3, 4567.0f, 124.6f, 5368.5f),
+		test(4, 123.5, 2356.4, 5678.6, 2769.1));
 }

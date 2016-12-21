@@ -1303,34 +1303,55 @@ static void enter(struct definition *def)
 }
 
 /*
+ * Initialize variable references to each field of va_list object.
+ *
+ *     typedef struct {
+ *         unsigned int gp_offset;
+ *         unsigned int fp_offset;
+ *         void *overflow_arg_area;
+ *         void *reg_save_area;
+ *     } va_list[1];
+ *
+ */
+static void deconstruct_va_arg(
+    struct var args,
+    struct var *gp_offset,
+    struct var *fp_offset,
+    struct var *overflow_arg_area,
+    struct var *reg_save_area)
+{
+    *gp_offset = args;
+    *fp_offset = args;
+    *overflow_arg_area = args;
+    *reg_save_area = args;
+
+    gp_offset->type = &basic_type__unsigned_int;
+    fp_offset->type = &basic_type__unsigned_int;
+    overflow_arg_area->type = &basic_type__unsigned_long;
+    reg_save_area->type = &basic_type__unsigned_long;
+
+    fp_offset->offset += 4;
+    overflow_arg_area->offset += 8;
+    reg_save_area->offset += 16;
+}
+
+/*
  * Execute call to va_start, initializing the provided va_list object.
  * Values are taken from static context set during enter(). Address of
  * va_args object is evaluated from expression.
  *
- * Produce code equivalent to four assignments:
- *
- *      args.gp_offset = ...
- *      args.fp_offset = ...
- *      args.overflow_arg_area = ...
- *      args.reg_save_area = ...
+ *  gp_offset:          Offset from reg_save_area to first int register.
+ *  fp_offset:          Offset from reg_save_area to first SSE register.
+ *  overflow_arg_area:  Address of first stack argument.
+ *  reg_save_area:      Address of register save area.
  *
  */
 static void compile__builtin_va_start(struct var args)
 {
-    struct var
-        gp_offset = args,
-        fp_offset = args,
-        overflow_arg_area = args,
-        reg_save_area = args;
+    struct var gp_offset, fp_offset, overflow_arg_area, reg_save_area;
 
-    gp_offset.type = &basic_type__unsigned_int;
-    fp_offset.type = &basic_type__unsigned_int;
-    overflow_arg_area.type = &basic_type__unsigned_long;
-    reg_save_area.type = &basic_type__unsigned_long;
-
-    fp_offset.offset += 4;
-    overflow_arg_area.offset += 8;
-    reg_save_area.offset += 16;
+    deconstruct_va_arg(
+        args, &gp_offset, &fp_offset, &overflow_arg_area, &reg_save_area);
 
     if (args.kind == DEREF) {
         emit(INSTR_MOV, OPT_IMM_REG, constant(vararg.gp_offset, 4), reg(AX, 4));
@@ -1359,55 +1380,35 @@ static void compile__builtin_va_start(struct var args)
 }
 
 /*
- * Output logic for fetching a parameter calling res = va_arg(args, T).
- * Type of args should always be pointer to first element of array.
+ * Generate code for fetching a parameter calling res = va_arg(args, T).
+ * Approach is described in section 3.5.7 of the System V ABI.
  */
 static void compile__builtin_va_arg(struct var res, struct var args)
 {
-    const int w = size_of(res.type);
-    int n,
+    const struct symbol *stack, *done = NULL;
+    struct var slice, gp_offset, fp_offset, overflow_arg_area, reg_save_area;
+    struct param_class pc;
+    int i, n, w,
+        num_gp = 0,
+        num_fp = 0,
         integer_regs_loaded = 0,
         sse_regs_loaded = 0;
-    struct param_class pc;
-
-    struct var
-        var_gp_offset,
-        var_fp_offset,
-        var_overflow_arg_area,
-        var_reg_save_area;
-
-    /* Get some unique jump labels. */
-    const struct symbol
-        *memory = sym_create_label(),
-        *done = sym_create_label();
-
-    /* Rewriting references only works for specific input. */
-    assert(res.kind == DIRECT || res.kind == DEREF);
-    assert(args.kind == ADDRESS || args.kind == DIRECT);
-    assert(is_pointer(args.type));
-    assert(!args.offset);
 
     /*
-     * References into va_list object, offset and rewrite types to get
-     * direct references to each field.
+     * Type of args is pointer to first element of array. Rewrite to
+     * reference element directly.
      */
+    assert(is_pointer(args.type));
+    assert(!args.offset);
     if (args.kind == ADDRESS) {
         args.kind = DIRECT;
     } else {
+        assert(res.kind == DIRECT);
         args.kind = DEREF;
     }
 
-    var_gp_offset = args;
-    var_gp_offset.type = &basic_type__unsigned_int;
-    var_fp_offset = args;
-    var_fp_offset.offset += 4;
-    var_fp_offset.type = &basic_type__unsigned_int;
-    var_overflow_arg_area = args;
-    var_overflow_arg_area.offset += 8;
-    var_overflow_arg_area.type = &basic_type__unsigned_long;
-    var_reg_save_area = args;
-    var_reg_save_area.offset += 16;
-    var_reg_save_area.type = &basic_type__unsigned_long;
+    deconstruct_va_arg(
+        args, &gp_offset, &fp_offset, &overflow_arg_area, &reg_save_area);
 
     /*
      * Integer or SSE parameters are read from registers, if there are
@@ -1415,50 +1416,53 @@ static void compile__builtin_va_arg(struct var res, struct var args)
      */
     pc = classify(res.type);
     if (pc.eightbyte[0] == PC_INTEGER || pc.eightbyte[0] == PC_SSE) {
-        struct var slice = res;
-        int i,
-            width,
-            num_gp = 0, /* General purpose registers needed. */
-            num_fp = 0; /* Floating point registers needed. */
-
+        stack = sym_create_label();
+        done = sym_create_label();
+        slice = res;
         n = EIGHTBYTES(res.type);
         count_register_classifications(pc, &num_gp, &num_fp);
+
+        /*
+         * Check whether there are enough registers left for the
+         * argument to be passed in, comparing gp_offset and fp_offset
+         * with max values.
+         *
+         * Max fp_offset is 6*8 + 8*16, pointing past also the first
+         * integer registers. In ABI it sais 16*16, but that has to
+         * be wrong. Only 8 registers are used for arguments.
+         */
+        if (num_gp) {
+            load(gp_offset, CX);
+            emit(INSTR_CMP, OPT_IMM_REG,
+                constant(MAX_INTEGER_ARGS*8 - 8*num_gp, 4), reg(CX, 4));
+            emit(INSTR_JA, OPT_IMM, addr(stack));
+        }
+        if (num_fp) {
+            load(fp_offset, DX);
+            emit(INSTR_CMP, OPT_IMM_REG,
+                constant(MAX_INTEGER_ARGS*8 + MAX_SSE_ARGS*16 - 16*num_fp, 4),
+                reg(DX, 4));
+            emit(INSTR_JA, OPT_IMM, addr(stack));
+        }
 
         /*
          * Keep reg_save_area in register for the remainder, a pointer
          * to stack where registers are stored. This value does not
          * change.
          */
-        load(var_reg_save_area, SI);
-
-        /*
-         * Check whether there are enough registers left for the
-         * argument to be passed in, comparing gp_offset and fp_offset
-         * with max values.
-         */
-        if (num_gp) {
-            load(var_gp_offset, CX);
-            emit(INSTR_CMP, OPT_IMM_REG,
-                constant(MAX_INTEGER_ARGS*8 - 8*num_gp, 4), reg(CX, 4));
-            emit(INSTR_JA, OPT_IMM, addr(memory));
-        }
-        if (num_fp) {
-            /*
-             * Max fp_offset is 6*8 + 8*16, pointing past also the first
-             * integer registers. In ABI it sais 16*16, but that has to
-             * be wrong. Only 8 registers are used for arguments.
-             */
-            load(var_fp_offset, DX);
-            emit(INSTR_CMP, OPT_IMM_REG,
-                constant(MAX_INTEGER_ARGS*8 + MAX_SSE_ARGS*16 - 16*num_fp, 4),
-                reg(DX, 4));
-            emit(INSTR_JA, OPT_IMM, addr(memory));
-        }
+        load(reg_save_area, SI);
 
         /*
          * Load argument, one eightbyte at a time. Similar to routines
          * moving object to and from register, but here we are getting
          * the values from spill area.
+         *
+         * Advanced addressing, load (%rsi + 8*i + (%rcx * 1))  into
+         * %rax. Base of registers are stored in %rsi, first pending
+         * register is at offset %rcx, and i counts number of registers
+         * done. In GNU assembly it is {i*8}(%rsi, %rcx, 1).
+         *
+         * Floating arguments to vararg is always double.
          */
         while ((i = integer_regs_loaded + sse_regs_loaded) < n) {
             switch (pc.eightbyte[i]) {
@@ -1468,22 +1472,14 @@ static void compile__builtin_va_arg(struct var res, struct var args)
                         &basic_type__unsigned_long :
                         BASIC_TYPE_UNSIGNED(size_of(res.type) % 8);
                 }
-                /*
-                 * Advanced addressing, load (%rsi + 8*i + (%rcx * 1))
-                 * into %rax. Base of registers are stored in %rsi,
-                 * first pending register is at offset %rcx, and i
-                 * counts number of registers done. In GNU assembly it
-                 * is {i*8}(%rsi, %rcx, 1).
-                 */
                 i = integer_regs_loaded++;
-                width = size_of(slice.type);
+                w = size_of(slice.type);
                 emit(INSTR_MOV, OPT_MEM_REG,
-                    location(address(i*8, SI, CX, 1), width), reg(AX, width));
+                    location(address(i*8, SI, CX, 1), w), reg(AX, w));
                 store(AX, slice);
                 break;
             case PC_SSE:
                 i = sse_regs_loaded++;
-                /* Floating arguments to vararg is always double. */
                 slice.type = &basic_type__double;
                 emit(INSTR_MOVSD, OPT_MEM_REG,
                     location(address(i*16, SI, DX, 1), 8), reg(XMM0, 8));
@@ -1495,32 +1491,35 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             slice.offset += size_of(slice.type);
         }
 
-        /* Store updated offsets to va_list. */
+        /*
+         * Store updated offsets pointing to next integer and SSE
+         * register.
+         */
         if (num_gp) {
-            if (var_gp_offset.kind == DIRECT) {
+            if (gp_offset.kind == DIRECT) {
                 emit(INSTR_ADD, OPT_IMM_MEM,
-                    constant(8 * num_gp, 4), location_of(var_gp_offset, 4));
+                    constant(8*num_gp, 4), location_of(gp_offset, 4));
             } else {
-                load(var_gp_offset, AX);
+                load(gp_offset, AX);
                 emit(INSTR_ADD, OPT_IMM_REG,
-                    constant(8 * num_gp, 4), reg(AX, 4));
-                store(AX, var_gp_offset);
+                    constant(8*num_gp, 4), reg(AX, 4));
+                store(AX, gp_offset);
             }
         }
         if (num_fp) {
-            if (var_fp_offset.kind == DIRECT) {
+            if (fp_offset.kind == DIRECT) {
                 emit(INSTR_ADD, OPT_IMM_MEM,
-                    constant(16 * num_fp, 4), location_of(var_fp_offset, 4));
+                    constant(16*num_fp, 4), location_of(fp_offset, 4));
             } else {
-                load(var_fp_offset, AX);
+                load(fp_offset, AX);
                 emit(INSTR_ADD, OPT_IMM_REG,
-                    constant(8 * num_fp, 4), reg(AX, 4));
-                store(AX, var_fp_offset);
+                    constant(16*num_fp, 4), reg(AX, 4));
+                store(AX, fp_offset);
             }
         }
 
         emit(INSTR_JMP, OPT_IMM, addr(done));
-        enter_context(memory);
+        enter_context(stack);
     }
 
     /*
@@ -1528,14 +1527,15 @@ static void compile__builtin_va_arg(struct var res, struct var args)
      * overflow_arg_area. This is also the fallback when arguments
      * do not fit in remaining registers.
      */
-    load(var_overflow_arg_area, SI);
+    load(overflow_arg_area, SI);
+    w = size_of(res.type);
     if (is_standard_register_width(w) && res.kind == DIRECT) {
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(0, SI, 0, 0), w), reg(AX, w));
         emit(INSTR_MOV, OPT_REG_MEM, reg(AX, w), location_of(res, w));
     } else {
         load_address(res, DI);
-        emit(INSTR_MOV, OPT_IMM_REG, constant(w, 8), reg(DX, 8));
+        emit(INSTR_MOV, OPT_IMM_REG, constant(w, 4), reg(DX, 4));
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
     }
 
@@ -1543,18 +1543,18 @@ static void compile__builtin_va_arg(struct var res, struct var args)
      * Move overflow_arg_area pointer to position of next memory
      * argument, aligning to 8 byte.
      */
-    if (var_overflow_arg_area.kind == DIRECT) {
+    w = EIGHTBYTES(res.type);
+    if (overflow_arg_area.kind == DIRECT) {
         emit(INSTR_ADD, OPT_IMM_MEM,
-            constant(EIGHTBYTES(res.type) * 8, 4),
-            location_of(var_overflow_arg_area, 4));
+            constant(w*8, 8), location_of(overflow_arg_area, 8));
     } else {
-        load(var_overflow_arg_area, AX);
-        emit(INSTR_ADD, OPT_IMM_REG,
-            constant(EIGHTBYTES(res.type) * 8, 4), reg(AX, 4));
-        store(AX, var_overflow_arg_area);
+        load(overflow_arg_area, AX);
+        emit(INSTR_ADD, OPT_IMM_REG, constant(w*8, 8), reg(AX, 8));
+        store(AX, overflow_arg_area);
     }
 
     if (pc.eightbyte[0] == PC_INTEGER || pc.eightbyte[0] == PC_SSE) {
+        assert(done);
         enter_context(done);
     }
 }
