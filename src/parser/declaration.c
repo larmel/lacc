@@ -271,7 +271,7 @@ static void member_declaration_list(struct typetree *type)
                     }
                 } else if (!size_of(decl_type)) {
                     error("Member '%s' has incomplete type '%t'.",
-                        name.len, decl_type);
+                        str_raw(name), decl_type);
                     exit(1);
                 } else {
                     type_add_member(type, name, decl_type);
