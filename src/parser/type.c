@@ -455,6 +455,13 @@ struct typetree *type_tagged_copy(
     return tag;
 }
 
+struct typetree *type_shallow_copy(const struct typetree *type)
+{
+    struct typetree *copy = mktype();
+    *copy = *type;
+    return copy;
+}
+
 /*
  * Determine whether two types are the same. Disregard qualifiers, and
  * names of function parameters.

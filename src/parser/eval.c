@@ -1333,9 +1333,10 @@ struct var eval_assign(
         if (!(is_identity(expr) && is_nullptr(expr.l))
             && cv != target.type->next->qualifier)
         {
-            warning("Target of assignment lacks qualifiers; %t = %t.",
-                target.type,
-                expr.type);
+            cv = cv & ~target.type->next->qualifier;
+            warning("Target of assignment lacks %s qualifier.",
+                cv == Q_CONST ? "const" :
+                cv == Q_VOLATILE ? "volatile" : "const volatile");
         }
     } else if (is_pointer(target.type) && is_integer(expr.type)) {
         if (!(is_identity(expr) && is_nullptr(expr.l))) {
@@ -1425,6 +1426,7 @@ struct expression eval_conditional(
     struct block *c)
 {
     struct var res, bval, cval;
+    struct typetree *next;
     const struct typetree *t1, *t2, *type;
 
     if (!is_scalar(a.type)) {
@@ -1434,24 +1436,30 @@ struct expression eval_conditional(
 
     bval = rvalue(def, b, eval(def, b, b->expr));
     cval = rvalue(def, c, eval(def, c, c->expr));
-
     t1 = bval.type;
     t2 = cval.type;
 
     if (is_arithmetic(t1) && is_arithmetic(t2)) {
         type = usual_arithmetic_conversion(t1, t2);
-    } else if (
-        (is_void(t1) && is_void(t2)) ||
-        (is_struct_or_union(t1) && type_equal(t1, t2)) ||
-        (is_pointer(t1) && is_pointer(t2) && is_compatible(t1, t2)) ||
-        (is_pointer(t1) && is_nullptr(cval)))
-    {
+    } else if (is_pointer(t1) && is_pointer(t2) && is_compatible(t1, t2)) {
+        type = t1;
+        if (t1->next->qualifier != t2->next->qualifier) {
+            next = type_shallow_copy(t1->next);
+            next->qualifier = t1->next->qualifier | t2->next->qualifier;
+            next = type_init(T_POINTER, next);
+            next->qualifier = type->qualifier;
+            type = next;
+        }
+    } else if (is_pointer(t1) && is_nullptr(cval)) {
         type = t1;
     } else if (is_pointer(t2) && is_nullptr(bval)) {
         type = t2;
+    } else if (is_void(t1) && is_void(t2)) {
+        type = t1;
+    } else if (is_struct_or_union(t1) && type_equal(t1, t2)) {
+        type = t1;
     } else {
-        /* The rules are more complex than this, revisit later. */
-        error("Unsupported types in conditional operator.");
+        error("Incompatible types in conditional operator.");
         exit(1);
     }
 

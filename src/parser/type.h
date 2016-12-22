@@ -76,6 +76,12 @@ struct typetree *type_tagged_copy(
 int is_compatible(const struct typetree *l, const struct typetree *r);
 
 /*
+ * Return a copy of type at root level, leaving all members, return, and
+ * pointer type unchanged.
+ */
+struct typetree *type_shallow_copy(const struct typetree *type);
+
+/*
  * Get the type the given POINTER is pointing to. Handles tag
  * indirections for pointers to typedef'ed object types.
  */
