@@ -930,16 +930,15 @@ static void move_to_from_registers(
         type = var.type;
         n = EIGHTBYTES(type);
         for (i = 0; i < n; ++i) {
-            switch (pc.eightbyte[i]) {
-            case PC_INTEGER:
+            if (pc.eightbyte[i] == PC_INTEGER) {
                 r = *intregs++;
                 if (!is_scalar(type)) {
                     var.type = (i < n - 1) ?
                         &basic_type__unsigned_long :
                         BASIC_TYPE_UNSIGNED(size_of(type) % 8);
                 }
-                break;
-            case PC_SSE:
+            } else {
+                assert(pc.eightbyte[i] == PC_SSE);
                 r = *sseregs++;
                 if (size_of(type) % 8 == 4) {
                     var.type = &basic_type__float;
@@ -947,10 +946,6 @@ static void move_to_from_registers(
                     assert(size_of(type) % 8 == 0);
                     var.type = &basic_type__double;
                 }
-                break;
-            default:
-                assert(0);
-                break;
             }
             if (toggle_load) {
                 load(var, r);
