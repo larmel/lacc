@@ -689,9 +689,9 @@ String tokstr(struct token tok)
     switch (tok.token) {
     case NUMBER:
         num = tok.d.number;
+        len = 0;
         if (tok.is_char_literal) {
             assert(num.type->type == T_SIGNED);
-            len = 0;
             buf[len++] = '\'';
             len += write_escaped_char(num.val.i, buf + len);
             buf[len++] = '\'';
@@ -700,7 +700,7 @@ String tokstr(struct token tok)
             default: assert(0);
             case T_UNSIGNED:
                 len = sprintf(buf,
-                    (num.type->size == 8) ? "%lul" : "%lu", num.val.u);
+                    (num.type->size == 8) ? "%luul" : "%luu", num.val.u);
                 break;
             case T_SIGNED:
                 len = sprintf(buf,
