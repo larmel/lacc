@@ -153,19 +153,30 @@ static int eval_multiplicative(
     const struct token *list,
     const struct token **endptr)
 {
-    int val = eval_unary(list, &list),
-        done = 0;
+    int val, num, done;
 
+    val = eval_unary(list, &list);
+    done = 0;
     do {
         switch (list->token) {
         case '*':
             val = val * eval_unary(list + 1, &list);
             break;
         case '/':
-            val = val / eval_unary(list + 1, &list);
+            num = eval_unary(list + 1, &list);
+            if (num == 0) {
+                error("Division by zero.");
+                exit(1);
+            }
+            val = val / num;
             break;
         case '%':
-            val = val % eval_unary(list + 1, &list);
+            num = eval_unary(list + 1, &list);
+            if (num == 0) {
+                error("Modulo by zero.");
+                exit(1);
+            }
+            val = val % num;
             break;
         default:
             done = 1;

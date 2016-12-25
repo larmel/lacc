@@ -2065,6 +2065,8 @@ static void compile_block(struct block *block, const struct typetree *type)
             compile_block(block->jump[0], type);
         }
     } else {
+        assert(block->jump[0]);
+        assert(block->jump[1]);
         assert(is_scalar(block->expr.type));
         res = compile_expression(block->expr);
         if (res.kind == VAL_FLAGS) {

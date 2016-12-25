@@ -437,7 +437,7 @@ static TokenArray expand_macro(
     struct token t;
     TokenArray list = expand_stringify_and_paste(def, args);
 
-    if (def->params) {
+    if (def->params > 0) {
         for (i = 0; i < def->params; ++i) {
             expand(&args[i]);
             if (!args[i].data[0].leading_whitespace) {

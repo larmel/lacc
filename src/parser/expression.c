@@ -790,9 +790,9 @@ static struct block *conditional_expression(
         if (is_immediate_true(block->expr)) {
             block = expression(def, block);
             consume(':');
-            t = conditional_expression(def, t); /* throwaway */
+            conditional_expression(def, t); /* throwaway */
         } else if (is_immediate_false(block->expr)) {
-            t = expression(def, t); /* throwaway */
+            expression(def, t); /* throwaway */
             consume(':');
             block = conditional_expression(def, block);
         } else {

@@ -468,9 +468,11 @@ static void flush_relocations(void)
     for (i = 0; i < n_rela_text + n_rela_data; ++i) {
         pending = array_get(&pending_relocation_list, i);
         assert(pending.type != R_X86_64_NONE);
-        if (pending.section == SHID_RELA_DATA)
+        if (pending.section == SHID_RELA_DATA) {
+            assert(n_rela_data);
             entry = data_entry++;
-        else {
+        } else {
+            assert(n_rela_text);
             assert(pending.section == SHID_RELA_TEXT);
             entry = text_entry++;
         }
@@ -484,8 +486,9 @@ static void flush_relocations(void)
          * Subtract 4 to account for the size occupied by the relocation
          * slot itself, it takes up 4 bytes in the instruction.
          */
-        if (pending.type == R_X86_64_PC32)
+        if (pending.type == R_X86_64_PC32) {
             entry->r_addend -= 4;
+        }
     }
 
     array_clear(&pending_relocation_list);

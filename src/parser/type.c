@@ -353,6 +353,7 @@ void type_add_anonymous_member(
         }
     } else {
         for (i = 0; i < nmembers(type); ++i) {
+            m = array_get(&type->signature->members, i);
             type_add_member(parent, m.name, m.type);
         }
     }

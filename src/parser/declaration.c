@@ -311,7 +311,6 @@ static struct typetree *struct_or_union_declaration(void)
         if (!sym) {
             template.type = kind;
             sym = sym_add(&ns_tag, name, &template, SYM_TYPEDEF, LINK_NONE);
-            type = &sym->type;
         } else if (is_integer(&sym->type)) {
             error("Tag '%s' was previously declared as enum.",
                 str_raw(sym->name));

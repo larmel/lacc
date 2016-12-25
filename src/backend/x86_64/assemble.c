@@ -118,7 +118,7 @@ static const char *address(struct address addr)
             reg.r = addr.offset;
             w += snprintf(buf + w, s - w, ",%s,%d", mnemonic(reg), addr.mult);
         }
-        w += snprintf(buf + w, s - w, ")");
+        snprintf(buf + w, s - w, ")");
     }
 
     return buf;
@@ -128,32 +128,31 @@ static const char *immediate(struct immediate imm, int *size)
 {
     static char buf[MAX_OPERAND_TEXT_LENGTH];
 
-    int w = 0,
-        s = sizeof(buf);
-
     *size = 8;
     switch (imm.type) {
     case IMM_INT:
         *size = imm.w;
-        if (imm.w < 8)
-            w += snprintf(buf + w, s - w, "$%d",
+        if (imm.w < 8) {
+            snprintf(buf, sizeof(buf), "$%d",
                 (imm.w == 1) ? imm.d.byte :
                 (imm.w == 2) ? imm.d.word : imm.d.dword);
-        else
-            w += snprintf(buf + w, s - w, "$%ld", imm.d.qword);
+        } else {
+            snprintf(buf, sizeof(buf), "$%ld", imm.d.qword);
+        }
         break;
     case IMM_ADDR:
         assert(imm.d.addr.sym);
         if (imm.d.addr.sym->symtype == SYM_STRING_VALUE) {
-            if (imm.d.addr.disp != 0)
-                w += snprintf(buf + w, s - w, "$%s%s%d",
+            if (imm.d.addr.disp != 0) {
+                snprintf(buf, sizeof(buf), "$%s%s%d",
                     sym_name(imm.d.addr.sym),
                     (imm.d.addr.disp > 0) ? "+" : "",
                     imm.d.addr.disp);
-            else
-                w += snprintf(buf + w, s - w, "$%s", sym_name(imm.d.addr.sym));
+            } else {
+                snprintf(buf, sizeof(buf), "$%s", sym_name(imm.d.addr.sym));
+            }
         } else {
-            w += snprintf(buf + w, s - w, "%s", sym_name(imm.d.addr.sym));
+            snprintf(buf, sizeof(buf), "%s", sym_name(imm.d.addr.sym));
         }
         break;
     case IMM_STRING:

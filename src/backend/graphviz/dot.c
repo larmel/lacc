@@ -233,13 +233,14 @@ static void foutputnode(FILE *stream, struct block *node)
         }
     }
 
-    if (node->jump[0] == NULL && node->jump[1] == NULL) {
+    if (!node->jump[0] && !node->jump[1]) {
         if (node->has_return_value) {
             fputs(" | return ", stream);
             fprintexpr(stream, node->expr);
         }
         fputs(" }\"];\n", stream);
-    } else if (node->jump[1] != NULL) {
+    } else if (node->jump[1]) {
+        assert(node->jump[0]);
         fputs(" | if ", stream);
         fprintexpr(stream, node->expr);
         fprintf(stream, " goto %s", escape(node->jump[1]->label));
@@ -251,6 +252,8 @@ static void foutputnode(FILE *stream, struct block *node)
         fprintf(stream, "\t%s:s -> %s:n;\n",
             sanitize(node->label), sanitize(node->jump[1]->label));
     } else {
+        assert(node->jump[0]);
+        assert(!node->jump[1]);
         fprintf(stream, " }\"];\n");
         foutputnode(stream, node->jump[0]);
         fprintf(stream, "\t%s:s -> %s:n;\n",

@@ -1046,9 +1046,8 @@ static struct code x87_encode_arithmetic(unsigned int op, union operand r)
 
 struct code encode(struct instruction instr)
 {
-    struct code c = {{0x90}, 1};
-
     switch (instr.opcode) {
+    default: assert(0);
     case INSTR_ADD:
         return add(instr.optype, instr.source, instr.dest);
     case INSTR_ADDSD:
@@ -1208,6 +1207,4 @@ struct code encode(struct instruction instr)
     case INSTR_FDIVRP:
         return x87_encode_arithmetic(0xF8, instr.source);
     }
-
-    return c;
 }
