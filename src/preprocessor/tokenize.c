@@ -220,14 +220,14 @@ static const struct typetree *constant_integer_type(
 
 struct token convert_preprocessing_number(struct token t)
 {
-    const char *in;
+    const char *str;
     char *endptr;
-    unsigned len;
+    int len;
     enum suffix suffix;
     struct token tok = {NUMBER};
 
     assert(t.token == PREP_NUMBER);
-    in = str_raw(t.d.string);
+    str = str_raw(t.d.string);
     len = t.d.string.len;
     tok.leading_whitespace = t.leading_whitespace;
 
@@ -236,12 +236,12 @@ struct token convert_preprocessing_number(struct token t)
      * permuations of upper- and lower case.
      */
     errno = 0;
-    tok.d.number.val.u = strtoul(in, &endptr, 0);
+    tok.d.number.val.u = strtoul(str, &endptr, 0);
     suffix = read_integer_suffix(endptr, &endptr);
-    if (endptr - in == len) {
-        assert(isdigit(*in));
+    if (endptr - str == len) {
+        assert(isdigit(*str));
         tok.d.number.type =
-            constant_integer_type(tok.d.number.val.u, suffix, *in != '0');
+            constant_integer_type(tok.d.number.val.u, suffix, *str != '0');
     } else {
         /*
          * If the integer conversion did not consume the whole token,
@@ -252,8 +252,8 @@ struct token convert_preprocessing_number(struct token t)
          */
         errno = 0;
         tok.d.number.type = &basic_type__double;
-        tok.d.number.val.d = strtod(in, &endptr);
-        if (endptr - in < len) {
+        tok.d.number.val.d = strtod(str, &endptr);
+        if (endptr - str < len) {
             if (*endptr == 'f' || *endptr == 'F') {
                 tok.d.number.type = &basic_type__float;
                 tok.d.number.val.f = (float) tok.d.number.val.d;
@@ -266,11 +266,11 @@ struct token convert_preprocessing_number(struct token t)
         }
     }
 
-    if (errno || (endptr - in != len)) {
+    if (errno || (endptr - str != len)) {
         if (errno == ERANGE) {
-            error("Numeric literal '%s' is out of range.", str_raw(t.d.string));
+            error("Numeric literal '%s' is out of range.", str);
         } else {
-            error("Invalid numeric literal '%s'.", str_raw(t.d.string));
+            error("Invalid numeric literal '%s'.", str);
         }
         exit(1);
     }
