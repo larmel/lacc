@@ -12,17 +12,17 @@ all: bin/lacc
 
 bin/lacc: $(SOURCES)
 	@mkdir -p $(dir $@)
-	cc $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $^ -o $@
 
 bin/bootstrap: $(patsubst src/%.c,bin/%-bootstrap.o,$(SOURCES))
-	cc $^ -o $@
+	$(CC) $^ -o $@
 
 bin/%-bootstrap.o: src/%.c bin/lacc
 	@mkdir -p $(dir $@)
 	bin/lacc $(LACCFLAGS) -c $< -o $@
 
 bin/selfhost: $(patsubst src/%.c,bin/%-selfhost.o,$(SOURCES))
-	cc $^ -o $@
+	$(CC) $^ -o $@
 
 bin/%-selfhost.o: src/%.c bin/bootstrap
 	@mkdir -p $(dir $@)
@@ -52,13 +52,13 @@ creduce-prepare-%: csmith/%.c bin/lacc
 	bin/lacc -std=c99 -I $(CSMITH_HOME_PATH)/runtime -w -E $< -o creduce/reduce.c
 	bin/lacc -std=c99 -c -I $(CSMITH_HOME_PATH)/runtime $< -o creduce/reduce.o
 	cc creduce/reduce.o -o creduce/reduce -lm
-	cc -std=c99 -I $(CSMITH_HOME_PATH)/runtime $< -o creduce/reduce-cc
-	cp creduce.sh creduce/
+	$(CC) -std=c99 -I $(CSMITH_HOME_PATH)/runtime $< -o creduce/reduce-cc
+	$(CC) creduce.sh creduce/
 	creduce/reduce 1 > creduce/lacc.out && creduce/reduce-cc 1 > creduce/cc.out
 	diff --side-by-side --suppress-common-lines creduce/lacc.out creduce/cc.out | head -n 1
 
 creduce-check: bin/lacc
-	./check.sh "bin/lacc -std=c99" creduce/reduce.c "cc -std=c99"
+	./check.sh "bin/lacc -std=c99" creduce/reduce.c "$(CC) -std=c99"
 
 clean:
 	rm -rf bin
