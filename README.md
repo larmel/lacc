@@ -82,16 +82,14 @@ code generation.
 
 ### Preprocessor
 Preprocessing includes reading files, tokenization, macro expansion, and
-directive handling. The interface to the preprocessor are mainly `peek(0)`,
+directive handling. The interface to the preprocessor is `peek(0)`, peekn(1),
 `consume(1)`, and `next(0)`, which looks at a stream of preprocessed `struct
 token` objects. These are defined in
 [include/lacc/token.h](include/lacc/token.h).
 
 Input processing is done completely lazily, driven by the parser calling these
-three functions to consume more input. A buffer of at least [K = 2]
-(src/preprocessor/preprocess.c#L19) preprocessed tokens are kept for lookahead
-purposes. This number is sufficient to implement a recursive descent parser for
-the C grammar.
+four functions to consume more input. A buffer of preprocessed tokens is kept
+for lookahead, and filled on demand when peeking ahead.
 
 ### Intermediate Representation
 Code is modeled as control flow graph of basic blocks, each holding a sequence

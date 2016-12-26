@@ -13,14 +13,8 @@
 #include <string.h>
 
 /*
- * Lookahead kept in buffer of preprocessed tokens. For the K&R grammar,
- * it is sufficient to have two lookahead to parse.
- */
-#define K 2
-
-/*
  * Buffer of preprocessed tokens, ready to be consumed by the parser.
- * Configured to hold at least K tokens, enabling LL(K) parsing.
+ * Filled lazily on calls to peek(0), peekn(1) and next(0).
  */
 static deque_of(struct token) lookahead;
 
@@ -297,40 +291,35 @@ static int refill_expanding_line(TokenArray *line)
     return n;
 }
 
+/*
+ * Add preprocessed token to lookahead buffer, ready to be consumed by
+ * the parser.
+ *
+ * This is the last step of preprocessing, where we also do join of
+ * adjacent string literals, and conversion from preprocessing number to
+ * proper numeric values.
+ */
 static void add_to_lookahead(struct token t)
 {
     String s;
-    unsigned len = deque_len(&lookahead);
     struct token prev;
-    int added = 0;
 
-    /*
-     * Combine adjacent string literals. This step is done after
-     * preprocessing and macro expansion; logic in preprocess_line will
-     * guarantee that we keep preprocessing lines and filling up the
-     * lookahead buffer for as long as there can be continuations.
-     */
-    if (t.token == STRING && len) {
-        prev = deque_get(&lookahead, len - 1);
-        if (prev.token == STRING) {
-            t.d.string = str_cat(prev.d.string, t.d.string);
-            deque_get(&lookahead, len - 1) = t;
-            added = 1;
+    if (!output_preprocessed) {
+        if (t.token == STRING && deque_len(&lookahead)) {
+            prev = deque_back(&lookahead);
+            if (prev.token == STRING) {
+                t.d.string = str_cat(prev.d.string, t.d.string);
+                deque_back(&lookahead) = t;
+                goto added;
+            }
+        } else if (t.token == PREP_NUMBER) {
+            t = convert_preprocessing_number(t);
         }
     }
 
-    /*
-     * Convert preprocessing numbers to actual numeric tokens, unless
-     * doing only preprocessing.
-     */
-    if (!output_preprocessed && t.token == PREP_NUMBER) {
-        t = convert_preprocessing_number(t);
-    }
+    deque_push_back(&lookahead, t);
 
-    if (!added) {
-        deque_push_back(&lookahead, t);
-    }
-
+added:
     if (context.verbose) {
         s = tokstr(t);
         verbose("   token( %s )", str_raw(s));
@@ -338,16 +327,42 @@ static void add_to_lookahead(struct token t)
 }
 
 /*
+ * Determine whether we need to read more input in anticipation of a new
+ * string literal needing to be joined with the current lookahead. This
+ * is the case if buffer is non-empty, and last element is STRING, which
+ * can be followed by any number of NEWLINE.
+ */
+static int is_lookahead_ready(int n)
+{
+    unsigned len;
+    struct token last;
+
+    len = deque_len(&lookahead);
+    if (len < n) {
+        return 0;
+    }
+
+    if (len > 0 && !output_preprocessed) {
+        last = deque_back(&lookahead);
+        if (last.token == STRING) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+/*
  * Consume at least one line, up until the final newline or end of file.
- * Fill up lookahead buffer to hold at least K tokens. In case of end of
+ * Fill up lookahead buffer to hold at least n tokens. In case of end of
  * input, put END tokens in remaining slots.
  */
-static void preprocess_line(void)
+static void preprocess_line(int n)
 {
     static TokenArray line;
 
     int i;
-    struct token t, u;
+    struct token t;
 
     ensure_initialized();
     do {
@@ -380,17 +395,15 @@ static void preprocess_line(void)
                 i = refill_expanding_line(&line);
             }
             for (i = 0; i < array_len(&line); ++i) {
-                u = array_get(&line, i);
-                if (u.token != NEWLINE || output_preprocessed) {
-                    if (u.token != NEWLINE)
-                        t = u;
-                    add_to_lookahead(u);
+                t = array_get(&line, i);
+                if (t.token != NEWLINE || output_preprocessed) {
+                    add_to_lookahead(t);
                 }
             }
         }
-    } while (deque_len(&lookahead) < K || t.token == STRING);
+    } while (!is_lookahead_ready(n));
 
-    while (deque_len(&lookahead) < K) {
+    while (deque_len(&lookahead) < n) {
         add_to_lookahead(basic_token[END]);
     }
 }
@@ -399,7 +412,7 @@ void inject_line(char *line)
 {
     assert(!line_buffer);
     line_buffer = line;
-    preprocess_line();
+    preprocess_line(0);
     while (deque_len(&lookahead) && deque_back(&lookahead).token == END) {
         (void) deque_pop_back(&lookahead);
     }
@@ -410,7 +423,7 @@ void inject_line(char *line)
 struct token next(void)
 {
     if (deque_len(&lookahead) < 1) {
-        preprocess_line();
+        preprocess_line(1);
     }
 
     return deque_pop_front(&lookahead);
@@ -424,9 +437,8 @@ struct token peek(void)
 struct token peekn(int n)
 {
     assert(n > 0);
-    assert(n <= K);
-    if (deque_len(&lookahead) < K) {
-        preprocess_line();
+    if (deque_len(&lookahead) < n) {
+        preprocess_line(n);
     }
 
     return deque_get(&lookahead, n - 1);
