@@ -19,22 +19,24 @@ Install
 Clone and build from source, and the binary will be placed in `bin/lacc`.
 Default include paths assume GNU standard library headers being available, at
 `/usr/include/x86_64-linux-gnu`. To change to some other libc, for example musl,
-edit [main.c](src/main.c#L159).
+edit [main.c](src/main.c#L168).
 
     git clone https://github.com/larmel/lacc.git
     cd lacc
     make
 
-Some standard library headers, like `stddef.h` and `stdarg.h`, contain
+Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain
 definitions that are inherently compiler specific, and are provided specifically
-for lacc under [include/stdlib/](include/stdlib). These are expected to be
-located at `/usr/lib/lacc/include`, and `make install` will do the copying.
+for lacc under [include/stdlib/](include/stdlib). The compiler is looking for
+these files at a default include path configurable by defining `LACC_STDLIB_PATH`,
+which by default points to the local source tree.
 
     make install
 
-Install also copies the binary to `/usr/bin`, so it is possible to run `lacc`
-directly in terminal. Run `make uninstall` to remove the files copies from
-install.
+Install copies the standard headers to `/usr/lib/lacc/include`, and produces an
+optimized binary with this as the default include path. The binary is copied to
+`/usr/bin`, which enables running `lacc` directly from terminal. Execute `make
+uninstall` to remove all the files that were copied.
 
 Usage
 -----

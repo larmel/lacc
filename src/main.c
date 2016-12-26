@@ -15,6 +15,15 @@
 #include <stdio.h>
 #include <unistd.h>
 
+/*
+ * Configurable location of implementation defined standard library
+ * headers. This is set in the makefile, by default pointing to files
+ * from the source tree under /include/stdlib/.
+ */
+#ifndef LACC_STDLIB_PATH
+# define LACC_STDLIB_PATH "/usr/lib/lacc/include"
+#endif
+
 const char *program;
 static FILE *output;
 static int optimization_level;
@@ -155,7 +164,7 @@ static void setup(int argc, char *argv[])
 
     input = parse_program_arguments(argc, argv);
     add_include_search_path("/usr/local/include");
-    add_include_search_path("/usr/lib/lacc/include");
+    add_include_search_path(LACC_STDLIB_PATH);
     add_include_search_path("/usr/include/x86_64-linux-gnu");
     add_include_search_path("/usr/include");
     init(input);

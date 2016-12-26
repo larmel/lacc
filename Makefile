@@ -1,18 +1,24 @@
+ROOT := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 DIRS := ${shell find src -type d -print}
 SOURCES := $(foreach sdir,$(DIRS),$(wildcard $(sdir)/*.c))
 
-INSTALL_LIB_PATH := /usr/lib/lacc/
-INSTALL_BIN_PATH := /usr/bin/
+SOURCE_LIB_PATH := $(ROOT)/include/stdlib
+INSTALL_LIB_PATH := /usr/lib/lacc/include
+INSTALL_BIN_PATH := /usr/bin
 CSMITH_HOME_PATH := ~/Code/csmith
 
-CFLAGS := -Wall -pedantic -std=c89 -g -I include/ -Wno-missing-braces -Wno-psabi
-LACCFLAGS := -I include/
+CFLAGS := -Wall -pedantic -std=c89 -I include/ -Wno-missing-braces -Wno-psabi
+LACCFLAGS := -I include/ -D'LACC_STDLIB_PATH="$(SOURCE_LIB_PATH)"'
 
 all: bin/lacc
 
 bin/lacc: $(SOURCES)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) -g -D'LACC_STDLIB_PATH="$(SOURCE_LIB_PATH)"' $^ -o $@
+
+bin/release: $(SOURCES)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -O3 -D'LACC_STDLIB_PATH="$(INSTALL_LIB_PATH)"' -DNDEBUG $^ -o $@
 
 bin/bootstrap: $(patsubst src/%.c,bin/%-bootstrap.o,$(SOURCES))
 	$(CC) $^ -o $@
@@ -33,11 +39,10 @@ test-%: bin/%
 
 test: test-lacc
 
-install: bin/lacc
+install: bin/release
 	mkdir -p $(INSTALL_LIB_PATH)
-	mkdir -p $(INSTALL_LIB_PATH)/include
-	cp include/stdlib/*.h $(INSTALL_LIB_PATH)/include/
-	cp $< $(INSTALL_BIN_PATH)
+	cp $(SOURCE_LIB_PATH)/*.h $(INSTALL_LIB_PATH)/
+	cp $< $(INSTALL_BIN_PATH)/lacc
 
 uninstall:
 	rm -rf $(INSTALL_LIB_PATH)
