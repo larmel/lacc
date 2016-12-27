@@ -23,7 +23,7 @@
 #define symtab_index_of(s) ((s)->stack_offset)
 #define symtab_lookup(s) (&sbuf[SHID_SYMTAB].sym[(s)->stack_offset])
 
-FILE *object_file_output;
+static FILE *object_file_output;
 
 static Elf64_Ehdr header = {
     {
@@ -296,36 +296,23 @@ static int elf_section_align(int shid, int align)
     return offset;
 }
 
-/* Add entry to .symtab, returning index. */
+/*
+ * Add entry to .symtab, returning index.
+ *
+ * All STB_LOCAL must come before STB_GLOBAL. Index of the first non-
+ * local symbol is stored in section header field.
+ */
 static int elf_symtab_add(Elf64_Sym entry)
 {
-    static Elf64_Sym default_symbols[] = {
-        {0},
-        {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHID_DATA, 0, 0},
-        {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHID_TEXT, 0, 0}
-    };
-
     int i;
 
-    if (!shdr[SHID_SYMTAB].sh_size) {
-        elf_section_write(
-            SHID_SYMTAB,
-            &default_symbols,
-            sizeof(default_symbols));
-    }
-
-    assert(shdr[SHID_SYMTAB].sh_size);
     i = shdr[SHID_SYMTAB].sh_size / sizeof(Elf64_Sym);
     elf_section_write(SHID_SYMTAB, &entry, sizeof(Elf64_Sym));
 
-    /*
-     * All STB_LOCAL must come before STB_GLOBAL. Index of the first
-     * non-local symbol is stored in section header field.
-     */
     if (entry.st_info >> 4 == STB_GLOBAL && !shdr[SHID_SYMTAB].sh_info) {
         shdr[SHID_SYMTAB].sh_info = i;
     } else {
-        assert(
+        assert(i == 0 ||
             (entry.st_info >> 4) == (sbuf[SHID_SYMTAB].sym[i-1].st_info >> 4));
     }
 
@@ -527,6 +514,33 @@ int elf_text_displacement(const struct symbol *label, int instr_offset)
     entry.text_offset = shdr[SHID_TEXT].sh_size + instr_offset;
     array_push_back(&pending_displacement_list, entry);
     return 0;
+}
+
+/*
+ * Initialize object file output. Called once before any other function.
+ *
+ * Write initial values to .symtab, starting with {0}, followed by a
+ * special symbol representing the name of the source file, and section
+ * names.
+ */
+void elf_init(FILE *output, const char *file)
+{
+    static Elf64_Sym default_symbols[] = {
+        {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHID_DATA, 0, 0},
+        {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHID_TEXT, 0, 0}
+    };
+
+    Elf64_Sym entry = {0};
+    object_file_output = output;
+    elf_symtab_add(entry);
+    if (file) {
+        entry.st_name = elf_strtab_add(SHID_STRTAB, file);
+        entry.st_info = STB_LOCAL << 4 | STT_FILE;
+        entry.st_shndx = SHN_ABS;
+        elf_symtab_add(entry);
+    }
+
+    elf_section_write(SHID_SYMTAB, &default_symbols, sizeof(default_symbols));
 }
 
 int elf_symbol(const struct symbol *sym)

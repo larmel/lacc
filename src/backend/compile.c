@@ -2279,7 +2279,7 @@ static void compile_function(struct definition *def)
     compile_block(def->body, &def->symbol->type);
 }
 
-void set_compile_target(FILE *stream)
+void set_compile_target(FILE *stream, const char *file)
 {
     output_stream = stream;
     switch (context.target) {
@@ -2287,14 +2287,14 @@ void set_compile_target(FILE *stream)
     case TARGET_IR_DOT:
         break;
     case TARGET_x86_64_ASM:
-        asm_output = stream;
+        asm_init(stream, file);
         enter_context = asm_symbol;
         emit_instruction = asm_text;
         emit_data = asm_data;
         flush_backend = asm_flush;
         break;
     case TARGET_x86_64_ELF:
-        object_file_output = stream;
+        elf_init(stream, file);
         enter_context = elf_symbol;
         emit_instruction = elf_text;
         emit_data = elf_data;

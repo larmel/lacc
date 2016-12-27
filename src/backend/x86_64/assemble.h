@@ -5,7 +5,8 @@
 
 #include <stdio.h>
 
-extern FILE *asm_output;
+/* Call once on startup, with output handle and source filename. */
+void asm_init(FILE *output, const char *file);
 
 /*
  * Start processing symbol. If the symbol is static, data will follow.

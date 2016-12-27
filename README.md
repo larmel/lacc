@@ -19,7 +19,7 @@ Install
 Clone and build from source, and the binary will be placed in `bin/lacc`.
 Default include paths assume GNU standard library headers being available, at
 `/usr/include/x86_64-linux-gnu`. To change to some other libc, for example musl,
-edit [main.c](src/main.c#L168).
+edit [main.c](src/main.c#L165).
 
     git clone https://github.com/larmel/lacc.git
     cd lacc

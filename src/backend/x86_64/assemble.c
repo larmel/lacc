@@ -22,8 +22,7 @@
 
 #define MAX_OPERAND_TEXT_LENGTH 256
 
-/* Clients must set this field first. */
-FILE *asm_output = NULL;
+static FILE *asm_output;
 
 static const struct symbol *current_symbol;
 
@@ -161,6 +160,14 @@ static const char *immediate(struct immediate imm, int *size)
     }
 
     return buf;
+}
+
+void asm_init(FILE *output, const char *file)
+{
+    asm_output = output;
+    if (file) {
+        out("\t.file\t\"%s\"\n", file);
+    }
 }
 
 int asm_symbol(const struct symbol *sym)

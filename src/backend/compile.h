@@ -9,7 +9,7 @@
  * Initialize compile target format and output stream. Must be called
  * before any other compile function.
  */
-void set_compile_target(FILE *stream);
+void set_compile_target(FILE *stream, const char *file);
 
 /* Compile definition, symbols which are assigned some storage. */
 int compile(struct definition *def);

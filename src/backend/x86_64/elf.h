@@ -53,6 +53,7 @@ typedef struct {
 } Elf64_Shdr;
 
 #define SHN_UNDEF 0
+#define SHN_ABS 0xFFF1              /* Absolute value reference. */
 #define SHN_COMMON 0xFFF2           /* Tentative definitions. */
 
 /* Section types, sh_type. */
@@ -113,7 +114,7 @@ enum rel_type {
 
 #define ELF64_R_INFO(s, t) ((((long) s) << 32) + (((long) t) & 0xFFFFFFFFL))
 
-extern FILE *object_file_output;
+void elf_init(FILE *output, const char *file);
 
 int elf_symbol(const struct symbol *sym);
 

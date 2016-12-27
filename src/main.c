@@ -158,26 +158,25 @@ static void register_builtin_declarations(void)
  * Add default search paths last, with lowest priority. These are
  * searched after anything specified with -I, and in the order listed.
  */
-static void setup(int argc, char *argv[])
+static void add_include_search_paths(void)
 {
-    char *input;
-
-    input = parse_program_arguments(argc, argv);
     add_include_search_path("/usr/local/include");
     add_include_search_path(LACC_STDLIB_PATH);
     add_include_search_path("/usr/include/x86_64-linux-gnu");
     add_include_search_path("/usr/include");
-    init(input);
 }
 
 int main(int argc, char *argv[])
 {
+    char *filename;
     struct definition *def;
     const struct symbol *sym;
 
-    setup(argc, argv);
+    filename = parse_program_arguments(argc, argv);
+    add_include_search_paths();
+    init(filename);
     register_builtin_definitions();
-    set_compile_target(output);
+    set_compile_target(output, filename);
 
     if (context.target == TARGET_NONE) {
         preprocess(output);
