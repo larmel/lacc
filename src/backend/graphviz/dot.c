@@ -10,6 +10,8 @@
 
 static char buffer[BUFFERS][MAX_BUF_LEN];
 
+static FILE *stream;
+
 /*
  * Return a buffer which can be used to write string representation of
  * variable or symbol.
@@ -130,7 +132,7 @@ static char *vartostr(const struct var var)
     return buffer;
 }
 
-static void fprintexpr(FILE *stream, struct expression expr)
+static void dot_print_expr(struct expression expr)
 {
     switch (expr.op) {
     case IR_OP_CAST:
@@ -198,7 +200,7 @@ static void fprintexpr(FILE *stream, struct expression expr)
     }
 }
 
-static void foutputnode(FILE *stream, struct block *node)
+static void dot_print_node(struct block *node)
 {
     int i;
     struct statement s;
@@ -215,20 +217,20 @@ static void foutputnode(FILE *stream, struct block *node)
         switch (s.st) {
         case IR_ASSIGN:
             fprintf(stream, " | %s = ", vartostr(s.t));
-            fprintexpr(stream, s.expr);
+            dot_print_expr(s.expr);
             break;
         case IR_PARAM:
             fputs(" | param ", stream);
-            fprintexpr(stream, s.expr);
+            dot_print_expr(s.expr);
             break;
         case IR_VA_START:
             fputs(" | va_start(", stream);
-            fprintexpr(stream, s.expr);
+            dot_print_expr(s.expr);
             fputs(")", stream);
             break;
         case IR_EXPR:
             fputs(" | ", stream);
-            fprintexpr(stream, s.expr);
+            dot_print_expr(s.expr);
             break;
         }
     }
@@ -236,17 +238,17 @@ static void foutputnode(FILE *stream, struct block *node)
     if (!node->jump[0] && !node->jump[1]) {
         if (node->has_return_value) {
             fputs(" | return ", stream);
-            fprintexpr(stream, node->expr);
+            dot_print_expr(node->expr);
         }
         fputs(" }\"];\n", stream);
     } else if (node->jump[1]) {
         assert(node->jump[0]);
         fputs(" | if ", stream);
-        fprintexpr(stream, node->expr);
+        dot_print_expr(node->expr);
         fprintf(stream, " goto %s", escape(node->jump[1]->label));
         fprintf(stream, " }\"];\n");
-        foutputnode(stream, node->jump[0]);
-        foutputnode(stream, node->jump[1]);
+        dot_print_node(node->jump[0]);
+        dot_print_node(node->jump[1]);
         fprintf(stream, "\t%s:s -> %s:n;\n",
             sanitize(node->label), sanitize(node->jump[0]->label));
         fprintf(stream, "\t%s:s -> %s:n;\n",
@@ -255,14 +257,22 @@ static void foutputnode(FILE *stream, struct block *node)
         assert(node->jump[0]);
         assert(!node->jump[1]);
         fprintf(stream, " }\"];\n");
-        foutputnode(stream, node->jump[0]);
+        dot_print_node(node->jump[0]);
         fprintf(stream, "\t%s:s -> %s:n;\n",
             sanitize(node->label), sanitize(node->jump[0]->label));
     }
 }
 
-void fdotgen(FILE *stream, struct definition *def)
+void dot_init(FILE *output)
 {
+    assert(!stream);
+    assert(output);
+    stream = output;
+}
+
+void dotgen(struct definition *def)
+{
+    assert(stream);
     fprintf(stream, "digraph {\n");
     fprintf(stream, "\tnode [fontname=\"Courier_New\",fontsize=10,"
                     "style=\"setlinewidth(0.1)\",shape=record];\n");
@@ -273,6 +283,6 @@ void fdotgen(FILE *stream, struct definition *def)
         fprintf(stream, "\tlabelloc=\"t\"\n");
     }
 
-    foutputnode(stream, def->body);
+    dot_print_node(def->body);
     fprintf(stream, "}\n");
 }

@@ -10,8 +10,6 @@
 #include <limits.h>
 #include <stdarg.h>
 
-static FILE *output_stream;
-
 static int (*enter_context)(const struct symbol *);
 static int (*emit_instruction)(struct instruction);
 static int (*emit_data)(struct immediate);
@@ -2281,10 +2279,11 @@ static void compile_function(struct definition *def)
 
 void set_compile_target(FILE *stream, const char *file)
 {
-    output_stream = stream;
     switch (context.target) {
     case TARGET_NONE:
+        break;
     case TARGET_IR_DOT:
+        dot_init(stream);
         break;
     case TARGET_x86_64_ASM:
         asm_init(stream, file);
@@ -2311,7 +2310,7 @@ int compile(struct definition *def)
 
     switch (context.target) {
     case TARGET_IR_DOT:
-        fdotgen(output_stream, def);
+        dotgen(def);
     case TARGET_NONE:
         break;
     case TARGET_x86_64_ASM:
