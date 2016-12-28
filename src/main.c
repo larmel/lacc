@@ -21,7 +21,7 @@
  * from the source tree under /include/stdlib/.
  */
 #ifndef LACC_STDLIB_PATH
-# define LACC_STDLIB_PATH "/usr/lib/lacc/include"
+# define LACC_STDLIB_PATH "/usr/local/lib/lacc/include"
 #endif
 
 const char *program;

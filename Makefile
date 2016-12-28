@@ -2,9 +2,11 @@ ROOT := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 DIRS := ${shell find src -type d -print}
 SOURCES := $(foreach sdir,$(DIRS),$(wildcard $(sdir)/*.c))
 
+INSTALL_PATH := /usr/local
+
 SOURCE_LIB_PATH := $(ROOT)/include/stdlib
-INSTALL_LIB_PATH := /usr/lib/lacc/include
-INSTALL_BIN_PATH := /usr/bin
+INSTALL_LIB_PATH := $(INSTALL_PATH)/lib/lacc/include
+INSTALL_BIN_PATH := $(INSTALL_PATH)/bin
 CSMITH_HOME_PATH := ~/Code/csmith
 
 CFLAGS := -Wall -pedantic -std=c89 -I include/ -Wno-missing-braces -Wno-psabi

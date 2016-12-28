@@ -30,13 +30,13 @@ definitions that are inherently compiler specific, and are provided specifically
 for lacc under [include/stdlib/](include/stdlib). The compiler is looking for
 these files at a default include path configurable by defining `LACC_STDLIB_PATH`,
 which by default points to the local source tree.
+Install copies the standard headers to `/usr/local/lib/lacc/include`, and
+produces an optimized binary with this as the default include path.
 
     make install
 
-Install copies the standard headers to `/usr/lib/lacc/include`, and produces an
-optimized binary with this as the default include path. The binary is copied to
-`/usr/bin`, which enables running `lacc` directly from terminal. Execute `make
-uninstall` to remove all the files that were copied.
+The binary is placed in `/usr/local/bin`, which enables running `lacc` directly
+from terminal. Execute `make uninstall` to remove all the files that were copied.
 
 Usage
 -----
