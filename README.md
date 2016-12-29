@@ -72,7 +72,7 @@ exiting with the answer. Running `./fact` followed by `echo $?` should print
 Implementation
 --------------
 The compiler is written in C89, with no external dependencies other than the
-C standard library. There is around 12k lines of code total.
+C standard library. There is around 13k lines of code total.
 
 The implementation is organized into three main parts; preprocessor, parser, and
 backend, each in their own directory under [src/](src/). In general, each module
@@ -247,25 +247,51 @@ Performance
 -----------
 Some effort has been put into making the compiler itself fast (although the
 generated code is still very much unoptimized).
+Serving as both a performance benchmark and correctness test, we use the
+[sqlite](https://sqlite.org/download.html) database engine.
+The source code is distributed as a single 7 MB large C file spanning almost
+200 K lines (including comments and whitespace), which is perfect for stress
+testing the compiler.
 
-    valgrind lacc -c -I include/ src/backend/compile.c -o foo.o
-    perf stat lacc -c -I include/ src/backend/compile.c -o foo.o
+The following experiments were run on an i7 4770K, compiling version 3.15.2 of
+sqlite3. Measurements are made from compiling to object code (-c).
 
-The largest file, [src/backend/compile.c](src/backend/compile.c), is used as a
-crude benchmark. Measurements are made from compiling to object code, collecting
-hardware performance counter data with `perf stat`, and memory allocations with
-`valgrind`. In these experiments, lacc was compiled using gcc and -O3.
+### Compilation speed
 
-| Compiler | Cycles      | Instructions | Allocations | Bytes allocated |
-|:---------|------------:|-------------:|------------:|----------------:|
-| lacc     |  36,779,684 |   61,119,409 |      10,951 |       2,942,812 |
-| tcc      |  18,123,655 |   29,134,092 |      11,580 |       2,937,744 |
-| gcc      | 429,638,431 |  712,090,450 |         231 |         134,972 |
-| clang    | 266,049,110 |  336,297,464 |      28,775 |       1,441,342 |
+It takes around 200 ms to compile the file with lacc, but rather than time we
+look at a more accurate sampling of CPU cycles and instructions executed
+compared to other compilers. Hardware performance counter data is collected with
+`perf stat`, and memory allocations with `valgrind`.
+The numbers for lacc is from an optimized build produced by GCC (-O3).
 
-There is yet work to be done to get closer to TCC, which is probably one of
-the fastest C compilers available. Still, we are within reasonable distance from
-TCC performance, and an order of magnitude better than GCC.
+| Compiler      | Cycles        | Instructions   | Allocations | Bytes allocated |
+|:--------------|--------------:|---------------:|------------:|----------------:|
+| lacc          |   796,417,381 |  1,094,268,882 |     173,427 |      46,929,022 |
+| tcc (0.9.26)  |   252,278,233 |    390,117,688 |     101,420 |      15,908,753 |
+| gcc (5.2.1)   | 8,937,133,232 | 13,614,565,033 |         230 |         134,510 |
+| clang (3.6.2) | 3,510,155,745 |  4,238,137,539 |      28,764 |       1,440,754 |
+
+There is yet work to be done to get closer to [TCC](http://bellard.org/tcc/),
+which is probably one of the fastest C compilers available. Still, we are within
+reasonable distance from TCC performance, and an order of magnitude better than
+GCC.
+
+### Codegen quality
+
+One can compare the relative quality of code generated from lacc and GCC by
+looking at the number of dynamic instructions executed by the selfhost binary
+versus a binary built by GCC. In both cases we do not enable any optimizations,
+so this is a measure of code generated with -O0.
+
+| Compiler        | Cycles        | Instructions   |
+|:----------------|--------------:|---------------:|
+| lacc            | 1,168,489,042 |  1,778,288,298 |
+| lacc (selfhost) | 2,487,512,453 |  3,513,259,653 |
+
+Around twice the number of instructions are executed by the selfhost binary,
+showing that lacc generates more naive code than GCC. Improving the backend with
+more efficient instruction selection is a priority, so these numbers should get
+closer in the future.
 
 References
 ----------
