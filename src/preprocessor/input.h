@@ -27,7 +27,7 @@ void include_system_file(const char *);
 char *getprepline(void);
 
 /* Path of file and line number that was last read. */
-String current_file_path;
-int current_file_line;
+extern String current_file_path;
+extern int current_file_line;
 
 #endif
