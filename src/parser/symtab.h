@@ -75,7 +75,7 @@ struct symbol *sym_lookup(struct namespace *ns, String name);
 struct symbol *sym_add(
     struct namespace *ns,
     String name,
-    const struct typetree *type,
+    Type type,
     enum symtype symtype,
     enum linkage linkage);
 
@@ -84,7 +84,7 @@ struct symbol *sym_add(
  * identifier namespace. Used to hold temporary values in expression
  * evaluation.
  */
-struct symbol *sym_create_temporary(const struct typetree *type);
+struct symbol *sym_create_temporary(Type type);
 
 /*
  * Release memory used for a temporary symbol, allowing it to be reused

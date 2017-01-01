@@ -73,7 +73,7 @@ static void initialize_dataflow(int count)
 
 static int count_symbol(struct symbol *sym)
 {
-    if (sym && !sym->index && is_object(&sym->type)) {
+    if (sym && !sym->index && is_object(sym->type)) {
         array_push_back(&symbols, sym);
         sym->index = array_len(&symbols);
         return 1;
@@ -196,7 +196,7 @@ void optimize(struct definition *def)
 {
     int iops, syms;
 
-    if (optimization_level && is_function(&def->symbol->type)) {
+    if (optimization_level && is_function(def->symbol->type)) {
         array_empty(&blocks);
         array_empty(&symbols);
         array_empty(&nodes);

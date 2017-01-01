@@ -2,7 +2,7 @@
 #include "strtab.h"
 #include "tokenize.h"
 #include <lacc/context.h>
-#include <lacc/typetree.h>
+#include <lacc/type.h>
 
 #include <assert.h>
 #include <ctype.h>
@@ -169,23 +169,23 @@ static enum suffix read_integer_suffix(char *ptr, char **endptr)
     return s;
 }
 
-static const struct typetree *constant_integer_type(
+static const Type constant_integer_type(
     unsigned long int value,
     enum suffix suffix,
     int is_decimal)
 {
-    const struct typetree *type;
+    Type type;
 
     switch (suffix) {
     case SUFFIX_NONE:
         if (value <= INT_MAX) {
-            type = &basic_type__int;
+            type = basic_type__int;
         } else if (!is_decimal && value <= UINT_MAX) {
-            type = &basic_type__unsigned_int;
+            type = basic_type__unsigned_int;
         } else if (value <= LONG_MAX) {
-            type = &basic_type__long;
+            type = basic_type__long;
         } else {
-            type = &basic_type__unsigned_long;
+            type = basic_type__unsigned_long;
             if (is_decimal) {
                 warning("Conversion of decimal constant to unsigned.");
             }
@@ -193,17 +193,17 @@ static const struct typetree *constant_integer_type(
         break;
     case SUFFIX_U:
         if (value <= UINT_MAX) {
-            type = &basic_type__unsigned_int;
+            type = basic_type__unsigned_int;
         } else {
-            type = &basic_type__unsigned_long;
+            type = basic_type__unsigned_long;
         }
         break;
     case SUFFIX_L:
     case SUFFIX_LL:
         if (value <= LONG_MAX) {
-            type = &basic_type__long;
+            type = basic_type__long;
         } else {
-            type = &basic_type__unsigned_long;
+            type = basic_type__unsigned_long;
             if (is_decimal) {
                 warning("Conversion of decimal constant to unsigned.");
             }
@@ -211,7 +211,7 @@ static const struct typetree *constant_integer_type(
         break;
     case SUFFIX_UL:
     case SUFFIX_ULL:
-        type = &basic_type__unsigned_long;
+        type = basic_type__unsigned_long;
         break;
     }
 
@@ -251,15 +251,15 @@ struct token convert_preprocessing_number(struct token t)
          * get incorrect results compared to other compilers.
          */
         errno = 0;
-        tok.d.number.type = &basic_type__double;
+        tok.d.number.type = basic_type__double;
         tok.d.number.val.d = strtod(str, &endptr);
         if (endptr - str < len) {
             if (*endptr == 'f' || *endptr == 'F') {
-                tok.d.number.type = &basic_type__float;
+                tok.d.number.type = basic_type__float;
                 tok.d.number.val.f = (float) tok.d.number.val.d;
                 endptr++;
             } else if (*endptr == 'l' || *endptr == 'L') {
-                tok.d.number.type = &basic_type__long_double;
+                tok.d.number.type = basic_type__long_double;
                 tok.d.number.val.ld = (long double) tok.d.number.val.d;
                 endptr++;
             }
@@ -348,7 +348,7 @@ static struct token strtochar(char *in, char **endptr)
     assert(*in == '\'');
 
     in++;
-    tok.d.number.type = &basic_type__int;
+    tok.d.number.type = basic_type__int;
     tok.d.number.val.i = escpchar(in, endptr);
     if (**endptr != '\'')
         error("Invalid character constant %c.", *in);
@@ -691,31 +691,23 @@ String tokstr(struct token tok)
         num = tok.d.number;
         len = 0;
         if (tok.is_char_literal) {
-            assert(num.type->type == T_SIGNED);
+            assert(is_signed(num.type));
             buf[len++] = '\'';
             len += write_escaped_char(num.val.i, buf + len);
             buf[len++] = '\'';
+        } else if (is_unsigned(num.type)) {
+            len = sprintf(buf,
+                (size_of(num.type) == 8) ? "%luul" : "%luu", num.val.u);
+        } else if (is_signed(num.type)) {
+            len = sprintf(buf,
+                (size_of(num.type) == 8) ? "%ldl" : "%ld", num.val.i);
+        } else if (is_float(num.type)) {
+            len = sprintf(buf, "%ff", num.val.f);
+        } else if (is_double(num.type)) {
+            len = sprintf(buf, "%f", num.val.d);
         } else {
-            switch (num.type->type) {
-            default: assert(0);
-            case T_UNSIGNED:
-                len = sprintf(buf,
-                    (num.type->size == 8) ? "%luul" : "%luu", num.val.u);
-                break;
-            case T_SIGNED:
-                len = sprintf(buf,
-                    (num.type->size == 8) ? "%ldl" : "%ld", num.val.i);
-                break;
-            case T_REAL:
-                if (is_float(num.type)) {
-                    len = sprintf(buf, "%ff", num.val.f);
-                } else if (is_double(num.type)) {
-                    len = sprintf(buf, "%f", num.val.d);
-                } else {
-                    len = sprintf(buf, "%Lf", num.val.ld);
-                }
-                break;
-            }
+            assert(is_long_double(num.type));
+            len = sprintf(buf, "%Lf", num.val.ld);
         }
         tok.d.string = str_register(buf, len);
         break;

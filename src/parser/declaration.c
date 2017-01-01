@@ -4,7 +4,7 @@
 #include "parse.h"
 #include "statement.h"
 #include "symtab.h"
-#include "type.h"
+#include "typetree.h"
 #include <lacc/context.h>
 #include <lacc/token.h>
 
@@ -15,7 +15,7 @@ static struct block *initializer(
     struct block *block,
     struct var target);
 
-static const struct typetree *get_typedef(String str)
+static const Type *get_typedef(String str)
 {
     struct symbol *tag;
 
@@ -27,18 +27,28 @@ static const struct typetree *get_typedef(String str)
     return NULL;
 }
 
+static int is_type_placeholder(Type type)
+{
+    return type.type == -1;
+}
+
+static Type get_type_placeholder(void)
+{
+    Type t = {-1};
+    return t;
+}
+
 /*
  * FOLLOW(parameter-list) = { ')' }, peek to return empty list; even
  * though K&R require at least specifier: (void)
  * Set parameter-type-list = parameter-list, including the , ...
  */
-static struct typetree *parameter_list(const struct typetree *base)
+static Type parameter_list(Type base)
 {
     String name;
-    const struct typetree *type;
-    struct typetree *func;
+    Type func, type;
 
-    func = type_init(T_FUNCTION, base);
+    func = type_create(T_FUNCTION, base);
     while (peek().token != ')') {
         name.len = 0;
         type = declaration_specifiers(NULL, NULL);
@@ -49,17 +59,15 @@ static struct typetree *parameter_list(const struct typetree *base)
             }
             break;
         }
-
         type_add_member(func, name, type);
         if (peek().token != ',') {
             break;
         }
-
         consume(',');
         if (peek().token == DOTS) {
             consume(DOTS);
             assert(!is_vararg(func));
-            type_add_member(func, str_init("..."), NULL);
+            type_add_member(func, str_init("..."), basic_type__void);
             assert(is_vararg(func));
             break;
         }
@@ -72,14 +80,14 @@ static struct typetree *parameter_list(const struct typetree *base)
  * Old-style function definitions with separate identifiers list and
  * type declarations.
  *
- * Return a function type where all members have NULL type.
+ * Return a function type where all members have placeholder type.
  */
-static const struct typetree *identifier_list(const struct typetree *base)
+static Type identifier_list(Type base)
 {
     struct token t;
-    struct typetree *type;
+    Type type;
 
-    type = type_init(T_FUNCTION, base);
+    type = type_create(T_FUNCTION, base);
     if (peek().token != ')') {
         while (1) {
             t = consume(IDENTIFIER);
@@ -87,7 +95,7 @@ static const struct typetree *identifier_list(const struct typetree *base)
                 error("Unexpected type '%t' in identifier list.");
                 exit(1);
             }
-            type_add_member(type, t.d.string, NULL);
+            type_add_member(type, t.d.string, get_type_placeholder());
             if (peek().token == ',') {
                 next();
             } else break;
@@ -105,14 +113,13 @@ static const struct typetree *identifier_list(const struct typetree *base)
  * incomplete type. Incomplete types are represented by having size of
  * zero.
  */
-static const struct typetree *direct_declarator_array(
-    const struct typetree *base)
+static Type direct_declarator_array(Type base)
 {
-    size_t length = 0;
+    size_t length;
     struct var val;
 
     if (peek().token == '[') {
-        consume('[');
+        next();
         if (peek().token != ']') {
             val = constant_expression();
             assert(val.kind == IMMEDIATE);
@@ -122,6 +129,8 @@ static const struct typetree *direct_declarator_array(
                 exit(1);
             }
             length = is_signed(val.type) ? (size_t) val.imm.i : val.imm.u;
+        } else {
+            length = 0;
         }
         consume(']');
         base = direct_declarator_array(base);
@@ -129,27 +138,27 @@ static const struct typetree *direct_declarator_array(
             error("Array has incomplete element type.");
             exit(1);
         }
-        base = type_init(T_ARRAY, base, length);
+        base = type_create(T_ARRAY, base, length);
     }
 
     return base;
 }
 
 /*
- * Parse function and array declarators. Some trickery is needed to
- * handle declarations like `void (*foo)(int)`, where the inner *foo
- * has to be  traversed first, and prepended on the outer type
- * `* (int) -> void` afterwards making it `* (int) -> void`.
- * The type returned from declarator has to be either array, function or
- * pointer, thus only need to check for type->next to find inner tail.
+ * Parse function and array declarators.
+ *
+ * Example:
+ *
+ *    void (*foo)(int)
+ *
+ * Traverse (*foo) first, and prepended on the outer `(int) -> void`,
+ * making it `* (int) -> void`. Void is used as a sentinel, the inner
+ * declarator can only produce pointer, function or array.
  */
-static const struct typetree *direct_declarator(
-    const struct typetree *base,
-    String *name)
+static Type direct_declarator(Type base, String *name)
 {
-    const struct typetree *type = base;
-    const struct typetree *head = NULL, *tail = NULL;
     struct token t;
+    Type type, head = basic_type__void;
 
     switch (peek().token) {
     case IDENTIFIER:
@@ -161,75 +170,59 @@ static const struct typetree *direct_declarator(
         *name = t.d.string;
         break;
     case '(':
-        consume('(');
-        tail = declarator(NULL, name);
-        if (tail) {
-            head = tail;
-            type = tail;
-            while (tail->next) {
-                tail = tail->next;
-            }
-        }
+        next();
+        head = declarator(head, name);
         consume(')');
         break;
     default:
         break;
     }
 
-    while ((t = peek()).token == '[' || t.token == '(') {
-        switch (t.token) {
-        case '[':
-            type = direct_declarator_array(base);
-            break;
-        case '(':
-            consume('(');
-            t = peek();
-            if (t.token == IDENTIFIER && !get_typedef(t.d.string)) {
-                type = identifier_list(base);
-            } else {
-                type = parameter_list(base);
-            }
-            consume(')');
-            break;
-        default: assert(0);
-        }
-        if (tail) {
-            assert(head);
-            ((struct typetree *) tail)->next = type;
-            type = head;
-        }
-        base = type;
-    }
-
-    return type;
-}
-
-static struct typetree *pointer(const struct typetree *base)
-{
-    struct token t;
-    struct typetree *type = type_init(T_POINTER, base);
-
-    consume('*');
-    while (1) {
-        t = peek();
-        if (t.token == CONST) {
-            if (type->qualifier & Q_CONST) {
-                error("Duplicate 'const' qualifier.");
-            }
-            type->qualifier |= Q_CONST;
-        } else if (t.token == VOLATILE) {
-            if (type->qualifier & Q_VOLATILE) {
-                error("Duplicate 'volatile' qualifier.");
-            }
-            type->qualifier |= Q_VOLATILE;
-        } else break;
+    switch (peek().token) {
+    case '[':
+        type = direct_declarator_array(base);
+        break;
+    case '(':
         next();
+        t = peek();
+        if (t.token == IDENTIFIER && !get_typedef(t.d.string)) {
+            type = identifier_list(base);
+        } else {
+            type = parameter_list(base);
+        }
+        consume(')');
+        break;
+    default:
+        type = base;
+        break;
+    }
+
+    if (!is_void(head)) {
+        type = type_patch_declarator(head, type);
     }
 
     return type;
 }
 
-const struct typetree *declarator(const struct typetree *base, String *name)
+static Type pointer(Type type)
+{
+    type = type_create(T_POINTER, type);
+    while (1) {
+        next();
+        switch (peek().token) {
+        case CONST:
+            type = type_set_const(type);
+            break;
+        case VOLATILE:
+            type = type_set_volatile(type);
+            break;
+        default:
+            return type;
+        }
+    }
+}
+
+Type declarator(Type base, String *name)
 {
     while (peek().token == '*') {
         base = pointer(base);
@@ -238,11 +231,11 @@ const struct typetree *declarator(const struct typetree *base, String *name)
     return direct_declarator(base, name);
 }
 
-static void member_declaration_list(struct typetree *type)
+static void member_declaration_list(Type type)
 {
     String name;
     struct var expr;
-    const struct typetree *decl_base, *decl_type;
+    Type decl_base, decl_type;
 
     do {
         decl_base = declaration_specifiers(NULL, NULL);
@@ -250,7 +243,7 @@ static void member_declaration_list(struct typetree *type)
             name.len = 0;
             decl_type = declarator(decl_base, &name);
             if (is_struct_or_union(type) && peek().token == ':') {
-                if (!is_integer(decl_type) || decl_type->size != 4) {
+                if (!is_int(decl_type)) {
                     error("Unsupported type '%t' for bit-field.", decl_type);
                     exit(1);
                 }
@@ -277,7 +270,6 @@ static void member_declaration_list(struct typetree *type)
                     type_add_member(type, name, decl_type);
                 }
             }
-
             if (peek().token == ',') {
                 consume(',');
                 continue;
@@ -292,53 +284,50 @@ static void member_declaration_list(struct typetree *type)
  * Parse and declare a new struct or union type, or retrieve type from
  * existing symbol; possibly providing a complete definition that will
  * be available for later declarations.
- *
- * Named types are return to the caller as a copy, which can be
- * overwritten with new type qualifiers.
  */
-static struct typetree *struct_or_union_declaration(void)
+static Type struct_or_union_declaration(void)
 {
-    static struct typetree template;
-
     struct symbol *sym = NULL;
-    struct typetree *type = NULL;
+    Type type = {0};
     String name;
-    enum type kind = (next().token == STRUCT) ? T_STRUCT : T_UNION;
+    enum type kind;
 
+    kind = (next().token == STRUCT) ? T_STRUCT : T_UNION;
     if (peek().token == IDENTIFIER) {
         name = consume(IDENTIFIER).d.string;
         sym = sym_lookup(&ns_tag, name);
         if (!sym) {
-            template.type = kind;
-            sym = sym_add(&ns_tag, name, &template, SYM_TYPEDEF, LINK_NONE);
-        } else if (is_integer(&sym->type)) {
+            type = type_create(kind);
+            sym = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
+            type_set_tag(type, sym->name);
+        } else if (is_integer(sym->type)) {
             error("Tag '%s' was previously declared as enum.",
                 str_raw(sym->name));
             exit(1);
-        } else if (sym->type.type != kind) {
+        } else if (type_of(sym->type) != kind) {
             error("Tag '%s' was previously declared as %s.",
                 str_raw(sym->name),
-                (is_struct(&sym->type)) ? "struct" : "union");
+                (is_struct(sym->type)) ? "struct" : "union");
             exit(1);
         }
-        type = &sym->type;
-        if (peek().token == '{' && type->size) {
+        type = sym->type;
+        if (peek().token == '{' && size_of(type)) {
             error("Redefiniton of '%s'.", str_raw(sym->name));
             exit(1);
         }
     }
 
     if (peek().token == '{') {
-        if (!type) {
-            type = type_init(kind);
+        if (!sym) {
+            type = type_create(kind);
         }
-        consume('{');
+        next();
         member_declaration_list(type);
-        assert(type->size);
+        assert(size_of(type));
         consume('}');
     }
 
-    return (sym) ? type_tagged_copy(&sym->type, sym->name) : type;
+    return type;
 }
 
 static void enumerator_list(void)
@@ -362,7 +351,7 @@ static void enumerator_list(void)
         sym = sym_add(
             &ns_ident,
             name,
-            &basic_type__int,
+            basic_type__int,
             SYM_CONSTANT,
             LINK_NONE);
         sym->constant_value.i = count++;
@@ -382,20 +371,23 @@ static void enumerator_list(void)
 static void enum_declaration(void)
 {
     String name;
+    struct token t;
     struct symbol *tag;
 
     consume(ENUM);
-    if (peek().token == IDENTIFIER) {
-        name = consume(IDENTIFIER).d.string;
+    t = peek();
+    if (t.token == IDENTIFIER) {
+        next();
+        name = t.d.string;
         tag = sym_lookup(&ns_tag, name);
         if (!tag || tag->depth < current_scope_depth(&ns_tag)) {
             tag = sym_add(
                 &ns_tag,
                 name,
-                &basic_type__int,
+                basic_type__int,
                 SYM_TYPEDEF,
                 LINK_NONE);
-        } else if (!is_integer(&tag->type)) {
+        } else if (!is_integer(tag->type)) {
             error("Tag '%s' was previously defined as aggregate type.",
                 str_raw(tag->name));
             exit(1);
@@ -422,77 +414,106 @@ static void enum_declaration(void)
  * Use a compact bit representation to hold state about declaration 
  * specifiers. Initialize storage class to sentinel value.
  */
-const struct typetree *declaration_specifiers(
-    int *storage_class,
-    int *is_inline)
+Type declaration_specifiers(int *storage_class, int *is_inline)
 {
-    const struct typetree *tagged;
-    struct typetree *type = NULL;
+    Type type = {-1}, other;
+    const Type *tagged;
     struct token tok;
-    unsigned spec = 0x0000;
-    enum qualifier qual = Q_NONE;
 
-    #define set_specifier(arg) \
-        if (spec & arg)                                                        \
-            error("Duplicate type specifier '%s'.", str_raw(tok.d.string));    \
-        next(); spec |= arg;
+    if (storage_class) {
+        *storage_class = '$';
+    }
 
-    #define set_qualifier(arg) \
-        if (qual & arg)                                                        \
-            error("Duplicate type qualifier '%s'.", str_raw(tok.d.string));    \
-        next(); qual |= arg;
-
-    if (storage_class) *storage_class = '$';
     while (1) {
         switch ((tok = peek()).token) {
-        case VOID:      set_specifier(0x001); break;
-        case CHAR:      set_specifier(0x002); break;
-        case SHORT:     set_specifier(0x004); break;
-        case INT:       set_specifier(0x008); break;
-        case SIGNED:    set_specifier(0x010); break;
-        case UNSIGNED:  set_specifier(0x020); break;
-        case LONG:
-            if (spec & 0x040) {
-                set_specifier(0x080);
-            } else {
-                set_specifier(0x040);
+        case VOID:
+            next();
+            type.type = T_VOID;
+            break;
+        case CHAR:
+            next();
+            type.type = T_CHAR;
+            break;
+        case SHORT:
+            next();
+            type.type = T_SHORT;
+            break;
+        case INT:
+            next();
+            if (type.type != T_LONG && type.type != T_SHORT) {
+                type.type = T_INT;
             }
             break;
-        case FLOAT:     set_specifier(0x100); break;
-        case DOUBLE:    set_specifier(0x200); break;
-        case CONST:     set_qualifier(Q_CONST); break;
-        case VOLATILE:  set_qualifier(Q_VOLATILE); break;
+        case SIGNED:
+            next();
+            if (type.type == -1) {
+                type.type = T_INT;
+            }
+            if (is_unsigned(type)) {
+                error("Conflicting 'signed' and 'unsigned' specifiers.");
+            }
+            break;
+        case UNSIGNED:
+            next();
+            if (type.type == -1) {
+                type.type = T_INT;
+            }
+            if (is_unsigned(type)) {
+                error("Duplicate 'unsigned' specifier.");
+            }
+            type.is_unsigned = 1;
+            break;
+        case LONG:
+            next();
+            if (type.type == T_DOUBLE) {
+                type.type = T_LDOUBLE;
+            } else {
+                type.type = T_LONG;
+            }
+            break;
+        case FLOAT:
+            next();
+            type.type = T_FLOAT;
+            break;
+        case DOUBLE:
+            next();
+            if (type.type == T_LONG) {
+                type.type = T_LDOUBLE;
+            } else {
+                type.type = T_DOUBLE;
+            }
+            break;
+        case CONST:
+            next();
+            type = type_set_const(type);
+            break;
+        case VOLATILE:
+            next();
+            type = type_set_volatile(type);
+            break;
         case IDENTIFIER:
             tagged = get_typedef(tok.d.string);
-            if (tagged && !type) {
-                consume(IDENTIFIER);
-                type = type_init(T_STRUCT);
-                *type = *tagged;
+            if (tagged) {
+                next();
+                type = type_apply_qualifiers(*tagged, type);
                 break;
             }
             goto done;
         case UNION:
         case STRUCT:
-            if (!type) {
-                type = struct_or_union_declaration();
-                break;
-            }
-            goto done;
+            other = struct_or_union_declaration();
+            type = type_apply_qualifiers(other, type);
+            break;
         case ENUM:
-            if (spec & 0x400) {
-                error("Duplicate enum specifier in type declaration.");
-                exit(1);
-            }
             enum_declaration();
-            spec |= 0x400;
+            type.type = T_INT;
             break;
         case INLINE:
             next();
             if (!is_inline) {
-                error("Invalid 'inline' specifier.");
-                exit(1);
+                error("Unexpected 'inline' specifier.");
             } else if (*is_inline) {
-                warning("Multiple 'inline' specifiers.");
+                error("Multiple 'inline' specifiers.");
             } else {
                 *is_inline = 1;
             }
@@ -516,96 +537,15 @@ const struct typetree *declaration_specifiers(
         }
     }
 
-    #undef set_specifier
-    #undef set_qualifier
-
 done:
-    if (type) {
-        if (spec) {
-            error("Invalid combination of declaration specifiers.");
-        } else if (qual & type->qualifier) {
-            error("Duplicate type qualifier:%s%s.",
-                (qual & Q_CONST) ? " const" : "",
-                (qual & Q_VOLATILE) ? " volatile" : "");
-        } else {
-            type->qualifier |= qual;
-        }
-        return type;
-    } else switch (spec) {
-    case 0x0001: /* void */
-        return get_basic_type(T_VOID, 0, qual);
-    case 0x0002: /* char */
-    case 0x0012: /* signed char */
-        return get_basic_type(T_SIGNED, 1, qual);
-    case 0x0022: /* unsigned char */
-        return get_basic_type(T_UNSIGNED, 1, qual);
-    case 0x0004: /* short */
-    case 0x0014: /* signed short */
-    case 0x000C: /* short int */
-    case 0x001C: /* signed short int */
-        return get_basic_type(T_SIGNED, 2, qual);
-    case 0x0024: /* unsigned short */
-    case 0x002C: /* unsigned short int */
-        return get_basic_type(T_UNSIGNED, 2, qual);
-    case 0x0000: /* (default) */
-    case 0x0400: /* enum */
-    case 0x0008: /* int */
-    case 0x0010: /* signed */
-    case 0x0018: /* signed int */
-        return get_basic_type(T_SIGNED, 4, qual);
-    case 0x0020: /* unsigned */
-    case 0x0028: /* unsigned int */
-        return get_basic_type(T_UNSIGNED, 4, qual);
-    case 0x0040: /* long */
-    case 0x0048: /* long int */
-    case 0x00C0: /* long long */
-    case 0x00C8: /* long long int */
-    case 0x0050: /* signed long */
-    case 0x0058: /* signed long int */
-    case 0x00D0: /* signed long long */
-    case 0x00D8: /* signed long long int */
-        return get_basic_type(T_SIGNED, 8, qual);
-    case 0x0060: /* unsigned long */
-    case 0x0068: /* unsigned long int */
-    case 0x00E0: /* unsigned long long */
-    case 0x00E8: /* unsigned long long int */
-        return get_basic_type(T_UNSIGNED, 8, qual);
-    case 0x0100: /* float */
-        return get_basic_type(T_REAL, 4, qual);
-    case 0x0200: /* double */
-        return get_basic_type(T_REAL, 8, qual);
-    case 0x0240: /* long double */
-        return get_basic_type(T_REAL, 16, qual);
-    default:
-        error("Invalid type specification.");
-        exit(1);
+    if (type.type == -1) {
+        type.type = T_INT;
     }
+
+    return type;
 }
 
-/* Constants representing immediate zero values of all basic types. */
-static const struct var
-    var__zero_float = {&basic_type__float, NULL, IMMEDIATE},
-    var__zero_double = {&basic_type__double, NULL, IMMEDIATE},
-    var__zero_unsigned[] = {
-        {&basic_type__unsigned_char, NULL, IMMEDIATE},
-        {&basic_type__unsigned_short, NULL, IMMEDIATE},
-        {0},
-        {&basic_type__unsigned_int, NULL, IMMEDIATE},
-        {0},
-        {0},
-        {0},
-        {&basic_type__unsigned_long, NULL, IMMEDIATE}
-    },
-    var__zero_signed[] = {
-        {&basic_type__char, NULL, IMMEDIATE},
-        {&basic_type__short, NULL, IMMEDIATE},
-        {0},
-        {&basic_type__int, NULL, IMMEDIATE},
-        {0},
-        {0},
-        {0},
-        {&basic_type__long, NULL, IMMEDIATE}
-    };
+static const struct var var__immediate_zero = {IMMEDIATE, {T_INT}};
 
 /*
  * Set var = 0, using simple assignment on members for composite types.
@@ -623,37 +563,32 @@ static void zero_initialize(
     struct var var;
 
     assert(target.kind == DIRECT);
-    switch (target.type->type) {
+    switch (type_of(target.type)) {
     case T_STRUCT:
     case T_UNION:
         target.type =
             (size_of(target.type) % 8) ?
-                type_init(T_ARRAY, &basic_type__char, size_of(target.type)) :
-                type_init(T_ARRAY, &basic_type__long, size_of(target.type) / 8);
+                type_create(T_ARRAY, basic_type__char, size_of(target.type)) :
+                type_create(T_ARRAY, basic_type__long, size_of(target.type)/8);
     case T_ARRAY:
-        assert(target.type->size);
+        assert(size_of(target.type));
         var = target;
-        target.type = target.type->next;
-        for (i = 0; i < var.type->size / var.type->next->size; ++i) {
-            target.offset = var.offset + i * var.type->next->size;
+        target.type = type_next(target.type);
+        for (i = 0; i < size_of(var.type) / size_of(target.type); ++i) {
+            target.offset = var.offset + i * size_of(target.type);
             zero_initialize(def, block, target);
         }
         break;
+    case T_CHAR:
+    case T_SHORT:
+    case T_INT:
+    case T_LONG:
+    case T_FLOAT:
+    case T_DOUBLE:
+    case T_LDOUBLE:
     case T_POINTER:
-        var = var__zero_unsigned[7];
+        var = var__immediate_zero;
         var.type = target.type;
-        eval_assign(def, block, target, as_expr(var));
-        break;
-    case T_UNSIGNED:
-        var = var__zero_unsigned[size_of(target.type) - 1];
-        eval_assign(def, block, target, as_expr(var));
-        break;
-    case T_SIGNED:
-        var = var__zero_signed[size_of(target.type) - 1];
-        eval_assign(def, block, target, as_expr(var));
-        break;
-    case T_REAL:
-        var = (is_float(target.type) ? var__zero_float : var__zero_double);
         eval_assign(def, block, target, as_expr(var));
         break;
     default:
@@ -731,10 +666,9 @@ static struct block *initialize_struct_or_union(
 {
     int i, m;
     size_t filled = target.offset;
-    const struct typetree *type = target.type;
+    Type type = target.type;
     const struct member *member, *prev = NULL;
 
-    assert(!is_tagged(type));
     assert(is_struct_or_union(type));
     assert(nmembers(type) > 0);
     target.lvalue = 1;
@@ -800,22 +734,22 @@ static struct block *initialize_array(
     struct block *block,
     struct var target)
 {
-    const struct typetree *type = target.type;
+    Type type = target.type;
     int filled = target.offset;
 
     assert(is_array(type));
-    if (is_aggregate(target.type->next)) {
-        target.type = target.type->next;
+    if (is_aggregate(type_next(target.type))) {
+        target.type = type_next(target.type);
         do {
             block = initialize_field(def, block, target);
             target.offset += size_of(target.type);
         } while (next_element());
     } else {
         block = read_initializer_element(def, block, target);
-        if (is_char(target.type->next) && is_string(block->expr)) {
+        if (is_char(type_next(target.type)) && is_string(block->expr)) {
             target = eval_assign(def, block, target, block->expr);
         } else {
-            target.type = target.type->next;
+            target.type = type_next(target.type);
             eval_assign(def, block, target, block->expr);
             target.offset += size_of(target.type);
             while (next_element()) {
@@ -827,14 +761,14 @@ static struct block *initialize_array(
     }
 
     target.type = type;
-    if (!target.type->size) {
+    if (!size_of(target.type)) {
         assert(target.kind == DIRECT);
-        assert(target.symbol->type.size == 0);
-        assert(is_array(&target.symbol->type));
-        ((struct symbol *) target.symbol)->type.size = target.offset;
+        assert(!size_of(target.symbol->type));
+        assert(is_array(target.symbol->type));
+        type_set_array_size(target.symbol->type, target.offset);
     } else {
-        target.type = target.type->next;
-        while (target.offset - filled < type->size) {
+        target.type = type_next(target.type);
+        while (target.offset - filled < size_of(type)) {
             zero_initialize(def, block, target);
             target.offset += size_of(target.type);
         }
@@ -850,21 +784,22 @@ static struct block *initialize_field(
     struct var target)
 {
     assert(target.kind == DIRECT);
-    target.type = unwrapped(target.type);
     if (is_struct_or_union(target.type)) {
         if (peek().token == '{') {
-            consume('{');
+            next();
             block = initialize_struct_or_union(def, block, target);
-            if (peek().token == ',') next();
+            if (peek().token == ',')
+                next();
             consume('}');
         } else {
             block = initialize_struct_or_union(def, block, target);
         }
     } else if (is_array(target.type)) {
         if (peek().token == '{') {
-            consume('{');
+            next();
             block = initialize_array(def, block, target);
-            if (peek().token == ',') next();
+            if (peek().token == ',')
+                next();
             consume('}');
         } else {
             block = initialize_array(def, block, target);
@@ -891,9 +826,8 @@ static struct block *initializer(
     struct var target)
 {
     assert(target.kind == DIRECT);
-    target.type = unwrapped(target.type);
     if (peek().token == '{') {
-        consume('{');
+        next();
         if (is_struct_or_union(target.type)) {
             block = initialize_struct_or_union(def, block, target);
         } else if (is_array(target.type)) {
@@ -901,7 +835,8 @@ static struct block *initializer(
         } else {
             block = initializer(def, block, target);
         }
-        if (peek().token == ',') next();
+        if (peek().token == ',')
+            next();
         consume('}');
     } else if (is_array(target.type)) {
         block = initialize_array(def, block, target);
@@ -916,7 +851,7 @@ static struct block *initializer(
 /* Define __func__ as static const char __func__[] = sym->name; */
 static void define_builtin__func__(String name)
 {
-    struct typetree *type;
+    Type type;
     struct symbol *sym;
     assert(current_scope_depth(&ns_ident) == 1);
     assert(context.standard == STD_C99);
@@ -925,7 +860,7 @@ static void define_builtin__func__(String name)
      * Just add the symbol directly as a special string value. No
      * explicit assignment reflected in the IR.
      */
-    type = type_init(T_ARRAY, &basic_type__char, name.len + 1);
+    type = type_create(T_ARRAY, basic_type__char, (size_t) name.len + 1);
     sym = sym_add(
         &ns_ident,
         str_init("__func__"),
@@ -944,17 +879,14 @@ static void define_builtin__func__(String name)
  * Default to int for parameters that are given without type in the
  * function signature.
  */
-static void parameter_declaration_list(
-    struct definition *def,
-    const struct typetree *type)
+static void parameter_declaration_list(struct definition *def, Type type)
 {
     int i;
     struct symbol *sym;
-    const struct member *param;
+    struct member *param;
 
     assert(is_function(type));
     assert(current_scope_depth(&ns_ident) == 1);
-
     while (peek().token != '{') {
         declaration(def, NULL);
     }
@@ -965,8 +897,8 @@ static void parameter_declaration_list(
             error("Missing parameter name at position %d.", i + 1);
             exit(1);
         }
-        if (!param->type) {
-            ((struct member *) param)->type = &basic_type__int;
+        if (is_type_placeholder(param->type)) {
+            param->type = basic_type__int;
         }
         sym = sym_lookup(&ns_ident, param->name);
         if (!sym || sym->depth != 1) {
@@ -987,10 +919,10 @@ static void parameter_declaration_list(
 struct block *declaration(struct definition *def, struct block *parent)
 {
     String name;
+    Type base, type;
     struct token t;
     struct symbol *sym;
     const struct member *param;
-    const struct typetree *base, *type;
     enum symtype symtype;
     enum linkage linkage;
     int storage_class, is_inline;
@@ -1036,8 +968,8 @@ struct block *declaration(struct definition *def, struct block *parent)
         switch (current_scope_depth(&ns_ident)) {
         case 0: break;
         case 1: /* Parameters from old-style function definitions. */
-            param = find_type_member(&def->symbol->type, name);
-            if (param && param->type == NULL) {
+            param = find_type_member(def->symbol->type, name);
+            if (param && is_type_placeholder(param->type)) {
                 ((struct member *) param)->type = type;
             } else {
                 error("Invalid parameter declaration of %s.", str_raw(name));
@@ -1074,7 +1006,7 @@ struct block *declaration(struct definition *def, struct block *parent)
                 def = cfg_init(sym);
                 initializer(def, def->body, var_direct(sym));
             }
-            assert(size_of(&sym->type) > 0);
+            assert(size_of(sym->type) > 0);
             if (peek().token != ',') {
                 consume(';');
                 return parent;
@@ -1087,7 +1019,7 @@ struct block *declaration(struct definition *def, struct block *parent)
         case '{':
             assert(!parent);
             assert(sym->linkage != LINK_NONE);
-            if (is_function(&sym->type)) {
+            if (is_function(sym->type)) {
                 sym->symtype = SYM_DEFINITION;
                 def = cfg_init(sym);
                 push_scope(&ns_label);

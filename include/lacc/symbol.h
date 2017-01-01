@@ -3,7 +3,7 @@
 
 #include "string.h"
 #include "token.h"
-#include "typetree.h"
+#include "type.h"
 
 #include <stdio.h>
 
@@ -16,13 +16,7 @@ struct block;
  */
 struct symbol {
     String name;
-
-    /*
-     * Top-level type is inlined in the symbol. Partial declarations are
-     * updated by writing directly to this object. Members are still
-     * const, and should never be mutated.
-     */
-    struct typetree type;
+    Type type;
 
     enum symtype {
         SYM_DEFINITION = 0,
@@ -99,8 +93,6 @@ struct symbol *sym_create_label(void);
  * Create a floating point constant, which can be stored and loaded from
  * memory.
  */
-struct symbol *sym_create_constant(
-    const struct typetree *type,
-    union value val);
+struct symbol *sym_create_constant(Type type, union value val);
 
 #endif

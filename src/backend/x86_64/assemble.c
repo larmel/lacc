@@ -183,14 +183,14 @@ int asm_symbol(const struct symbol *sym)
 
     switch (sym->symtype) {
     case SYM_TENTATIVE:
-        assert(is_object(&sym->type));
+        assert(is_object(sym->type));
         if (sym->linkage == LINK_INTERN)
             out("\t.local %s\n", sym_name(sym));
         out("\t.comm %s,%d,%d\n",
-            sym_name(sym), size_of(&sym->type), type_alignment(&sym->type));
+            sym_name(sym), size_of(sym->type), type_alignment(sym->type));
         break;
     case SYM_DEFINITION:
-        if (is_function(&sym->type)) {
+        if (is_function(sym->type)) {
             I0(".text");
             if (sym->linkage == LINK_EXTERN)
                 I1(".globl", sym_name(sym));
@@ -202,7 +202,7 @@ int asm_symbol(const struct symbol *sym)
                 I1(".globl", sym_name(sym));
             out("\t.align\t%d\n", sym_alignment(sym));
             out("\t.type\t%s, @object\n", sym_name(sym));
-            out("\t.size\t%s, %d\n", sym_name(sym), size_of(&sym->type));
+            out("\t.size\t%s, %d\n", sym_name(sym), size_of(sym->type));
             out("%s:\n", sym_name(sym));
         }
         break;
@@ -210,7 +210,7 @@ int asm_symbol(const struct symbol *sym)
         I0(".data");
         out("\t.align\t%d\n", sym_alignment(sym));
         out("\t.type\t%s, @object\n", sym_name(sym));
-        out("\t.size\t%s, %d\n", sym_name(sym), size_of(&sym->type));
+        out("\t.size\t%s, %d\n", sym_name(sym), size_of(sym->type));
         out("%s:\n", sym_name(sym));
         out("\t.string\t");
         fprintstr(asm_output, sym->string_value);
@@ -220,16 +220,16 @@ int asm_symbol(const struct symbol *sym)
         I0(".section\t.rodata");
         out("\t.align\t%d\n", sym_alignment(sym));
         out("%s:\n", sym_name(sym));
-        if (is_float(&sym->type)) {
+        if (is_float(sym->type)) {
             out("\t.long\t%lu\n", sym->constant_value.u & 0xFFFFFFFFu);
-        } else if (is_double(&sym->type)) {
+        } else if (is_double(sym->type)) {
             out("\t.quad\t%ld\n", sym->constant_value.i);
         } else {
             union {
                 long double ld;
                 long i[2];
             } conv = {0};
-            assert(is_long_double(&sym->type));
+            assert(is_long_double(sym->type));
             conv.ld = sym->constant_value.ld;
             out("\t.quad\t%ld\n", conv.i[0]);
             out("\t.quad\t%ld\n", conv.i[1] & 0xFFFF);
@@ -430,7 +430,7 @@ int asm_data(struct immediate data)
 int asm_flush(void)
 {
     if (current_symbol) {
-        if (is_function(&current_symbol->type) &&
+        if (is_function(current_symbol->type) &&
                 current_symbol->symtype == SYM_DEFINITION)
             out("\t.size\t%s, .-%s\n",
                 sym_name(current_symbol), sym_name(current_symbol));

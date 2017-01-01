@@ -64,7 +64,7 @@ static char *vartostr(const struct var var)
 
     switch (var.kind) {
     case IMMEDIATE:
-        switch (var.type->type) {
+        switch (type_of(var.type)) {
         default: assert(0);
         case T_POINTER:
             if (var.symbol) {
@@ -77,20 +77,24 @@ static char *vartostr(const struct var var)
                 }
                 break;
             }
-        case T_UNSIGNED:
-            n = sprintf(buffer, "%lu", var.imm.u);
-            break;
-        case T_SIGNED:
-            n = sprintf(buffer, "%ld", var.imm.i);
-            break;
-        case T_REAL:
-            if (is_float(var.type)) {
-                n = sprintf(buffer, "%ff", var.imm.f);
-            } else if (is_double(var.type)) {
-                n = sprintf(buffer, "%f", var.imm.d);
+        case T_CHAR:
+        case T_SHORT:
+        case T_INT:
+        case T_LONG:
+            if (is_unsigned(var.type)) {
+                n = sprintf(buffer, "%lu", var.imm.u);
             } else {
-                n = sprintf(buffer, "%LfL", var.imm.ld);
+                n = sprintf(buffer, "%ld", var.imm.i);
             }
+            break;
+        case T_FLOAT:
+            n = sprintf(buffer, "%ff", var.imm.f);
+            break;
+        case T_DOUBLE:
+            n = sprintf(buffer, "%f", var.imm.d);
+            break;
+        case T_LDOUBLE:
+            n = sprintf(buffer, "%LfL", var.imm.ld);
             break;
         case T_ARRAY:
             assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
@@ -278,7 +282,7 @@ void dotgen(struct definition *def)
                     "style=\"setlinewidth(0.1)\",shape=record];\n");
     fprintf(stream, "\tedge [fontname=\"Courier_New\",fontsize=10,"
                     "style=\"setlinewidth(0.1)\"];\n");
-    if (is_function(&def->symbol->type)) {
+    if (is_function(def->symbol->type)) {
         fprintf(stream, "\tlabel=\"%s\"\n", sym_name(def->symbol));
         fprintf(stream, "\tlabelloc=\"t\"\n");
     }

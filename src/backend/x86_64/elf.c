@@ -331,7 +331,7 @@ static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
     struct global var;
     if (sym->linkage == LINK_INTERN) {
         sym->stack_offset = elf_symtab_add(entry);
-        if (is_function(&sym->type)) {
+        if (is_function(sym->type)) {
             current_function_entry = &sbuf[SHID_SYMTAB].sym[sym->stack_offset];
         }
     } else {
@@ -339,7 +339,7 @@ static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
         var.sym = sym;
         var.entry = entry;
         array_push_back(&globals, var);
-        if (is_function(&sym->type)) {
+        if (is_function(sym->type)) {
             /*
              * This seems a bit shady, assumes the array address is kept
              * stable. Same with LINK_INTERN case...
@@ -558,7 +558,7 @@ int elf_symbol(const struct symbol *sym)
     entry.st_info = (sym->linkage == LINK_INTERN)
         ? STB_LOCAL << 4 : STB_GLOBAL << 4;
 
-    if (is_function(&sym->type)) {
+    if (is_function(sym->type)) {
         entry.st_info |= STT_FUNC;
         if (sym->symtype == SYM_DEFINITION) {
             entry.st_shndx = SHID_TEXT;
@@ -568,7 +568,7 @@ int elf_symbol(const struct symbol *sym)
     } else if (sym->symtype == SYM_DEFINITION) {
         elf_section_align(SHID_DATA, sym_alignment(sym));
         entry.st_shndx = SHID_DATA;
-        entry.st_size = size_of(&sym->type);
+        entry.st_size = size_of(sym->type);
         entry.st_value = shdr[SHID_DATA].sh_size;
         entry.st_info |= STT_OBJECT;
     } else if (
@@ -577,7 +577,7 @@ int elf_symbol(const struct symbol *sym)
     {
         elf_section_align(SHID_RODATA, sym_alignment(sym));
         entry.st_shndx = SHID_RODATA;
-        entry.st_size = size_of(&sym->type);
+        entry.st_size = size_of(sym->type);
         entry.st_value = shdr[SHID_RODATA].sh_size;
         entry.st_info |= STT_OBJECT;
 
@@ -594,14 +594,14 @@ int elf_symbol(const struct symbol *sym)
     } else if (sym->linkage == LINK_INTERN) {
         elf_section_align(SHID_BSS, sym_alignment(sym));
         entry.st_shndx = SHID_BSS;
-        entry.st_size = size_of(&sym->type);
+        entry.st_size = size_of(sym->type);
         entry.st_value = shdr[SHID_BSS].sh_size;
         entry.st_info |= STT_OBJECT;
         shdr[SHID_BSS].sh_size += entry.st_size;
     } else if (sym->symtype == SYM_TENTATIVE) {
         assert(sym->linkage == LINK_EXTERN);
         entry.st_shndx = SHN_COMMON;
-        entry.st_size = size_of(&sym->type);
+        entry.st_size = size_of(sym->type);
     }
 
     elf_symtab_assoc((struct symbol *) sym, entry);

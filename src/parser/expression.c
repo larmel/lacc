@@ -3,7 +3,7 @@
 #include "eval.h"
 #include "parse.h"
 #include "symtab.h"
-#include "type.h"
+#include "typetree.h"
 #include <lacc/context.h>
 #include <lacc/token.h>
 
@@ -33,7 +33,7 @@ static struct block *parse__builtin_va_start(
     struct definition *def,
     struct block *block)
 {
-    const struct typetree *type;
+    Type type;
     const struct member *mb;
     const struct symbol *sym;
     struct token param;
@@ -44,7 +44,7 @@ static struct block *parse__builtin_va_start(
     param = consume(IDENTIFIER);
 
     sym = find_symbol(param.d.string);
-    type = &def->symbol->type;
+    type = def->symbol->type;
     if (!is_vararg(type)) {
         error("Function must be vararg to use va_start.");
         exit(1);
@@ -71,7 +71,7 @@ static struct block *parse__builtin_va_arg(
     struct block *block)
 {
     struct var value;
-    const struct typetree *type;
+    Type type;
 
     consume('(');
     block = assignment_expression(def, block);
@@ -120,12 +120,15 @@ static struct block *primary_expression(
         consume(')');
         break;
     case STRING:
-        sym =
-            sym_add(&ns_ident,
-                str_init(".LC"),
-                type_init(T_ARRAY, &basic_type__char, tok.d.string.len + 1),
-                SYM_STRING_VALUE,
-                LINK_INTERN);
+        sym = sym_add(
+            &ns_ident,
+            str_init(".LC"),
+            type_create(
+                T_ARRAY,
+                basic_type__char,
+                (size_t) tok.d.string.len + 1),
+            SYM_STRING_VALUE,
+            LINK_INTERN);
         /*
          * Store string value directly on symbol, memory ownership is in
          * string table from previously called str_register. The symbol
@@ -214,10 +217,10 @@ static struct block *postfix_expression(
     struct expression root;
     struct var value, copy;
     const struct member *mbr;
-    const struct typetree *type;
     const struct symbol *sym;
     struct token tok;
     int i;
+    Type type;
     ExprArray *args;
 
     /*
@@ -230,7 +233,7 @@ static struct block *postfix_expression(
         if (tok.token == IDENTIFIER && peekn(2).token == '(') {
             sym = sym_lookup(&ns_ident, tok.d.string);
             if (!sym) {
-                type = type_init(T_FUNCTION, &basic_type__int);
+                type = type_create(T_FUNCTION, basic_type__int);
                 sym_add(&ns_ident, tok.d.string, type,
                     SYM_DECLARATION, LINK_EXTERN);
             }
@@ -263,7 +266,7 @@ static struct block *postfix_expression(
             break;
         case '(':
             type = root.type;
-            if (is_pointer(root.type) && is_function(root.type->next)) {
+            if (is_pointer(root.type) && is_function(type_deref(root.type))) {
                 type = type_deref(root.type);
             } else if (!is_function(root.type)) {
                 error("Expression must have type pointer to function, was %t.",
@@ -301,7 +304,7 @@ static struct block *postfix_expression(
                      */
                     value = eval(def, block, block->expr);
                     block->expr = eval_expr(def, block, IR_OP_CAST,
-                        value, &basic_type__double);
+                        value, basic_type__double);
                 }
                 block->expr = eval_param(def, block, block->expr);
                 array_push_back(args, block->expr);
@@ -336,7 +339,9 @@ static struct block *postfix_expression(
         case ARROW:
             consume(ARROW);
             tok = consume(IDENTIFIER);
-            if (is_pointer(root.type) && is_struct_or_union(root.type->next)) {
+            if (is_pointer(root.type)
+                && is_struct_or_union(type_deref(root.type)))
+            {
                 mbr = find_type_member(type_deref(root.type), tok.d.string);
                 if (!mbr) {
                     error("Invalid access, no member named '%s'.",
@@ -348,7 +353,7 @@ static struct block *postfix_expression(
                  * perform normal dereferencing.
                  */
                 value = eval(def, block, root);
-                value.type = type_init(T_POINTER, mbr->type);
+                value.type = type_create(T_POINTER, mbr->type);
                 value = eval_deref(def, block, value);
                 value.field_width = mbr->field_width;
                 value.field_offset = mbr->field_offset;
@@ -392,7 +397,7 @@ static struct block *unary_expression(
     struct var value;
     struct block *head, *tail;
     const struct symbol *sym;
-    const struct typetree *type;
+    Type type;
 
     switch (peek().token) {
     case '&':
@@ -444,7 +449,7 @@ static struct block *unary_expression(
                 consume('(');
                 type = declaration_specifiers(NULL, NULL);
                 if (peek().token != ')') {
-                    type = declarator((struct typetree *) type, NULL);
+                    type = declarator(type, NULL);
                 }
                 consume(')');
                 break;
@@ -461,7 +466,7 @@ exprsize:
         if (!size_of(type)) {
             error("Cannot apply 'sizeof' to incomplete type.");
         }
-        value = imm_unsigned(&basic_type__unsigned_long, size_of(type));
+        value = imm_unsigned(basic_type__unsigned_long, size_of(type));
         block->expr = as_expr(value);
         break;
     }
@@ -498,7 +503,7 @@ static struct block *cast_expression(
     struct var value;
     struct token tok;
     struct symbol *sym;
-    const struct typetree *type;
+    Type type;
 
     if (peek().token == '(') {
         tok = peekn(2);
@@ -511,7 +516,7 @@ static struct block *cast_expression(
             consume('(');
             type = declaration_specifiers(NULL, NULL);
             if (peek().token != ')') {
-                type = declarator((struct typetree *) type, NULL);
+                type = declarator(type, NULL);
             }
             consume(')');
             block = cast_expression(def, block);

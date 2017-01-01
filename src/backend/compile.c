@@ -10,6 +10,11 @@
 #include <limits.h>
 #include <stdarg.h>
 
+#define BASIC_TYPE_UNSIGNED(w) \
+    ((w) == 1) ? basic_type__unsigned_char : \
+    ((w) == 2) ? basic_type__unsigned_short : \
+    ((w) == 4) ? basic_type__unsigned_int : basic_type__unsigned_long;
+
 static int (*enter_context)(const struct symbol *);
 static int (*emit_instruction)(struct instruction);
 static int (*emit_data)(struct immediate);
@@ -83,7 +88,7 @@ static void relase_regs(void)
     sse_regs_used = 0;
 }
 
-static void compile_block(struct block *block, const struct typetree *type);
+static void compile_block(struct block *block, Type type);
 
 static void emit(enum opcode opcode, enum instr_optype optype, ...)
 {
@@ -345,7 +350,7 @@ static void load_field(struct var v, enum reg r)
     int mask;
 
     assert(is_field(v));
-    assert(size_of(v.type) == size_of(&basic_type__int));
+    assert(size_of(v.type) == size_of(basic_type__int));
     assert(v.field_width > 0 && v.field_width < 32);
     assert(v.field_offset + v.field_width <= 32);
 
@@ -453,7 +458,7 @@ static const struct symbol *get_x87_unsigned_adjust_constant(void)
 
     if (!sym) {
         val.ld = 18446744073709551616.L;
-        sym = sym_create_constant(&basic_type__long_double, val);
+        sym = sym_create_constant(basic_type__long_double, val);
     }
 
     return sym;
@@ -489,8 +494,8 @@ static void push(struct var v)
              */
             if (is_real(v.type)) {
                 v.type = (is_float(v.type))
-                    ? &basic_type__unsigned_int
-                    : &basic_type__unsigned_long;
+                    ? basic_type__unsigned_int
+                    : basic_type__unsigned_long;
             }
             load_int(v, AX, 8);
             emit(INSTR_PUSH, OPT_REG, reg(AX, 8));
@@ -522,26 +527,26 @@ static enum reg load_x87(struct var v)
 
     if (is_real(v.type)) {
         if (v.kind == DIRECT) {
-            emit(INSTR_FLD, OPT_MEM, location_of(v, v.type->size));
+            emit(INSTR_FLD, OPT_MEM, location_of(v, size_of(v.type)));
         } else {
             push(v);
             emit(INSTR_FLD, OPT_MEM,
-                location(address(0, SP, 0, 0), v.type->size));
+                location(address(0, SP, 0, 0), size_of(v.type)));
             emit(INSTR_ADD, OPT_IMM_REG,
                 constant(EIGHTBYTES(v.type) * 8, 8), reg(SP, 8));
         }
-    } else if (is_unsigned(v.type) || v.type->size == 1) {
+    } else if (is_unsigned(v.type) || size_of(v.type) == 1) {
         ax = get_int_reg();
         load_int(v, ax, 8);
         emit(INSTR_PUSH, OPT_REG, reg(ax, 8));
         emit(INSTR_FILD, OPT_MEM, location(address(0, SP, 0, 0), 8));
         emit(INSTR_ADD, OPT_IMM_REG, constant(8, 8), reg(SP, 8));
-        if (v.type->size == 8) {
+        if (size_of(v.type) == 8) {
             label = sym_create_label();
             emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
             emit(INSTR_JNS, OPT_IMM, addr(label));
             v.symbol = get_x87_unsigned_adjust_constant();
-            v.type = &basic_type__long_double;
+            v.type = basic_type__long_double;
             load_x87(v);
             emit(INSTR_FADDP, OPT_REG, reg(st, 16));
             x87_stack--;
@@ -551,12 +556,12 @@ static enum reg load_x87(struct var v)
         assert(is_signed(v.type));
         assert(size_of(v.type) != 1);
         if (v.kind == DIRECT) {
-            emit(INSTR_FILD, OPT_MEM, location_of(v, v.type->size));
+            emit(INSTR_FILD, OPT_MEM, location_of(v, size_of(v.type)));
         } else {
             push(v);
             emit(INSTR_FILD, OPT_MEM,
-                location(address(0, SP, 0, 0), v.type->size));
-            emit(INSTR_ADD, OPT_IMM_REG, constant(v.type->size, 8), reg(SP, 8));
+                location(address(0, SP, 0, 0), size_of(v.type)));
+            emit(INSTR_ADD, OPT_IMM_REG, constant(size_of(v.type), 8), reg(SP, 8));
         }
     }
 
@@ -565,7 +570,7 @@ static enum reg load_x87(struct var v)
 
 static enum reg load_float_as_integer(
     struct var val,
-    const struct typetree *type)
+    Type type)
 {
     enum opcode opcode;
     enum reg ax, cx, xmm0, xmm1;
@@ -595,10 +600,10 @@ static enum reg load_float_as_integer(
         convert = sym_create_label();
         next = sym_create_label();
         if (is_float(val.type)) {
-            limit.type = &basic_type__float;
+            limit.type = basic_type__float;
             limit.val.f = (float) LONG_MAX;
         } else {
-            limit.type = &basic_type__double;
+            limit.type = basic_type__double;
             limit.val.d = (double) LONG_MAX;
         }
         load_sse(val, xmm0, width);
@@ -630,7 +635,7 @@ static enum reg load_float_as_integer(
 
 static enum reg load_integer_as_float(
     struct var val,
-    const struct typetree *type)
+    Type type)
 {
     struct symbol *label, *next;
     enum reg xmm, ax, cx;
@@ -693,7 +698,7 @@ static enum reg load_integer_as_float(
 
 static enum reg load_float_from_long_double(
     struct var val,
-    const struct typetree *type)
+    Type type)
 {
     size_t w;
     enum reg xmm;
@@ -721,7 +726,7 @@ static enum reg load_float_from_long_double(
  */
 static enum reg load_integer_from_long_double(
     struct var val,
-    const struct typetree *type)
+    Type type)
 {
     int w;
     enum reg ax;
@@ -730,9 +735,9 @@ static enum reg load_integer_from_long_double(
     assert(is_integer(type));
     assert(!is_long_double(type));
     if (size_of(type) < 2) {
-        type = &basic_type__short;
+        type = basic_type__short;
     } else if (size_of(type) == 4 && is_unsigned(type)) {
-        type = &basic_type__long;
+        type = basic_type__long;
     }
 
     w = size_of(type);
@@ -765,7 +770,7 @@ static enum reg load_integer_from_long_double(
  * register holding the value. Type is promoted to be at least 32 bit
  * wide.
  */
-static enum reg load_cast(struct var val, const struct typetree *type)
+static enum reg load_cast(struct var val, Type type)
 {
     enum reg r;
 
@@ -780,8 +785,8 @@ static enum reg load_cast(struct var val, const struct typetree *type)
     } else {
         if (size_of(type) < 4) {
             type = is_integer(type)
-                ? &basic_type__int
-                : &basic_type__unsigned_int;
+                ? basic_type__int
+                : basic_type__unsigned_int;
         }
         assert(size_of(type) == 4 || size_of(type) == 8);
         if (is_real(val.type)) {
@@ -815,7 +820,7 @@ static void store_x87(struct var v)
         r1 = get_int_reg();
         r2 = get_int_reg();
         load_address(v, r2);
-        v.type = &basic_type__long;
+        v.type = basic_type__long;
         emit(INSTR_SUB, OPT_IMM_REG, constant(16, 8), reg(SP, 8));
         emit(INSTR_FSTP, OPT_MEM, location(address(0, SP, 0, 0), 16));
         emit(INSTR_POP, OPT_REG, reg(r1, 8));
@@ -845,7 +850,7 @@ static void store(enum reg r, struct var v)
     if (is_real(v.type)) {
         op  = is_float(v.type) ? INSTR_MOVSS : INSTR_MOVSD;
     } else if (is_field(v)) {
-        assert(w == size_of(&basic_type__int));
+        assert(w == size_of(basic_type__int));
         assert(v.field_width > 0 && v.field_width < 32);
         field = v;
         field.field_width = 0;
@@ -870,8 +875,8 @@ static void store(enum reg r, struct var v)
             v.kind = IMMEDIATE;
             load_int(v, R11, 8);
         } else {
-            assert(is_pointer(&v.symbol->type));
-            load_int(var_direct(v.symbol), R11, size_of(&v.symbol->type));
+            assert(is_pointer(v.symbol->type));
+            load_int(var_direct(v.symbol), R11, size_of(v.symbol->type));
         }
         emit(op, OPT_REG_MEM,
             reg(r, w), location(
@@ -916,13 +921,13 @@ static void move_to_from_registers(
 {
     int i, n;
     enum reg r;
-    const struct typetree *type;
+    Type type;
 
     if (pc.eightbyte[0] == PC_X87) {
         assert(pc.eightbyte[1] == PC_X87UP);
         assert(pc.eightbyte[2] == PC_NO_CLASS);
         assert(toggle_load);
-        var.type = &basic_type__long_double;
+        var.type = basic_type__long_double;
         load_x87(var);
     } else {
         type = var.type;
@@ -932,17 +937,17 @@ static void move_to_from_registers(
                 r = *intregs++;
                 if (!is_scalar(type)) {
                     var.type = (i < n - 1) ?
-                        &basic_type__unsigned_long :
+                        basic_type__unsigned_long :
                         BASIC_TYPE_UNSIGNED(size_of(type) % 8);
                 }
             } else {
                 assert(pc.eightbyte[i] == PC_SSE);
                 r = *sseregs++;
                 if (size_of(type) % 8 == 4) {
-                    var.type = &basic_type__float;
+                    var.type = basic_type__float;
                 } else {
                     assert(size_of(type) % 8 == 0);
-                    var.type = &basic_type__double;
+                    var.type = basic_type__double;
                 }
             }
             if (toggle_load) {
@@ -991,9 +996,7 @@ static void store_object_from_registers(
  * Return number of bytes of stack space used. This must be added back
  * to %rsp after result is read.
  */
-static int push_function_arguments(
-    const struct typetree *type,
-    struct param_class respc)
+static int push_function_arguments(Type type, struct param_class respc)
 {
     int i, n;
     int next_integer_reg = 0, next_sse_reg = 0, mem_used = 0, register_args = 0;
@@ -1004,6 +1007,7 @@ static int push_function_arguments(
         int i;
     } argpc[MAX_REGISTER_ARGS];
 
+    assert(is_function(type));
     if (respc.eightbyte[0] == PC_MEMORY) {
         next_integer_reg = 1;
     }
@@ -1106,20 +1110,23 @@ static void call(struct var func, int mem_used)
  *
  * Results of class PC_MEMORY has already been written by callee.
  */
-static void function_call(struct var res, struct var func)
+static void function_call(struct var res, struct var ptr)
 {
     int n;
+    Type func, ret;
     struct param_class pc;
-    assert(is_pointer(func.type));
-    assert(is_function(func.type->next));
+    assert(is_pointer(ptr.type));
+    assert(is_function(type_next(ptr.type)));
 
-    pc = classify(func.type->next->next);
-    n = push_function_arguments(func.type->next, pc);
+    func = type_next(ptr.type);
+    ret = type_next(func);
+    pc = classify(ret);
+    n = push_function_arguments(func, pc);
     if (pc.eightbyte[0] == PC_MEMORY) {
         load_address(res, param_int_reg[0]);
     }
 
-    call(func, n);
+    call(ptr, n);
     if (pc.eightbyte[0] == PC_INTEGER || pc.eightbyte[0] == PC_SSE) {
         store_object_from_registers(res, pc, ret_int_reg, ret_sse_reg);
     } else if (pc.eightbyte[0] == PC_X87) {
@@ -1135,16 +1142,21 @@ static void function_call(struct var res, struct var func)
  * can be used on standalone struct expression nodes, for example in
  * branch conditions.
  */
-static enum reg scalar_function_call(struct var func)
+static enum reg scalar_function_call(struct var ptr)
 {
+    Type func, ret;
     struct param_class pc;
-    assert(is_pointer(func.type) && is_function(func.type->next));
 
-    pc = classify(func.type->next->next);
+    assert(is_pointer(ptr.type));
+    func = type_next(ptr.type);
+    assert(is_function(func));
+    ret = type_next(func);
+
+    pc = classify(ret);
     assert(pc.eightbyte[0] != PC_MEMORY);
-    assert(EIGHTBYTES(func.type->next->next) == 1);
+    assert(EIGHTBYTES(ret) == 1);
 
-    call(func, push_function_arguments(func.type->next, pc));
+    call(ptr, push_function_arguments(func, pc));
     return pc.eightbyte[0] == PC_SSE ? ret_sse_reg[0] : ret_int_reg[0];
 }
 
@@ -1163,16 +1175,16 @@ static void enter(struct definition *def)
         struct param_class pc;
         int i;
     } argpc[MAX_REGISTER_ARGS];
-    const struct typetree *type;
+    Type type;
 
-    type = &def->symbol->type;
+    type = def->symbol->type;
     assert(is_function(type));
 
     /*
      * Address of return value is passed as first integer argument. If
      * return value is MEMORY, store the address at stack offset -8.
      */
-    res = classify(type->next);
+    res = classify(type_next(type));
     if (res.eightbyte[0] == PC_MEMORY) {
         stack_offset = -8;
         next_integer_reg = 1;
@@ -1197,8 +1209,8 @@ static void enter(struct definition *def)
      */
     for (i = 0; i < array_len(&def->params); ++i) {
         sym = array_get(&def->params, i);
-        arg = classify(&sym->type);
-        n = EIGHTBYTES(&sym->type);
+        arg = classify(sym->type);
+        n = EIGHTBYTES(sym->type);
         assert(!sym->stack_offset);
         assert(sym->linkage == LINK_NONE);
         if (alloc_register_params(arg, &next_integer_reg, &next_sse_reg)) {
@@ -1221,7 +1233,7 @@ static void enter(struct definition *def)
         sym = array_get(&def->locals, i);
         assert(!sym->stack_offset);
         if (sym->linkage == LINK_NONE) {
-            stack_offset -= EIGHTBYTES(&sym->type) * 8;
+            stack_offset -= EIGHTBYTES(sym->type) * 8;
             sym->stack_offset = stack_offset;
         }
     }
@@ -1318,10 +1330,10 @@ static void deconstruct_va_arg(
     *overflow_arg_area = args;
     *reg_save_area = args;
 
-    gp_offset->type = &basic_type__unsigned_int;
-    fp_offset->type = &basic_type__unsigned_int;
-    overflow_arg_area->type = &basic_type__unsigned_long;
-    reg_save_area->type = &basic_type__unsigned_long;
+    gp_offset->type = basic_type__unsigned_int;
+    fp_offset->type = basic_type__unsigned_int;
+    overflow_arg_area->type = basic_type__unsigned_long;
+    reg_save_area->type = basic_type__unsigned_long;
 
     fp_offset->offset += 4;
     overflow_arg_area->offset += 8;
@@ -1462,7 +1474,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             case PC_INTEGER:
                 if (!is_scalar(res.type)) {
                     slice.type = (i < n - 1) ?
-                        &basic_type__unsigned_long :
+                        basic_type__unsigned_long :
                         BASIC_TYPE_UNSIGNED(size_of(res.type) % 8);
                 }
                 i = integer_regs_loaded++;
@@ -1473,7 +1485,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
                 break;
             case PC_SSE:
                 i = sse_regs_loaded++;
-                slice.type = &basic_type__double;
+                slice.type = basic_type__double;
                 emit(INSTR_MOVSD, OPT_MEM_REG,
                     location(address(i*16, SI, DX, 1), 8), reg(XMM0, 8));
                 store(XMM0, slice);
@@ -1606,7 +1618,7 @@ static struct result compile_expression(struct expression expr)
     enum opcode opc;
     enum reg ax, cx, xmm0, xmm1;
     struct param_class pc;
-    const struct typetree *type;
+    Type type;
     struct result res = {0};
 
     w = size_of(expr.type);
@@ -1624,7 +1636,7 @@ static struct result compile_expression(struct expression expr)
             pc = classify(type);
             if (pc.eightbyte[0] == PC_X87) {
                 if (is_struct_or_union(l.type)) {
-                    l.type = &basic_type__long_double;
+                    l.type = basic_type__long_double;
                 }
                 res.r = load_x87(l);
             } else if (!is_standard_register_width(size_of(type))) {
@@ -1638,8 +1650,8 @@ static struct result compile_expression(struct expression expr)
                     } else {
                         assert(pc.eightbyte[0] == PC_SSE);
                         type = (size_of(type) == 4)
-                            ? &basic_type__float
-                            : &basic_type__double;
+                            ? basic_type__float
+                            : basic_type__double;
                     }
                     l.type = type;
                 }
@@ -1837,9 +1849,7 @@ compare:
  * result is assigned to a variable. In other cases, a jump can be
  * emitted without ever computing the integer 0 or 1 result.
  */
-static enum reg set_compare_value(
-    const struct typetree *type,
-    enum opcode op)
+static enum reg set_compare_value(Type type, enum opcode op)
 {
     emit(op, OPT_REG, reg(AX, 1));
     if (is_real(type)) {
@@ -1926,8 +1936,8 @@ static void compile_statement(struct statement stmt)
                 case PC_SSE:
                     assert(res.r >= XMM0 && res.r <= XMM8);
                     stmt.t.type = (size_of(stmt.t.type) == 4)
-                        ? &basic_type__float
-                        : &basic_type__double;
+                        ? basic_type__float
+                        : basic_type__double;
                     break;
                 default: assert(0);
                 }
@@ -1955,13 +1965,13 @@ static void compile_statement(struct statement stmt)
  * The ABI specifies that the address of a returned object should be
  * placed in %rax.
  */
-static void ret(struct var var, const struct typetree *type)
+static void ret(struct var var, Type type)
 {
     struct param_class pc;
     const struct symbol *label;
 
     assert(is_function(type));
-    pc = classify(type->next);
+    pc = classify(type_next(type));
     if (pc.eightbyte[0] != PC_MEMORY) {
         load_object_to_registers(var, pc, ret_int_reg, ret_sse_reg);
     } else {
@@ -1977,7 +1987,7 @@ static void ret(struct var var, const struct typetree *type)
         emit(INSTR_CMP, OPT_REG_REG, reg(DI, 8), reg(SI, 8));
         emit(INSTR_JZ, OPT_IMM, addr(label));
         emit(INSTR_MOV, OPT_IMM_REG,
-            constant(size_of(type->next), 8), reg(DX, 4));
+            constant(size_of(type_next(type)), 8), reg(DX, 4));
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(-8, BP, 0, 0), 8), reg(AX, 8));
@@ -1993,7 +2003,7 @@ static void ret(struct var var, const struct typetree *type)
  * object, branchhing to the correct next block. All scalar expressions
  * are allowed.
  */
-static void compile_block(struct block *block, const struct typetree *type)
+static void compile_block(struct block *block, Type type)
 {
     int i;
     enum reg xmm0, xmm1;
@@ -2002,7 +2012,6 @@ static void compile_block(struct block *block, const struct typetree *type)
     struct param_class pc;
 
     assert(is_function(type));
-
     if (block->color == BLACK)
         return;
 
@@ -2016,14 +2025,14 @@ static void compile_block(struct block *block, const struct typetree *type)
     if (!block->jump[0] && !block->jump[1]) {
         if (block->has_return_value) {
             assert(is_object(block->expr.type));
-            assert(type_equal(block->expr.type, type->next));
-            pc = classify(type->next);
+            assert(type_equal(block->expr.type, type_next(type)));
+            pc = classify(type_next(type));
             res = compile_expression(block->expr);
             switch (res.kind) {
             case VAL_FLAGS:
                 res.r = set_compare_value(block->expr.l.type, res.cmp);
             case VAL_REG:
-                i = size_of(type->next);
+                i = size_of(type_next(type));
                 switch (pc.eightbyte[0]) {
                 case PC_INTEGER:
                     if (res.r != ret_int_reg[0]) {
@@ -2068,7 +2077,7 @@ static void compile_block(struct block *block, const struct typetree *type)
         assert(is_scalar(block->expr.type));
         res = compile_expression(block->expr);
         if (res.kind == VAL_FLAGS) {
-            assert(type_equal(&basic_type__int, block->expr.type));
+            assert(type_equal(basic_type__int, block->expr.type));
             switch (res.cmp) {
             case INSTR_SETZ:
                 if (is_real(block->expr.l.type)) {
@@ -2139,9 +2148,9 @@ static void compile_data_assign(struct var target, struct var val)
     struct immediate imm = {0};
     assert(target.kind == DIRECT);
 
-    imm.w = target.type->size;
+    imm.w = size_of(target.type);
     if (val.kind == IMMEDIATE) {
-        switch (target.type->type) {
+        switch (type_of(target.type)) {
         case T_POINTER:
             if (is_string(val)) {
                 imm.type = IMM_ADDR;
@@ -2149,9 +2158,13 @@ static void compile_data_assign(struct var target, struct var val)
                 imm.d.addr.disp = displacement_from_offset(val.offset);
                 break;
             }
-        case T_SIGNED:
-        case T_UNSIGNED:
-        case T_REAL:
+        case T_CHAR:
+        case T_SHORT:
+        case T_INT:
+        case T_LONG:
+        case T_FLOAT:
+        case T_DOUBLE:
+        case T_LDOUBLE:
             assert(type_equal(target.type, val.type));
             imm.type = IMM_INT;
             if (is_long_double(val.type)) {
@@ -2194,14 +2207,14 @@ static void zero_fill_data(size_t bytes)
         zero_int = {IMM_INT, 4},
         zero_quad = {IMM_INT, 8};
 
-    while (bytes >= size_of(&basic_type__long)) {
+    while (bytes >= size_of(basic_type__long)) {
         emit_data(zero_quad);
-        bytes -= size_of(&basic_type__long);
+        bytes -= size_of(basic_type__long);
     }
 
-    while (bytes >= size_of(&basic_type__int)) {
+    while (bytes >= size_of(basic_type__int)) {
         emit_data(zero_int);
-        bytes -= size_of(&basic_type__int);
+        bytes -= size_of(basic_type__int);
     }
 
     while (bytes > 0) {
@@ -2215,7 +2228,7 @@ static void compile_data(struct definition *def)
     int i, value, mask;
     struct statement st, fl;
     size_t
-        total_size = size_of(&def->symbol->type),
+        total_size = size_of(def->symbol->type),
         initialized = 0;
 
     enter_context(def->symbol);
@@ -2244,7 +2257,7 @@ static void compile_data(struct definition *def)
                 fl = array_get(&def->body->code, i);
             } while (is_field(fl.t) && fl.t.offset == initialized);
             i -= 1;
-            st.t.type = &basic_type__int;
+            st.t.type = basic_type__int;
             st.t.field_offset = 0;
             st.t.field_width = 0;
             compile_data_assign(st.t, var_int(value));
@@ -2265,7 +2278,7 @@ static void compile_data(struct definition *def)
 
 static void compile_function(struct definition *def)
 {
-    assert(is_function(&def->symbol->type));
+    assert(is_function(def->symbol->type));
     enter_context(def->symbol);
     emit(INSTR_PUSH, OPT_REG, reg(BP, 8));
     emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(BP, 8));
@@ -2274,7 +2287,7 @@ static void compile_function(struct definition *def)
     enter(def);
 
     /* Recursively assemble body. */
-    compile_block(def->body, &def->symbol->type);
+    compile_block(def->body, def->symbol->type);
 }
 
 void set_compile_target(FILE *stream, const char *file)
@@ -2315,7 +2328,7 @@ int compile(struct definition *def)
         break;
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
-        if (is_function(&def->symbol->type))
+        if (is_function(def->symbol->type))
             compile_function(def);
         else
             compile_data(def);

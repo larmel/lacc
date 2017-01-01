@@ -15,7 +15,7 @@ static unsigned long set_var_bit(struct var var)
         return 0xFFFFFFFFFFFFFFFFul;
     case DIRECT:
     case ADDRESS:
-        if (is_object(&var.symbol->type)) {
+        if (is_object(var.symbol->type)) {
             assert(var.symbol->index);
             return 1ul << (var.symbol->index - 1);
         }

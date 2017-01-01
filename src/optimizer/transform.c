@@ -1,6 +1,6 @@
 #include "transform.h"
 
-#include <lacc/typetree.h>
+#include <lacc/type.h>
 #include <assert.h>
 
 static int var_equal(struct var a, struct var b)

@@ -1,6 +1,6 @@
 #define _XOPEN_SOURCE 500 /* snprintf */
 #include "symtab.h"
-#include "type.h"
+#include "typetree.h"
 #include <lacc/context.h>
 
 #include <assert.h>
@@ -39,7 +39,7 @@ static void sym_clear_temporaries(void)
     array_clear(&temporaries);
 }
 
-struct symbol *sym_create_temporary(const struct typetree *type)
+struct symbol *sym_create_temporary(Type type)
 {
     /*
      * Count number of temporary variables, giving each new one a unique
@@ -60,7 +60,7 @@ struct symbol *sym_create_temporary(const struct typetree *type)
         sym->n = ++n;
     }
 
-    sym->type = *type;
+    sym->type = type;
     return sym;
 }
 
@@ -211,30 +211,33 @@ const char *sym_name(const struct symbol *sym)
  * For functions, the last parameter list is applied for as long as the
  * symbol is still tentative.
  */
-static void apply_type(struct symbol *sym, const struct typetree *type)
+static void apply_type(struct symbol *sym, Type type)
 {
     int conflict = 1;
 
-    if (type_equal(&sym->type, type)
-        && !(is_function(&sym->type) && sym->symtype != SYM_DEFINITION))
+    if (type_equal(sym->type, type)
+        && !(is_function(sym->type) && sym->symtype != SYM_DEFINITION))
         return;
 
-    switch (sym->type.type) {
+    switch (type_of(sym->type)) {
     case T_FUNCTION:
-        if (is_function(type) && type_equal(sym->type.next, type->next)) {
-            conflict =
-                sym->type.signature &&
-                nmembers(&sym->type) != nmembers(type);
-            if (!conflict)
-                sym->type.signature = type->signature;
+        if (is_function(type)
+            && type_equal(type_next(sym->type), type_next(type)))
+        {
+            conflict = nmembers(sym->type) != nmembers(type);
+            if (!conflict) {
+                sym->type = type;
+            }
         }
         break;
     case T_ARRAY:
-        if (is_array(type) && type_equal(sym->type.next, type->next)) {
+        if (is_array(type)
+            && type_equal(type_next(sym->type), type_next(type)))
+        {
             conflict = 0;
-            if (!sym->type.size) {
-                assert(type->size);
-                sym->type.size = type->size;
+            if (!size_of(sym->type)) {
+                assert(size_of(type));
+                type_set_array_size(sym->type, size_of(type));
             }
         }
     default: break;
@@ -242,7 +245,7 @@ static void apply_type(struct symbol *sym, const struct typetree *type)
 
     if (conflict) {
         error("Incompatible declaration of %s :: %t, cannot apply type '%t'.",
-            sym->name, &sym->type, type);
+            sym->name, sym->type, type);
         exit(1);
     }
 }
@@ -274,7 +277,7 @@ static void add_symbol_to_current_scope(
 struct symbol *sym_add(
     struct namespace *ns,
     String name,
-    const struct typetree *type,
+    Type type,
     enum symtype symtype,
     enum linkage linkage)
 {
@@ -323,7 +326,7 @@ struct symbol *sym_add(
     sym = calloc(1, sizeof(*sym));
     sym->depth = current_scope_depth(ns);
     sym->name = name;
-    sym->type = *type;
+    sym->type = type;
     sym->symtype = symtype;
     sym->linkage = linkage;
     if (!decl_memcpy && !str_cmp(str_init("memcpy"), sym->name)) {
@@ -351,7 +354,7 @@ struct symbol *sym_add(
         (sym->linkage == LINK_INTERN ? "intern" :
             sym->linkage == LINK_EXTERN ? "extern" : "none"),
         sym_name(sym),
-        &sym->type);
+        sym->type);
 
     return sym;
 }
@@ -375,7 +378,7 @@ struct symbol *sym_create_label(void)
     return sym;
 }
 
-struct symbol *sym_create_constant(const struct typetree *type, union value val)
+struct symbol *sym_create_constant(Type type, union value val)
 {
     static struct symbol data = {
         SHORT_STRING_INIT(".C"),
@@ -388,7 +391,7 @@ struct symbol *sym_create_constant(const struct typetree *type, union value val)
     array_push_back(&ns_ident.symbol, sym);
     data.n++;
     *sym = data;
-    sym->type = *type;
+    sym->type = type;
     sym->constant_value = val;
     sym->referenced = 1;
     return sym;
@@ -403,7 +406,7 @@ const struct symbol *yield_declaration(struct namespace *ns)
         ns->cursor++;
         if (sym->symtype == SYM_TENTATIVE ||
             sym->symtype == SYM_STRING_VALUE ||
-            (sym->symtype == SYM_CONSTANT && is_real(&sym->type)) ||
+            (sym->symtype == SYM_CONSTANT && is_real(sym->type)) ||
             (sym->symtype == SYM_DECLARATION &&
                 sym->linkage == LINK_EXTERN &&
                 (sym->referenced || sym == decl_memcpy)))
@@ -417,13 +420,14 @@ const struct symbol *yield_declaration(struct namespace *ns)
 
 void output_symbols(FILE *stream, struct namespace *ns)
 {
-    unsigned i;
+    int i;
     const struct symbol *sym;
 
     for (i = 0; i < array_len(&ns->symbol); ++i) {
         if (!i) {
             verbose("namespace %s:", ns->name);
         }
+
         sym = array_get(&ns->symbol, i);
         fprintf(stream, "%*s", sym->depth * 2, "");
         if (sym->linkage != LINK_NONE) {
@@ -440,22 +444,23 @@ void output_symbols(FILE *stream, struct namespace *ns)
             (sym->symtype == SYM_STRING_VALUE) ? "string" : "label");
 
         fprintf(stream, "%s :: ", sym_name(sym));
-        fprinttype(stream, &sym->type);
-        fprintf(stream, ", size=%lu", size_of(&sym->type));
-        if (sym->stack_offset)
+        fprinttype(stream, sym->type);
+        fprintf(stream, ", size=%lu", size_of(sym->type));
+        if (sym->stack_offset) {
             fprintf(stream, " (stack_offset: %d)", sym->stack_offset);
+        }
 
         if (sym->symtype == SYM_CONSTANT) {
-            if (is_signed(&sym->type)) {
+            if (is_signed(sym->type)) {
                 fprintf(stream, ", value=%ld", sym->constant_value.i);
-            } else if (is_unsigned(&sym->type)) {
+            } else if (is_unsigned(sym->type)) {
                 fprintf(stream, ", value=%lu", sym->constant_value.u);
-            } else if (is_float(&sym->type)) {
+            } else if (is_float(sym->type)) {
                 fprintf(stream, ", value=%ff", sym->constant_value.f);
-            } else if (is_double(&sym->type)) {
+            } else if (is_double(sym->type)) {
                 fprintf(stream, ", value=%f", sym->constant_value.d);
             } else {
-                assert(is_long_double(&sym->type));
+                assert(is_long_double(sym->type));
                 fprintf(stream, ", value=%Lf", sym->constant_value.ld);
             }
         }

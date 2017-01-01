@@ -14,9 +14,6 @@
  * code.
  */
 struct var {
-    const struct typetree *type;
-    const struct symbol *symbol;
-
     enum {
         /*
          * l-value or r-value reference to symbol, which must have some
@@ -45,6 +42,10 @@ struct var {
          */
         IMMEDIATE
     } kind;
+
+    Type type;
+
+    const struct symbol *symbol;
 
     /*
      * Offset from symbol, which can only be positive. It is possible to
@@ -99,7 +100,7 @@ struct expression {
         IR_OP_GE,     /* l >= r */
         IR_OP_GT      /* l > r  */
     } op;
-    const struct typetree *type;
+    Type type;
     struct var l, r;
 };
 

@@ -2,7 +2,7 @@
 #define TOKEN_H
 
 #include "string.h"
-#include "typetree.h"
+#include "type.h"
 
 /*
  * Map token type to corresponding numerical ascii value where possible,
@@ -134,7 +134,7 @@ enum token_type {
  * numeric values.
  */
 struct number {
-    const struct typetree *type;
+    Type type;
     union value {
         unsigned long u;
         signed long i;

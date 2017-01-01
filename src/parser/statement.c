@@ -4,7 +4,7 @@
 #include "expression.h"
 #include "parse.h"
 #include "symtab.h"
-#include "type.h"
+#include "typetree.h"
 #include <lacc/array.h>
 #include <lacc/context.h>
 #include <lacc/token.h>
@@ -358,7 +358,7 @@ struct block *statement(struct definition *def, struct block *parent)
         sym = sym_add(
             &ns_label,
             tok.d.string,
-            &basic_type__void,
+            basic_type__void,
             SYM_TENTATIVE,
             LINK_INTERN);
         if (!sym->label_value) {
@@ -378,7 +378,7 @@ struct block *statement(struct definition *def, struct block *parent)
         break;
     case RETURN:
         consume(RETURN);
-        if (!is_void(def->symbol->type.next)) {
+        if (!is_void(type_next(def->symbol->type))) {
             parent = expression(def, parent);
             parent->expr = eval_return(def, parent);
         }
@@ -427,7 +427,7 @@ struct block *statement(struct definition *def, struct block *parent)
                 sym = sym_add(
                     &ns_label,
                     tok.d.string,
-                    &basic_type__void,
+                    basic_type__void,
                     SYM_DEFINITION,
                     LINK_INTERN);
                 if (!sym->label_value) {

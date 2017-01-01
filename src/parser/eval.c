@@ -2,7 +2,7 @@
 #include "declaration.h"
 #include "parse.h"
 #include "symtab.h"
-#include "type.h"
+#include "typetree.h"
 #include <lacc/context.h>
 #include <lacc/ir.h>
 
@@ -14,7 +14,7 @@
 int is_immediate_true(struct expression expr)
 {
     union value val;
-    const struct typetree *type;
+    Type type;
 
     if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
         val = expr.l.imm;
@@ -33,7 +33,7 @@ int is_immediate_true(struct expression expr)
 int is_immediate_false(struct expression expr)
 {
     union value val;
-    const struct typetree *type;
+    Type type;
 
     if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
         val = expr.l.imm;
@@ -66,13 +66,11 @@ static struct var var_void(void)
     struct var var = {0};
 
     var.kind = IMMEDIATE;
-    var.type = &basic_type__void;
+    var.type = basic_type__void;
     return var;
 }
 
-static struct var create_var(
-    struct definition *def,
-    const struct typetree *type)
+static struct var create_var(struct definition *def, Type type)
 {
     struct symbol *tmp;
     struct var res;
@@ -89,7 +87,7 @@ struct var var_direct(const struct symbol *sym)
 {
     struct var var = {0};
 
-    var.type = &sym->type;
+    var.type = sym->type;
     var.symbol = sym;
 
     switch (sym->symtype) {
@@ -114,7 +112,7 @@ struct var var_int(int value)
 {
     struct var var = {0};
     var.kind = IMMEDIATE;
-    var.type = &basic_type__int;
+    var.type = basic_type__int;
     var.imm.i = value;
     return var;
 }
@@ -128,7 +126,7 @@ struct var var_numeric(struct number n)
     return var;
 }
 
-static struct var imm_signed(const struct typetree *type, long val)
+static struct var imm_signed(Type type, long val)
 {
     struct number num = {0};
     assert(is_signed(type));
@@ -137,7 +135,7 @@ static struct var imm_signed(const struct typetree *type, long val)
     return var_numeric(num);
 }
 
-struct var imm_unsigned(const struct typetree *type, unsigned long val)
+struct var imm_unsigned(Type type, unsigned long val)
 {
     struct number num = {0};
 
@@ -157,7 +155,7 @@ struct var imm_unsigned(const struct typetree *type, unsigned long val)
 static struct var imm_float(float val)
 {
     struct number num = {0};
-    num.type = &basic_type__float;
+    num.type = basic_type__float;
     num.val.f = val;
     return var_numeric(num);
 }
@@ -165,7 +163,7 @@ static struct var imm_float(float val)
 static struct var imm_double(double val)
 {
     struct number num = {0};
-    num.type = &basic_type__double;
+    num.type = basic_type__double;
     num.val.d = val;
     return var_numeric(num);
 }
@@ -173,7 +171,7 @@ static struct var imm_double(double val)
 static struct var imm_long_double(long double val)
 {
     struct number num = {0};
-    num.type = &basic_type__long_double;
+    num.type = basic_type__long_double;
     num.val.ld = val;
     return var_numeric(num);
 }
@@ -224,11 +222,11 @@ static struct expression create_expr(enum optype op, struct var l, ...)
     switch (op) {
     case IR_OP_CAST:
     case IR_OP_VA_ARG:
-        expr.type = va_arg(args, const struct typetree *);
+        expr.type = va_arg(args, Type );
         break;
     case IR_OP_CALL:
-        assert(is_pointer(l.type) && is_function(l.type->next));
-        expr.type = l.type->next->next;
+        assert(is_pointer(l.type) && is_function(type_next(l.type)));
+        expr.type = type_next(type_next(l.type));
         break;
     case IR_OP_NOT:
         assert(is_integer(l.type));
@@ -256,7 +254,7 @@ static struct expression create_expr(enum optype op, struct var l, ...)
     case IR_OP_GE:
     case IR_OP_GT:
         expr.r = va_arg(args, struct var);
-        expr.type = &basic_type__int;
+        expr.type = basic_type__int;
         break;
     }
 
@@ -336,7 +334,7 @@ struct var eval(
  * All immediate conversions must be evaluated compile time. Also handle
  * conversion which can be done by reinterpreting memory.
  */
-static struct expression cast(struct var var, const struct typetree *type)
+static struct expression cast(struct var var, Type type)
 {
     struct expression expr;
 
@@ -427,7 +425,7 @@ static struct var eval_cast(
     struct definition *def,
     struct block *block,
     struct var var,
-    const struct typetree *type)
+    Type type)
 {
     return eval(def, block,
         eval_expr(def, block, IR_OP_CAST, var, type));
@@ -440,7 +438,7 @@ static struct expression mul(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     type = usual_arithmetic_conversion(l.type, r.type);
     l = eval_cast(def, block, l, type);
@@ -462,7 +460,7 @@ static struct expression ediv(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     type = usual_arithmetic_conversion(l.type, r.type);
     l = eval_cast(def, block, l, type);
@@ -484,7 +482,7 @@ static struct expression mod(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     type = usual_arithmetic_conversion(l.type, r.type);
     if (!is_integer(type)) {
@@ -511,7 +509,7 @@ static struct expression add(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
         type = usual_arithmetic_conversion(l.type, r.type);
@@ -527,7 +525,7 @@ static struct expression add(
         /* Make sure pointer is left, and integer right. */
         expr = add(def, block, r, l);
     } else if (is_pointer(l.type) && is_integer(r.type)) {
-        if (!size_of(l.type->next)) {
+        if (!size_of(type_deref(l.type))) {
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
@@ -540,19 +538,18 @@ static struct expression add(
             && r.kind == IMMEDIATE
             && is_integer(r.type))
         {
-            assert(!is_tagged(l.type));
-            l.offset += r.imm.i * size_of(l.type->next);
+            l.offset += r.imm.i * size_of(type_deref(l.type));
             expr = as_expr(l);
         } else if (is_constant(l) && r.kind == IMMEDIATE) {
             l.imm.i += r.imm.i;
             expr = as_expr(l);
         } else if (r.kind != IMMEDIATE || r.imm.i) {
             type = l.type;
-            l = eval_cast(def, block, l, &basic_type__long);
-            r = eval_cast(def, block, r, &basic_type__long);
+            l = eval_cast(def, block, l, basic_type__long);
+            r = eval_cast(def, block, r, basic_type__long);
             r = eval(def, block,
                     eval_expr(def, block, IR_OP_MUL,
-                        var_int(size_of(type->next)), r));
+                        var_int(size_of(type_next(type))), r));
             expr = create_expr(IR_OP_ADD, l, r);
             expr.type = type;
         } else {
@@ -575,7 +572,7 @@ static struct expression sub(
 {
     int size;
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
         type = usual_arithmetic_conversion(l.type, r.type);
@@ -588,7 +585,7 @@ static struct expression sub(
             expr = create_expr(IR_OP_SUB, l, r);
         }
     } else if (is_pointer(l.type) && is_integer(r.type)) {
-        if (!size_of(l.type->next)) {
+        if (!size_of(type_deref(l.type))) {
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
@@ -601,8 +598,7 @@ static struct expression sub(
             && r.kind == IMMEDIATE
             && is_integer(r.type))
         {
-            assert(!is_tagged(l.type));
-            l.offset -= r.imm.i * size_of(l.type->next);
+            l.offset -= r.imm.i * size_of(type_deref(l.type));
             expr = as_expr(l);
         } else if (is_constant(l) && r.kind == IMMEDIATE) {
             l.imm.i -= r.imm.i;
@@ -610,20 +606,22 @@ static struct expression sub(
         } else if (!is_immediate_false(as_expr(r))) {
             r = eval(def, block,
                     eval_expr(def, block, IR_OP_MUL,
-                        var_int(size_of(l.type->next)), r));
+                        var_int(size_of(type_deref(l.type))), r));
             expr = create_expr(IR_OP_SUB, l, r);
         } else {
             expr = as_expr(l);
         }
     } else if (is_pointer(l.type) && is_pointer(r.type)) {
-        size = size_of(r.type->next);
-        if (!size_of(l.type->next) || size_of(l.type->next) != size) {
+        size = size_of(type_deref(r.type));
+        if (!size_of(type_deref(l.type))
+            || size_of(type_deref(l.type)) != size)
+        {
             error("Referenced type is incomplete.");
             exit(1);
         }
         /* Result is ptrdiff_t, which will be signed 64 bit integer. */
-        l = eval_cast(def, block, l, &basic_type__long);
-        r = eval_cast(def, block, r, &basic_type__long);
+        l = eval_cast(def, block, l, basic_type__long);
+        r = eval_cast(def, block, r, basic_type__long);
         l = eval(def, block, eval_expr(def, block, IR_OP_SUB, l, r));
         expr = eval_expr(def, block, IR_OP_DIV, l, var_int(size));
     } else {
@@ -641,12 +639,12 @@ static void prepare_comparison_operands(
     struct var *l,
     struct var *r)
 {
-    const struct typetree *type;
+    Type type, t1, t2;
 
     /* Normalize by putting most specific pointer as left argument. */
     if (is_pointer(r->type)
         && (!is_pointer(l->type)
-            || (is_void(l->type->next) && !is_void(r->type->next))))
+            || (is_void(type_next(l->type)) && !is_void(type_next(r->type)))))
     {
         prepare_comparison_operands(def, block, r, l);
         return;
@@ -658,9 +656,11 @@ static void prepare_comparison_operands(
         *r = eval_cast(def, block, *r, type);
     } else if (is_pointer(l->type)) {
         if (is_pointer(r->type)) {
+            t1 = type_deref(l->type);
+            t2 = type_deref(r->type);
             if (!is_compatible(l->type, r->type) &&
-                !(is_void(l->type->next) && size_of(r->type->next)) &&
-                !(is_void(r->type->next) && size_of(l->type->next)))
+                !(is_void(t1) && size_of(t2)) &&
+                !(is_void(t2) && size_of(t1)))
             {
                 warning("Comparison between incompatible types '%t' and '%t'.",
                     l->type, r->type);
@@ -669,8 +669,8 @@ static void prepare_comparison_operands(
             warning("Comparison between pointer and non-zero integer.");
         }
 
-        *l = eval_cast(def, block, *l, &basic_type__unsigned_long);
-        *r = eval_cast(def, block, *r, &basic_type__unsigned_long);
+        *l = eval_cast(def, block, *l, basic_type__unsigned_long);
+        *r = eval_cast(def, block, *r, basic_type__unsigned_long);
     } else {
         error("Illegal comparison between types '%t' and '%t'.",
             l->type, r->type);
@@ -716,18 +716,16 @@ static struct expression cmp_ne(
     return expr;
 }
 
-static const struct typetree *common_compare_type(
-    const struct typetree *left,
-    const struct typetree *right)
+static Type common_compare_type(Type left, Type right)
 {
     if (is_arithmetic(left) && is_arithmetic(right)) {
         return usual_arithmetic_conversion(left, right);
     } else if (is_pointer(left)
         && is_pointer(right)
-        && size_of(left->next)
-        && size_of(left->next) == size_of(right->next))
+        && size_of(type_next(left))
+        && size_of(type_next(left)) == size_of(type_next(right)))
     {
-        return &basic_type__unsigned_long;
+        return basic_type__unsigned_long;
     } else {
         error("Invalid operands in relational expression.");
         exit(1);
@@ -741,7 +739,7 @@ static struct expression cmp_ge(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     type = common_compare_type(l.type, r.type);
     l = eval_cast(def, block, l, type);
@@ -763,7 +761,7 @@ static struct expression cmp_gt(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     type = common_compare_type(l.type, r.type);
     l = eval_cast(def, block, l, type);
@@ -785,7 +783,7 @@ static struct expression or(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Operands to bitwise or must have integer type.");
@@ -812,7 +810,7 @@ static struct expression xor(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Operands to bitwise xor must have integer type.");
@@ -839,7 +837,7 @@ static struct expression and(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Operands to bitwise and must have integer type.");
@@ -866,7 +864,7 @@ static struct expression shiftl(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Shift operands must have integer type.");
@@ -892,7 +890,7 @@ static struct expression shiftr(
     struct var r)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     if (!is_integer(l.type) || !is_integer(r.type)) {
         error("Shift operands must have integer type.");
@@ -917,7 +915,7 @@ static struct expression not(
     struct var var)
 {
     struct expression expr;
-    const struct typetree *type;
+    Type type;
 
     if (!is_integer(var.type)) {
         error("Bitwise complement operand must have integer type.");
@@ -943,7 +941,7 @@ static struct expression not(
 
 static struct expression call(struct var var)
 {
-    if (!is_pointer(var.type) || !is_function(var.type->next)) {
+    if (!is_pointer(var.type) || !is_function(type_next(var.type))) {
         error("Calling non-function type %t.", var.type);
         exit(1);
     }
@@ -951,9 +949,7 @@ static struct expression call(struct var var)
     return create_expr(IR_OP_CALL, var);
 }
 
-static struct expression eval_va_arg(
-    struct var var,
-    const struct typetree *type)
+static struct expression eval_va_arg(struct var var, Type type)
 {
     assert(is_pointer(var.type));
     return create_expr(IR_OP_VA_ARG, var, type);
@@ -983,7 +979,7 @@ static struct var rvalue(
              * representation, only changing type from array to
              * pointer.
              */
-            var.type = type_init(T_POINTER, var.type->next);
+            var.type = type_create(T_POINTER, type_next(var.type));
         } else {
             /*
              * References to arrays decay into pointer to the first
@@ -992,7 +988,7 @@ static struct var rvalue(
              * address of array in any special way. The memory location
              * represented by var can also be seen as the first element.
              */
-            var.type = var.type->next;
+            var.type = type_next(var.type);
             var = eval_addr(def, block, var);
         }
     } else if (is_field(var) && is_unsigned(var.type)) {
@@ -1000,8 +996,8 @@ static struct var rvalue(
          * Fields of unsigned type are promoted to signed int if the
          * signed type can represent all values of the unsigned type.
          */
-        if (var.field_width < size_of(&basic_type__int) * 8) {
-            var = eval(def, block, cast(var, &basic_type__int));
+        if (var.field_width < size_of(basic_type__int) * 8) {
+            var = eval(def, block, cast(var, basic_type__int));
         }
     }
 
@@ -1016,12 +1012,12 @@ struct expression eval_expr(
 {
     va_list args;
     struct var r;
-    const struct typetree *type = NULL;
+    Type type;
 
     l = rvalue(def, block, l);
     va_start(args, l);
     if (optype == IR_OP_CAST || optype == IR_OP_VA_ARG) {
-        type = va_arg(args, const struct typetree *);
+        type = va_arg(args, Type);
     } else if (optype != IR_OP_NOT && optype != IR_OP_CALL) {
         r = va_arg(args, struct var);
         r = rvalue(def, block, r);
@@ -1064,16 +1060,16 @@ struct expression eval_unary_minus(
     }
 
     if (is_float(val.type)) {
-        val.type = &basic_type__unsigned_int;
+        val.type = basic_type__unsigned_int;
         expr = xor(def, block, imm_unsigned(val.type, 1u << 31), val);
         val = eval(def, block, expr);
-        val.type = &basic_type__float;
+        val.type = basic_type__float;
         expr = as_expr(val);
     } else if (is_double(val.type)) {
-        val.type = &basic_type__unsigned_long;
+        val.type = basic_type__unsigned_long;
         expr = xor(def, block, imm_unsigned(val.type, 1ul << 63), val);
         val = eval(def, block, expr);
-        val.type = &basic_type__double;
+        val.type = basic_type__double;
         expr = as_expr(val);
     } else {
         expr = sub(def, block, var_int(0), val);
@@ -1116,7 +1112,7 @@ struct var eval_addr(
          */
         if (var.lvalue) {
             var.kind = ADDRESS;
-            var.type = type_init(T_POINTER, var.type);
+            var.type = type_create(T_POINTER, var.type);
             break;
         }
     case ADDRESS:
@@ -1131,7 +1127,7 @@ struct var eval_addr(
              * Convert to immediate, adding the extra offset.
              */
             var.kind = IMMEDIATE;
-            var.type = type_init(T_POINTER, var.type);
+            var.type = type_create(T_POINTER, var.type);
             var.imm.u += var.offset;
             var.offset = 0;
             var.lvalue = 0;
@@ -1141,15 +1137,15 @@ struct var eval_addr(
              * not possible to just convert to DIRECT. Offset must be
              * applied after converting to direct pointer.
              */
-            assert(is_pointer(&var.symbol->type));
+            assert(is_pointer(var.symbol->type));
             tmp = var_direct(var.symbol);
             if (var.offset) {
                 ptr = eval_cast(def, block, tmp,
-                    type_init(T_POINTER, &basic_type__char));
+                    type_create(T_POINTER, basic_type__char));
                 tmp = eval(def, block,
                     eval_expr(def, block, IR_OP_ADD, ptr, var_int(var.offset)));
             }
-            tmp.type = type_init(T_POINTER, var.type);
+            tmp.type = type_create(T_POINTER, var.type);
             var = tmp;
         }
         break;
@@ -1170,7 +1166,6 @@ struct var eval_deref(
         exit(1);
     }
 
-    assert(!is_tagged(var.type));
     switch (var.kind) {
     case DEREF:
         /*
@@ -1180,7 +1175,7 @@ struct var eval_deref(
         var = eval_assign(def, block, create_var(def, var.type), as_expr(var));
         break;
     case DIRECT:
-        if (var.offset != 0 || !is_pointer(&var.symbol->type)) {
+        if (var.offset != 0 || !is_pointer(var.symbol->type)) {
             /*
              * Cannot immediately dereference a pointer which is at a
              * direct offset from another symbol. Also, pointers that
@@ -1231,7 +1226,7 @@ static struct var mask_bitfield_immediate(struct var v, int w)
     assert(v.kind == IMMEDIATE);
     assert(is_integer(v.type));
     assert(w > 0);
-    assert(w < size_of(&basic_type__int) * 8);
+    assert(w < size_of(basic_type__int) * 8);
 
     mask = (1l << w) - 1;
     v.imm.i &= mask;
@@ -1262,26 +1257,26 @@ static struct var eval_assign_string_literal(
     struct var target,
     struct expression expr)
 {
-    const struct typetree *type;
+    Type type;
 
     assert(is_identity(expr));
     assert(is_array(target.type));
     assert(expr.l.symbol->symtype == SYM_STRING_VALUE);
-    if (!is_char(target.type->next)) {
+    if (!is_char(type_next(target.type))) {
         error("Assigning string literal to non-char array.");
         exit(1);
     }
 
-    if (!target.type->size) {
+    if (!size_of(target.type)) {
         assert(target.kind == DIRECT);
         assert(target.offset == 0);
-        assert(target.symbol->type.size == 0);
-        ((struct symbol *) target.symbol)->type.size = expr.type->size;
+        assert(size_of(target.symbol->type) == 0);
+        type_set_array_size(target.symbol->type, size_of(expr.type));
         target.type = expr.type;
         emit_ir(block, IR_ASSIGN, target, expr);
     } else {
-        if (expr.type->size > target.type->size) {
-            error("String literal length exceeds target array size.");
+        if (size_of(expr.type) > size_of(target.type)) {
+            error("Length of string literal exceeds target array size.");
             exit(1);
         }
         type = target.type;
@@ -1290,7 +1285,7 @@ static struct var eval_assign_string_literal(
         target.type = type;
     }
 
-    target.offset += expr.type->size;
+    target.offset += size_of(expr.type);
     return target;
 }
 
@@ -1301,7 +1296,7 @@ struct var eval_assign(
     struct expression expr)
 {
     struct var var;
-    enum qualifier cv;
+    Type p1, p2;
 
     if (!target.lvalue) {
         error("Target of assignment must be l-value.");
@@ -1319,30 +1314,30 @@ struct var eval_assign(
     }
 
     if (is_pointer(target.type) && is_pointer(expr.type)) {
-        cv = target.type->next->qualifier | expr.type->next->qualifier;
+        p1 = type_deref(target.type);
+        p2 = type_deref(expr.type);
         if (!is_compatible(target.type, expr.type)) {
             if (!((is_identity(expr) && is_nullptr(expr.l))
-                || (is_void(target.type->next) && is_object(expr.type->next))
-                || (is_object(target.type->next) && is_void(expr.type->next))))
+                || (is_void(p1) && is_object(p2))
+                || (is_object(p1) && is_void(p2))))
             {
                 warning("Incompatible type in pointer assignment; %t = %t.",
                     target.type,
                     expr.type);
             }
         }
-        if (!(is_identity(expr) && is_nullptr(expr.l))
-            && cv != target.type->next->qualifier)
-        {
-            cv = cv & ~target.type->next->qualifier;
-            warning("Target of assignment lacks %s qualifier.",
-                cv == Q_CONST ? "const" :
-                cv == Q_VOLATILE ? "volatile" : "const volatile");
+        if (!is_identity(expr) || !is_nullptr(expr.l)) {
+            if (is_const(p1) < is_const(p2)) {
+                warning("Pointer assignment discards 'const' qualifier.");
+                warning("STMT: %t = %t", target.type, expr.type);
+            }
+            if (is_volatile(p1) < is_volatile(p2)) {
+                warning("Pointer assignment discards 'volatile' qualifier.");
+            }
         }
     } else if (is_pointer(target.type) && is_integer(expr.type)) {
-        if (!(is_identity(expr) && is_nullptr(expr.l))) {
-            warning("Assigning non-zero number to pointer.",
-                target.type,
-                expr.type);
+        if (!is_identity(expr) || !is_nullptr(expr.l)) {
+            warning("Assigning non-zero number to pointer.");
         }
     } else if (is_arithmetic(target.type) && is_arithmetic(expr.type)) {
         if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
@@ -1356,7 +1351,7 @@ struct var eval_assign(
         !(is_struct_or_union(target.type)
             && is_compatible(target.type, expr.type)))
     {
-        error("Incompatible operands to assignment expression, %s :: %t = %t.",
+        error("Incompatible operands in assignment expression, %s :: %t = %t.",
             str_raw(target.symbol->name), target.type, expr.type);
         exit(1);
     }
@@ -1396,9 +1391,9 @@ struct expression eval_return(
     struct block *block)
 {
     struct var val;
-    const struct typetree *type;
+    Type type;
 
-    type = def->symbol->type.next;
+    type = type_next(def->symbol->type);
     assert(is_object(type));
     assert(!is_array(type));
 
@@ -1426,8 +1421,7 @@ struct expression eval_conditional(
     struct block *c)
 {
     struct var res, bval, cval;
-    struct typetree *next;
-    const struct typetree *t1, *t2, *type;
+    Type t1, t2, type;
 
     if (!is_scalar(a.type)) {
         error("Conditional must be of scalar type.");
@@ -1443,13 +1437,9 @@ struct expression eval_conditional(
         type = usual_arithmetic_conversion(t1, t2);
     } else if (is_pointer(t1) && is_pointer(t2) && is_compatible(t1, t2)) {
         type = t1;
-        if (t1->next->qualifier != t2->next->qualifier) {
-            next = type_shallow_copy(t1->next);
-            next->qualifier = t1->next->qualifier | t2->next->qualifier;
-            next = type_init(T_POINTER, next);
-            next->qualifier = type->qualifier;
-            type = next;
-        }
+        t1 = type_apply_qualifiers(type_deref(t1), type_deref(t2));
+        t1 = type_create(T_POINTER, t1);
+        type = type_apply_qualifiers(t1, type);
     } else if (is_pointer(t1) && is_nullptr(cval)) {
         type = t1;
     } else if (is_pointer(t2) && is_nullptr(bval)) {
@@ -1496,7 +1486,7 @@ static struct block *eval_logical_expression(
         *f = cfg_block_init(def),
         *r = cfg_block_init(def);
 
-    res = create_var(def, &basic_type__int);
+    res = create_var(def, basic_type__int);
     left->expr =
         eval_expr(def, left, IR_OP_EQ,
             eval(def, left, left->expr), var_int(0));

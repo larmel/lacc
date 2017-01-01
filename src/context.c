@@ -1,5 +1,5 @@
 #define _XOPEN_SOURCE 500 /* snprintf */
-#include "parser/type.h"
+#include "parser/typetree.h"
 #include "preprocessor/input.h"
 #include <lacc/context.h>
 
@@ -23,7 +23,7 @@ static char message[PRINT_BUF_SIZE];
  * In addition, have a custom formatter for objects representing a
  * compiler-internal type object.
  *
- *  %t  : struct typetree *
+ *  %t  : Type
  *
  */
 static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
@@ -66,7 +66,7 @@ static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
             }
             break;
         case 't':
-            n += fprinttype(stream, va_arg(ap, const struct typetree *));
+            n += fprinttype(stream, va_arg(ap, Type));
             break;
         default:
             format--;

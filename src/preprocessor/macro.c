@@ -622,7 +622,7 @@ int tok_cmp(struct token a, struct token b)
         if (!type_equal(a.d.number.type, b.d.number.type))
             return 1;
         return
-            (a.d.number.type->type == T_UNSIGNED) ?
+            (is_unsigned(a.d.number.type)) ?
                 a.d.number.val.u != b.d.number.val.u :
                 a.d.number.val.i != b.d.number.val.i;
     } else {
