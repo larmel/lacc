@@ -86,9 +86,6 @@ extern const struct symbol *decl_memcpy;
 /* Get the full name, including numeric value to disambiguate. */
 const char *sym_name(const struct symbol *sym);
 
-/* Create a jump label symbol, of type void. */
-struct symbol *sym_create_label(void);
-
 /*
  * Create a floating point constant, which can be stored and loaded from
  * memory.

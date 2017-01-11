@@ -20,6 +20,9 @@ static int (*emit_instruction)(struct instruction);
 static int (*emit_data)(struct immediate);
 static int (*flush_backend)(void);
 
+/* Current function definition being compiled. */
+static struct definition *definition;
+
 /* Values from va_list initialization. */
 static struct {
     int gp_offset;
@@ -542,7 +545,7 @@ static enum reg load_x87(struct var v)
         emit(INSTR_FILD, OPT_MEM, location(address(0, SP, 0, 0), 8));
         emit(INSTR_ADD, OPT_IMM_REG, constant(8, 8), reg(SP, 8));
         if (size_of(v.type) == 8) {
-            label = sym_create_label();
+            label = create_label(definition);
             emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
             emit(INSTR_JNS, OPT_IMM, addr(label));
             v.symbol = get_x87_unsigned_adjust_constant();
@@ -597,8 +600,8 @@ static enum reg load_float_as_integer(
         xmm0 = get_sse_reg();
         xmm1 = get_sse_reg();
         width = size_of(val.type);
-        convert = sym_create_label();
-        next = sym_create_label();
+        convert = create_label(definition);
+        next = create_label(definition);
         if (is_float(val.type)) {
             limit.type = basic_type__float;
             limit.val.f = (float) LONG_MAX;
@@ -662,8 +665,8 @@ static enum reg load_integer_as_float(
         } else {
             cx = get_int_reg();
             load_int(val, ax, 8);
-            label = sym_create_label();
-            next = sym_create_label();
+            label = create_label(definition);
+            next = create_label(definition);
             /*
              * Check if unsigned integer is small enough to be
              * interpreted as signed.
@@ -1270,7 +1273,7 @@ static void enter(struct definition *def)
      * %al holds the number of registers passed.
      */
     if (is_vararg(type)) {
-        sym = sym_create_label();
+        sym = create_label(definition);
         vararg.gp_offset = 8*next_integer_reg;
         vararg.fp_offset = 8*MAX_INTEGER_ARGS + 16*next_sse_reg;
         vararg.overflow_arg_area_offset = mem_offset;
@@ -1421,8 +1424,8 @@ static void compile__builtin_va_arg(struct var res, struct var args)
      */
     pc = classify(res.type);
     if (pc.eightbyte[0] == PC_INTEGER || pc.eightbyte[0] == PC_SSE) {
-        stack = sym_create_label();
-        done = sym_create_label();
+        stack = create_label(definition);
+        done = create_label(definition);
         slice = res;
         n = EIGHTBYTES(res.type);
         count_register_classifications(pc, &num_gp, &num_fp);
@@ -1975,7 +1978,7 @@ static void ret(struct var var, Type type)
     if (pc.eightbyte[0] != PC_MEMORY) {
         load_object_to_registers(var, pc, ret_int_reg, ret_sse_reg);
     } else {
-        label = sym_create_label();
+        label = create_label(definition);
         load_address(var, SI);
         if (is_vararg(type)) {
             emit(INSTR_MOV, OPT_MEM_REG,
@@ -2321,6 +2324,7 @@ int compile(struct definition *def)
     assert(def->symbol);
     assert(x87_stack == 0);
 
+    definition = def;
     switch (context.target) {
     case TARGET_IR_DOT:
         dotgen(def);
@@ -2328,10 +2332,14 @@ int compile(struct definition *def)
         break;
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
-        if (is_function(def->symbol->type))
+        if (is_function(def->symbol->type)) {
             compile_function(def);
-        else
+            if (context.target == TARGET_x86_64_ELF) {
+                elf_flush_text_displacements();
+            }
+        } else {
             compile_data(def);
+        }
         break;
     }
 

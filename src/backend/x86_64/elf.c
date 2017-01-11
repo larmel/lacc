@@ -482,10 +482,11 @@ static void flush_relocations(void)
 }
 
 /*
- * Must be called before writing text segment. Overwrite locations with
- * offsets now found in stack_offset member of label symbols.
+ * Overwrite locations with offsets now found in stack_offset member of
+ * label symbols. Invoked after each function, before the labels are
+ * recycled.
  */
-static void flush_text_displacements(void)
+void elf_flush_text_displacements(void)
 {
     int i, *ptr;
     struct pending_displacement entry;
@@ -498,7 +499,7 @@ static void flush_text_displacements(void)
         *ptr += entry.label->stack_offset - entry.text_offset;
     }
 
-    array_clear(&pending_displacement_list);
+    array_empty(&pending_displacement_list);
 }
 
 int elf_text_displacement(const struct symbol *label, int instr_offset)
@@ -661,7 +662,7 @@ int elf_flush(void)
     /* Write remaining data to section buffers. */
     flush_symtab_globals();
     flush_relocations();
-    flush_text_displacements();
+    array_clear(&pending_displacement_list);
 
     /* Add padding to force proper alignment. */
     elf_section_align(SHID_SHSTRTAB, 0x10);

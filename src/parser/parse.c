@@ -29,11 +29,17 @@ static array_of(struct block *) expressions;
  */
 static array_of(struct block *) blocks;
 
-/* Free memory in static buffers. */
+/*
+ * Keep track of symbols used for jump target labels, and recycle them
+ * between definitions.
+ */
+static array_of(struct symbol *) labels;
+
 static void cleanup(void)
 {
     int i;
     struct block *block;
+    struct symbol *sym;
 
     for (i = 0; i < array_len(&expressions); ++i) {
         block = array_get(&expressions, i);
@@ -45,10 +51,15 @@ static void cleanup(void)
         array_clear(&block->code);
         free(block);
     }
+    for (i = 0; i < array_len(&labels); ++i) {
+        sym = array_get(&labels, i);
+        free(sym);
+    }
 
     deque_destroy(&definitions);
     array_clear(&expressions);
     array_clear(&blocks);
+    array_clear(&labels);
 }
 
 static void cfg_block_release(struct block *block)
@@ -69,7 +80,6 @@ static void cfg_clear(struct definition *def)
     int i;
     struct symbol *sym;
 
-    array_clear(&def->params);
     for (i = 0; i < array_len(&def->locals); ++i) {
         sym = array_get(&def->locals, i);
         if (!str_cmp(sym->name, str_init(".t"))) {
@@ -77,11 +87,18 @@ static void cfg_clear(struct definition *def)
         }
     }
 
-    array_clear(&def->locals);
+    for (i = 0; i < array_len(&def->labels); ++i) {
+        sym = array_get(&def->labels, i);
+        array_push_back(&labels, sym);
+    }
+
     for (i = 0; i < array_len(&def->nodes); ++i) {
         cfg_block_release(array_get(&def->nodes, i));
     }
 
+    array_clear(&def->params);
+    array_clear(&def->locals);
+    array_clear(&def->labels);
     array_clear(&def->nodes);
     free(def);
 }
@@ -97,13 +114,35 @@ struct block *cfg_block_init(struct definition *def)
     }
 
     if (def) {
-        block->label = sym_create_label();
+        block->label = create_label(def);
         array_push_back(&def->nodes, block);
     } else {
         array_push_back(&expressions, block);
     }
 
     return block;
+}
+
+struct symbol *create_label(struct definition *def)
+{
+    static int n;
+    struct symbol *sym;
+
+    if (array_len(&labels)) {
+        sym = array_pop_back(&labels);
+        sym->stack_offset = 0;
+        sym->index = 0;
+    } else {
+        sym = calloc(1, sizeof(*sym));
+        sym->type = basic_type__void;
+        sym->symtype = SYM_LABEL;
+        sym->linkage = LINK_INTERN;
+        sym->name = str_init(".L");
+    }
+
+    sym->n = ++n;
+    array_push_back(&def->labels, sym);
+    return sym;
 }
 
 struct definition *cfg_init(const struct symbol *sym)

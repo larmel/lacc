@@ -221,7 +221,8 @@ struct definition {
      */
     array_of(struct symbol *)
         params,
-        locals;
+        locals,
+        labels;
 
     /*
      * Store all associated nodes in a list to be able to free
@@ -244,5 +245,11 @@ struct var var_int(int value);
 
 /* Immediate numeric value from typed number. */
 struct var var_numeric(struct number n);
+
+/*
+ * Create symbol representing a jump target, and associate it with the
+ * given definition.
+ */
+struct symbol *create_label(struct definition *def);
 
 #endif

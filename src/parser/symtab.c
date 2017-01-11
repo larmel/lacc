@@ -359,25 +359,6 @@ struct symbol *sym_add(
     return sym;
 }
 
-struct symbol *sym_create_label(void)
-{
-    static int n;
-
-    struct symbol *sym = calloc(1, sizeof(*sym));
-    sym->type = basic_type__void;
-    sym->symtype = SYM_LABEL;
-    sym->linkage = LINK_INTERN;
-    sym->name = str_init(".L");
-    sym->n = ++n;
-
-    /*
-     * Construct symbol in normal namespace, but do not add it to any
-     * scope. No need or use for searching labels.
-     */
-    array_push_back(&ns_ident.symbol, sym);
-    return sym;
-}
-
 struct symbol *sym_create_constant(Type type, union value val)
 {
     static struct symbol data = {

@@ -122,6 +122,9 @@ int elf_text(struct instruction instr);
 
 int elf_data(struct immediate data);
 
+/* Write pending label offsets. Required after each function. */
+void elf_flush_text_displacements(void);
+
 int elf_flush(void);
 
 /*
