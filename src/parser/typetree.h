@@ -97,12 +97,6 @@ int is_compatible(Type l, Type r);
 Type type_deref(Type type);
 
 /*
- * Find a common real type between operands used in an expression,
- * giving the type of the result.
- */
-Type usual_arithmetic_conversion(Type t1, Type t2);
-
-/*
  * Promote the given integer type to int or unsigned int, or do nothing
  * if the precision is already as wide. For example, unsigned short will
  * be converted to int.

@@ -144,6 +144,8 @@ struct number {
     } val;
 };
 
+struct number convert(struct number num, Type type);
+
 /*
  * Representation of token; used in preprocessing, and interface to
  * parser.

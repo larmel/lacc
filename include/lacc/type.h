@@ -134,6 +134,12 @@ size_t type_alignment(Type type);
 /* Returns 1 if types are equal, 0 otherwise. */
 int type_equal(Type l, Type r);
 
+/*
+ * Find a common real type between operands used in an expression,
+ * giving the type of the result.
+ */
+Type usual_arithmetic_conversion(Type t1, Type t2);
+
 /* Print type to stream, returning number of characters written. */
 int fprinttype(FILE *stream, Type type);
 
