@@ -131,10 +131,11 @@ void include_file(const char *name)
 
     /*
      * Construct path by combining current directory and include name,
-     * which itself can include folders.
+     * which itself can include folders. Except for root level, where
+     * the whole name is already specified.
      */
     file = current_file();
-    if (file->dirlen) {
+    if (file->dirlen && name[0] != '/') {
         path = create_path(str_raw(file->path), file->dirlen, name);
     } else {
         path = name;
