@@ -6,15 +6,17 @@
 #define IN(block, i) (block)->flow[i].live.bits
 #define OUT(block, i) IN(block, i + 1)
 
-/* Set bit in position of variable if referencing a symbol. */
-static unsigned long set_var_bit(struct var var)
+/*
+ * Set bit for symbol definitely written through operation. Unless used
+ * in right hand side expression, this can be removed from in-liveness.
+ *
+ * Pointers can point to anything, so we cannot say for sure what is
+ * written.
+ */
+static unsigned long set_def_bit(struct var var)
 {
     switch (var.kind) {
-    case DEREF:
-        /* Assume pointer can point to anything. */
-        return 0xFFFFFFFFFFFFFFFFul;
     case DIRECT:
-    case ADDRESS:
         if (is_object(var.symbol->type)) {
             assert(var.symbol->index);
             return 1ul << (var.symbol->index - 1);
@@ -24,26 +26,45 @@ static unsigned long set_var_bit(struct var var)
     }
 }
 
-/* Set bits for symbols referenced in expression. */
+/*
+ * Set bit for symbol possibly read through operation. This set must be
+ * part of in-liveness.
+ *
+ * Pointers can point to anything, so assume everything is touched.
+ */
+static unsigned long set_use_bit(struct var var)
+{
+    switch (var.kind) {
+    case DEREF:
+        return 0xFFFFFFFFFFFFFFFFul;
+    case DIRECT:
+        if (is_object(var.symbol->type)) {
+            assert(var.symbol->index);
+            return 1ul << (var.symbol->index - 1);
+        }
+    default:
+        return 0;
+    }
+}
+
 static unsigned long use(struct expression expr)
 {
     unsigned long r = 0ul;
 
     switch (expr.op) {
     default:
-        r |= set_var_bit(expr.r);
+        r |= set_use_bit(expr.r);
     case IR_OP_CAST:
     case IR_OP_NOT:
     case IR_OP_CALL:
     case IR_OP_VA_ARG:
-        r |= set_var_bit(expr.l);
+        r |= set_use_bit(expr.l);
         break;
     }
 
     return r;
 }
 
-/* Set bits for symbols used in statement. */
 static unsigned long uses(struct statement s)
 {
     unsigned long r = use(s.expr);
@@ -51,17 +72,16 @@ static unsigned long uses(struct statement s)
     if (s.st == IR_ASSIGN) {
         if (s.t.kind == DEREF && s.t.symbol) {
             s.t.kind = DIRECT;
-            r |= set_var_bit(s.t);
+            r |= set_use_bit(s.t);
         }
     }
 
     return r;
 }
 
-/* Set bit for symbol written through operation. */
 static unsigned long def(struct statement s)
 {
-    return (s.st == IR_ASSIGN) ? set_var_bit(s.t) : 0ul;
+    return (s.st == IR_ASSIGN) ? set_def_bit(s.t) : 0ul;
 }
 
 int live_variable_analysis(struct block *block)
