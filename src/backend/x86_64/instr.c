@@ -902,8 +902,8 @@ static struct code pxor(
     struct code c = {{0}};
 
     assert(optype == OPT_REG_REG);
-    assert(a.reg.w == 8);
-    assert(b.reg.w == 8);
+    assert(a.reg.w == 8 || a.reg.w == 4);
+    assert(a.reg.w == b.reg.w);
     c.val[c.len++] = 0x66;
     c.val[c.len++] = 0x0F;
     c.val[c.len++] = 0xEF;

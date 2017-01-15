@@ -272,6 +272,25 @@ static void count_register_classifications(
     }
 }
 
+static int is_zero(union value val, Type type)
+{
+    switch (type_of(type)) {
+    case T_CHAR:
+    case T_SHORT:
+    case T_INT:
+    case T_LONG:
+        return val.u == 0;
+    case T_FLOAT:
+        return val.f == 0.0f;
+    case T_DOUBLE:
+        return val.d == 0.0;
+    case T_LDOUBLE:
+        return val.ld == 0;
+    }
+
+    return 0;
+}
+
 /*
  * Emit instruction to load a value to specified register. Handles all
  * kinds of variables, including immediate. Load instruction can perform
@@ -294,7 +313,14 @@ static void emit_load(
          * floating point value directly to register. Need to store it
          * in memory first, so create symbol holding constant value.
          */
-        if (is_real(source.type)) {
+        if (is_zero(source.imm, source.type)) {
+            assert(!is_long_double(source.type));
+            emit(is_real(source.type) ? INSTR_PXOR : INSTR_XOR,
+                OPT_REG_REG,
+                dest,
+                dest);
+            break;
+        } else if (is_real(source.type)) {
             source.symbol = sym_create_constant(source.type, source.imm);
             source.kind = DIRECT;
         } else {
