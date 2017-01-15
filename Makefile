@@ -58,9 +58,9 @@ creduce-prepare-%: csmith/%.c bin/lacc
 	@mkdir -p creduce
 	bin/lacc -std=c99 -I $(CSMITH_HOME_PATH)/runtime -w -E $< -o creduce/reduce.c
 	bin/lacc -std=c99 -c -I $(CSMITH_HOME_PATH)/runtime $< -o creduce/reduce.o
-	cc creduce/reduce.o -o creduce/reduce -lm
+	$(CC) creduce/reduce.o -o creduce/reduce -lm
 	$(CC) -std=c99 -I $(CSMITH_HOME_PATH)/runtime $< -o creduce/reduce-cc
-	$(CC) creduce.sh creduce/
+	cp creduce.sh creduce/
 	creduce/reduce 1 > creduce/lacc.out && creduce/reduce-cc 1 > creduce/cc.out
 	diff --side-by-side --suppress-common-lines creduce/lacc.out creduce/cc.out | head -n 1
 
