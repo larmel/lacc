@@ -62,6 +62,12 @@ struct expression eval_unary_minus(
     struct block *block,
     struct var val);
 
+/*
+ * Evaluate (+val). Perform integer promotion, and results in an
+ * r-value.
+ */
+struct expression eval_unary_plus(struct var val);
+
 /* Evaluate (a) ? b : c. */
 struct expression eval_conditional(
     struct definition *def,

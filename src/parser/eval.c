@@ -1105,6 +1105,24 @@ struct expression eval_unary_minus(
     return expr;
 }
 
+struct expression eval_unary_plus(struct var val)
+{
+    Type type;
+
+    if (!is_arithmetic(val.type)) {
+        error("Unary (+) operand must be of arithmetic type.");
+        exit(1);
+    }
+
+    if (is_integer(val.type)) {
+        type = promote_integer(val.type);
+        return cast(val, type);
+    }
+
+    val.lvalue = 0;
+    return as_expr(val);
+}
+
 struct var eval_addr(
     struct definition *def,
     struct block *block,

@@ -428,7 +428,7 @@ static struct block *unary_expression(
         consume('+');
         block = cast_expression(def, block);
         value = eval(def, block, block->expr);
-        block->expr = eval_expr(def, block, IR_OP_ADD, var_int(0), value);
+        block->expr = eval_unary_plus(value);
         break;
     case '-':
         consume('-');
