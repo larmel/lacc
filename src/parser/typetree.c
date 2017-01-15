@@ -476,40 +476,69 @@ void type_add_anonymous_member(Type parent, Type type)
 }
 
 /*
- * Adjust aggregate type size to be a multiple of strongest member
- * alignment. This function should only be called once all members have
- * been added.
+ * Remove anonymous field members, which are only kept for alignment
+ * during type construction. Return largest remaining member alignment.
+ *
+ * If the last member has only a single anonymous field, remove its
+ * contribution to the total size. It will still matter for alignment,
+ * for example the following struct will get size 4 and not 1, even
+ * though it has only a single char member.
+ *
+ * struct {
+ *     char c;
+ *     int : 0;
+ * }
+ *
  */
-void type_seal(Type type)
+static size_t remove_anonymous_fields(struct typetree *t)
 {
     int i;
     size_t align, maxalign;
-    struct typetree *t;
-    struct member m;
+    struct member *m;
 
-    assert(is_struct_or_union(type));
     maxalign = 0;
-    t = get_typetree_handle(type.ref);
-    for (i = 0; i < nmembers(type); ++i) {
-        m = array_get(&t->members, i);
-        if (is_struct(type) && m.name.len == 0) {
+    for (i = array_len(&t->members) - 1; i >= 0; --i) {
+        m = &array_get(&t->members, i);
+        if (m->name.len == 0) {
             array_erase(&t->members, i);
-            i -= 1;
-            continue;
-        }
-        align = type_alignment(m.type);
-        if (align > maxalign) {
-            maxalign = align;
+            if (m->field_offset == 0 && i == array_len(&t->members)) {
+                assert(t->size >= 4);
+                assert(t->type == T_STRUCT);
+                t->size -= 4;
+            }
+        } else {
+            align = type_alignment(m->type);
+            if (align > maxalign) {
+                maxalign = align;
+            }
         }
     }
 
-    if (maxalign == 0) {
+    return maxalign;
+}
+
+/*
+ * Adjust aggregate type size to be a multiple of strongest member
+ * alignment.
+ *
+ * This function should only be called only once all members have been
+ * added.
+ */
+void type_seal(Type type)
+{
+    struct typetree *t;
+    size_t align;
+    assert(is_struct_or_union(type));
+
+    t = get_typetree_handle(type.ref);
+    align = remove_anonymous_fields(t);
+    if (align == 0) {
         error("%s has no named members.", is_struct(type) ? "Struct" : "Union");
         exit(1);
     }
 
-    if (t->size % maxalign) {
-        t->size += maxalign - (t->size % maxalign);
+    if (t->size % align) {
+        t->size += align - (t->size % align);
     }
 }
 
