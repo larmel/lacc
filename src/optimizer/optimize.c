@@ -9,13 +9,6 @@
 static int optimization_level;
 
 /*
- * Store all edge nodes in one contiguous list. Blocks point into this
- * list, and owns as many elements as there are IR operations, plus
- * input and output edges.
- */
-static array_of(struct dataflow) nodes;
-
-/*
  * Serialized control flow graph. Topologically sorted if non-cyclical.
  */
 static array_of(struct block *) blocks;
@@ -26,60 +19,74 @@ static array_of(struct block *) blocks;
 static array_of(struct symbol *) symbols;
 
 /*
- * Serialize basic blocks by recursively, visiting each node and
+ * Serialize basic blocks by recursively visiting each node and
  * appending to list. Assign number to each symbol in use. Return
  * number of edges in the flow graph.
  */
 static int serialize_basic_blocks(struct block *block)
 {
-    int r = 0;
+    if (block->color == BLACK)
+        return 0;
 
-    if (block->color != BLACK) {
-        block->color = BLACK;
-        array_push_back(&blocks, block);
-
-        r = edges(block);
-        if (block->jump[0]) {
-            r += serialize_basic_blocks(block->jump[0]);
-            if (block->jump[1]) {
-                r += serialize_basic_blocks(block->jump[1]);
-            }
+    block->color = BLACK;
+    array_push_back(&blocks, block);
+    if (block->jump[0]) {
+        serialize_basic_blocks(block->jump[0]);
+        if (block->jump[1]) {
+            serialize_basic_blocks(block->jump[1]);
         }
     }
 
-    return r;
+    return 1;
 }
 
-/*
- * Initialize array of dataflow structs, and set up pointers from each
- * basic block into array of nodes. Must be called after serialization.
- */
-static void initialize_dataflow(int count)
+/* Initialize liveness information in each block. */
+static void initialize_dataflow(void)
 {
     struct block *block;
-    int i, n;
+    struct statement *st;
+    int i, j;
 
-    assert(!array_len(&nodes));
-    array_realloc(&nodes, count);
-    array_zero(&nodes);
-
-    /* Point into array, reserving size for all edges in a block. */
-    for (i = 0, n = 0; i < array_len(&blocks); ++i) {
+    for (i = 0; i < array_len(&blocks); ++i) {
         block = array_get(&blocks, i);
-        block->flow = &array_get(&nodes, n);
-        n += edges(block);
+        block->in = 0;
+        block->out = 0;
+        for (j = 0; j < array_len(&block->code); ++j) {
+            st = &array_get(&block->code, j);
+            st->out = 0;
+        }
     }
 }
 
 static int count_symbol(struct symbol *sym)
 {
-    if (sym && !sym->index && is_object(sym->type)) {
-        array_push_back(&symbols, sym);
-        sym->index = array_len(&symbols);
-        return 1;
+    if (!sym)
+        return 0;
+
+    if (is_object(sym->type)) {
+        if (!sym->index) {
+            array_push_back(&symbols, sym);
+            sym->index = array_len(&symbols);
+            /*printf("%s => %d\n", sym_name(sym), sym->index);*/
+            return 1;
+        }
+    } else {
+        assert(!sym->index);
     }
 
     return 0;
+}
+
+static void reset_symbol_indexes(void)
+{
+    int i;
+    struct symbol *sym;
+
+    for (i = 0; i < array_len(&symbols); ++i) {
+        sym = array_get(&symbols, i);
+        assert(sym->index);
+        sym->index = 0;
+    }
 }
 
 /*
@@ -88,24 +95,24 @@ static int count_symbol(struct symbol *sym)
  */
 static int enumerate_used_symbols(struct block *block)
 {
-    int i, n = 0;
-    struct statement s;
+    int i, n;
+    struct statement *s;
 
-    for (i = 0; i < array_len(&block->code); ++i) {
-        s = array_get(&block->code, i);
-        switch (s.expr.op) {
+    for (i = 0, n = 0; i < array_len(&block->code); ++i) {
+        s = &array_get(&block->code, i);
+        switch (s->expr.op) {
         default:
-            n += count_symbol((struct symbol *) s.expr.r.symbol);
+            n += count_symbol((struct symbol *) s->expr.r.symbol);
         case IR_OP_CAST:
         case IR_OP_NOT:
         case IR_OP_CALL:
         case IR_OP_VA_ARG:
-            n += count_symbol((struct symbol *) s.expr.l.symbol);
+            n += count_symbol((struct symbol *) s->expr.l.symbol);
             break;
         }
 
-        if (s.st == IR_ASSIGN) {
-            n += count_symbol((struct symbol *) s.t.symbol);
+        if (s->st == IR_ASSIGN) {
+            n += count_symbol((struct symbol *) s->t.symbol);
         }
     }
 
@@ -137,10 +144,10 @@ static int color_white(struct block *block)
  */
 static int traverse(int (*callback)(struct block *))
 {
-    int i, n = 0;
+    int i, n;
     struct block *block;
 
-    for (i = 0; i < array_len(&blocks); ++i) {
+    for (i = 0, n = 0; i < array_len(&blocks); ++i) {
         block = array_get(&blocks, i);
         n += callback(block);
     }
@@ -161,30 +168,52 @@ static void execute_iterative_dataflow(int (*callback)(struct block *))
     } while (changes);
 }
 
+static void print_liveness_statement(unsigned long live)
+{
+    int j, k;
+    const struct symbol *sym;
+
+    printf("--- {");
+    for (j = 0, k = 0; j < array_len(&symbols); ++j) {
+        sym = array_get(&symbols, j);
+        if (live & (1ul << (sym->index - 1))) {
+            if (k) {
+                printf(", ");
+            }
+            printf("%s", sym_name(sym));
+            k = 1;
+        }
+    }
+    printf("}\n");
+}
+
 int print_liveness(struct block *block)
 {
-    int i, j, k;
-    const struct symbol *sym;
-    unsigned long live;
+    int i;
+    struct statement *st;
 
     printf("%s:\n", sym_name(block->label));
-    for (i = 0; i < edges(block); ++i) {
-        printf("--- {");
-        live = block->flow[i].live.bits;
-        for (j = 0, k = 0; j < array_len(&symbols); ++j) {
-            sym = array_get(&symbols, j);
-            if (live & (1ul << (sym->index - 1))) {
-                if (k) {
-                    printf(", ");
-                }
-                printf("%s", sym_name(sym));
-                k = 1;
-            }
-        }
-        printf("}\n");
+    print_liveness_statement(block->in);
+    for (i = 0; i < array_len(&block->code); ++i) {
+        st = &array_get(&block->code, i);
+        print_liveness_statement(st->out);
+    }
+
+    if (block->jump[1] || block->has_return_value) {
+        print_liveness_statement(block->out);
     }
 
     return 0;
+}
+
+int is_live_after(const struct symbol *sym, const struct statement *st)
+{
+    if (optimization_level && is_object(sym->type)) {
+        assert(sym->index);
+        return (st->out & (1ul << (sym->index - 1))) != 0;
+    }
+
+    return 1;
 }
 
 void push_optimization(int level)
@@ -194,30 +223,34 @@ void push_optimization(int level)
 
 void optimize(struct definition *def)
 {
-    int iops, syms;
+    int syms, n;
 
-    if (optimization_level && is_function(def->symbol->type)) {
-        array_empty(&blocks);
-        array_empty(&symbols);
-        array_empty(&nodes);
-        iops = serialize_basic_blocks(def->body);
-        syms = traverse(&enumerate_used_symbols);
+    if (!optimization_level || !is_function(def->symbol->type))
+        return;
 
-        if (syms < 64) {
-            initialize_dataflow(iops);
+    array_empty(&blocks);
+    array_empty(&symbols);
+    serialize_basic_blocks(def->body);
+    syms = traverse(&enumerate_used_symbols);
+
+    if (syms < 64) {
+        initialize_dataflow();
+        do {
+            n = 0;
             execute_iterative_dataflow(&live_variable_analysis);
 
             /*traverse(&print_liveness);*/
-            traverse(&merge_chained_assignment);
-        }
-
-        traverse(&color_white);
+            n += traverse(&merge_chained_assignment);
+            /*if (n) printf("Did %d changes!\n", n);*/
+        } while (n);
     }
+
+    reset_symbol_indexes();
+    traverse(&color_white);
 }
 
 void pop_optimization(void)
 {
-    array_clear(&nodes);
     array_clear(&blocks);
     array_clear(&symbols);
 }

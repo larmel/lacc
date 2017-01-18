@@ -36,9 +36,10 @@ struct var {
         DEREF,
         /*
          * r-value immediate, with the type specified. Symbol is NULL,
-         * or be of type SYM_STRING_VALUE. String immediates can either
-         * have type array of char, or pointer to char. They can also
-         * have offsets, representing constants such as .LC1+3.
+         * or be of type SYM_CONSTANT (from enum), or SYM_STRING_VALUE.
+         * String immediates can either have type array of char, or
+         * pointer to char. They can also have offsets, representing
+         * constants such as .LC1+3.
          */
         IMMEDIATE
     } kind;
@@ -123,12 +124,10 @@ struct statement {
         IR_VA_START, /* va_start(expr) */
         IR_ASSIGN    /* t = expr       */
     } st;
+    unsigned long out;
     struct var t;
     struct expression expr;
 };
-
-/* Object used to hold state during optimization passes. */
-struct dataflow;
 
 /*
  * Basic block in function control flow graph, containing a symbolic
@@ -171,12 +170,10 @@ struct block {
         BLACK
     } color;
 
-    /* State used for dataflow analysis and optimization passes. */
-    struct dataflow *flow;
+    /* Liveness at the start and end of the block. */
+    unsigned long in;
+    unsigned long out;
 };
-
-/* From optimizer, used for code generation and transformation. */
-int is_live(const struct symbol *sym, const struct block *block, int n);
 
 /*
  * Represents a function or object definition. Parsing emits one
