@@ -240,6 +240,7 @@ void optimize(struct definition *def)
             execute_iterative_dataflow(&live_variable_analysis);
 
             /*traverse(&print_liveness);*/
+            n += traverse(&dead_store_elimination);
             n += traverse(&merge_chained_assignment);
             /*if (n) printf("Did %d changes!\n", n);*/
         } while (n);

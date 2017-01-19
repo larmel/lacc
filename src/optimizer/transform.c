@@ -65,3 +65,28 @@ int merge_chained_assignment(struct block *block)
 
     return 0;
 }
+
+int dead_store_elimination(struct block *block)
+{
+    int i, c;
+    struct statement *st;
+
+    for (i = 0, c = 0; i < array_len(&block->code); ++i) {
+        st = &array_get(&block->code, i);
+        if (st->st == IR_ASSIGN
+            && st->t.kind == DIRECT
+            && !is_live_after(st->t.symbol, st)
+            && st->t.symbol->linkage == LINK_NONE)
+        {
+            c += 1;
+            if (has_side_effects(st->expr)) {
+                st->st = IR_EXPR;
+            } else {
+                array_erase(&block->code, i);
+                i -= 1;
+            }
+        }
+    }
+
+    return c;
+}
