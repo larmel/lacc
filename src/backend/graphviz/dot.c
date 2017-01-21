@@ -178,7 +178,7 @@ static void dot_print_expr(struct expression expr)
         fprintf(stream, "%s & %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_OR:
-        fprintf(stream, "%s | %s", vartostr(expr.l), vartostr(expr.r));
+        fprintf(stream, "%s \\| %s", vartostr(expr.l), vartostr(expr.r));
         break;
     case IR_OP_XOR:
         fprintf(stream, "%s ^ %s", vartostr(expr.l), vartostr(expr.r));
