@@ -253,7 +253,7 @@ void print_token_array(const TokenArray *list)
         }
         t = array_get(list, i);
         if (t.token == PARAM) {
-            printf("<param %ld>", t.d.number.val.i);
+            printf("<param %ld>", t.d.val.i);
         } else if (t.token == EMPTY_ARG) {
             printf("<no-arg>");
         } else {
@@ -387,12 +387,12 @@ static TokenArray expand_stringify_and_paste(
             t = array_get(&list, array_len(&list) - 1);
             if (t.token == PARAM) {
                 (void) array_pop_back(&list);
-                array_concat(&list, &args[t.d.number.val.i]);
+                array_concat(&list, &args[t.d.val.i]);
                 t = array_get(&list, array_len(&list) - 1);
             }
             s = array_get(&def->replacement, i);
             if (s.token == PARAM) {
-                d = s.d.number.val.i;
+                d = s.d.val.i;
                 s = array_get(&args[d], 0);
                 t = paste(t, s);
                 (void) array_pop_back(&list);
@@ -409,7 +409,7 @@ static TokenArray expand_stringify_and_paste(
         case '#':
             i += 1;
             if (peek_token(&def->replacement, i) == PARAM) {
-                d = array_get(&def->replacement, i).d.number.val.i;
+                d = array_get(&def->replacement, i).d.val.i;
                 t = stringify(&args[d]);
                 array_push_back(&list, t);
             } else {
@@ -454,7 +454,7 @@ static TokenArray expand_macro(
         for (i = 0; i < array_len(&list); ++i) {
             t = array_get(&list, i);
             if (t.token == PARAM) {
-                j = t.d.number.val.i;
+                j = t.d.val.i;
                 if (array_get(&args[j], 0).token == EMPTY_ARG) {
                     array_erase(&list, i);
                 } else {
@@ -617,14 +617,14 @@ int tok_cmp(struct token a, struct token b)
         return 1;
 
     if (a.token == PARAM) {
-        return a.d.number.val.i != b.d.number.val.i;
+        return a.d.val.i != b.d.val.i;
     } else if (a.token == NUMBER) {
-        if (!type_equal(a.d.number.type, b.d.number.type))
+        if (!type_equal(a.type, b.type))
             return 1;
         return
-            (is_unsigned(a.d.number.type)) ?
-                a.d.number.val.u != b.d.number.val.u :
-                a.d.number.val.i != b.d.number.val.i;
+            (is_unsigned(a.type)) ?
+                a.d.val.u != b.d.val.u :
+                a.d.val.i != b.d.val.i;
     } else {
         return str_cmp(a.d.string, b.d.string);
     }

@@ -241,7 +241,7 @@ struct var var_direct(const struct symbol *sym);
 struct var var_int(int value);
 
 /* Immediate numeric value from typed number. */
-struct var var_numeric(struct number n);
+struct var var_numeric(Type type, union value val);
 
 /*
  * Create symbol representing a jump target, and associate it with the

@@ -16,8 +16,8 @@
  * Static initializer for token. Only works with string representation
  * that can fit inline.
  */
-#define TOK(t, s) {(t), 0, 0, 0, 0, {SHORT_STRING_INIT(s)}}
-#define IDN(t, s) {(t), 0, 1, 0, 0, {SHORT_STRING_INIT(s)}}
+#define TOK(t, s) {(t), 0, 0, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
+#define IDN(t, s) {(t), 0, 1, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
 
 const struct token basic_token[] = {
 /* 0x00 */  TOK(END, "$"),              IDN(AUTO, "auto"),
@@ -236,12 +236,11 @@ struct token convert_preprocessing_number(struct token t)
      * permuations of upper- and lower case.
      */
     errno = 0;
-    tok.d.number.val.u = strtoul(str, &endptr, 0);
+    tok.d.val.u = strtoul(str, &endptr, 0);
     suffix = read_integer_suffix(endptr, &endptr);
     if (endptr - str == len) {
         assert(isdigit(*str));
-        tok.d.number.type =
-            constant_integer_type(tok.d.number.val.u, suffix, *str != '0');
+        tok.type = constant_integer_type(tok.d.val.u, suffix, *str != '0');
     } else {
         /*
          * If the integer conversion did not consume the whole token,
@@ -251,16 +250,16 @@ struct token convert_preprocessing_number(struct token t)
          * get incorrect results compared to other compilers.
          */
         errno = 0;
-        tok.d.number.type = basic_type__double;
-        tok.d.number.val.d = strtod(str, &endptr);
+        tok.type = basic_type__double;
+        tok.d.val.d = strtod(str, &endptr);
         if (endptr - str < len) {
             if (*endptr == 'f' || *endptr == 'F') {
-                tok.d.number.type = basic_type__float;
-                tok.d.number.val.f = (float) tok.d.number.val.d;
+                tok.type = basic_type__float;
+                tok.d.val.f = (float) tok.d.val.d;
                 endptr++;
             } else if (*endptr == 'l' || *endptr == 'L') {
-                tok.d.number.type = basic_type__long_double;
-                tok.d.number.val.ld = (long double) tok.d.number.val.d;
+                tok.type = basic_type__long_double;
+                tok.d.val.ld = (long double) tok.d.val.d;
                 endptr++;
             }
         }
@@ -348,10 +347,11 @@ static struct token strtochar(char *in, char **endptr)
     assert(*in == '\'');
 
     in++;
-    tok.d.number.type = basic_type__int;
-    tok.d.number.val.i = escpchar(in, endptr);
-    if (**endptr != '\'')
+    tok.type = basic_type__int;
+    tok.d.val.i = escpchar(in, endptr);
+    if (**endptr != '\'') {
         error("Invalid character constant %c.", *in);
+    }
 
     *endptr += 1;
     tok.is_char_literal = 1;
@@ -681,33 +681,31 @@ String tokstr(struct token tok)
     static char buf[512];
     char *str;
     size_t len;
-    struct number num;
 
     assert(tok.token != PARAM);
     assert(tok.token != EMPTY_ARG);
 
     switch (tok.token) {
     case NUMBER:
-        num = tok.d.number;
         len = 0;
         if (tok.is_char_literal) {
-            assert(is_signed(num.type));
+            assert(is_signed(tok.type));
             buf[len++] = '\'';
-            len += write_escaped_char(num.val.i, buf + len);
+            len += write_escaped_char(tok.d.val.i, buf + len);
             buf[len++] = '\'';
-        } else if (is_unsigned(num.type)) {
+        } else if (is_unsigned(tok.type)) {
             len = sprintf(buf,
-                (size_of(num.type) == 8) ? "%luul" : "%luu", num.val.u);
-        } else if (is_signed(num.type)) {
+                (size_of(tok.type) == 8) ? "%luul" : "%luu", tok.d.val.u);
+        } else if (is_signed(tok.type)) {
             len = sprintf(buf,
-                (size_of(num.type) == 8) ? "%ldl" : "%ld", num.val.i);
-        } else if (is_float(num.type)) {
-            len = sprintf(buf, "%ff", num.val.f);
-        } else if (is_double(num.type)) {
-            len = sprintf(buf, "%f", num.val.d);
+                (size_of(tok.type) == 8) ? "%ldl" : "%ld", tok.d.val.i);
+        } else if (is_float(tok.type)) {
+            len = sprintf(buf, "%ff", tok.d.val.f);
+        } else if (is_double(tok.type)) {
+            len = sprintf(buf, "%f", tok.d.val.d);
         } else {
-            assert(is_long_double(num.type));
-            len = sprintf(buf, "%Lf", num.val.ld);
+            assert(is_long_double(tok.type));
+            len = sprintf(buf, "%Lf", tok.d.val.ld);
         }
         tok.d.string = str_register(buf, len);
         break;

@@ -604,7 +604,7 @@ static enum reg load_float_as_integer(
     enum opcode opcode;
     enum reg ax, cx, xmm0, xmm1;
     struct symbol *convert, *next;
-    struct number limit;
+    union value limit;
     int width;
 
     assert(is_real(val.type));
@@ -628,15 +628,14 @@ static enum reg load_float_as_integer(
         width = size_of(val.type);
         convert = create_label(definition);
         next = create_label(definition);
-        if (is_float(val.type)) {
-            limit.type = basic_type__float;
-            limit.val.f = (float) LONG_MAX;
-        } else {
-            limit.type = basic_type__double;
-            limit.val.d = (double) LONG_MAX;
-        }
         load_sse(val, xmm0, width);
-        load_sse(var_numeric(limit), xmm1, width);
+        if (is_float(val.type)) {
+            limit.f = (float) LONG_MAX;
+            load_sse(var_numeric(basic_type__float, limit), xmm1, width);
+        } else {
+            limit.d = (double) LONG_MAX;
+            load_sse(var_numeric(basic_type__double, limit), xmm1, width);
+        }
         if (is_float(val.type)) {
             emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
         } else {

@@ -8,7 +8,7 @@
 
 #include <assert.h>
 
-#define IDENT(s) {IDENTIFIER, 0, 1, 0, 0, {SHORT_STRING_INIT(s)}}
+#define IDENT(s) {IDENTIFIER, 0, 1, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
 
 struct token
     ident__include = IDENT("include"),
@@ -113,10 +113,12 @@ static struct number eval_primary(
     case PREP_NUMBER:
         n = convert_preprocessing_number(*list);
         assert(n.token == NUMBER);
-        value = n.d.number;
+        value.type = n.type;
+        value.val = n.d.val;
         break;
     case NUMBER:
-        value = list->d.number;
+        value.type = list->type;
+        value.val = list->d.val;
         break;
     case '(':
         value = expression(list + 1, &list);
@@ -572,16 +574,16 @@ static struct macro preprocess_define(
 
     while (line->token != NEWLINE) {
         assert(line->token != END);
-        param.d.number.val.i = -1;
+        param.d.val.i = -1;
         if (line->token == IDENTIFIER && macro.type == FUNCTION_LIKE) {
             for (i = 0; i < macro.params; ++i) {
                 if (!tok_cmp(*line, array_get(&params, i))) {
-                    param.d.number.val.i = i;
+                    param.d.val.i = i;
                     break;
                 }
             }
         }
-        if (param.d.number.val.i != -1) {
+        if (param.d.val.i != -1) {
             array_push_back(&macro.replacement, param);
         } else {
             array_push_back(&macro.replacement, *line);

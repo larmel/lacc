@@ -112,7 +112,7 @@ static struct block *primary_expression(
         }
         break;
     case NUMBER:
-        block->expr = as_expr(var_numeric(tok.d.number));
+        block->expr = as_expr(var_numeric(tok.type, tok.d.val));
         assert(is_identity(block->expr));
         break;
     case '(':

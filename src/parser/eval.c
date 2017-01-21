@@ -117,63 +117,58 @@ struct var var_int(int value)
     return var;
 }
 
-struct var var_numeric(struct number n)
+struct var var_numeric(Type type, union value val)
 {
     struct var var = {0};
     var.kind = IMMEDIATE;
-    var.type = n.type;
-    var.imm = n.val;
+    var.type = type;
+    var.imm = val;
     return var;
 }
 
-static struct var imm_signed(Type type, long val)
+static struct var imm_signed(Type type, long n)
 {
-    struct number num = {0};
+    union value val = {0};
     assert(is_signed(type));
-    num.type = type;
-    num.val.i = val;
-    return var_numeric(num);
+    val.i = n;
+    return var_numeric(type, val);
 }
 
-struct var imm_unsigned(Type type, unsigned long val)
+struct var imm_unsigned(Type type, unsigned long n)
 {
-    struct number num = {0};
+    union value val = {0};
 
     assert(is_unsigned(type));
-    num.type = type;
-    num.val.u = val;
+    val.u = n;
     if (size_of(type) < 8) {
         assert(size_of(type) == 4
             || size_of(type) == 2
             || size_of(type) == 1);
-        num.val.u &= (0xFFFFFFFFu >> ((4 - size_of(type)) * 8));
+        val.u &= (0xFFFFFFFFu >> ((4 - size_of(type)) * 8));
     }
 
-    return var_numeric(num);
+    return var_numeric(type, val);
 }
 
-static struct var imm_float(float val)
+static struct var imm_float(float n)
 {
-    struct number num = {0};
-    num.type = basic_type__float;
-    num.val.f = val;
-    return var_numeric(num);
+    union value val = {0};
+    val.f = n;
+    return var_numeric(basic_type__float, val);
 }
 
-static struct var imm_double(double val)
+static struct var imm_double(double n)
 {
-    struct number num = {0};
-    num.type = basic_type__double;
-    num.val.d = val;
-    return var_numeric(num);
+    union value val = {0};
+    val.d = n;
+    return var_numeric(basic_type__double, val);
 }
 
-static struct var imm_long_double(long double val)
+static struct var imm_long_double(long double n)
 {
-    struct number num = {0};
-    num.type = basic_type__long_double;
-    num.val.ld = val;
-    return var_numeric(num);
+    union value val = {0};
+    val.ld = n;
+    return var_numeric(basic_type__long_double, val);
 }
 
 struct expression as_expr(struct var val)

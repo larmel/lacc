@@ -126,12 +126,6 @@ enum token_type {
 };
 
 /*
- * Tokens keep track of typed numbers, to capture difference between
- * literals like 1 and 1ul. Type should always correspond to one of the
- * basic integer types.
- *
- * The value union is also used in internal representation of immediate
- * numeric values.
  */
 struct number {
     Type type;
@@ -149,6 +143,10 @@ struct number convert(struct number num, Type type);
 /*
  * Representation of token; used in preprocessing, and interface to
  * parser.
+ *
+ * Tokens keep track of typed numbers, to capture difference between
+ * literals like 1 and 1ul. Type should always correspond to one of the
+ * basic integer types.
  */
 struct token {
     enum token_type token;
@@ -156,9 +154,10 @@ struct token {
     unsigned int is_expandable : 1;
     unsigned int is_char_literal : 1;
     unsigned int disable_expand : 1;
+    Type type;
     union {
         String string;
-        struct number number;
+        union value val;
     } d;
 };
 
