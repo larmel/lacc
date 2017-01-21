@@ -126,19 +126,18 @@ enum token_type {
 };
 
 /*
+ * Hold an immediate numeric value. Associated type is used to determine
+ * which element is valid.
  */
-struct number {
-    Type type;
-    union value {
-        unsigned long u;
-        signed long i;
-        float f;
-        double d;
-        long double ld;
-    } val;
+union value {
+    unsigned long u;
+    signed long i;
+    float f;
+    double d;
+    long double ld;
 };
 
-struct number convert(struct number num, Type type);
+union value convert(union value val, Type from, Type to);
 
 /*
  * Representation of token; used in preprocessing, and interface to

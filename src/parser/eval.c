@@ -309,96 +309,97 @@ struct var eval(
     return res;
 }
 
-#define cast_immediate(v, T) ( \
-    is_signed((v).type) ? (T) (v).val.i : \
-    is_unsigned((v).type) || is_pointer((v).type) ? (T) (v).val.u : \
-    is_float((v).type) ? (T) (v).val.f : \
-    is_double((v).type) ? (T) (v).val.d : (T) (v).val.ld)
+#define cast_immediate(v, t, T) ( \
+    is_signed(t) ? (T) (v).i : \
+    is_unsigned(t) || is_pointer(t) ? (T) (v).u : \
+    is_float(t) ? (T) (v).f : \
+    is_double(t) ? (T) (v).d : (T) (v).ld)
 
-#define is_float_above(v, n) \
-    ((is_float((v).type) && (v).val.f > n) \
-        || (is_double((v).type) && (v).val.d > n) \
-        || (is_long_double((v).type) && (v).val.ld > n))
+#define is_float_above(v, t, n) \
+    ((is_float(t) && (v).f > n) \
+        || (is_double(t) && (v).d > n) \
+        || (is_long_double(t) && (v).ld > n))
 
-#define is_float_below(v, n) \
-    ((is_float((v).type) && (v).val.f < n) \
-        || (is_double((v).type) && (v).val.d < n) \
-        || (is_long_double((v).type) && (v).val.ld < n))
+#define is_float_below(v, t, n) \
+    ((is_float(t) && (v).f < n) \
+        || (is_double(t) && (v).d < n) \
+        || (is_long_double(t) && (v).ld < n))
 
-struct number convert(struct number num, Type type)
+
+
+union value convert(union value val, Type type, Type to)
 {
-    switch (type_of(type)) {
+    switch (type_of(to)) {
     case T_FLOAT:
-        num.val.f = is_double(num.type) ? (float) num.val.d
-              : is_signed(num.type) ? (float) num.val.i
-              : is_unsigned(num.type) ? (float) num.val.u
-              : is_long_double(num.type) ? (float) num.val.ld
-              : num.val.f;
+        val.f = is_double(type) ? (float) val.d
+              : is_signed(type) ? (float) val.i
+              : is_unsigned(type) ? (float) val.u
+              : is_long_double(type) ? (float) val.ld
+              : val.f;
         break;
     case T_DOUBLE:
-        num.val.d = is_float(num.type) ? (double) num.val.f
-              : is_signed(num.type) ? (double) num.val.i
-              : is_unsigned(num.type) ? (double) num.val.u
-              : is_long_double(num.type) ? (double) num.val.ld
-              : num.val.d;
+        val.d = is_float(type) ? (double) val.f
+              : is_signed(type) ? (double) val.i
+              : is_unsigned(type) ? (double) val.u
+              : is_long_double(type) ? (double) val.ld
+              : val.d;
         break;
     case T_LDOUBLE:
-        num.val.ld = is_float(num.type) ? (long double) num.val.f
-              : is_double(num.type) ? (long double) num.val.d
-              : is_signed(num.type) ? (long double) num.val.i
-              : is_unsigned(num.type) ? (long double) num.val.u
-              : num.val.ld;
+        val.ld = is_float(type) ? (long double) val.f
+              : is_double(type) ? (long double) val.d
+              : is_signed(type) ? (long double) val.i
+              : is_unsigned(type) ? (long double) val.u
+              : val.ld;
         break;
     case T_CHAR:
-        if (is_signed(type)) {
-            num.val.i = is_float_below(num, CHAR_MIN) ? CHAR_MIN
-                  : is_float_above(num, CHAR_MAX) ? CHAR_MAX
-                  : cast_immediate(num, signed char);
+        if (is_signed(to)) {
+            val.i = is_float_below(val, type, CHAR_MIN) ? CHAR_MIN
+                  : is_float_above(val, type, CHAR_MAX) ? CHAR_MAX
+                  : cast_immediate(val, type, signed char);
         } else {
-            num.val.u = is_float_below(num, 0) ? 0
-                  : is_float_above(num, UCHAR_MAX) ? UCHAR_MAX
-                  : cast_immediate(num, unsigned char);
+            val.u = is_float_below(val, type, 0) ? 0
+                  : is_float_above(val, type, UCHAR_MAX) ? UCHAR_MAX
+                  : cast_immediate(val, type, unsigned char);
         }
         break;
     case T_SHORT:
-        if (is_signed(type)) {
-            num.val.i = is_float_below(num, SHRT_MIN) ? SHRT_MIN
-                  : is_float_above(num, SHRT_MAX) ? SHRT_MAX
-                  : cast_immediate(num, signed short);
+        if (is_signed(to)) {
+            val.i = is_float_below(val, type, SHRT_MIN) ? SHRT_MIN
+                  : is_float_above(val, type, SHRT_MAX) ? SHRT_MAX
+                  : cast_immediate(val, type, signed short);
         } else {
-            num.val.u = is_float_below(num, 0) ? 0
-                  : is_float_above(num, USHRT_MAX) ? USHRT_MAX
-                  : cast_immediate(num, unsigned short);
+            val.u = is_float_below(val, type, 0) ? 0
+                  : is_float_above(val, type, USHRT_MAX) ? USHRT_MAX
+                  : cast_immediate(val, type, unsigned short);
         }
         break;
     case T_INT:
-        if (is_signed(type)) {
-            num.val.i = is_float_below(num, INT_MIN) ? INT_MIN
-                  : is_float_above(num, INT_MAX) ? INT_MAX
-                  : cast_immediate(num, signed int);
+        if (is_signed(to)) {
+            val.i = is_float_below(val, type, INT_MIN) ? INT_MIN
+                  : is_float_above(val, type, INT_MAX) ? INT_MAX
+                  : cast_immediate(val, type, signed int);
         } else {
-            num.val.u = is_float_below(num, 0) ? 0
-                  : is_float_above(num, UINT_MAX) ? UINT_MAX
-                  : cast_immediate(num, unsigned int);
+            val.u = is_float_below(val, type, 0) ? 0
+                  : is_float_above(val, type, UINT_MAX) ? UINT_MAX
+                  : cast_immediate(val, type, unsigned int);
         }
         break;
     case T_LONG:
-        if (is_signed(type)) {
-            num.val.i = is_float_below(num, LONG_MIN) ? LONG_MIN
-                  : is_float_above(num, LONG_MAX) ? LONG_MAX
-                  : cast_immediate(num, signed long);
+        if (is_signed(to)) {
+            val.i = is_float_below(val, type, LONG_MIN) ? LONG_MIN
+                  : is_float_above(val, type, LONG_MAX) ? LONG_MAX
+                  : cast_immediate(val, type, signed long);
         } else {
     case T_POINTER:
-            num.val.u = is_float_below(num, 0) ? 0
-                  : is_float_above(num, ULONG_MAX) ? ULONG_MAX
-                  : cast_immediate(num, unsigned long);
+            val.u = is_float_below(val, type, 0) ? 0
+                  : is_float_above(val, type, ULONG_MAX) ? ULONG_MAX
+                  : cast_immediate(val, type, unsigned long);
         }
         break;
     default: assert(0);
     }
 
-    num.type = type;
-    return num;
+    return val;
 }
 
 /*
@@ -407,7 +408,6 @@ struct number convert(struct number num, Type type)
  */
 static struct expression cast(struct var var, Type type)
 {
-    struct number num;
     struct expression expr;
 
     if (is_void(type)) {
@@ -421,11 +421,12 @@ static struct expression cast(struct var var, Type type)
     }
 
     if (var.kind == IMMEDIATE) {
-        num.type = var.type;
-        num.val = var.imm;
-        num = convert(num, type);
-        var.imm = num.val;
-        var.type = num.type;
+        if (var.symbol && var.symbol->symtype == SYM_STRING_VALUE) {
+            var.type = type;
+        } else {
+            assert(!var.offset);
+            var = var_numeric(type, convert(var.imm, var.type, type));
+        }
         expr = as_expr(var);
     } else if (size_of(var.type) == size_of(type)
         && (is_pointer(var.type) || is_pointer(type)))

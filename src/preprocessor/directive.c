@@ -40,6 +40,11 @@ enum state {
     BRANCH_DEAD
 };
 
+struct number {
+    Type type;
+    union value val;
+};
+
 /*
  * Keep stack of branch conditions for #if, #elif and #endif. Push and
  * pop according to current and parent state, and result of evaluating
@@ -107,21 +112,21 @@ static struct number eval_primary(
 {
     String s;
     struct token n;
-    struct number value;
+    struct number num;
 
     switch (list->token) {
     case PREP_NUMBER:
         n = convert_preprocessing_number(*list);
         assert(n.token == NUMBER);
-        value.type = n.type;
-        value.val = n.d.val;
+        num.type = n.type;
+        num.val = n.d.val;
         break;
     case NUMBER:
-        value.type = list->type;
-        value.val = list->d.val;
+        num.type = list->type;
+        num.val = list->d.val;
         break;
     case '(':
-        value = expression(list + 1, &list);
+        num = expression(list + 1, &list);
         expect(list, ')');
         break;
     default:
@@ -132,22 +137,26 @@ static struct number eval_primary(
         }
     case IDENTIFIER:
         assert(!definition(list->d.string));
-        value.type = basic_type__long;
-        value.val.i = 0;
+        num.type = basic_type__long;
+        num.val.i = 0;
         break;
     }
 
     *endptr = list + 1;
-    if (!is_integer(value.type)) {
+    if (!is_integer(num.type)) {
         error("Preprocessing number must be integer.");
         exit(1);
-    } else if (size_of(value.type) != 8) {
-        value = is_signed(value.type)
-              ? convert(value, basic_type__long)
-              : convert(value, basic_type__unsigned_long);
+    } else if (size_of(num.type) != 8) {
+        if (is_signed(num.type)) {
+            num.val = convert(num.val, num.type, basic_type__long);
+            num.type = basic_type__long;
+        } else {
+            num.val = convert(num.val, num.type, basic_type__unsigned_long);
+            num.type = basic_type__unsigned_long;
+        }
     }
 
-    return value;
+    return num;
 }
 
 static struct number eval_unary(
@@ -198,8 +207,10 @@ static int both_signed(struct number *l, struct number *r)
 
     if (!type_equal(l->type, r->type)) {
         type = usual_arithmetic_conversion(l->type, r->type);
-        *l = convert(*l, type);
-        *r = convert(*r, type);
+        l->val = convert(l->val, l->type, type);
+        l->type = type;
+        r->val = convert(r->val, r->type, type);
+        r->type = type;
     } else {
         type = l->type;
     }
