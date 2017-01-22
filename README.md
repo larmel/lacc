@@ -5,9 +5,7 @@ in C, which is able to compile itself.
 
 Features
 --------
- * Almost complete support (barring bugs) for C89, and some C99 features. This
-   includes preprocessing, but no linker. To build executable binaries, an
-   external linker must be used.
+ * Complete support for C89, in addition to some features from later standards.
  * Target x86_64 assembly GNU syntax (-S), binary ELF object files (-c), or pure
    preprocessing (-E).
  * Rich intermediate representation, building a control flow graph (CFG) with
@@ -268,7 +266,7 @@ The numbers for lacc is from an optimized build produced by GCC (-O3).
 
 | Compiler      | Cycles        | Instructions   | Allocations | Bytes allocated |
 |:--------------|--------------:|---------------:|------------:|----------------:|
-| lacc          |   675,864,658 |    917,908,234 |      73,042 |      33,727,328 |
+| lacc          |   690,900,174 |    919,885,987 |      73,042 |      33,727,328 |
 | tcc (0.9.26)  |   252,278,233 |    390,117,688 |     101,420 |      15,908,753 |
 | gcc (5.2.1)   | 8,937,133,232 | 13,614,565,033 |   1,584,001 |   1,816,848,537 |
 | clang (3.6.2) | 3,510,155,745 |  4,238,137,539 |     802,535 |     251,267,607 |
@@ -287,10 +285,10 @@ so this is a measure of code generated with -O0.
 
 | Compiler        | Cycles        | Instructions   |
 |:----------------|--------------:|---------------:|
-| lacc            | 1,023,139,554 |  1,500,192,933 |
-| lacc (selfhost) | 1,848,426,988 |  2,686,689,804 |
+| lacc            | 1,035,714,524 |  1,510,326,974 |
+| lacc (selfhost) | 1,874,518,277 |  2,716,840,251 |
 
-Around 75 % more instructions executed by the selfhost binary, showing that lacc
+Around 80 % more instructions executed by the selfhost binary, showing that lacc
 generates more naive code than GCC. Improving the backend with more efficient
 instruction selection is a priority, so these numbers should get closer in the
 future.

@@ -251,12 +251,34 @@ static size_t read_comment(const char *line, int *linecount)
 }
 
 /*
+ * Read trigraph character, produced by pattern '??X', where X is the
+ * input.
+ */
+static char read_trigraph(char c)
+{
+    switch (c) {
+    case '=':  return '#';
+    case '(':  return '[';
+    case '/':  return '\\';
+    case ')':  return ']';
+    case '\'': return '^';
+    case '<':  return '{';
+    case '!':  return '|';
+    case '>':  return '}';
+    case '-':  return '~';
+    default:
+        return 0;
+    }
+}
+
+/*
  * Read initial part of line, until forming a complete source line ready
  * for tokenization. Store the result in rline, with the following
  * mutations done:
  *
  *  - Join line continuations.
  *  - Replace comments with a single whitespace character.
+ *  - Replace trigraph sequence with corresponding character.
  *
  * Return non-zero number of consumed characters, or 0 if input buffer
  * does not contain a complete line. Note that the source code line can
@@ -268,7 +290,7 @@ static size_t read_line(const char *line, size_t len, int *linecount)
     int lines;
     size_t count;
     const char *end;
-    char *ptr;
+    char *ptr, c;
 
     if (len > rlen) {
         rlen = len;
@@ -288,6 +310,16 @@ static size_t read_line(const char *line, size_t len, int *linecount)
             if (end[1] == '\n') {
                 end += 2;
                 break;
+            }
+            goto normal;
+        case '?':
+            if (end[1] == '?') {
+                c = read_trigraph(end[2]);
+                if (c) {
+                    end += 3;
+                    *ptr++ = c;
+                    break;
+                }
             }
             goto normal;
         case '*':
