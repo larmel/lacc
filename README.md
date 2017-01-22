@@ -266,7 +266,7 @@ The numbers for lacc is from an optimized build produced by GCC (-O3).
 
 | Compiler      | Cycles        | Instructions   | Allocations | Bytes allocated |
 |:--------------|--------------:|---------------:|------------:|----------------:|
-| lacc          |   714,559,061 |  1,053,230,972 |      73,037 |      33,665,892 |
+| lacc          |   675,864,658 |    917,908,234 |      73,042 |      33,727,328 |
 | tcc (0.9.26)  |   252,278,233 |    390,117,688 |     101,420 |      15,908,753 |
 | gcc (5.2.1)   | 8,937,133,232 | 13,614,565,033 |         230 |         134,510 |
 | clang (3.6.2) | 3,510,155,745 |  4,238,137,539 |      28,764 |       1,440,754 |
@@ -285,13 +285,13 @@ so this is a measure of code generated with -O0.
 
 | Compiler        | Cycles        | Instructions   |
 |:----------------|--------------:|---------------:|
-| lacc            | 1,081,527,613 |  1,716,003,432 |
-| lacc (selfhost) | 2,405,542,462 |  3,387,439,237 |
+| lacc            | 1,023,139,554 |  1,500,192,933 |
+| lacc (selfhost) | 1,848,426,988 |  2,686,689,804 |
 
-Around twice the number of instructions are executed by the selfhost binary,
-showing that lacc generates more naive code than GCC. Improving the backend with
-more efficient instruction selection is a priority, so these numbers should get
-closer in the future.
+Around 75 % more instructions executed by the selfhost binary, showing that lacc
+generates more naive code than GCC. Improving the backend with more efficient
+instruction selection is a priority, so these numbers should get closer in the
+future.
 
 References
 ----------
