@@ -593,7 +593,7 @@ static struct expression sub(
     struct var l,
     struct var r)
 {
-    int size;
+    size_t size;
     struct expression expr;
     Type type;
 
@@ -608,7 +608,8 @@ static struct expression sub(
             expr = create_expr(IR_OP_SUB, l, r);
         }
     } else if (is_pointer(l.type) && is_integer(r.type)) {
-        if (!size_of(type_deref(l.type))) {
+        size = size_of(type_deref(l.type));
+        if (!size) {
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
@@ -621,32 +622,36 @@ static struct expression sub(
             && r.kind == IMMEDIATE
             && is_integer(r.type))
         {
-            l.offset -= r.imm.i * size_of(type_deref(l.type));
+            l.offset -= r.imm.i * size;
             expr = as_expr(l);
         } else if (is_constant(l) && r.kind == IMMEDIATE) {
             l.imm.i -= r.imm.i;
             expr = as_expr(l);
-        } else if (!is_immediate_false(as_expr(r))) {
-            r = eval(def, block,
-                    eval_expr(def, block, IR_OP_MUL,
-                        var_int(size_of(type_deref(l.type))), r));
-            expr = create_expr(IR_OP_SUB, l, r);
-        } else {
+        } else if (is_immediate_false(as_expr(r))) {
             expr = as_expr(l);
+        } else {
+            if (size > 1) {
+                r = eval(def, block,
+                    eval_expr(def, block, IR_OP_MUL,
+                        imm_unsigned(basic_type__unsigned_long, size), r));
+            }
+            expr = create_expr(IR_OP_SUB, l, r);
         }
     } else if (is_pointer(l.type) && is_pointer(r.type)) {
         size = size_of(type_deref(r.type));
-        if (!size_of(type_deref(l.type))
-            || size_of(type_deref(l.type)) != size)
-        {
+        if (!size || size_of(type_deref(l.type)) != size) {
             error("Referenced type is incomplete.");
             exit(1);
         }
         /* Result is ptrdiff_t, which will be signed 64 bit integer. */
         l = eval_cast(def, block, l, basic_type__long);
         r = eval_cast(def, block, r, basic_type__long);
-        l = eval(def, block, eval_expr(def, block, IR_OP_SUB, l, r));
-        expr = eval_expr(def, block, IR_OP_DIV, l, var_int(size));
+        expr = eval_expr(def, block, IR_OP_SUB, l, r);
+        if (size > 1) {
+            l = eval(def, block, expr);
+            r = imm_signed(basic_type__long, size);
+            expr = eval_expr(def, block, IR_OP_DIV, l, r);
+        }
     } else {
         error("Incompatible arguments to subtraction operator, was %t and %t.",
             l.type, r.type);
