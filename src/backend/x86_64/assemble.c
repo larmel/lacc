@@ -338,10 +338,14 @@ int asm_text(struct instruction instr)
     case INSTR_MULSS:    I2("mulss", source, destin); break;
     case INSTR_SETZ:     I1("setz", source); break;
     case INSTR_SETA:     I1("seta", source); break;
+    case INSTR_SETNA:    I1("setna", source); break;
     case INSTR_SETG:     I1("setg", source); break;
+    case INSTR_SETNG:    I1("setng", source); break;
     case INSTR_SETP:     I1("setp", source); break;
     case INSTR_SETAE:    I1("setae", source); break;
+    case INSTR_SETNAE:   I1("setnae", source); break;
     case INSTR_SETGE:    I1("setge", source); break;
+    case INSTR_SETNGE:   I1("setnge", source); break;
     case INSTR_SETNP:    I1("setnp", source); break;
     case INSTR_SETNE:    I1("setne", source); break;
     case INSTR_TEST:     S2("test", wd, source, destin); break;
@@ -355,11 +359,15 @@ int asm_text(struct instruction instr)
     case INSTR_JMP:      I1("jmp", source); break;
     case INSTR_JZ:       I1("jz", source); break;
     case INSTR_JA:       I1("ja", source); break;
+    case INSTR_JNA:      I1("jna", source); break;
     case INSTR_JG:       I1("jg", source); break;
+    case INSTR_JNG:      I1("jng", source); break;
     case INSTR_JS:       I1("js", source); break;
     case INSTR_JP:       I1("jp", source); break;
     case INSTR_JAE:      I1("jae", source); break;
+    case INSTR_JNAE:     I1("jnae", source); break;
     case INSTR_JGE:      I1("jge", source); break;
+    case INSTR_JNGE:     I1("jnge", source); break;
     case INSTR_JNE:      I1("jne", source); break;
     case INSTR_JNS:      I1("jns", source); break;
     case INSTR_CALL:

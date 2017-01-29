@@ -137,11 +137,15 @@ enum opcode {
     INSTR_MULSS,        /* Multiply scalar double-precision. */
     INSTR_SETZ,
     INSTR_SETA,
+    INSTR_SETNA,        /* Set not above. */
     INSTR_SETG,
+    INSTR_SETNG,        /* Set not greater than. */
     INSTR_SETP,
     INSTR_SETNE,
     INSTR_SETAE,
+    INSTR_SETNAE,       /* Set not above or equal. */
     INSTR_SETGE,
+    INSTR_SETNGE,       /* Set not greater than or equal. */
     INSTR_SETNP,        /* Set not parity bit. */
     INSTR_UCOMISS,      /* Compare single-precision and set EFLAGS. */
     INSTR_UCOMISD,      /* Compare double-precision and set EFLAGS. */
@@ -152,12 +156,16 @@ enum opcode {
     INSTR_PXOR,         /* Bitwise xor with xmm register. */
     INSTR_JMP,
     INSTR_JA,
+    INSTR_JNA,          /* Jump if not above. */
     INSTR_JP,           /* Jump if parity. */
     INSTR_JG,
+    INSTR_JNG,          /* Jump if not greater than. */
     INSTR_JZ,
     INSTR_JS,           /* Jump if sign bit is set. */
     INSTR_JAE,
+    INSTR_JNAE,         /* Jump if not above or equal. */
     INSTR_JGE,
+    INSTR_JNGE,         /* Jump if not greater than or equal. */
     INSTR_JNE,          /* Jump if not equal. */
     INSTR_JNS,          /* Jump if not sign. */
     INSTR_CALL,

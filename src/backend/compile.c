@@ -1636,6 +1636,106 @@ static struct result compile_bitwise_expression(
 }
 
 /*
+ * Compile comparison expression IR_OP_EQ, IR_OP_NE, IR_OP_GE, or
+ * IR_OP_GT.
+ */
+static enum opcode compile_compare(
+    enum optype op,
+    struct var l,
+    struct var r)
+{
+    size_t w;
+    enum opcode cmp;
+    enum reg xmm0, xmm1;
+
+    switch (op) {
+    default: assert(0);
+    case IR_OP_EQ:
+        cmp = INSTR_SETZ;
+        break;
+    case IR_OP_NE:
+        cmp = INSTR_SETNE;
+        break;
+    case IR_OP_GE:
+        cmp = is_unsigned(l.type) || is_real(l.type)
+            ? INSTR_SETAE
+            : INSTR_SETGE;
+        break;
+    case IR_OP_GT:
+        cmp = is_unsigned(l.type) || is_real(l.type)
+            ? INSTR_SETA
+            : INSTR_SETG;
+        break;
+    }
+
+    if (is_real(l.type)) {
+        xmm0 = load_cast(l, l.type);
+        xmm1 = load_cast(r, r.type);
+        if (is_float(l.type)) {
+            emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
+        } else if (is_double(l.type)) {
+            emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
+        } else {
+            assert(is_long_double(l.type));
+            if (op == IR_OP_GE || op == IR_OP_GT) {
+                emit(INSTR_FXCH, OPT_REG, reg(xmm0, 16));
+            }
+            emit(INSTR_FUCOMIP, OPT_REG, reg(xmm0, 16));
+            emit(INSTR_FSTP, OPT_REG, reg(xmm1, 16));
+            assert(x87_stack == 2);
+            x87_stack = 0;
+        }
+    } else {
+        w = size_of(l.type);
+        assert(w == size_of(r.type));
+        if (is_constant(l) && w < 8) {
+            if (r.kind == DIRECT && !is_field(r)) {
+                emit(INSTR_CMP, OPT_IMM_MEM, value_of(l, w), location_of(r, w));
+            } else {
+                load(r, AX);
+                emit(INSTR_CMP, OPT_IMM_REG, value_of(l, w), reg(AX, w));
+            }
+            switch (cmp) {
+            case INSTR_SETAE:
+                cmp = INSTR_SETNA;
+                break;
+            case INSTR_SETGE:
+                cmp = INSTR_SETNG;
+                break;
+            case INSTR_SETA:
+                cmp = INSTR_SETNAE;
+                break;
+            case INSTR_SETG:
+                cmp = INSTR_SETNGE;
+                break;
+            default: break;
+            }
+        } else if (is_constant(r) && w < 8) {
+            if (l.kind == DIRECT && !is_field(l)) {
+                emit(INSTR_CMP, OPT_IMM_MEM, value_of(r, w), location_of(l, w));
+            } else {
+                load(l, AX);
+                emit(INSTR_CMP, OPT_IMM_REG, value_of(r, w), reg(AX, w));
+            }
+        } else {
+            if (l.kind == DIRECT && !is_field(l)) {
+                load(r, AX);
+                emit(INSTR_CMP, OPT_REG_MEM, reg(AX, w), location_of(l, w));
+            } else if (r.kind == DIRECT && !is_field(r)) {
+                load(l, AX);
+                emit(INSTR_CMP, OPT_MEM_REG, location_of(r, w), reg(AX, w));
+            } else {
+                load(l, AX);
+                load(r, CX);
+                emit(INSTR_CMP, OPT_REG_REG, reg(CX, w), reg(AX, w));
+            }
+        }
+    }
+
+    return cmp;
+}
+
+/*
  * Emit instructions for evaluating expression, and store the result in
  * a suitable register.
  */
@@ -1825,43 +1925,11 @@ static struct result compile_expression(struct expression expr)
         res.r = AX;
         break;
     case IR_OP_EQ:
-        res.cmp = INSTR_SETZ;
-        goto compare;
     case IR_OP_NE:
-        res.cmp = INSTR_SETNE;
-        goto compare;
     case IR_OP_GE:
-        res.cmp =
-            is_unsigned(l.type) || is_real(l.type) ? INSTR_SETAE : INSTR_SETGE;
-        goto compare;
     case IR_OP_GT:
-        res.cmp =
-            is_unsigned(l.type) || is_real(l.type) ? INSTR_SETA : INSTR_SETG;
-compare:
         res.kind = VAL_FLAGS;
-        if (is_real(l.type)) {
-            xmm0 = load_cast(l, l.type);
-            xmm1 = load_cast(r, r.type);
-            if (is_float(l.type)) {
-                emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
-            } else if (is_double(l.type)) {
-                emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
-            } else {
-                assert(is_long_double(l.type));
-                if (expr.op == IR_OP_GE || expr.op == IR_OP_GT) {
-                    emit(INSTR_FXCH, OPT_REG, reg(xmm0, 16));
-                }
-                emit(INSTR_FUCOMIP, OPT_REG, reg(xmm0, 16));
-                emit(INSTR_FSTP, OPT_REG, reg(xmm1, 16));
-                assert(x87_stack == 2);
-                x87_stack = 0;
-            }
-        } else {
-            load(l, AX);
-            load(r, CX);
-            emit(INSTR_CMP, OPT_REG_REG,
-                reg(CX, size_of(l.type)), reg(AX, size_of(l.type)));
-        }
+        res.cmp = compile_compare(expr.op, l, r);
         break;
     }
 
@@ -1948,6 +2016,7 @@ static void compile_statement(struct statement stmt)
             break;
         }
 
+        assert(stmt.st == IR_ASSIGN);
         res = compile_expression(stmt.expr);
         switch (res.kind) {
         case VAL_FLAGS:
@@ -2128,14 +2197,26 @@ static void compile_block(struct block *block, Type type)
             case INSTR_SETG:
                 emit(INSTR_JG, OPT_IMM, addr(block->jump[1]->label));
                 break;
+            case INSTR_SETNG:
+                emit(INSTR_JNG, OPT_IMM, addr(block->jump[1]->label));
+                break;
             case INSTR_SETA:
                 emit(INSTR_JA, OPT_IMM, addr(block->jump[1]->label));
+                break;
+            case INSTR_SETNA:
+                emit(INSTR_JNA, OPT_IMM, addr(block->jump[1]->label));
                 break;
             case INSTR_SETGE:
                 emit(INSTR_JGE, OPT_IMM, addr(block->jump[1]->label));
                 break;
+            case INSTR_SETNGE:
+                emit(INSTR_JNGE, OPT_IMM, addr(block->jump[1]->label));
+                break;
             case INSTR_SETAE:
                 emit(INSTR_JAE, OPT_IMM, addr(block->jump[1]->label));
+                break;
+            case INSTR_SETNAE:
+                emit(INSTR_JNAE, OPT_IMM, addr(block->jump[1]->label));
                 break;
             default: assert(0);
             }
