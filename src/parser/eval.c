@@ -1265,24 +1265,6 @@ struct var eval_deref(
     return var;
 }
 
-static struct var mask_bitfield_immediate(struct var v, int w)
-{
-    long mask;
-
-    assert(v.kind == IMMEDIATE);
-    assert(is_integer(v.type));
-    assert(w > 0);
-    assert(w < size_of(basic_type__int) * 8);
-
-    mask = (1l << w) - 1;
-    v.imm.i &= mask;
-    if (is_signed(v.type) && (v.imm.i & (1l << (w - 1)))) {
-        v.imm.i |= ~mask;
-    }
-
-    return v;
-}
-
 /*
  * Special case char [] = string in initializers.
  *
@@ -1335,6 +1317,52 @@ static struct var eval_assign_string_literal(
     return target;
 }
 
+/*
+ * Assign value to field.
+ *
+ * Immediate values are masked to remove bits not within field width,
+ * and returned directly as result of the assignment.
+ */
+static struct var assign_field(
+    struct definition *def,
+    struct block *block,
+    struct var target,
+    struct expression expr)
+{
+    Type type;
+    long mask;
+    assert(is_field(target));
+
+    if (target.field_width == size_of(basic_type__int) * 8) {
+        type = target.type;
+    } else {
+        type = basic_type__int;
+    }
+
+    if (is_immediate(expr)) {
+        mask = (1l << target.field_width) - 1;
+        expr.l.imm.i &= mask;
+        if (is_signed(target.type)
+            && (expr.l.imm.i & (1l << (target.field_width - 1))))
+        {
+            expr.l.imm.i |= ~mask;
+        }
+        expr.l.type = type;
+        expr.type = type;
+    } else if (!type_equal(type, expr.type)) {
+        expr = eval_expr(def, block, IR_OP_CAST, eval(def, block, expr), type);
+    }
+
+    emit_ir(block, IR_ASSIGN, target, expr);
+    if (is_immediate(expr)) {
+        target = expr.l;
+    } else {
+        target.lvalue = 0;
+    }
+
+    return target;
+}
+
 struct var eval_assign(
     struct definition *def,
     struct block *block,
@@ -1354,8 +1382,7 @@ struct var eval_assign(
     }
 
     if (is_identity(expr)) {
-        var = eval(def, block, expr);
-        var = rvalue(def, block, var);
+        var = rvalue(def, block, expr.l);
         expr = as_expr(var);
     }
 
@@ -1375,7 +1402,6 @@ struct var eval_assign(
         if (!is_identity(expr) || !is_nullptr(expr.l)) {
             if (is_const(p1) < is_const(p2)) {
                 warning("Pointer assignment discards 'const' qualifier.");
-                warning("STMT: %t = %t", target.type, expr.type);
             }
             if (is_volatile(p1) < is_volatile(p2)) {
                 warning("Pointer assignment discards 'volatile' qualifier.");
@@ -1386,11 +1412,10 @@ struct var eval_assign(
             warning("Assigning non-zero number to pointer.");
         }
     } else if (is_arithmetic(target.type) && is_arithmetic(expr.type)) {
-        if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
+        if (is_field(target)) {
+            return assign_field(def, block, target, expr);
+        } else if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
             var = eval_cast(def, block, expr.l, target.type);
-            if (is_field(target)) {
-                var = mask_bitfield_immediate(var, target.field_width);
-            }
             expr = as_expr(var);
         }
     } else if (
