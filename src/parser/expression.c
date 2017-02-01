@@ -415,8 +415,30 @@ static struct block *unary_expression(
     case '!':
         consume('!');
         block = cast_expression(def, block);
-        value = eval(def, block, block->expr);
-        block->expr = eval_expr(def, block, IR_OP_EQ, var_int(0), value);
+        switch (block->expr.op) {
+        case IR_OP_EQ:
+            block->expr.op = IR_OP_NE;
+            break;
+        case IR_OP_NE:
+            block->expr.op = IR_OP_EQ;
+            break;
+        case IR_OP_GE:
+            block->expr.op = IR_OP_GT;
+            value = block->expr.l;
+            block->expr.l = block->expr.r;
+            block->expr.r = value;
+            break;
+        case IR_OP_GT:
+            block->expr.op = IR_OP_GE;
+            value = block->expr.l;
+            block->expr.l = block->expr.r;
+            block->expr.r = value;
+            break;
+        default:
+            value = eval(def, block, block->expr);
+            block->expr = eval_expr(def, block, IR_OP_EQ, var_int(0), value);
+            break;
+        }
         break;
     case '~':
         consume('~');
