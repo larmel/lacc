@@ -531,8 +531,13 @@ static struct expression add(
     struct var l,
     struct var r)
 {
+    size_t size;
     struct expression expr;
     Type type;
+
+    if (is_integer(l.type) && is_pointer(r.type)) {
+        return add(def, block, r, l);
+    }
 
     if (is_arithmetic(l.type) && is_arithmetic(r.type)) {
         type = usual_arithmetic_conversion(l.type, r.type);
@@ -544,11 +549,9 @@ static struct expression add(
         } else {
             expr = create_expr(IR_OP_ADD, l, r);
         }
-    } else if (is_integer(l.type) && is_pointer(r.type)) {
-        /* Make sure pointer is left, and integer right. */
-        expr = add(def, block, r, l);
     } else if (is_pointer(l.type) && is_integer(r.type)) {
-        if (!size_of(type_deref(l.type))) {
+        size = size_of(type_deref(l.type));
+        if (!size) {
             error("Pointer arithmetic on incomplete type.");
             exit(1);
         }
@@ -561,7 +564,7 @@ static struct expression add(
             && r.kind == IMMEDIATE
             && is_integer(r.type))
         {
-            l.offset += r.imm.i * size_of(type_deref(l.type));
+            l.offset += r.imm.i * size;
             expr = as_expr(l);
         } else if (is_constant(l) && r.kind == IMMEDIATE) {
             l.imm.i += r.imm.i;
@@ -570,9 +573,11 @@ static struct expression add(
             type = l.type;
             l = eval_cast(def, block, l, basic_type__long);
             r = eval_cast(def, block, r, basic_type__long);
-            r = eval(def, block,
-                    eval_expr(def, block, IR_OP_MUL,
-                        var_int(size_of(type_next(type))), r));
+            if (size != 1) {
+                r = eval(def, block,
+                        eval_expr(def, block, IR_OP_MUL,
+                            imm_signed(basic_type__long, size), r));
+            }
             expr = create_expr(IR_OP_ADD, l, r);
             expr.type = type;
         } else {
