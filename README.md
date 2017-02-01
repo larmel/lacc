@@ -233,8 +233,8 @@ In both cases we do not enable any optimizations, so this is a measure of code g
 
 | Compiler        | Cycles        | Instructions   |
 |:----------------|--------------:|---------------:|
-| lacc            | 1,046,547,954 |  1,496,879,293 |
-| lacc (selfhost) | 1,714,519,512 |  2,397,778,953 |
+| lacc            | 1,044,860,541 |  1,478,455,235 |
+| lacc (selfhost) | 1,603,394,173 |  2,291,836,459 |
 
 Around 60 % more instructions executed by the selfhost binary, showing that lacc
 generates more naive code than GCC.

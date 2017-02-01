@@ -1541,6 +1541,15 @@ struct expression eval_conditional(
 }
 
 /*
+ * Connect basic blocks in a logical OR or AND operation.
+ *
+ * left:      Left hand side of the expression, left->expr holds the
+ *            value to be compared.
+ * right_top: First block of the right hand side expression. This should
+ *            be jump target on AND if left->expr is false.
+ * right:     Last block of the right hand side expression. The value to
+ *            compare is in right->expr.
+ *
  * Result is integer type, assigned in true and false branches to
  * numeric constant 1 or 0.
  */
@@ -1557,30 +1566,24 @@ static struct block *eval_logical_expression(
         *f = cfg_block_init(def),
         *r = cfg_block_init(def);
 
-    res = create_var(def, basic_type__int);
-    left->expr =
-        eval_expr(def, left, IR_OP_EQ,
-            eval(def, left, left->expr), var_int(0));
     if (is_and) {
-        left->jump[0] = right_top;
-        left->jump[1] = f;
-    } else {
-        left->jump[0] = t;
+        left->jump[0] = f;
         left->jump[1] = right_top;
-    }
-
-    right->expr =
-        eval_expr(def, right, IR_OP_EQ,
-            eval(def, right, right->expr), var_int(0));
-    if (is_immediate_true(right->expr)) {
-        right->jump[0] = f;
-    } else if (is_immediate_false(right->expr)) {
-        right->jump[0] = t;
     } else {
-        right->jump[0] = t;
-        right->jump[1] = f;
+        left->jump[0] = right_top;
+        left->jump[1] = t;
     }
 
+    if (is_immediate_true(right->expr)) {
+        right->jump[0] = t;
+    } else if (is_immediate_false(right->expr)) {
+        right->jump[0] = f;
+    } else {
+        right->jump[0] = f;
+        right->jump[1] = t;
+    }
+
+    res = create_var(def, basic_type__int);
     res.lvalue = 1;
     eval_assign(def, t, res, as_expr(var_int(1)));
     eval_assign(def, f, res, as_expr(var_int(0)));
