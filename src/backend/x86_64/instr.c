@@ -398,9 +398,10 @@ static struct code add(
     union operand a,
     union operand b)
 {
-    struct code c = {{0}};
+    struct code c = {0};
 
     switch (optype) {
+    default: assert(0);
     case OPT_REG_REG:
         if (rrex(a.reg)) {
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
@@ -423,7 +424,11 @@ static struct code add(
         }
         break;
     case OPT_IMM_MEM:
-        assert(a.imm.type == IMM_INT && !mrex(b.mem.addr));
+        assert(a.imm.type == IMM_INT);
+        assert(!mrex(b.mem.addr));
+        if (b.mem.w > 4) {
+            c.val[c.len++] = REX | W(b.mem);
+        }
         c.val[c.len++] = 0x80 | is_byte_imm(a.imm) << 1 | w(b.mem);
         if (is_byte_imm(a.imm)) {
             encode_addr(&c, 0, b.mem.addr, 1);
@@ -435,7 +440,21 @@ static struct code add(
             c.len += 4;
         }
         break;
-    default: assert(0);
+    case OPT_REG_MEM:
+        assert(!mrex(b.mem.addr));
+        if (rrex(a.reg)) {
+            c.val[c.len++] = REX | W(a.reg) | R(a.reg);
+        }
+        c.val[c.len++] = 0x00 | is_64_bit_reg(a.reg.r) << 1 | w(b.mem);
+        encode_addr(&c, reg(a.reg), b.mem.addr, 0);
+        break;
+    case OPT_MEM_REG:
+        if (rrex(b.reg) || mrex(a.mem.addr)) {
+            c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
+        }
+        c.val[c.len++] = 0x00 | !is_64_bit_reg(b.reg.r) << 1 | w(b.reg);
+        encode_addr(&c, reg(b.reg), a.mem.addr, 0);
+        break;
     }
 
     return c;

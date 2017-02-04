@@ -1676,6 +1676,31 @@ static enum opcode compile_compare(
     return cmp;
 }
 
+/*
+ * Compare variables for equality as expression operands.
+ *
+ * Do not consider type, as this can be changed during evaluation, for
+ * example addition of pointer types being treated as long.
+ */
+static int operand_equal(struct var a, struct var b)
+{
+    return a.symbol == b.symbol
+        && a.symbol != NULL
+        && a.kind == b.kind
+        && a.field_width == b.field_width
+        && a.field_offset == b.field_offset
+        && a.offset == b.offset;
+}
+
+static int is_int_constant(struct var v)
+{
+    return v.kind == IMMEDIATE
+        && is_integer(v.type)
+        && !v.symbol
+        && (size_of(v.type) < 8
+            || (v.imm.i <= INT_MAX && v.imm.i >= INT_MIN));
+}
+
 static enum reg compile_add(
     struct var target,
     Type type,
@@ -1693,19 +1718,60 @@ static enum reg compile_add(
         emit(INSTR_FADDP, OPT_REG, reg(ax, w));
         assert(x87_stack == 2);
         x87_stack--;
-        if (!is_void(target.type)) {
-            store_x87(target);
-        }
-    } else {
+    } else if (is_real(type)) {
         ax = load_cast(l, type);
         cx = load_cast(r, type);
-        opc = is_float(type) ? INSTR_ADDSS
-            : is_double(type) ? INSTR_ADDSD
-            : INSTR_ADD;
+        opc = is_float(type) ? INSTR_ADDSS : INSTR_ADDSD;
         emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
-        if (!is_void(target.type)) {
-            store(ax, target);
+    } else {
+        if (!is_void(target.type)
+            && target.kind == DIRECT
+            && !is_field(target))
+        {
+            ax = AX;
+            if (operand_equal(target, r)) {
+                if (is_int_constant(l)) {
+                    emit(INSTR_ADD, OPT_IMM_MEM,
+                        value_of(l, w), location_of(target, w));
+                } else {
+                    ax = load_cast(l, type);
+                    emit(INSTR_ADD, OPT_REG_MEM,
+                        reg(ax, w), location_of(target, w));
+                }
+                return ax;
+            } else if (operand_equal(target, l)) {
+                if (is_int_constant(r)) {
+                    emit(INSTR_ADD, OPT_IMM_MEM,
+                        value_of(r, w), location_of(target, w));
+                } else {
+                    ax = load_cast(r, type);
+                    emit(INSTR_ADD, OPT_REG_MEM,
+                        reg(ax, w), location_of(target, w));
+                }
+                return ax;
+            }
         }
+        if (is_int_constant(l)) {
+            ax = load_cast(r, type);
+            emit(INSTR_ADD, OPT_IMM_REG, value_of(l, w), reg(ax, w));
+        } else if (is_int_constant(r)) {
+            ax = load_cast(l, type);
+            emit(INSTR_ADD, OPT_IMM_REG, value_of(r, w), reg(ax, w));
+        } else if (l.kind == DIRECT && !is_field(l)) {
+            ax = load_cast(r, type);
+            emit(INSTR_ADD, OPT_MEM_REG, location_of(l, w), reg(ax, w));
+        } else if (r.kind == DIRECT && !is_field(r)) {
+            ax = load_cast(l, type);
+            emit(INSTR_ADD, OPT_MEM_REG, location_of(r, w), reg(ax, w));
+        } else {
+            ax = load_cast(l, type);
+            cx = load_cast(r, type);
+            emit(INSTR_ADD, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        }
+    }
+
+    if (!is_void(target.type)) {
+        store(ax, target);
     }
 
     return ax;
