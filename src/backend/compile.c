@@ -2398,13 +2398,14 @@ static void compile_block(struct block *block, Type type)
         if (is_comparison(block->expr)) {
             cmp = compile_compare(block->expr.op, block->expr.l, block->expr.r);
             switch (cmp) {
+            default: assert(0);
             case INSTR_SETZ:
                 if (is_real(block->expr.l.type)) {
                     emit(INSTR_JNE, OPT_IMM, addr(block->jump[0]->label));
                     emit(INSTR_JP, OPT_IMM, addr(block->jump[0]->label));
                     emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
                 } else {
-                    emit(INSTR_JZ, OPT_IMM, addr(block->jump[1]->label));
+                    emit(INSTR_JNE, OPT_IMM, addr(block->jump[0]->label));
                 }
                 break;
             case INSTR_SETNE:
@@ -2413,34 +2414,33 @@ static void compile_block(struct block *block, Type type)
                     emit(INSTR_JP, OPT_IMM, addr(block->jump[1]->label));
                     emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
                 } else {
-                    emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
+                    emit(INSTR_JZ, OPT_IMM, addr(block->jump[0]->label));
                 }
                 break;
             case INSTR_SETG:
-                emit(INSTR_JG, OPT_IMM, addr(block->jump[1]->label));
+                emit(INSTR_JNG, OPT_IMM, addr(block->jump[0]->label));
                 break;
             case INSTR_SETNG:
-                emit(INSTR_JNG, OPT_IMM, addr(block->jump[1]->label));
+                emit(INSTR_JG, OPT_IMM, addr(block->jump[0]->label));
                 break;
             case INSTR_SETA:
-                emit(INSTR_JA, OPT_IMM, addr(block->jump[1]->label));
+                emit(INSTR_JNA, OPT_IMM, addr(block->jump[0]->label));
                 break;
             case INSTR_SETNA:
-                emit(INSTR_JNA, OPT_IMM, addr(block->jump[1]->label));
+                emit(INSTR_JA, OPT_IMM, addr(block->jump[0]->label));
                 break;
             case INSTR_SETGE:
-                emit(INSTR_JGE, OPT_IMM, addr(block->jump[1]->label));
+                emit(INSTR_JNGE, OPT_IMM, addr(block->jump[0]->label));
                 break;
             case INSTR_SETNGE:
-                emit(INSTR_JNGE, OPT_IMM, addr(block->jump[1]->label));
+                emit(INSTR_JGE, OPT_IMM, addr(block->jump[0]->label));
                 break;
             case INSTR_SETAE:
-                emit(INSTR_JAE, OPT_IMM, addr(block->jump[1]->label));
+                emit(INSTR_JNAE, OPT_IMM, addr(block->jump[0]->label));
                 break;
             case INSTR_SETNAE:
-                emit(INSTR_JNAE, OPT_IMM, addr(block->jump[1]->label));
+                emit(INSTR_JAE, OPT_IMM, addr(block->jump[0]->label));
                 break;
-            default: assert(0);
             }
         } else {
             ax = compile_expression(block->expr);
@@ -2460,18 +2460,18 @@ static void compile_block(struct block *block, Type type)
                 i = size_of(block->expr.type);
                 assert(i == 1 || i == 2 || i == 4 || i == 8);
                 emit(INSTR_CMP, OPT_IMM_REG, constant(0, i), reg(ax, i));
-                emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
+                emit(INSTR_JZ, OPT_IMM, addr(block->jump[0]->label));
             }
         }
 
         relase_regs();
-        if (block->jump[0]->color == BLACK) {
-            emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
+        if (block->jump[1]->color == BLACK) {
+            emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
         } else {
-            compile_block(block->jump[0], type);
+            compile_block(block->jump[1], type);
         }
 
-        compile_block(block->jump[1], type);
+        compile_block(block->jump[0], type);
     }
 }
 
