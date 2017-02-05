@@ -1234,7 +1234,7 @@ static void enter(struct definition *def)
         vararg.overflow_arg_area_offset = mem_offset;
         vararg.reg_save_area_offset = 0;
         emit(INSTR_TEST, OPT_REG_REG, reg(AX, 1), reg(AX, 1));
-        emit(INSTR_JZ, OPT_IMM, addr(sym));
+        emit(INSTR_JE, OPT_IMM, addr(sym));
         for (i = 0; i < MAX_SSE_ARGS; ++i) {
             vararg.reg_save_area_offset -= 16;
             emit(INSTR_MOVAPS, OPT_REG_MEM,
@@ -1592,7 +1592,7 @@ static enum opcode compile_compare(
     switch (op) {
     default: assert(0);
     case IR_OP_EQ:
-        cmp = INSTR_SETZ;
+        cmp = INSTR_SETE;
         break;
     case IR_OP_NE:
         cmp = INSTR_SETNE;
@@ -2053,7 +2053,7 @@ static enum reg set_compare_value(Type type, enum opcode op)
 {
     emit(op, OPT_REG, reg(AX, 1));
     if (is_real(type)) {
-        if (op == INSTR_SETZ) {
+        if (op == INSTR_SETE) {
             emit(INSTR_SETNP, OPT_REG, reg(CX, 1));
             emit(INSTR_AND, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
         } else if (op == INSTR_SETNE) {
@@ -2335,7 +2335,7 @@ static void compile_return(Type func, struct expression expr)
                 location(address(-8, BP, 0, 0), 8), reg(DI, 8));
         }
         emit(INSTR_CMP, OPT_REG_REG, reg(DI, 8), reg(SI, 8));
-        emit(INSTR_JZ, OPT_IMM, addr(label));
+        emit(INSTR_JE, OPT_IMM, addr(label));
         emit(INSTR_MOV, OPT_IMM_REG, constant(w, 8), reg(DX, 8));
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
         /* should this be different for vararg? */
@@ -2399,7 +2399,7 @@ static void compile_block(struct block *block, Type type)
             cmp = compile_compare(block->expr.op, block->expr.l, block->expr.r);
             switch (cmp) {
             default: assert(0);
-            case INSTR_SETZ:
+            case INSTR_SETE:
                 if (is_real(block->expr.l.type)) {
                     emit(INSTR_JNE, OPT_IMM, addr(block->jump[0]->label));
                     emit(INSTR_JP, OPT_IMM, addr(block->jump[0]->label));
@@ -2414,7 +2414,7 @@ static void compile_block(struct block *block, Type type)
                     emit(INSTR_JP, OPT_IMM, addr(block->jump[1]->label));
                     emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
                 } else {
-                    emit(INSTR_JZ, OPT_IMM, addr(block->jump[0]->label));
+                    emit(INSTR_JE, OPT_IMM, addr(block->jump[0]->label));
                 }
                 break;
             case INSTR_SETG:
@@ -2460,7 +2460,7 @@ static void compile_block(struct block *block, Type type)
                 i = size_of(block->expr.type);
                 assert(i == 1 || i == 2 || i == 4 || i == 8);
                 emit(INSTR_CMP, OPT_IMM_REG, constant(0, i), reg(ax, i));
-                emit(INSTR_JZ, OPT_IMM, addr(block->jump[0]->label));
+                emit(INSTR_JE, OPT_IMM, addr(block->jump[0]->label));
             }
         }
 

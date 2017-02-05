@@ -84,7 +84,7 @@
 enum tttn {
     TEST_NAE = 0x2,
     TEST_AE = 0x3,
-    TEST_Z = 0x4,
+    TEST_E = 0x4,
     TEST_NE = 0x5,
     TEST_NA = 0x6,
     TEST_A = 0x7,
@@ -1206,8 +1206,8 @@ struct code encode(struct instruction instr)
         return jcc(instr.optype, TEST_G, instr.source);
     case INSTR_JNG:
         return jcc(instr.optype, TEST_NG, instr.source);
-    case INSTR_JZ:
-        return jcc(instr.optype, TEST_Z, instr.source);
+    case INSTR_JE:
+        return jcc(instr.optype, TEST_E, instr.source);
     case INSTR_JS:
         return jcc(instr.optype, TEST_S, instr.source);
     case INSTR_JAE:
@@ -1222,8 +1222,8 @@ struct code encode(struct instruction instr)
         return jcc(instr.optype, TEST_NE, instr.source);
     case INSTR_JNS:
         return jcc(instr.optype, TEST_NS, instr.source);
-    case INSTR_SETZ:
-        return setcc(instr.optype, TEST_Z, instr.source);
+    case INSTR_SETE:
+        return setcc(instr.optype, TEST_E, instr.source);
     case INSTR_SETA:
         return setcc(instr.optype, TEST_A, instr.source);
     case INSTR_SETNA:

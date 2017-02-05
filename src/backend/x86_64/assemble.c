@@ -336,7 +336,7 @@ int asm_text(struct instruction instr)
     case INSTR_MOVSD:    I2("movsd", source, destin); break;
     case INSTR_MULSD:    I2("mulsd", source, destin); break;
     case INSTR_MULSS:    I2("mulss", source, destin); break;
-    case INSTR_SETZ:     I1("setz", source); break;
+    case INSTR_SETE:     I1("sete", source); break;
     case INSTR_SETA:     I1("seta", source); break;
     case INSTR_SETNA:    I1("setna", source); break;
     case INSTR_SETG:     I1("setg", source); break;
@@ -357,7 +357,7 @@ int asm_text(struct instruction instr)
     case INSTR_POP:      S1("pop", ws, source); break;
     case INSTR_PXOR:     I2("pxor", source, destin); break;
     case INSTR_JMP:      I1("jmp", source); break;
-    case INSTR_JZ:       I1("jz", source); break;
+    case INSTR_JE:       I1("je", source); break;
     case INSTR_JA:       I1("ja", source); break;
     case INSTR_JNA:      I1("jna", source); break;
     case INSTR_JG:       I1("jg", source); break;

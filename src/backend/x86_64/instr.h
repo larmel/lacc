@@ -135,7 +135,7 @@ enum opcode {
     INSTR_MUL,
     INSTR_MULSD,        /* Multiply scalar double-precision. */
     INSTR_MULSS,        /* Multiply scalar double-precision. */
-    INSTR_SETZ,
+    INSTR_SETE,         /* Set equal. */
     INSTR_SETA,
     INSTR_SETNA,        /* Set not above. */
     INSTR_SETG,
@@ -160,7 +160,7 @@ enum opcode {
     INSTR_JP,           /* Jump if parity. */
     INSTR_JG,
     INSTR_JNG,          /* Jump if not greater than. */
-    INSTR_JZ,
+    INSTR_JE,           /* Jump if equal. */
     INSTR_JS,           /* Jump if sign bit is set. */
     INSTR_JAE,
     INSTR_JNAE,         /* Jump if not above or equal. */
