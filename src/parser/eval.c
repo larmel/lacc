@@ -1368,30 +1368,16 @@ static struct var assign_field(
     return target;
 }
 
-struct var eval_assign(
+static struct var eval_assign_pointer(
     struct definition *def,
     struct block *block,
     struct var target,
     struct expression expr)
 {
-    struct var var;
     Type p1, p2;
+    assert(is_pointer(target.type));
 
-    if (!target.lvalue) {
-        error("Target of assignment must be l-value.");
-        exit(1);
-    }
-
-    if (is_array(target.type)) {
-        return eval_assign_string_literal(block, target, expr);
-    }
-
-    if (is_identity(expr)) {
-        var = rvalue(def, block, expr.l);
-        expr = as_expr(var);
-    }
-
-    if (is_pointer(target.type) && is_pointer(expr.type)) {
+    if (is_pointer(expr.type)) {
         p1 = type_deref(target.type);
         p2 = type_deref(expr.type);
         if (!is_compatible(target.type, expr.type)) {
@@ -1399,9 +1385,8 @@ struct var eval_assign(
                 || (is_void(p1) && is_object(p2))
                 || (is_object(p1) && is_void(p2))))
             {
-                warning("Incompatible type in pointer assignment; %t = %t.",
-                    target.type,
-                    expr.type);
+                warning("Incompatible pointer assignment between %t and %t.",
+                    target.type, expr.type);
             }
         }
         if (!is_identity(expr) || !is_nullptr(expr.l)) {
@@ -1412,29 +1397,72 @@ struct var eval_assign(
                 warning("Pointer assignment discards 'volatile' qualifier.");
             }
         }
-    } else if (is_pointer(target.type) && is_integer(expr.type)) {
+    } else if (is_integer(expr.type)) {
         if (!is_identity(expr) || !is_nullptr(expr.l)) {
             warning("Assigning non-zero number to pointer.");
         }
-    } else if (is_arithmetic(target.type) && is_arithmetic(expr.type)) {
+    } else {
+        error("Incompatible pointer assignment between %t and %t.",
+            target.type, expr.type);
+        exit(1);
+    }
+
+    if (is_identity(expr)) {
+        expr.l.type = target.type;
+    }
+
+    expr.type = target.type;
+    emit_ir(block, IR_ASSIGN, target, expr);
+    if (is_immediate(expr)) {
+        target = expr.l;
+    } else {
+        target.lvalue = 0;
+    }
+
+    return target;
+}
+
+struct var eval_assign(
+    struct definition *def,
+    struct block *block,
+    struct var target,
+    struct expression expr)
+{
+    struct var var;
+
+    if (!target.lvalue) {
+        error("Target of assignment must be l-value.");
+        exit(1);
+    }
+
+    if (is_array(target.type)) {
+        return eval_assign_string_literal(block, target, expr);
+    } else if (is_identity(expr)) {
+        var = rvalue(def, block, expr.l);
+        expr = as_expr(var);
+    }
+
+    if (is_pointer(target.type)) {
+        return eval_assign_pointer(def, block, target, expr);
+    }
+
+    if (is_arithmetic(target.type) && is_arithmetic(expr.type)) {
         if (is_field(target)) {
             return assign_field(def, block, target, expr);
         } else if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
             var = eval_cast(def, block, expr.l, target.type);
             expr = as_expr(var);
+        } else if (!type_equal(target.type, expr.type)) {
+            var = eval(def, block, expr);
+            expr = eval_expr(def, block, IR_OP_CAST, var, target.type);
         }
     } else if (
         !(is_struct_or_union(target.type)
             && is_compatible(target.type, expr.type)))
     {
-        error("Incompatible operands in assignment expression, %s :: %t = %t.",
-            str_raw(target.symbol->name), target.type, expr.type);
+        error("Incompatible value of type %t assigned to variable of type %t.",
+            expr.type, target.type);
         exit(1);
-    }
-
-    if (!type_equal(target.type, expr.type)) {
-        var = eval(def, block, expr);
-        expr = eval_expr(def, block, IR_OP_CAST, var, target.type);
     }
 
     emit_ir(block, IR_ASSIGN, target, expr);
