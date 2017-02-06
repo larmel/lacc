@@ -138,6 +138,24 @@ static int color_white(struct block *block)
     return 0;
 }
 
+/* Forward jumps through blocks with no instructions. */
+static int skip_empty_blocks(struct block *block)
+{
+    int i;
+    struct block *next;
+
+    for (i = 0; i < 2 && block->jump[i]; ++i) {
+        do {
+            next = block->jump[i];
+            if (!array_len(&next->code) && next->jump[0] && !next->jump[1]) {
+                block->jump[i] = next->jump[0];
+            } else break;
+        } while (1);
+    }
+
+    return 0;
+}
+
 /*
  * Traverse all reachable nodes in a graph, invoking callback on each
  * basic block.
@@ -231,6 +249,7 @@ void optimize(struct definition *def)
     array_empty(&blocks);
     array_empty(&symbols);
     serialize_basic_blocks(def->body);
+    traverse(&skip_empty_blocks);
     syms = traverse(&enumerate_used_symbols);
 
     if (syms < 64) {
