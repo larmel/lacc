@@ -78,6 +78,9 @@ struct symbol {
 
     /* Counter used for enumeration during optimization. */
     int index;
+
+    /* Register allocation slot. */
+    int slot;
 };
 
 /* Holds the declaration for memcpy, which is needed for codegen. */

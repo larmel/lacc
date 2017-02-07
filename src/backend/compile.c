@@ -31,21 +31,30 @@ static struct {
     int reg_save_area_offset;
 } vararg;
 
-/* Registers used for parameter passing and return value. */
-static enum reg param_int_reg[] = {DI, SI, DX, CX, R8, R9};
-static enum reg param_sse_reg[] = {XMM0, XMM1, XMM2, XMM3,
-                                   XMM4, XMM5, XMM6, XMM7};
-static enum reg ret_int_reg[] = {AX, DX};
-static enum reg ret_sse_reg[] = {XMM0, XMM1};
-
 /* Store incoming PARAM operations before CALL. */
 static array_of(struct var) func_args;
+
+/*
+ * Use callee-saved registers %rbx, %r12, %r13, %r14 and %r15 for
+ * temporary integer values.
+ */
+#define TEMP_INT_REGS (sizeof(temp_int_reg) / sizeof(temp_int_reg[0]))
+
+static enum reg
+    temp_int_reg[] = {BX, R12, R13, R14, R15},
+    param_int_reg[] = {DI, SI, DX, CX, R8, R9},
+    param_sse_reg[] = {XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7},
+    ret_int_reg[] = {AX, DX},
+    ret_sse_reg[] = {XMM0, XMM1};
+
+static int
+    temp_int_regs_used;
 
 /*
  * Keep track of used registers when evaluating expressions, not having
  * to explicitly tell which register is to be used in all rules.
  */
-static unsigned int_regs_used, sse_regs_used;
+static int int_regs_used, sse_regs_used;
 
 /* Number of registers pushed to x87 stack. */
 static int x87_stack;
@@ -91,7 +100,7 @@ static void relase_regs(void)
     sse_regs_used = 0;
 }
 
-static void compile_block(struct block *block, Type type);
+static void compile_block(struct block *block, Type type, int stack);
 
 static void emit(enum opcode opcode, enum instr_optype optype, ...)
 {
@@ -172,6 +181,29 @@ static int displacement_from_offset(size_t offset)
     return (int) offset;
 }
 
+static int is_temporary(const struct symbol *sym)
+{
+    const char *str = str_raw(sym->name);
+    return str[0] == '.' && str[1] == 't';
+}
+
+static int is_register_allocated(struct var v)
+{
+    return v.kind == DIRECT
+        && is_temporary(v.symbol)
+        && v.symbol->slot != 0;
+}
+
+static enum reg allocated_register(struct var v)
+{
+    if (is_register_allocated(v)) {
+        assert(is_integer(v.symbol->type) || is_pointer(v.symbol->type));
+        return temp_int_reg[v.symbol->slot - 1];
+    }
+
+    return 0;
+}
+
 static struct immediate value_of(struct var var, int w)
 {
     struct immediate imm = {0};
@@ -224,6 +256,7 @@ static struct address address_of(struct var var)
 
 static struct memory location_of(struct var var, int w)
 {
+    assert(!is_register_allocated(var));
     return location(address_of(var), w);
 }
 
@@ -293,9 +326,10 @@ static int is_zero(union value val, Type type)
 
 /*
  * Emit instruction to load a value to specified register. Handles all
- * kinds of variables, including immediate. Load instruction can perform
- * conversion, for example sign extend. I.e. variable and register does
- * not need to be of the same width.
+ * kinds of variables, including immediate.
+ *
+ * Load instruction can perform conversion, for example sign extend.
+ * I.e., variable and register does not need to be of the same width.
  */
 static void emit_load(
     enum opcode opcode,
@@ -303,9 +337,11 @@ static void emit_load(
     struct registr dest)
 {
     struct var ptr;
-    const int w = size_of(source.type);
-    assert(is_standard_register_width(w));
+    enum reg ax;
+    size_t w;
 
+    w = size_of(source.type);
+    assert(is_standard_register_width(w));
     switch (source.kind) {
     case IMMEDIATE:
         /*
@@ -331,7 +367,15 @@ static void emit_load(
             break;
         }
     case DIRECT:
-        emit(opcode, OPT_MEM_REG, location_of(source, w), dest);
+        if (is_register_allocated(source)) {
+            ax = allocated_register(source);
+            if (opcode == INSTR_MOV) {
+                w = dest.w;
+            }
+            emit(opcode, OPT_REG_REG, reg(ax, w), dest);
+        } else {
+            emit(opcode, OPT_MEM_REG, location_of(source, w), dest);
+        }
         break;
     case DEREF:
         ptr = var_direct(source.symbol);
@@ -340,12 +384,17 @@ static void emit_load(
             emit(opcode, OPT_MEM_REG, location_of(ptr, w), dest);
         } else {
             assert(is_pointer(ptr.type));
-            emit(INSTR_MOV, OPT_MEM_REG, location_of(ptr, 8), reg(R11, 8));
+            if (is_register_allocated(ptr)) {
+                ax = allocated_register(ptr);
+            } else {
+                ax = R11;
+                emit(INSTR_MOV, OPT_MEM_REG, location_of(ptr, 8), reg(ax, 8));
+            }
             emit(opcode,
                 OPT_MEM_REG,
                 location(
                     address(
-                        displacement_from_offset(source.offset), R11, 0, 0), w),
+                        displacement_from_offset(source.offset), ax, 0, 0), w),
                 dest);
         }
         break;
@@ -870,6 +919,7 @@ static void store(enum reg r, struct var v)
 {
     const int w = size_of(v.type);
     struct var field;
+    enum reg ax;
     int mask;
     enum opcode op = INSTR_MOV;
 
@@ -899,7 +949,12 @@ static void store(enum reg r, struct var v)
 
     if (v.kind == DIRECT) {
         assert(!is_array(v.type));
-        emit(op, OPT_REG_MEM, reg(r, w), location_of(v, w));
+        if (is_register_allocated(v)) {
+            ax = allocated_register(v);
+            emit(op, OPT_REG_REG, reg(r, w), reg(ax, w));
+        } else {
+            emit(op, OPT_REG_MEM, reg(r, w), location_of(v, w));            
+        }
     } else {
         assert(v.kind == DEREF);
         if (!v.symbol) {
@@ -907,7 +962,7 @@ static void store(enum reg r, struct var v)
             load_int(v, R11, 8);
         } else {
             assert(is_pointer(v.symbol->type));
-            load_int(var_direct(v.symbol), R11, size_of(v.symbol->type));
+            load_int(var_direct(v.symbol), R11, 8);
         }
         emit(op, OPT_REG_MEM,
             reg(r, w), location(
@@ -1120,13 +1175,99 @@ static int push_function_arguments(Type type, struct param_class respc)
     return mem_used;
 }
 
-static void enter(struct definition *def)
+/*
+ * Assign stack location to locals, writing sym->stack_offset.
+ *
+ * Round up to nearest eightbyte, making all variables aligned.
+ */
+static int allocate_locals(
+    struct definition *def,
+    int reg_offset,
+    int stack_offset)
+{
+    int i;
+    struct symbol *sym;
+
+    for (i = 0; i < array_len(&def->locals); ++i) {
+        sym = array_get(&def->locals, i);
+        assert(!sym->stack_offset);
+        if (sym->linkage == LINK_NONE && sym->slot == 0) {
+            stack_offset -= EIGHTBYTES(sym->type) * 8;
+            sym->stack_offset = stack_offset - reg_offset;
+        }
+    }
+
+    return stack_offset;
+}
+
+/*
+ * Assign a subset of local variables to temporary registers, populating
+ * sym->slot.
+ *
+ * Return number of bytes allocated, which must be taken into account
+ * when placing other temporaries and parameters on stack.
+ */
+static int allocate_registers(struct definition *def)
+{
+    int i, offset;
+    struct symbol *sym;
+
+    offset = 0;
+    temp_int_regs_used = 0;
+    for (i = 0; i < array_len(&def->locals); ++i) {
+        sym = array_get(&def->locals, i);
+        if (is_temporary(sym)
+            && sym->slot == 0
+            && is_arithmetic(sym->type)
+            && (is_integer(sym->type) || is_pointer(sym->type))
+            && temp_int_regs_used < TEMP_INT_REGS)
+        {
+            assert(sym->linkage == LINK_NONE);
+            sym->slot = ++temp_int_regs_used;
+            offset += 8;
+        }
+    }
+
+    return offset;
+}
+
+/*
+ * Offset from %rbp where address of return value is stored, in case of
+ * function with class PC_MEMORY. The return address is passed in the
+ * first integer register on enter, and needs to be preserved to write
+ * the result before exit. The value is stored in %rax on return.
+ *
+ * The offset depends on number of registers used for temporaries, and
+ * is set up on enter().
+ */
+static int return_address_offset;
+
+/*
+ * Emit code for entering a function.
+ *
+ * Return number of bytes subtracted from %rsp allocated for local
+ * variables.
+ *
+ * The stack frame contains, in order:
+ *
+ *  1) Registers allocated for temporaries that are callee saved, being
+ *     %rbx, %r12 through %r15.
+ *  2) Address of return value if result is PC_MEMORY. Part of 3) if
+ *     function is vararg.
+ *  3) Register save area for vararg functions, holding all values that
+ *     could have been passed in registers.
+ *  4) Parameters passed in registers.
+ *  5) Local variables.
+ *
+ */
+static int enter(struct definition *def)
 {
     int i, n,
         register_args = 0,  /* Arguments passed in registers. */
         next_integer_reg = 0,
         next_sse_reg = 0,
         mem_offset = 16,    /* Offset of PC_MEMORY parameters. */
+        reg_offset = 0,     /* Offset of %rsp to save temp registers. */
         stack_offset = 0;   /* Offset of %rsp to for local variables. */
     struct var ref;
     struct symbol *sym;
@@ -1140,6 +1281,9 @@ static void enter(struct definition *def)
     type = def->symbol->type;
     assert(is_function(type));
 
+    /* Figure out how many registers are used for temporaries. */
+    reg_offset = allocate_registers(def);
+
     /*
      * Address of return value is passed as first integer argument. If
      * return value is MEMORY, store the address at stack offset -8.
@@ -1148,6 +1292,10 @@ static void enter(struct definition *def)
     if (res.eightbyte[0] == PC_MEMORY) {
         stack_offset = -8;
         next_integer_reg = 1;
+        return_address_offset = -8 - reg_offset;
+        if (is_vararg(type)) {
+            return_address_offset = -176 - reg_offset;
+        }
     }
 
     /*
@@ -1178,25 +1326,16 @@ static void enter(struct definition *def)
             argpc[register_args].i = i;
             register_args++;
             stack_offset -= n * 8;
-            sym->stack_offset = stack_offset;
+            sym->stack_offset = stack_offset - reg_offset;
         } else {
             sym->stack_offset = mem_offset;
             mem_offset += n * 8;
         }
     }
 
-    /*
-     * Assign storage to locals. Round up to nearest eightbyte, making
-     * all variables aligned.
-     */
-    for (i = 0; i < array_len(&def->locals); ++i) {
-        sym = array_get(&def->locals, i);
-        assert(!sym->stack_offset);
-        if (sym->linkage == LINK_NONE) {
-            stack_offset -= EIGHTBYTES(sym->type) * 8;
-            sym->stack_offset = stack_offset;
-        }
-    }
+    stack_offset = allocate_locals(def, reg_offset, stack_offset);
+    for (i = 0; i < temp_int_regs_used; ++i)
+        emit(INSTR_PUSH, OPT_REG, reg(temp_int_reg[i], 8));
 
     /*
      * Make invariant to have %rsp aligned to 0x10, which is mandatory
@@ -1205,20 +1344,18 @@ static void enter(struct definition *def)
      * this point. Alignment must also be considered when calling other
      * functions, to push memory divisible by 16.
      */
-    if (stack_offset < 0) {
-        i = (-stack_offset) % 16;
+    if (stack_offset - reg_offset < 0) {
+        i = (reg_offset - stack_offset) % 16;
         stack_offset -= 16 - i;
     }
 
-    /*
-     * Allocate space in the call frame to hold local variables. Store
-     * return address to well known location -8(%rbp).
-     */
+    /* Allocate space in the call frame to hold local variables. */
     if (stack_offset < 0) {
         emit(INSTR_SUB, OPT_IMM_REG, constant(-stack_offset, 8), reg(SP, 8));
         if (res.eightbyte[0] == PC_MEMORY) {
             emit(INSTR_MOV, OPT_REG_MEM,
-                reg(param_int_reg[0], 8), location(address(-8, BP, 0, 0), 8));
+                reg(param_int_reg[0], 8),
+                location(address(return_address_offset, BP, 0, 0), 8));
         }
     }
 
@@ -1265,6 +1402,8 @@ static void enter(struct definition *def)
             param_sse_reg + next_sse_reg);
         count_register_classifications(arg, &next_integer_reg, &next_sse_reg);
     }
+
+    return -stack_offset;
 }
 
 /*
@@ -1351,7 +1490,13 @@ static void compile__builtin_va_start(struct var args)
 static void compile__builtin_va_arg(struct var res, struct var args)
 {
     const struct symbol *stack, *done = NULL;
-    struct var slice, gp_offset, fp_offset, overflow_arg_area, reg_save_area;
+    enum reg ax;
+    struct var
+        slice,
+        gp_offset,
+        fp_offset,
+        overflow_arg_area,
+        reg_save_area;
     struct param_class pc;
     int i, n, w,
         num_gp = 0,
@@ -1495,9 +1640,14 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     load(overflow_arg_area, SI);
     w = size_of(res.type);
     if (is_standard_register_width(w) && res.kind == DIRECT) {
-        emit(INSTR_MOV, OPT_MEM_REG,
-            location(address(0, SI, 0, 0), w), reg(AX, w));
-        emit(INSTR_MOV, OPT_REG_MEM, reg(AX, w), location_of(res, w));
+        if ((ax = allocated_register(res)) != 0) {
+            emit(INSTR_MOV, OPT_MEM_REG,
+                location(address(0, SI, 0, 0), w), reg(ax, w));
+        } else {
+            emit(INSTR_MOV, OPT_MEM_REG,
+                location(address(0, SI, 0, 0), w), reg(AX, w));
+            emit(INSTR_MOV, OPT_REG_MEM, reg(AX, w), location_of(res, w));
+        }
     } else {
         load_address(res, DI);
         emit(INSTR_MOV, OPT_IMM_REG, constant(w, 4), reg(DX, 4));
@@ -1589,6 +1739,7 @@ static enum opcode compile_compare(
 {
     size_t w;
     enum opcode cmp;
+    enum reg ax, cx;
     enum reg xmm0, xmm1;
 
     switch (op) {
@@ -1633,10 +1784,15 @@ static enum opcode compile_compare(
         assert(w == size_of(r.type));
         if (is_constant(l) && w < 8) {
             if (r.kind == DIRECT && !is_field(r)) {
-                emit(INSTR_CMP, OPT_IMM_MEM, value_of(l, w), location_of(r, w));
+                if ((ax = allocated_register(r)) != 0) {
+                    emit(INSTR_CMP, OPT_IMM_REG, value_of(l, w), reg(ax, w));
+                } else {
+                    emit(INSTR_CMP, OPT_IMM_MEM, value_of(l, w),
+                        location_of(r, w));
+                }
             } else {
-                load(r, AX);
-                emit(INSTR_CMP, OPT_IMM_REG, value_of(l, w), reg(AX, w));
+                ax = load_cast(r, r.type);
+                emit(INSTR_CMP, OPT_IMM_REG, value_of(l, w), reg(ax, w));
             }
             switch (cmp) {
             case INSTR_SETAE:
@@ -1655,22 +1811,39 @@ static enum opcode compile_compare(
             }
         } else if (is_constant(r) && w < 8) {
             if (l.kind == DIRECT && !is_field(l)) {
-                emit(INSTR_CMP, OPT_IMM_MEM, value_of(r, w), location_of(l, w));
+                if ((ax = allocated_register(l)) != 0) {
+                    emit(INSTR_CMP, OPT_IMM_REG, value_of(r, w), reg(ax, w));
+                } else {
+                    emit(INSTR_CMP, OPT_IMM_MEM, value_of(r, w),
+                        location_of(l, w));
+                }
             } else {
-                load(l, AX);
-                emit(INSTR_CMP, OPT_IMM_REG, value_of(r, w), reg(AX, w));
+                ax = load_cast(l, l.type);
+                emit(INSTR_CMP, OPT_IMM_REG, value_of(r, w), reg(ax, w));
             }
         } else {
             if (l.kind == DIRECT && !is_field(l)) {
-                load(r, AX);
-                emit(INSTR_CMP, OPT_REG_MEM, reg(AX, w), location_of(l, w));
+                if ((ax = allocated_register(l)) != 0) {
+                    ax = load_cast(l, l.type);
+                    cx = load_cast(r, r.type);
+                    emit(INSTR_CMP, OPT_REG_REG, reg(cx, w), reg(ax, w));
+                } else {
+                    ax = load_cast(r, r.type);
+                    emit(INSTR_CMP, OPT_REG_MEM, reg(ax, w), location_of(l, w));
+                }
             } else if (r.kind == DIRECT && !is_field(r)) {
-                load(l, AX);
-                emit(INSTR_CMP, OPT_MEM_REG, location_of(r, w), reg(AX, w));
+                if ((ax = allocated_register(r)) != 0) {
+                    ax = load_cast(l, l.type);
+                    cx = load_cast(r, r.type);
+                    emit(INSTR_CMP, OPT_REG_REG, reg(cx, w), reg(ax, w));
+                } else {
+                    ax = load_cast(l, l.type);
+                    emit(INSTR_CMP, OPT_MEM_REG, location_of(r, w), reg(ax, w));
+                }
             } else {
-                load(l, AX);
-                load(r, CX);
-                emit(INSTR_CMP, OPT_REG_REG, reg(CX, w), reg(AX, w));
+                ax = load_cast(l, l.type);
+                cx = load_cast(r, r.type);
+                emit(INSTR_CMP, OPT_REG_REG, reg(cx, w), reg(ax, w));
             }
         }
     }
@@ -1733,22 +1906,42 @@ static enum reg compile_add(
             ax = AX;
             if (operand_equal(target, r)) {
                 if (is_int_constant(l)) {
-                    emit(INSTR_ADD, OPT_IMM_MEM,
-                        value_of(l, w), location_of(target, w));
+                    if ((cx = allocated_register(r)) != 0) {
+                        emit(INSTR_ADD, OPT_REG_REG, reg(ax, w), reg(cx, w));
+                        ax = cx;
+                    } else {
+                        emit(INSTR_ADD, OPT_IMM_MEM,
+                            value_of(l, w), location_of(target, w));
+                    }
                 } else {
                     ax = load_cast(l, type);
-                    emit(INSTR_ADD, OPT_REG_MEM,
-                        reg(ax, w), location_of(target, w));
+                    if ((cx = allocated_register(r)) != 0) {
+                        emit(INSTR_ADD, OPT_REG_REG, reg(ax, w), reg(cx, w));
+                        ax = cx;
+                    } else {
+                        emit(INSTR_ADD, OPT_REG_MEM,
+                            reg(ax, w), location_of(target, w));
+                    }
                 }
                 return ax;
             } else if (operand_equal(target, l)) {
                 if (is_int_constant(r)) {
-                    emit(INSTR_ADD, OPT_IMM_MEM,
-                        value_of(r, w), location_of(target, w));
+                    if ((cx = allocated_register(l)) != 0) {
+                        emit(INSTR_ADD, OPT_REG_REG, reg(ax, w), reg(cx, w));
+                        ax = cx;
+                    } else {
+                        emit(INSTR_ADD, OPT_IMM_MEM,
+                            value_of(r, w), location_of(target, w));
+                    }
                 } else {
                     ax = load_cast(r, type);
-                    emit(INSTR_ADD, OPT_REG_MEM,
-                        reg(ax, w), location_of(target, w));
+                    if ((cx = allocated_register(l)) != 0) {
+                        emit(INSTR_ADD, OPT_REG_REG, reg(ax, w), reg(cx, w));
+                        ax = cx;
+                    } else {
+                        emit(INSTR_ADD, OPT_REG_MEM,
+                            reg(ax, w), location_of(target, w));
+                    }
                 }
                 return ax;
             }
@@ -1761,10 +1954,18 @@ static enum reg compile_add(
             emit(INSTR_ADD, OPT_IMM_REG, value_of(r, w), reg(ax, w));
         } else if (l.kind == DIRECT && !is_field(l)) {
             ax = load_cast(r, type);
-            emit(INSTR_ADD, OPT_MEM_REG, location_of(l, w), reg(ax, w));
+            if ((cx = allocated_register(l)) != 0) {
+                emit(INSTR_ADD, OPT_REG_REG, reg(cx, w), reg(ax, w));
+            } else {
+                emit(INSTR_ADD, OPT_MEM_REG, location_of(l, w), reg(ax, w));
+            }
         } else if (r.kind == DIRECT && !is_field(r)) {
             ax = load_cast(l, type);
-            emit(INSTR_ADD, OPT_MEM_REG, location_of(r, w), reg(ax, w));
+            if ((cx = allocated_register(r)) != 0) {
+                emit(INSTR_ADD, OPT_REG_REG, reg(cx, w), reg(ax, w));
+            } else {
+                emit(INSTR_ADD, OPT_MEM_REG, location_of(r, w), reg(ax, w));
+            }
         } else {
             ax = load_cast(l, type);
             cx = load_cast(r, type);
@@ -1896,11 +2097,12 @@ static enum reg compile_mul(
             }
         }
     } else {
-        ax = load(r, AX);
-        if (l.kind == DIRECT) {
+        ax = load_cast(r, r.type);
+        assert(ax == AX);
+        if (l.kind == DIRECT && !is_register_allocated(l)) {
             emit(INSTR_MUL, OPT_MEM, location_of(l, w));
         } else {
-            cx = load(l, CX);
+            cx = load_cast(l, l.type);
             emit(INSTR_MUL, OPT_REG, reg(cx, w));
         }
         if (!is_void(target.type)) {
@@ -1940,7 +2142,8 @@ static enum reg compile_div(
             }
         }
     } else {
-        ax = load(l, AX);
+        ax = load_cast(l, l.type);
+        assert(ax == AX);
         if (is_signed(l.type)) {
             if (size_of(l.type) == 8) {
                 emit(INSTR_CQO, OPT_NONE);
@@ -1951,15 +2154,12 @@ static enum reg compile_div(
         } else {
             emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
         }
-        if (r.kind == DIRECT) {
-            emit(is_signed(type) ? INSTR_IDIV : INSTR_DIV,
-                OPT_MEM,
-                location_of(r, size_of(r.type)));
+        opc = is_signed(type) ? INSTR_IDIV : INSTR_DIV;
+        if (r.kind == DIRECT && !is_register_allocated(r)) {
+            emit(opc, OPT_MEM, location_of(r, size_of(r.type)));
         } else {
-            cx = load(r, CX);
-            emit(is_signed(type) ? INSTR_IDIV : INSTR_DIV,
-                OPT_REG,
-                reg(cx, size_of(r.type)));
+            cx = load_cast(r, r.type);
+            emit(opc, OPT_REG, reg(cx, size_of(r.type)));
         }
         if (!is_void(target.type)) {
             store(ax, target);
@@ -1976,9 +2176,12 @@ static enum reg compile_mod(
     struct var l,
     struct var r)
 {
+    enum opcode opc;
+    enum reg ax;
     assert(!is_real(type));
 
-    load(l, AX);
+    ax = load_cast(l, l.type);
+    assert(ax == AX);
     if (is_signed(l.type)) {
         if (size_of(l.type) == 8) {
             emit(INSTR_CQO, OPT_NONE);
@@ -1990,15 +2193,12 @@ static enum reg compile_mod(
         emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
     }
 
-    if (r.kind == DIRECT) {
-        emit(is_signed(type) ? INSTR_IDIV : INSTR_DIV,
-            OPT_MEM,
-            location_of(r, size_of(r.type)));
+    opc = is_signed(type) ? INSTR_IDIV : INSTR_DIV;
+    if (r.kind == DIRECT && !is_register_allocated(r)) {
+        emit(opc, OPT_MEM, location_of(r, size_of(r.type)));
     } else {
-        load(r, CX);
-        emit(is_signed(type) ? INSTR_IDIV : INSTR_DIV,
-            OPT_REG,
-            reg(CX, size_of(r.type)));
+        ax = load_cast(r, r.type);
+        emit(opc, OPT_REG, reg(ax, size_of(r.type)));
     }
 
     if (!is_void(target.type)) {
@@ -2206,6 +2406,7 @@ static enum reg compile_cast(
         assert(!is_void(target.type));
         store_copy_object(l, target);
         ax = AX;
+        break;
     }
 
     return ax;
@@ -2370,20 +2571,14 @@ static void compile_return(Type func, struct expression expr)
         assert(is_identity(expr));
         label = create_label(definition);
         load_address(expr.l, SI);
-        if (is_vararg(func)) {
-            emit(INSTR_MOV, OPT_MEM_REG,
-                location(address(-176, BP, 0, 0), 8), reg(DI, 8));
-        } else {
-            emit(INSTR_MOV, OPT_MEM_REG,
-                location(address(-8, BP, 0, 0), 8), reg(DI, 8));
-        }
+        emit(INSTR_MOV, OPT_MEM_REG,
+            location(address(return_address_offset, BP, 0, 0), 8), reg(DI, 8));
         emit(INSTR_CMP, OPT_REG_REG, reg(DI, 8), reg(SI, 8));
         emit(INSTR_JE, OPT_IMM, addr(label));
         emit(INSTR_MOV, OPT_IMM_REG, constant(w, 8), reg(DX, 8));
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
-        /* should this be different for vararg? */
         emit(INSTR_MOV, OPT_MEM_REG,
-            location(address(-8, BP, 0, 0), 8), reg(AX, 8));
+            location(address(return_address_offset, BP, 0, 0), 8), reg(AX, 8));
         enter_context(label);
         break;
     }
@@ -2399,7 +2594,7 @@ static void compile_return(Type func, struct expression expr)
  * object, branchhing to the correct next block. All scalar expressions
  * are allowed.
  */
-static void compile_block(struct block *block, Type type)
+static void compile_block(struct block *block, Type type, int stack)
 {
     int i;
     enum reg ax;
@@ -2426,13 +2621,19 @@ static void compile_block(struct block *block, Type type)
             relase_regs();
             assert(x87_stack == 0);
         }
+        if (temp_int_regs_used) {
+            if (stack)
+                emit(INSTR_ADD, OPT_IMM_REG, constant(stack, 8), reg(SP, 8));
+            for (i = temp_int_regs_used; i > 0; --i)
+                emit(INSTR_POP, OPT_REG, reg(temp_int_reg[i - 1], 8));
+        }
         emit(INSTR_LEAVE, OPT_NONE);
         emit(INSTR_RET, OPT_NONE);
     } else if (!block->jump[1]) {
         if (block->jump[0]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
         } else {
-            compile_block(block->jump[0], type);
+            compile_block(block->jump[0], type, stack);
         }
     } else {
         assert(block->jump[0]);
@@ -2511,10 +2712,10 @@ static void compile_block(struct block *block, Type type)
         if (block->jump[1]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
         } else {
-            compile_block(block->jump[1], type);
+            compile_block(block->jump[1], type, stack);
         }
 
-        compile_block(block->jump[0], type);
+        compile_block(block->jump[0], type, stack);
     }
 }
 
@@ -2653,16 +2854,18 @@ static void compile_data(struct definition *def)
 
 static void compile_function(struct definition *def)
 {
+    int stack;
+
     assert(is_function(def->symbol->type));
     enter_context(def->symbol);
     emit(INSTR_PUSH, OPT_REG, reg(BP, 8));
     emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(BP, 8));
 
     /* Make sure parameters and local variables are placed on stack. */
-    enter(def);
+    stack = enter(def);
 
     /* Recursively assemble body. */
-    compile_block(def->body, def->symbol->type);
+    compile_block(def->body, def->symbol->type, stack);
 }
 
 void set_compile_target(FILE *stream, const char *file)

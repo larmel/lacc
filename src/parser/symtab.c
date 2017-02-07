@@ -53,6 +53,7 @@ struct symbol *sym_create_temporary(Type type)
         sym = array_pop_back(&temporaries);
         sym->stack_offset = 0;
         sym->index = 0;
+        sym->slot = 0;
         assert(sym->symtype == SYM_DEFINITION);
         assert(sym->linkage == LINK_NONE);
     } else {

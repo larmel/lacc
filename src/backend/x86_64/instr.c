@@ -172,7 +172,7 @@ static struct code mov(
     union operand a,
     union operand b)
 {
-    struct code c = {{0}};
+    struct code c = {0};
 
     switch (optype) {
     case OPT_IMM_REG:
@@ -214,7 +214,6 @@ static struct code mov(
         break;
     case OPT_REG_REG:
         assert(a.reg.w == b.reg.w);
-        assert(a.reg.w == 4 || a.reg.w == 8);
         if (rrex(a.reg) || rrex(b.reg)) {
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
@@ -261,11 +260,16 @@ static struct code movsx(
     switch (optype) {
     default: assert(0);
     case OPT_REG_REG:
-        assert(a.reg.w == 4);
-        assert(b.reg.w == 8);
         c.val[c.len++] = REX | W(b.reg) | R(b.reg) | B(a.reg);
-        c.val[c.len++] = 0x63;
-        c.val[c.len++] = 0xC0 | reg(b.reg) << 3 | reg(a.reg);
+        if (a.reg.w == 4) {
+            c.val[c.len++] = 0x63;
+            c.val[c.len++] = 0xC0 | reg(b.reg) << 3 | reg(a.reg);
+        } else {
+            assert(a.reg.w == 1 || a.reg.w == 2);
+            c.val[c.len++] = 0x0F;
+            c.val[c.len++] = 0xBE | w(a.reg);
+            c.val[c.len++] = 0xC0 | reg(b.reg) << 3 | reg(a.reg);
+        }
         break;
     case OPT_MEM_REG:
         if (rrex(b.reg) || mrex(a.mem.addr)) {
@@ -290,11 +294,11 @@ static struct code movzx(
     union operand a,
     union operand b)
 {
-    struct code c = {{0}};
+    struct code c = {0};
 
     if (optype == OPT_REG_REG) {
         if (rrex(a.reg) || rrex(b.reg)) {
-            c.val[c.len++] = REX | W(b.reg) | R(b.reg);
+            c.val[c.len++] = REX | W(b.reg) | R(b.reg) | B(a.reg);
         }
         c.val[c.len++] = 0x0F;
         c.val[c.len++] = 0xB6 | w(a.reg);
@@ -319,7 +323,11 @@ static struct code push(enum instr_optype optype, union operand op)
 
     switch (optype) {
     case OPT_REG:
-        c.val[c.len++] = 0x50 + reg(op.reg);
+        assert(op.reg.w == 8);
+        if (is_64_bit_reg(op.reg.r)) {
+            c.val[c.len++] = REX | B(op.reg);
+        }
+        c.val[c.len++] = 0x50 | R(op.reg) | reg(op.reg);
         break;
     case OPT_IMM:
         assert(op.imm.w == 8);
@@ -349,14 +357,14 @@ static struct code push(enum instr_optype optype, union operand op)
 static struct code pop(enum instr_optype optype, union operand op)
 {
     struct code c = {0};
-
     assert(optype == OPT_REG);
     assert(op.reg.w == 8);
+
     if (is_64_bit_reg(op.reg.r)) {
-        c.val[c.len++] = REX | W(op.reg) | R(op.reg);
+        c.val[c.len++] = REX | B(op.reg);
     }
 
-    c.val[c.len++] = 0x58 | ((op.reg.r - 1) % 8);
+    c.val[c.len++] = 0x58 | W(op.reg) | reg(op.reg);
     return c;
 }
 
@@ -491,9 +499,8 @@ static struct code cmp(
 
     switch (optype) {
     case OPT_IMM_REG:
-        assert(!is_64_bit_reg(b.reg.r));
         if (rrex(b.reg)) {
-            c.val[c.len++] = REX | W(a.imm);
+            c.val[c.len++] = REX | W(a.imm) | B(b.reg);
         } else if (is_16_bit(b.reg)) {
             c.val[c.len++] = PREFIX_OPERAND_SIZE;
         } else if (is_8_bit(b.reg)) {
@@ -751,7 +758,7 @@ static struct code encode_bitwise(
     switch (optype) {
     default: assert(0);
     case OPT_REG_REG:
-        if (rrex(a.reg)) {
+        if (rrex(a.reg) || rrex(b.reg)) {
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
         c.val[c.len++] = opcode | w(a.reg);
@@ -911,8 +918,7 @@ static struct code sse_generic(
     union operand a,
     union operand b)
 {
-    struct code c = {{0}};
-    assert(optype == OPT_MEM_REG || optype == OPT_REG_REG);
+    struct code c = {0};
 
     c.val[c.len++] = opcode1;
     if (optype == OPT_MEM_REG) {
@@ -926,8 +932,9 @@ static struct code sse_generic(
         c.val[c.len++] = opcode2;
         encode_addr(&c, reg(b.reg), a.mem.addr, 0);
     } else {
+        assert(optype == OPT_REG_REG);
         if (rrex(a.reg) || rrex(b.reg)) {
-            c.val[c.len++] = REX | W(a.reg) | W(b.reg) | R(a.reg) | B(b.reg);
+            c.val[c.len++] = REX | W(a.reg) | W(b.reg) | B(a.reg);
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = opcode2;
