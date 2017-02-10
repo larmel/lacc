@@ -65,6 +65,7 @@ static unsigned long use(const struct expression *expr)
         r |= set_use_bit(expr->r);
     case IR_OP_CAST:
     case IR_OP_NOT:
+    case IR_OP_NEG:
     case IR_OP_CALL:
     case IR_OP_VA_ARG:
         r |= set_use_bit(expr->l);

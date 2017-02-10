@@ -159,6 +159,9 @@ static void dot_print_expr(struct expression expr)
     case IR_OP_NOT:
         fprintf(stream, "~%s", vartostr(expr.l));
         break;
+    case IR_OP_NEG:
+        fprintf(stream, "-%s", vartostr(expr.l));
+        break;
     case IR_OP_ADD:
         fprintf(stream, "%s + %s", vartostr(expr.l), vartostr(expr.r));
         break;

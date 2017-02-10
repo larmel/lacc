@@ -456,7 +456,7 @@ static struct block *unary_expression(
         consume('-');
         block = cast_expression(def, block);
         value = eval(def, block, block->expr);
-        block->expr = eval_unary_minus(def, block, value);
+        block->expr = eval_expr(def, block, IR_OP_NEG, value);
         break;
     case SIZEOF: {
         head = cfg_block_init(def);

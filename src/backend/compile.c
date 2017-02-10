@@ -313,16 +313,18 @@ static void emit_load(
          * floating point value directly to register. Need to store it
          * in memory first, so create symbol holding constant value.
          */
-        if (is_zero(source.imm, source.type)) {
+        if (is_real(source.type)) {
+            if (!source.symbol) {
+                source.symbol = sym_create_constant(source.type, source.imm);
+            }
+            source.kind = DIRECT;
+        } else if (is_zero(source.imm, source.type)) {
             assert(!is_long_double(source.type));
             emit(is_real(source.type) ? INSTR_PXOR : INSTR_XOR,
                 OPT_REG_REG,
                 dest,
                 dest);
             break;
-        } else if (is_real(source.type)) {
-            source.symbol = sym_create_constant(source.type, source.imm);
-            source.kind = DIRECT;
         } else {
             assert(opcode == INSTR_MOV);
             emit(opcode, OPT_IMM_REG, value_of(source, dest.w), dest);
@@ -1827,6 +1829,44 @@ static enum reg compile_not(
     return ax;
 }
 
+static enum reg compile_neg(
+    struct var target,
+    struct var l)
+{
+    static struct symbol *c32, *c64;
+
+    enum reg xmm0, xmm1;
+    struct var val;
+    union value num = {0};
+    size_t w;
+
+    if (is_float(l.type)) {
+        if (!c32) {
+            num.u = 1u << 31;
+            c32 = sym_create_constant(basic_type__float, num);
+        }
+        val = var_direct(c32);
+    } else {
+        assert(is_double(l.type));
+        if (!c64) {
+            num.u = 1ul << 63;
+            c64 = sym_create_constant(basic_type__double, num);
+        }
+        val = var_direct(c64);
+    }
+
+    w = size_of(l.type);
+    assert(w == size_of(val.type));
+    xmm0 = load_cast(val, val.type);
+    xmm1 = load_cast(l, l.type);
+    emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
+    if (!is_void(target.type)) {
+        store(xmm0, target);
+    }
+
+    return xmm0;
+}
+
 static enum reg compile_mul(
     struct var target,
     Type type,
@@ -2190,6 +2230,9 @@ static enum reg compile_assign(struct var target, struct expression expr)
         break;
     case IR_OP_NOT:
         ax = compile_not(target, expr.l);
+        break;
+    case IR_OP_NEG:
+        ax = compile_neg(target, expr.l);
         break;
     case IR_OP_ADD:
         ax = compile_add(target, expr.type, expr.l, expr.r);

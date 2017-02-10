@@ -86,6 +86,7 @@ struct expression {
         IR_OP_CALL,   /* l()    */
         IR_OP_VA_ARG, /* va_arg(l, T) */
         IR_OP_NOT,    /* ~l     */
+        IR_OP_NEG,    /* -l     */
         IR_OP_ADD,    /* l + r  */
         IR_OP_SUB,    /* l - r  */
         IR_OP_MUL,    /* l * r  */

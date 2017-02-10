@@ -105,6 +105,7 @@ static int enumerate_used_symbols(struct block *block)
             n += count_symbol((struct symbol *) s->expr.r.symbol);
         case IR_OP_CAST:
         case IR_OP_NOT:
+        case IR_OP_NEG:
         case IR_OP_CALL:
         case IR_OP_VA_ARG:
             n += count_symbol((struct symbol *) s->expr.l.symbol);
@@ -122,6 +123,7 @@ static int enumerate_used_symbols(struct block *block)
             n += count_symbol((struct symbol *) block->expr.r.symbol);
         case IR_OP_CAST:
         case IR_OP_NOT:
+        case IR_OP_NEG:
         case IR_OP_CALL:
         case IR_OP_VA_ARG:
             n += count_symbol((struct symbol *) block->expr.l.symbol);

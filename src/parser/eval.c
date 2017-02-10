@@ -215,6 +215,7 @@ static struct expression create_expr(enum optype op, struct var l, ...)
     expr.op = op;
     va_start(args, l);
     switch (op) {
+    default: assert(0);
     case IR_OP_CAST:
     case IR_OP_VA_ARG:
         expr.type = va_arg(args, Type );
@@ -225,6 +226,9 @@ static struct expression create_expr(enum optype op, struct var l, ...)
         break;
     case IR_OP_NOT:
         assert(is_integer(l.type));
+        expr.type = l.type;
+        break;
+    case IR_OP_NEG:
         expr.type = l.type;
         break;
     case IR_OP_ADD:
@@ -972,6 +976,39 @@ static struct expression not(
     return expr;
 }
 
+static struct expression neg(
+    struct definition *def,
+    struct block *block,
+    struct var var)
+{
+    struct expression expr;
+
+    if (!is_arithmetic(var.type)) {
+        error("Unary (-) operand must be of arithmetic type.");
+        exit(1);
+    }
+
+    if (is_float(var.type)) {
+        if (var.kind == IMMEDIATE) {
+            var.imm.f = -var.imm.f;
+            expr = as_expr(var);
+        } else {
+            expr = create_expr(IR_OP_NEG, var);
+        }
+    } else if (is_double(var.type)) {
+        if (var.kind == IMMEDIATE) {
+            var.imm.d = -var.imm.d;
+            expr = as_expr(var);
+        } else {
+            expr = create_expr(IR_OP_NEG, var);
+        }
+    } else {
+        expr = sub(def, block, var_int(0), var);
+    }
+
+    return expr;
+}
+
 static struct expression call(struct var var)
 {
     if (!is_pointer(var.type) || !is_function(type_next(var.type))) {
@@ -1049,66 +1086,44 @@ struct expression eval_expr(
 
     l = rvalue(def, block, l);
     va_start(args, l);
-    if (optype == IR_OP_CAST || optype == IR_OP_VA_ARG) {
+    switch (optype) {
+    case IR_OP_CAST:
+    case IR_OP_VA_ARG:
         type = va_arg(args, Type);
-    } else if (optype != IR_OP_NOT && optype != IR_OP_CALL) {
+        break;
+    case IR_OP_NOT:
+    case IR_OP_NEG:
+    case IR_OP_CALL:
+        break;
+    default:
         r = va_arg(args, struct var);
         r = rvalue(def, block, r);
+        break;
     }
-    va_end(args);
 
+    va_end(args);
     switch (optype) {
     default: assert(0);
-    case IR_OP_CAST: return cast(l, type);
-    case IR_OP_CALL: return call(l);
+    case IR_OP_CAST:   return cast(l, type);
+    case IR_OP_CALL:   return call(l);
     case IR_OP_VA_ARG: return eval_va_arg(l, type);
-    case IR_OP_NOT:  return not(def, block, l);
-    case IR_OP_MOD:  return mod(def, block, l, r);
-    case IR_OP_MUL:  return mul(def, block, l, r);
-    case IR_OP_DIV:  return ediv(def, block, l, r);
-    case IR_OP_ADD:  return add(def, block, l, r);
-    case IR_OP_SUB:  return sub(def, block, l, r);
-    case IR_OP_EQ:   return cmp_eq(def, block, l, r);
-    case IR_OP_NE:   return cmp_ne(def, block, l, r);
-    case IR_OP_GE:   return cmp_ge(def, block, l, r);
-    case IR_OP_GT:   return cmp_gt(def, block, l, r);
-    case IR_OP_AND:  return and(def, block, l, r);
-    case IR_OP_XOR:  return xor(def, block, l, r);
-    case IR_OP_OR:   return or(def, block, l, r);
-    case IR_OP_SHL:  return shiftl(def, block, l, r);
-    case IR_OP_SHR:  return shiftr(def, block, l, r);
+    case IR_OP_NOT:    return not(def, block, l);
+    case IR_OP_NEG:    return neg(def, block, l);
+    case IR_OP_MOD:    return mod(def, block, l, r);
+    case IR_OP_MUL:    return mul(def, block, l, r);
+    case IR_OP_DIV:    return ediv(def, block, l, r);
+    case IR_OP_ADD:    return add(def, block, l, r);
+    case IR_OP_SUB:    return sub(def, block, l, r);
+    case IR_OP_EQ:     return cmp_eq(def, block, l, r);
+    case IR_OP_NE:     return cmp_ne(def, block, l, r);
+    case IR_OP_GE:     return cmp_ge(def, block, l, r);
+    case IR_OP_GT:     return cmp_gt(def, block, l, r);
+    case IR_OP_AND:    return and(def, block, l, r);
+    case IR_OP_XOR:    return xor(def, block, l, r);
+    case IR_OP_OR:     return or(def, block, l, r);
+    case IR_OP_SHL:    return shiftl(def, block, l, r);
+    case IR_OP_SHR:    return shiftr(def, block, l, r);
     }
-}
-
-struct expression eval_unary_minus(
-    struct definition *def,
-    struct block *block,
-    struct var val)
-{
-    struct expression expr;
-
-    if (!is_arithmetic(val.type)) {
-        error("Unary (-) operand must be of arithmetic type.");
-        exit(1);
-    }
-
-    if (is_float(val.type)) {
-        val.type = basic_type__unsigned_int;
-        expr = xor(def, block, imm_unsigned(val.type, 1u << 31), val);
-        val = eval(def, block, expr);
-        val.type = basic_type__float;
-        expr = as_expr(val);
-    } else if (is_double(val.type)) {
-        val.type = basic_type__unsigned_long;
-        expr = xor(def, block, imm_unsigned(val.type, 1ul << 63), val);
-        val = eval(def, block, expr);
-        val.type = basic_type__double;
-        expr = as_expr(val);
-    } else {
-        expr = sub(def, block, var_int(0), val);
-    }
-
-    return expr;
 }
 
 struct expression eval_unary_plus(struct var val)
