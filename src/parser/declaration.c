@@ -549,6 +549,7 @@ static const struct var var__immediate_zero = {IMMEDIATE, {T_INT}};
 
 /*
  * Set var = 0, using simple assignment on members for composite types.
+ *
  * This rule does not consume any input, but generates a series of
  * assignments on the given variable. Point is to be able to zero
  * initialize using normal simple assignment rules, although IR can
@@ -597,7 +598,43 @@ static void zero_initialize(
     }
 }
 
-static struct block *initialize_field(
+static void zero_initialize_bytes(
+    struct definition *def,
+    struct block *block,
+    struct var target,
+    size_t bytes)
+{
+    size_t size;
+    target.field_offset = 0;
+    target.field_width = 0;
+
+    while (bytes) {
+        size = bytes % 8;
+        if (!size) {
+            size = 8;
+        }
+        assert(size <= bytes);
+        switch (size) {
+        default:
+            target.type = basic_type__char;
+            break;
+        case 2:
+            target.type = basic_type__short;
+            break;
+        case 4:
+            target.type = basic_type__int;
+            break;
+        case 8:
+            target.type = basic_type__long;
+            break;
+        }
+        zero_initialize(def, block, target);
+        target.offset += size_of(target.type);
+        bytes -= size;
+    }
+}
+
+static struct block *initialize_member(
     struct definition *def,
     struct block *block,
     struct var target);
@@ -649,6 +686,73 @@ static int next_element(void)
 }
 
 /*
+ * Zero initialize padding bytes between previous and current member.
+ *
+ * Offset and field offset written so far is stored in target.
+ */
+static void initialize_padding(
+    struct definition *def,
+    struct block *block,
+    struct var target,
+    const struct member *prev,
+    const struct member *member)
+{
+    size_t padding;
+
+    if (!prev) {
+        if (member->field_offset) {
+            target.field_offset = 0;
+            target.field_width = member->field_offset;
+            target.type = basic_type__int;
+            zero_initialize(def, block, target);
+        }
+    } else if (prev->offset == member->offset) {
+        if (prev->field_offset + prev->field_width < member->field_offset) {
+            target.field_offset = prev->field_offset + prev->field_width;
+            target.field_width = member->field_offset - target.field_offset;
+            target.type = basic_type__int;
+            zero_initialize(def, block, target);
+        }
+    } else if (prev->offset + size_of(prev->type) < member->offset) {
+        padding = member->offset - (prev->offset + size_of(prev->type));
+        target.offset += size_of(prev->type);
+        zero_initialize_bytes(def, block, target, padding);
+    }
+}
+
+/*
+ * Initialize padding at the end of a struct.
+ *
+ * Consider both last bits of a bitfield, and any remaining space after
+ * the bitfield itself.
+ */
+static void initialize_trailing_padding(
+    struct definition *def,
+    struct block *block,
+    struct var target,
+    Type type)
+{
+    size_t padding;
+    const struct member *member;
+
+    member = get_member(type, nmembers(type) - 1);
+    if (member->field_width
+        && member->field_offset + member->field_width < 32)
+    {
+        target.type = basic_type__int;
+        target.field_offset = member->field_offset + member->field_width;
+        target.field_width = 32 - target.field_offset;
+        zero_initialize(def, block, target);
+    }
+
+    if (member->offset + size_of(member->type) < size_of(type)) {
+        padding = size_of(type) - (member->offset + size_of(member->type));
+        target.offset += size_of(member->type);
+        zero_initialize_bytes(def, block, target, padding);
+    }
+}
+
+/*
  * Initialize members of a struct or union.
  *
  * Only the first element of a union can be initialized. If the first
@@ -665,46 +769,55 @@ static struct block *initialize_struct_or_union(
     struct var target)
 {
     int i, m;
-    size_t filled = target.offset;
-    Type type = target.type;
-    const struct member *member, *prev = NULL;
+    size_t filled;
+    Type type;
+    const struct member *member, *prev;
 
+    target.lvalue = 1;
+    filled = target.offset;
+    type = target.type;
+    prev = NULL;
     assert(is_struct_or_union(type));
     assert(nmembers(type) > 0);
-    target.lvalue = 1;
+
     if (is_union(type)) {
         member = get_member(type, 0);
         target.type = member->type;
         target.field_offset = member->field_offset;
         target.field_width = member->field_width;
-        block = initialize_field(def, block, target);
+        block = initialize_member(def, block, target);
     } else {
         m = nmembers(type);
         i = 0;
         do {
             while (1) {
                 member = get_member(type, i++);
-                target.type = member->type;
                 if (!prev
                     || prev->offset != member->offset
                     || prev->field_offset != member->field_offset)
                     break;
             }
+            initialize_padding(def, block, target, prev, member);
+            target.type = member->type;
             prev = member;
             target.offset = filled + member->offset;
             target.field_offset = member->field_offset;
             target.field_width = member->field_width;
-            block = initialize_field(def, block, target);
+            block = initialize_member(def, block, target);
         } while (i < m && next_element());
 
         while (i < m) {
             member = get_member(type, i++);
+            initialize_padding(def, block, target, prev, member);
             target.type = member->type;
+            prev = member;
             target.offset = filled + member->offset;
             target.field_offset = member->field_offset;
             target.field_width = member->field_width;
             zero_initialize(def, block, target);
         }
+
+        initialize_trailing_padding(def, block, target, type);
     }
 
     return block;
@@ -741,7 +854,7 @@ static struct block *initialize_array(
     if (is_aggregate(type_next(target.type))) {
         target.type = type_next(target.type);
         do {
-            block = initialize_field(def, block, target);
+            block = initialize_member(def, block, target);
             target.offset += size_of(target.type);
         } while (next_element());
     } else {
@@ -778,7 +891,7 @@ static struct block *initialize_array(
 }
 
 /* Initialize member of an aggregate type. */
-static struct block *initialize_field(
+static struct block *initialize_member(
     struct definition *def,
     struct block *block,
     struct var target)
