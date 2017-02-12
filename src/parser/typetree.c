@@ -177,6 +177,39 @@ static void add_member(Type parent, struct member m)
 }
 
 /*
+ * Adjust alignment to next integer width after adding an unnamed zero-
+ * width field member.
+ *
+ * Insert a new field member with the appropriate padding bits. If the
+ * previous member is not a field, insert padding to align the next
+ * member to integer width.
+ *
+ * If there are no members, nothing to do. Starting with a zero width
+ * field does not put the next member at offset 4.
+ */
+static void reset_field_alignment(Type type)
+{
+    struct typetree *t;
+    int n, d;
+    const struct member *m;
+
+    assert(is_struct(type));
+    n = nmembers(type);
+    if (n) {
+        m = get_member(type, n - 1);
+        t = get_typetree_handle(type.ref);
+        if (m->field_width) {
+            d = m->field_offset + m->field_width;
+            if (d < 32) {
+                type_add_field(type, str_init(""), basic_type__int, 32 - d);
+            }
+        } else if (t->size % 4 != 0) {
+            t->size += t->size % 4;
+        }
+    }
+}
+
+/*
  * Add necessary padding to parent struct such that new member type can
  * be added. Union types need no padding.
  */
@@ -410,6 +443,12 @@ static const struct member *get_last_field_member(struct typetree *t)
     return NULL;
 }
 
+/*
+ * Add struct or union field member to typetree member list, updating
+ * total size and alignment accordingly.
+ *
+ * Anonymous union fields are ignored, not needed for alignment.
+ */
 void type_add_field(Type parent, String name, Type type, int width)
 {
     struct member m = {0};
@@ -425,7 +464,6 @@ void type_add_field(Type parent, String name, Type type, int width)
         exit(1);
     }
 
-    /* Anonymous union fields are ignored, not needed for alignment. */
     if (is_union(parent) && name.len == 0) {
         return;
     }
@@ -442,7 +480,11 @@ void type_add_field(Type parent, String name, Type type, int width)
         }
     }
 
-    add_member(parent, m);
+    if (!width) {
+        reset_field_alignment(parent);
+    } else {
+        add_member(parent, m);
+    }
 }
 
 void type_add_anonymous_member(Type parent, Type type)
@@ -478,17 +520,6 @@ void type_add_anonymous_member(Type parent, Type type)
 /*
  * Remove anonymous field members, which are only kept for alignment
  * during type construction. Return largest remaining member alignment.
- *
- * If the last member has only a single anonymous field, remove its
- * contribution to the total size. It will still matter for alignment,
- * for example the following struct will get size 4 and not 1, even
- * though it has only a single char member.
- *
- * struct {
- *     char c;
- *     int : 0;
- * }
- *
  */
 static size_t remove_anonymous_fields(struct typetree *t)
 {
@@ -501,11 +532,6 @@ static size_t remove_anonymous_fields(struct typetree *t)
         m = &array_get(&t->members, i);
         if (m->name.len == 0) {
             array_erase(&t->members, i);
-            if (m->field_offset == 0 && i == array_len(&t->members)) {
-                assert(t->size >= 4);
-                assert(t->type == T_STRUCT);
-                t->size -= 4;
-            }
         } else {
             align = type_alignment(m->type);
             if (align > maxalign) {
