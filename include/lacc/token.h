@@ -112,12 +112,6 @@ enum token_type {
     PARAM,
 
     /*
-     * Pseudo-token representing empty argument for macro expansion in
-     * preprocessor.
-     */
-    EMPTY_ARG,
-
-    /*
      * Preprocessing token representing a number. Valid strings include
      * a superset of numeric constants in C. A conversion to NUMBER
      * token is done before handed to parser.

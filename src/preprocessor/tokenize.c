@@ -80,7 +80,7 @@ const struct token basic_token[] = {
             {0},                        {0},
             {NUMBER},                   {IDENTIFIER, 1},
             {STRING},                   {PARAM},
-/* 0x78 */  {EMPTY_ARG},                {PREP_NUMBER},
+/* 0x78 */  {PREP_NUMBER},              {0},
             {0},                        TOK(OPEN_CURLY, "{"),
             TOK(OR, "|"),               TOK(CLOSE_CURLY, "}"),
             TOK(NEG, "~"),              {0},
@@ -681,9 +681,7 @@ String tokstr(struct token tok)
     static char buf[512];
     char *str;
     size_t len;
-
     assert(tok.token != PARAM);
-    assert(tok.token != EMPTY_ARG);
 
     switch (tok.token) {
     case NUMBER:

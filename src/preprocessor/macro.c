@@ -254,8 +254,6 @@ void print_token_array(const TokenArray *list)
         t = array_get(list, i);
         if (t.token == PARAM) {
             printf("<param %ld>", t.d.val.i);
-        } else if (t.token == EMPTY_ARG) {
-            printf("<no-arg>");
         } else {
             putchar('\'');
             if (t.leading_whitespace > 0) {
@@ -279,12 +277,6 @@ static struct token paste(struct token left, struct token right)
     struct token res;
     char *buf, *endptr;
     String ls, rs;
-
-    if (left.token == EMPTY_ARG) {
-        return right;
-    } else if (right.token == EMPTY_ARG) {
-        return left;
-    }
 
     ls = tokstr(left);
     rs = tokstr(right);
@@ -357,6 +349,12 @@ static void array_replace_slice(
  * the replacement list. This pass requires the parameters to not be
  * expanded.
  *
+ * Special cases to consider for empty parameter substitution:
+ *
+ *    [] ## [] produces no tokens.
+ *    [] ## ['foo'], and conversely, ['foo'] ## [], produces ['foo'].
+ *    # [] produces an empty string.
+ *
  * Return an array which still can contain PARAM tokens that needs
  * further expansion.
  */
@@ -384,26 +382,34 @@ static TokenArray expand_stringify_and_paste(
         switch (t.token) {
         case TOKEN_PASTE:
             i += 1;
-            t = array_get(&list, array_len(&list) - 1);
+            t = array_back(&list);
+            s = array_get(&def->replacement, i);
             if (t.token == PARAM) {
                 (void) array_pop_back(&list);
-                array_concat(&list, &args[t.d.val.i]);
-                t = array_get(&list, array_len(&list) - 1);
+                if (!array_len(&args[t.d.val.i])) {
+                    if (s.token == PARAM) {
+                        array_concat(&list, &args[s.d.val.i]);
+                    } else {
+                        array_push_back(&list, s);
+                    }
+                    break;
+                } else {
+                    array_concat(&list, &args[t.d.val.i]);
+                    t = array_back(&list);
+                }
             }
-            s = array_get(&def->replacement, i);
             if (s.token == PARAM) {
-                d = s.d.val.i;
-                s = array_get(&args[d], 0);
-                t = paste(t, s);
-                (void) array_pop_back(&list);
-                if (t.token != EMPTY_ARG) {
-                    array_concat(&list, &args[d]);
-                    d = array_len(&list) - array_len(&args[d]);
+                if (array_len(&args[s.d.val.i])) {
+                    t = array_pop_back(&list);
+                    d = array_len(&list);
+                    array_concat(&list, &args[s.d.val.i]);
+                    s = array_get(&args[s.d.val.i], 0);
+                    t = paste(t, s);
                     array_get(&list, d) = t;
                 }
             } else {
                 t = paste(t, s);
-                list.data[array_len(&list) - 1] = t;
+                array_back(&list) = t;
             }
             break;
         case '#':
@@ -440,13 +446,15 @@ static TokenArray expand_macro(
     if (def->params > 0) {
         for (i = 0; i < def->params; ++i) {
             expand(&args[i]);
-            if (!args[i].data[0].leading_whitespace) {
-                args[i].data[0].leading_whitespace = 1;
-            }
-            for (j = 0; j < array_len(&args[i]); ++j) {
-                t = array_get(&args[i], j);
-                if (t.is_expandable) {
-                    args[i].data[j].disable_expand = 1;
+            if (array_len(&args[i])) {
+                if (!array_get(&args[i], 0).leading_whitespace) {
+                    array_get(&args[i], 0).leading_whitespace = 1;
+                }
+                for (j = 0; j < array_len(&args[i]); ++j) {
+                    t = array_get(&args[i], j);
+                    if (t.is_expandable) {
+                        array_get(&args[i], j).disable_expand = 1;
+                    }
                 }
             }
         }
@@ -455,7 +463,7 @@ static TokenArray expand_macro(
             t = array_get(&list, i);
             if (t.token == PARAM) {
                 j = t.d.val.i;
-                if (array_get(&args[j], 0).token == EMPTY_ARG) {
+                if (!array_len(&args[j])) {
                     array_erase(&list, i);
                 } else {
                     array_replace_slice(&list, i, 1, &args[j]);
@@ -488,7 +496,7 @@ static const struct token *skip(const struct token *list, enum token_type token)
 
 /*
  * Read tokens forming next macro argument. Missing arguments are
- * represented by a single EMPTY_ARG element.
+ * represented by an empty list.
  */
 static TokenArray read_arg(
     ExpandStack *scope,
@@ -520,9 +528,6 @@ static TokenArray read_arg(
         array_push_back(&arg, t);
     }
 
-    if (!array_len(&arg)) {
-        array_push_back(&arg, basic_token[EMPTY_ARG]);
-    }
     *endptr = list;
     return arg;
 }
@@ -647,7 +652,7 @@ struct token stringify(const TokenArray *list)
     char *buf;
     size_t cap, len, ptr;
 
-    if (array_len(list) == 0 || array_get(list, 0).token == EMPTY_ARG) {
+    if (!array_len(list)) {
         str.d.string = str_init("");
     } else if (array_len(list) == 1) {
         tok = array_get(list, 0);
