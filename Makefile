@@ -37,6 +37,8 @@ bin/%-selfhost.o: src/%.c bin/bootstrap
 	bin/bootstrap $(LACCFLAGS) -c $< -o $@
 
 test-%: bin/%
+	@$(foreach file,$(wildcard test/c99/*.c),\
+		./check.sh "$< -std=c99" $(file) "$(CC) -std=c99";)
 	@$(foreach file,$(wildcard test/*.c),./check.sh $< $(file);)
 
 test: test-lacc

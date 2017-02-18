@@ -2,5 +2,6 @@ bin
 creduce
 csmith
 test/*
-!test/*.c
-!test/*.h
+!test/*/
+!test/**/*.c
+!test/**/*.h
