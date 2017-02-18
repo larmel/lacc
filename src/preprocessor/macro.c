@@ -752,8 +752,6 @@ void register_builtin_definitions(void)
 
     switch (context.standard) {
     case STD_C89:
-        register_macro("__STDC_VERSION__", "199409L");
-        register_macro("__STRICT_ANSI__", "");
         break;
     case STD_C99:
         register_macro("__STDC_VERSION__", "199901L");
