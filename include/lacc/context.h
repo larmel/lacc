@@ -16,7 +16,8 @@ extern struct context {
     } target;
     enum {
         STD_C89,
-        STD_C99
+        STD_C99,
+        STD_C11
     } standard;
 } context;
 

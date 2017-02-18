@@ -39,7 +39,7 @@ const struct token basic_token[] = {
 /* 0x20 */  IDN(INLINE, "inline"),      TOK(NOT, "!"),
             IDN(VOLATILE, "volatile"),  TOK(HASH, "#"),
             IDN(WHILE, "while"),        TOK(MODULO, "%"),
-            TOK(AND, "&"),              {0},
+            TOK(AND, "&"),              TOK(ALIGNOF, "_Alignof"),
 /* 0x28 */  TOK(OPEN_PAREN, "("),       TOK(CLOSE_PAREN, ")"),
             TOK(STAR, "*"),             TOK(PLUS, "+"),
             TOK(COMMA, ","),            TOK(MINUS, "-"),
@@ -412,6 +412,7 @@ static struct token strtostr(char *in, char **endptr)
 #define M4(a, b, c, d) (M3(a, b, c) && M(3, d))
 #define M5(a, b, c, d, e) (M4(a, b, c, d) && M(4, e))
 #define M6(a, b, c, d, e, f) (M5(a, b, c, d, e) && M(5, f))
+#define M7(a, b, c, d, e, f, g) (M6(a, b, c, d, e, f) && M(6, g))
 
 #define S1(a) (M1(a) && E(1))
 #define S2(a, b) (M2(a, b) && E(2))
@@ -437,6 +438,10 @@ static struct token strtoident(char *in, char **endptr)
     struct token ident = {IDENTIFIER};
 
     switch (*in++) {
+    case '_':
+        if (context.standard >= STD_C11)
+            if (S7('A', 'l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF);
+        break;
     case 'a':
         if (S3('u', 't', 'o')) MATCH(AUTO);
         break;

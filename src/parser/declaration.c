@@ -967,7 +967,7 @@ static void define_builtin__func__(String name)
     Type type;
     struct symbol *sym;
     assert(current_scope_depth(&ns_ident) == 1);
-    assert(context.standard == STD_C99);
+    assert(context.standard >= STD_C99);
 
     /*
      * Just add the symbol directly as a special string value. No

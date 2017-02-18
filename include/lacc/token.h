@@ -49,6 +49,7 @@ enum token_type {
     WHILE = HASH + 1,
     MODULO = '%',
     AND = '&',
+    ALIGNOF = AND + 1,
 
     OPEN_PAREN = '(',
     CLOSE_PAREN = ')',

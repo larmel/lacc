@@ -12,7 +12,7 @@ Install
 -------
 Clone and build from source, and the binary will be placed in `bin/lacc`.
 Default include paths assume GNU standard library headers being available, at `/usr/include/x86_64-linux-gnu`.
-To change to some other libc, for example musl, edit [main.c](src/main.c#L165).
+To change to some other libc, for example musl, edit [main.c](src/main.c#L167).
 
     git clone https://github.com/larmel/lacc.git
     cd lacc
@@ -32,13 +32,13 @@ Execute `make uninstall` to remove all the files that were copied.
 Usage
 -----
 Command line interface is kept similar to GCC and other compilers, using mostly a subset of the same flags and options.
-A custom argument parser is used, and the definition of each option can be found in [src/main.c](src/main.c#L107).
+A custom argument parser is used, and the definition of each option can be found in [src/main.c](src/main.c#L109).
 
     -E      Output preprocessed.
     -S      Output GNU style textual x86_64 assembly.
     -c      Output x86_64 ELF object file.
     -o      Specify output file name. If not specified, default to stdout.
-    -std=   Specify C standard, valid options are -std=c89 and -std=c99.
+    -std=   Specify C standard, valid options are c89, c99, and c11.
     -I      Add directory to search for included files.
     -w      Disable warnings.
     -O[1-3] Enable optimization.

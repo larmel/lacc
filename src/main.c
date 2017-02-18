@@ -72,6 +72,8 @@ static void set_c_std(const char *std)
         context.standard = STD_C89;
     } else if (!strcmp("c99", std)) {
         context.standard = STD_C99;
+    } else if (!strcmp("c11", std)) {
+        context.standard = STD_C11;
     } else {
         fprintf(stderr, "Unrecognized option %s.\n", std);
         exit(1);

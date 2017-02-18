@@ -458,8 +458,7 @@ static struct block *unary_expression(
         value = eval(def, block, block->expr);
         block->expr = eval_expr(def, block, IR_OP_NEG, value);
         break;
-    case SIZEOF: {
-        head = cfg_block_init(def);
+    case SIZEOF:
         consume(SIZEOF);
         if (peek().token == '(') {
             switch (peekn(2).token) {
@@ -478,7 +477,7 @@ static struct block *unary_expression(
             default: goto exprsize;
             }
         } else {
-exprsize:
+exprsize:   head = cfg_block_init(def);
             tail = unary_expression(def, head);
             type = tail->expr.type;
         }
@@ -491,7 +490,23 @@ exprsize:
         value = imm_unsigned(basic_type__unsigned_long, size_of(type));
         block->expr = as_expr(value);
         break;
-    }
+    case ALIGNOF:
+        next();
+        consume('(');
+        type = declaration_specifiers(NULL, NULL);
+        if (peek().token != ')') {
+            type = declarator(type, NULL);
+        }
+        if (is_function(type)) {
+            error("Cannot apply '_Alignof' to function type.");
+        }
+        if (!size_of(type)) {
+            error("Cannot apply '_Alignof' to incomplete type.");
+        }
+        value = imm_unsigned(basic_type__unsigned_long, type_alignment(type));
+        block->expr = as_expr(value);
+        consume(')');
+        break;
     case INCREMENT:
         consume(INCREMENT);
         block = unary_expression(def, block);

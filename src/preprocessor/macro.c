@@ -758,5 +758,8 @@ void register_builtin_definitions(void)
     case STD_C99:
         register_macro("__STDC_VERSION__", "199901L");
         break;
+    case STD_C11:
+        register_macro("__STDC_VERSION__", "201112L");
+        break;
     }
 }
