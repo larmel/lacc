@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define HASH_TABLE_BUCKETS 1024
 
@@ -729,12 +730,46 @@ static void register_macro(const char *key, char *value)
     define(macro);
 }
 
+static char *get__time__(char *ts)
+{
+    static char str[9];
+
+    assert(strlen(ts) == 25);
+    memcpy(str, ts + 11, 8);
+    assert(str[8] == '\0');
+    return str;
+}
+
+static char *get__date__(char *ts)
+{
+    static char str[12];
+
+    assert(strlen(ts) == 25);
+    memcpy(str, ts + 4, 7);
+    memcpy(str + 7, ts + 20, 4);
+    assert(str[11] == '\0');
+    return str;
+}
+
+/*
+ * Define macros that are intrinsic to the compiler, or mandated by the
+ * standard.
+ *
+ * Current date and time are taken from ctime output, which has format
+ * like "Sun Feb 19 01:26:43 2017\n". In this case, __DATE__ will be
+ * "Feb 19 2017", and __TIME__ is "01:26:43".
+ */
 void register_builtin_definitions(void)
 {
+    time_t timestamp = time(NULL);
+    char *ts = ctime(&timestamp);
+
     register_macro("__STDC__", "1");
     register_macro("__STDC_HOSTED__", "1");
     register_macro("__FILE__", "0");
     register_macro("__LINE__", "0");
+    register_macro("__DATE__", get__date__(ts));
+    register_macro("__TIME__", get__time__(ts));
     register_macro("__x86_64__", "1");
     register_macro("__SIZE_TYPE__", "unsigned long");
     register_macro("__WCHAR_TYPE__", "signed int");
