@@ -375,13 +375,13 @@ static void preprocess_line(int n)
         line.length = 0;
         if (t.token == '#') {
             t = get_token();
-            if (in_active_block() || (
-                t.token == IF ||
-                !tok_cmp(t, ident__ifdef) ||
-                !tok_cmp(t, ident__ifndef) ||
-                !tok_cmp(t, ident__elif) ||
-                !tok_cmp(t, ident__endif) ||
-                t.token == ELSE))
+            if ((t.token != NEWLINE && in_active_block())
+                || t.token == IF
+                || t.token == ELSE
+                || !tok_cmp(t, ident__ifdef)
+                || !tok_cmp(t, ident__ifndef)
+                || !tok_cmp(t, ident__elif)
+                || !tok_cmp(t, ident__endif))
             {
                 read_complete_line(&line, t, 1);
                 preprocess_directive(&line);
