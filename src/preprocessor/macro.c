@@ -498,9 +498,14 @@ static const struct token *skip(const struct token *list, enum token_type token)
 /*
  * Read tokens forming next macro argument. Missing arguments are
  * represented by an empty list.
+ *
+ * Stop reading on first ',' encountered with no parenthesis nesting
+ * depth. Exception is argument for (...), which consumes input until
+ * first ')'.
  */
 static TokenArray read_arg(
     ExpandStack *scope,
+    int is_va_arg,
     const struct token *list,
     const struct token **endptr)
 {
@@ -508,7 +513,9 @@ static TokenArray read_arg(
     struct token t;
     TokenArray arg = get_token_array();
 
-    while (nesting || (list->token != ',' && list->token != ')')) {
+    while (nesting
+        || ((list->token != ',' || is_va_arg) && list->token != ')'))
+    {
         if (list->token == NEWLINE) {
             error("Unexpected end of input in expansion.");
             exit(1);
@@ -546,12 +553,11 @@ static TokenArray *read_args(
         list = skip(list, '(');
         if (def->params) {
             args = malloc(def->params * sizeof(*args));
-            for (i = 0; i < def->params; ++i) {
-                args[i] = read_arg(scope, list, &list);
-                if (i < def->params - 1) {
-                    list = skip(list, ',');
-                }
+            for (i = 0; i < def->params - 1; ++i) {
+                args[i] = read_arg(scope, 0, list, &list);
+                list = skip(list, ',');
             }
+            args[i] = read_arg(scope, def->is_vararg, list, &list);
         }
         list = skip(list, ')');
     }

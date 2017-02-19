@@ -19,7 +19,8 @@ struct token
     ident__undef = IDENT("undef"),
     ident__elif = IDENT("elif"),
     ident__endif = IDENT("endif"),
-    ident__error = IDENT("error");
+    ident__error = IDENT("error"),
+    ident__VA_ARGS__ = IDENT("__VA_ARGS__");
 
 enum state {
     /*
@@ -568,6 +569,12 @@ static struct macro preprocess_define(
         macro.type = FUNCTION_LIKE;
         line++;
         while (line->token != ')') {
+            if (line->token == DOTS) {
+                macro.is_vararg = 1;
+                array_push_back(&params, ident__VA_ARGS__);
+                line++;
+                break;
+            }
             if (line->token != IDENTIFIER) {
                 error("Invalid macro parameter, expected identifer.");
                 exit(1);

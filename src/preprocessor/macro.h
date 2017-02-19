@@ -28,6 +28,7 @@ struct macro {
 
     unsigned int is__line__ : 1;
     unsigned int is__file__ : 1;
+    unsigned int is_vararg : 1;
 
     /*
      * A substitution is either a token or a parameter, and parameters
