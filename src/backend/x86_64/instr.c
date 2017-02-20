@@ -147,6 +147,7 @@ static void encode_addr(
 
         /* SIB */
         if (addr.offset) {
+            assert(!is_64_bit_reg(addr.base));
             c->val[c->len++] = ((addr.offset - 1) << 3) | (addr.base - 1);
         }
 
@@ -246,11 +247,28 @@ static struct code mov(
         encode_addr(&c, reg(b.reg), a.mem.addr, 0, 0);
         break;
     case OPT_IMM_MEM:
-        assert(a.imm.type == IMM_INT && a.imm.w == 4);
+        assert(a.imm.type == IMM_INT);
+        assert(is_32bit_imm(a.imm));
+        assert(a.imm.w == b.mem.w);
+        if (b.mem.w == 2) {
+            c.val[c.len++] = PREFIX_OPERAND_SIZE;
+        }
+        if (a.imm.w == 8 || mrex(b.mem.addr)) {
+            c.val[c.len++] = REX | W(a.imm) | mrex(b.mem.addr);
+        }
         c.val[c.len++] = 0xC6 | w(b.mem);
-        encode_addr(&c, 0, b.mem.addr, 4, 0);
-        memcpy(&c.val[c.len], &a.imm.d.dword, 4);
-        c.len += 4;
+        if (b.mem.w == 1) {
+            encode_addr(&c, 0, b.mem.addr, 1, 0);
+            c.val[c.len++] = a.imm.d.byte;
+        } else if (b.mem.w == 2) {
+            encode_addr(&c, 0, b.mem.addr, 2, 0);
+            memcpy(&c.val[c.len], &a.imm.d.word, 2);
+            c.len += 2;
+        } else {
+            encode_addr(&c, 0, b.mem.addr, 4, 0);
+            memcpy(&c.val[c.len], &a.imm.d.dword, 4);
+            c.len += 4;
+        }
         break;
     default: assert(0);
     }

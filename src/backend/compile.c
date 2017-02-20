@@ -915,59 +915,106 @@ static void store_x87(struct var v)
     }
 }
 
-static void store(enum reg r, struct var v)
+/*
+ * Emit store of either register or immediate operand.
+ *
+ * Immediate values might need to be loaded to a register before being
+ * stored.
+ */
+static void store_op(
+    enum instr_optype optype,
+    union operand op,
+    struct var target)
 {
-    const int w = size_of(v.type);
-    struct var field;
+    size_t w;
+    int val, mask;
     enum reg ax;
-    int mask;
-    enum opcode op = INSTR_MOV;
+    enum opcode opc;
+    struct var field;
+    assert(optype == OPT_IMM || optype == OPT_REG);
 
-    if (is_long_double(v.type)) {
-        store_x87(v);
+    if (is_long_double(target.type)) {
+        assert(optype == OPT_REG);
+        store_x87(target);
         return;
     }
 
-    if (is_real(v.type)) {
-        op  = is_float(v.type) ? INSTR_MOVSS : INSTR_MOVSD;
-    } else if (is_field(v)) {
+    w = size_of(target.type);
+    opc = INSTR_MOV;
+    if (is_real(target.type)) {
+        opc = is_float(target.type) ? INSTR_MOVSS : INSTR_MOVSD;
+        assert(optype == OPT_REG);
+    } else if (is_field(target)) {
         assert(w == size_of(basic_type__int));
-        assert(v.field_width > 0 && v.field_width < 32);
-        field = v;
+        assert(target.field_width > 0 && target.field_width < 32);
+        field = target;
         field.field_width = 0;
         field.field_offset = 0;
-        load(field, R11);
-        mask = ((1 << v.field_width) - 1) << v.field_offset;
-        emit(INSTR_AND, OPT_IMM_REG, constant(~mask, w), reg(R11, w));
-        if (v.field_offset) {
-            emit(INSTR_SHL, OPT_IMM_REG,
-                constant(v.field_offset, w), reg(r, w));
+        load(field, CX);
+        mask = ((1 << target.field_width) - 1) << target.field_offset;
+        emit(INSTR_AND, OPT_IMM_REG, constant(~mask, w), reg(CX, w));
+        if (optype == OPT_IMM) {
+            assert(op.imm.type == IMM_INT);
+            val = (op.imm.d.dword << target.field_offset) & mask;
+            if (val != 0) {
+                emit(INSTR_OR, OPT_IMM_REG, constant(val, w), reg(CX, w));
+            }
+            optype = OPT_REG;
+            op.reg = reg(CX, w);
+        } else {
+            if (target.field_offset) {
+                emit(INSTR_SHL, OPT_IMM_REG,
+                    constant(target.field_offset, w), op.reg);
+            }
+            emit(INSTR_AND, OPT_IMM_REG, constant(mask, w), op.reg);
+            emit(INSTR_OR, OPT_REG_REG, reg(CX, w), op.reg);
         }
-        emit(INSTR_AND, OPT_IMM_REG, constant(mask, w), reg(r, w));
-        emit(INSTR_OR, OPT_REG_REG, reg(R11, w), reg(r, w));
     }
 
-    if (v.kind == DIRECT) {
-        assert(!is_array(v.type));
-        if (is_register_allocated(v)) {
-            ax = allocated_register(v);
-            emit(op, OPT_REG_REG, reg(r, w), reg(ax, w));
+    switch (target.kind) {
+    case DIRECT:
+        assert(!is_array(target.type));
+        if (optype == OPT_IMM) {
+            if ((ax = allocated_register(target)) != 0) {
+                emit(opc, OPT_IMM_REG, op.imm, reg(ax, w));
+            } else {
+                emit(opc, OPT_IMM_MEM, op.imm, location_of(target, w));
+            }
         } else {
-            emit(op, OPT_REG_MEM, reg(r, w), location_of(v, w));            
+            if ((ax = allocated_register(target)) != 0) {
+                emit(opc, OPT_REG_REG, op.reg, reg(ax, w));
+            } else {
+                emit(opc, OPT_REG_MEM, op.reg, location_of(target, w));
+            }
         }
-    } else {
-        assert(v.kind == DEREF);
-        if (!v.symbol) {
-            v.kind = IMMEDIATE;
-            load_int(v, R11, 8);
+        break;
+    default:
+        assert(target.kind == DEREF);
+        if (!target.symbol) {
+            target.kind = IMMEDIATE;
+            load_int(target, R11, 8);
         } else {
-            assert(is_pointer(v.symbol->type));
-            load_int(var_direct(v.symbol), R11, 8);
+            assert(is_pointer(target.symbol->type));
+            load_int(var_direct(target.symbol), R11, 8);
         }
-        emit(op, OPT_REG_MEM,
-            reg(r, w), location(
-                address(displacement_from_offset(v.offset), R11, 0, 0), w));
+        if (optype == OPT_IMM) {
+            emit(opc, OPT_IMM_MEM, op.imm,
+                location(address(
+                    displacement_from_offset(target.offset), R11, 0, 0), w));
+        } else {
+            emit(opc, OPT_REG_MEM, op.reg,
+                location(address(
+                    displacement_from_offset(target.offset), R11, 0, 0), w));
+        }
+        break;
     }
+}
+
+static void store(enum reg r, struct var v)
+{
+    union operand operand = {0};
+    operand.reg = reg(r, size_of(v.type));
+    store_op(OPT_REG, operand, v);
 }
 
 /*
@@ -1870,7 +1917,7 @@ static int operand_equal(struct var a, struct var b)
 static int is_int_constant(struct var v)
 {
     return v.kind == IMMEDIATE
-        && is_integer(v.type)
+        && (is_integer(v.type) || is_pointer(v.type))
         && !v.symbol
         && (size_of(v.type) < 8
             || (v.imm.i <= INT_MAX && v.imm.i >= INT_MIN));
@@ -2340,6 +2387,7 @@ static enum reg compile_cast(
 {
     size_t w;
     enum reg ax;
+    union operand op;
     struct param_class pc;
 
     w = size_of(type);
@@ -2395,10 +2443,24 @@ static enum reg compile_cast(
                 }
                 l.type = type;
             }
-            ax = load_cast(l, type);
             if (!is_void(target.type)) {
                 target.type = type;
+                if (type_equal(l.type, type)) {
+                     if (is_int_constant(l)) {
+                        op.imm = value_of(l, w);
+                        store_op(OPT_IMM, op, target);
+                        ax = AX;
+                        break;
+                    } else if ((ax = allocated_register(l)) != 0) {
+                        op.reg = reg(ax, w);
+                        store_op(OPT_REG, op, target);
+                        break;
+                    }
+                }
+                ax = load_cast(l, type);
                 store(ax, target);
+            } else {
+                ax = load_cast(l, type);
             }
             break;
         }
