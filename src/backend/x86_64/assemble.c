@@ -7,9 +7,8 @@
 #include <stdarg.h>
 
 #define SUFFIX(w) ((w) == 1 ? 'b' : (w) == 2 ? 'w' : (w) == 4 ? 'l' : 'q')
-#define X87SFX(w) ((w) == 4 ? 'f' : (w) == 8 ? 'l' : 't')
+#define X87SFX(w) ((w) == 4 ? 's' : (w) == 8 ? 'l' : 't')
 #define X87IFX(w) ((w) == 2 ? 's' : (w) == 4 ? 'l' : 'q')
-#define X87FFX(w) ((w) == 4 ? 's' : (w) == 8 ? 'l' : 't')
 
 #define I0(instr)           out("\t%s\n", instr)
 #define I1(instr, a)        out("\t%s\t%s\n", instr, a)
@@ -18,7 +17,6 @@
 #define S2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
 #define X1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87SFX(w), a);
 #define Y1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87IFX(w), a);
-#define Z1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87FFX(w), a);
 
 #define MAX_OPERAND_TEXT_LENGTH 256
 
@@ -385,7 +383,7 @@ int asm_text(struct instruction instr)
         if (instr.optype == OPT_REG) {
             I1("fstp", source);
         } else {
-            Z1("fstp", ws, source);
+            X1("fstp", ws, source);
         }
         break;
     case INSTR_FXCH:     I1("fxch", source); break;
