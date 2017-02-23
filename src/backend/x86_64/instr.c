@@ -919,18 +919,19 @@ static struct code ucomisd(
     return c;
 }
 
-static struct code sse_generic(
+static struct code sse_enc(
     enum instr_optype optype,
     unsigned char opcode1,
     unsigned char opcode2,
     union operand a,
-    union operand b)
+    union operand b,
+    int is_int_load)
 {
     struct code c = {0};
 
     c.val[c.len++] = opcode1;
     if (optype == OPT_MEM_REG) {
-        if (rrex(b.reg) || mrex(a.mem.addr) || a.mem.w == 8) {
+        if (rrex(b.reg) || mrex(a.mem.addr) || (is_int_load && a.mem.w == 8)) {
             c.val[c.len++] = REX | W(a.mem) | R(b.reg) | mrex(a.mem.addr);
             if (!is_sse_reg(b.reg)) {
                 c.val[c.len - 1] |= W(b.reg);
@@ -1121,21 +1122,21 @@ struct code encode(struct instruction instr)
     case INSTR_ADD:
         return add(instr.optype, instr.source, instr.dest);
     case INSTR_ADDSD:
-        return sse_generic(instr.optype, 0xF2, 0x58, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF2, 0x58, instr.source, instr.dest, 0);
     case INSTR_ADDSS:
-        return sse_generic(instr.optype, 0xF3, 0x58, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF3, 0x58, instr.source, instr.dest, 0);
     case INSTR_CVTSI2SS:
-        return sse_generic(instr.optype, 0xF3, 0x2A, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF3, 0x2A, instr.source, instr.dest, 1);
     case INSTR_CVTSI2SD:
-        return sse_generic(instr.optype, 0xF2, 0x2A, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF2, 0x2A, instr.source, instr.dest, 1);
     case INSTR_CVTSS2SD:
-        return sse_generic(instr.optype, 0xF3, 0x5A, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF3, 0x5A, instr.source, instr.dest, 0);
     case INSTR_CVTSD2SS:
-        return sse_generic(instr.optype, 0xF2, 0x5A, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF2, 0x5A, instr.source, instr.dest, 0);
     case INSTR_CVTTSD2SI:
-        return sse_generic(instr.optype, 0xF2, 0x2C, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF2, 0x2C, instr.source, instr.dest, 0);
     case INSTR_CVTTSS2SI:
-        return sse_generic(instr.optype, 0xF3, 0x2C, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF3, 0x2C, instr.source, instr.dest, 0);
     case INSTR_CDQ:
         return cdq();
     case INSTR_CQO:
@@ -1145,17 +1146,17 @@ struct code encode(struct instruction instr)
     case INSTR_MUL:
         return mul(instr.optype, instr.source);
     case INSTR_MULSD:
-        return sse_generic(instr.optype, 0xF2, 0x59, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF2, 0x59, instr.source, instr.dest, 0);
     case INSTR_MULSS:
-        return sse_generic(instr.optype, 0xF3, 0x59, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF3, 0x59, instr.source, instr.dest, 0);
     case INSTR_XOR:
         return encode_bitwise(instr.optype, instr.source, instr.dest, 0x30);
     case INSTR_DIV:
         return encode_div(instr.optype, instr.source);
     case INSTR_DIVSD:
-        return sse_generic(instr.optype, 0xF2, 0x5E, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF2, 0x5E, instr.source, instr.dest, 0);
     case INSTR_DIVSS:
-        return sse_generic(instr.optype, 0xF3, 0x5E, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF3, 0x5E, instr.source, instr.dest, 0);
     case INSTR_AND:
         return encode_bitwise(instr.optype, instr.source, instr.dest, 0x20);
     case INSTR_OR:
@@ -1193,9 +1194,9 @@ struct code encode(struct instruction instr)
     case INSTR_SUB:
         return sub(instr.optype, instr.source, instr.dest);
     case INSTR_SUBSD:
-        return sse_generic(instr.optype, 0xF2, 0x5C, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF2, 0x5C, instr.source, instr.dest, 0);
     case INSTR_SUBSS:
-        return sse_generic(instr.optype, 0xF3, 0x5C, instr.source, instr.dest);
+        return sse_enc(instr.optype, 0xF3, 0x5C, instr.source, instr.dest, 0);
     case INSTR_UCOMISS:
         return ucomiss(instr.optype, instr.source, instr.dest);
     case INSTR_UCOMISD:
