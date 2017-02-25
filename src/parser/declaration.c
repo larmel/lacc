@@ -262,10 +262,6 @@ static void member_declaration_list(Type type)
                         error("Missing name in member declarator.");
                         exit(1);
                     }
-                } else if (!size_of(decl_type)) {
-                    error("Member '%s' has incomplete type '%t'.",
-                        str_raw(name), decl_type);
-                    exit(1);
                 } else {
                     type_add_member(type, name, decl_type);
                 }
@@ -561,21 +557,22 @@ static void zero_initialize(
     struct var target)
 {
     int i;
+    size_t size;
     struct var var;
 
     assert(target.kind == DIRECT);
+    size = size_of(target.type);
     switch (type_of(target.type)) {
     case T_STRUCT:
     case T_UNION:
-        target.type =
-            (size_of(target.type) % 8) ?
-                type_create(T_ARRAY, basic_type__char, size_of(target.type)) :
-                type_create(T_ARRAY, basic_type__long, size_of(target.type)/8);
+        assert(size);
+        target.type = (size % 8)
+            ? type_create(T_ARRAY, basic_type__char, size)
+            : type_create(T_ARRAY, basic_type__long, size / 8);
     case T_ARRAY:
-        assert(size_of(target.type));
         var = target;
         target.type = type_next(target.type);
-        for (i = 0; i < size_of(var.type) / size_of(target.type); ++i) {
+        for (i = 0; i < size / size_of(target.type); ++i) {
             target.offset = var.offset + i * size_of(target.type);
             zero_initialize(def, block, target);
         }
@@ -848,9 +845,10 @@ static struct block *initialize_array(
     struct var target)
 {
     Type type = target.type;
-    int filled = target.offset;
+    size_t filled = target.offset;
 
     assert(is_array(type));
+    assert(target.kind == DIRECT);
     if (is_aggregate(type_next(target.type))) {
         target.type = type_next(target.type);
         do {
@@ -873,14 +871,12 @@ static struct block *initialize_array(
         }
     }
 
-    target.type = type;
-    if (!size_of(target.type)) {
-        assert(target.kind == DIRECT);
-        assert(!size_of(target.symbol->type));
+    if (!size_of(type)) {
         assert(is_array(target.symbol->type));
+        assert(!size_of(target.symbol->type));
         type_set_array_size(target.symbol->type, target.offset);
     } else {
-        target.type = type_next(target.type);
+        target.type = type_next(type);
         while (target.offset - filled < size_of(type)) {
             zero_initialize(def, block, target);
             target.offset += size_of(target.type);
@@ -908,6 +904,10 @@ static struct block *initialize_member(
             block = initialize_struct_or_union(def, block, target);
         }
     } else if (is_array(target.type)) {
+        if (!size_of(target.type)) {
+            error("Invalid initialization of flexible array member.");
+            exit(1);
+        }
         if (peek().token == '{') {
             next();
             block = initialize_array(def, block, target);

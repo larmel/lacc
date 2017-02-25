@@ -12,6 +12,7 @@ static int has_unaligned_fields(Type type)
 
     for (i = 0; i < nmembers(type); ++i) {
         mem = get_member(type, i);
+        assert(size_of(mem->type));
         if (mem->offset % size_of(mem->type)) {
             return 1;
         }
@@ -117,10 +118,10 @@ struct param_class classify(Type type)
     } else if (is_long_double(type)) {
         pc.eightbyte[0] = PC_X87;
         pc.eightbyte[1] = PC_X87UP;
-    } else if (
-        EIGHTBYTES(type) <= 4 &&
-        is_struct_or_union(type) &&
-        !has_unaligned_fields(type))
+    } else if (EIGHTBYTES(type) <= 4
+        && is_struct_or_union(type)
+        && !is_flexible(type)
+        && !has_unaligned_fields(type))
     {
         pc = flatten(pc, type, 0);
         pc = merge(pc, EIGHTBYTES(type));

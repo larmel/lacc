@@ -125,6 +125,12 @@ Type type_next(Type type);
 /* A function takes variable arguments if last parameter is '...'. */
 int is_vararg(Type type);
 
+/*
+ * Determine whether struct or union type contains a flexible array
+ * member.
+ */
+int is_flexible(Type type);
+
 /* Return size of type. If indirection, return size of tagged type. */
 size_t size_of(Type type);
 

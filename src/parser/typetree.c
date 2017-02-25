@@ -33,6 +33,7 @@ struct typetree {
     unsigned int is_const : 1;
     unsigned int is_volatile : 1;
     unsigned int is_vararg : 1;
+    unsigned int is_flexible : 1;
 
     /* Total storage size in bytes, returned for sizeof. */
     size_t size;
@@ -165,6 +166,21 @@ static void add_member(Type parent, struct member m)
         }
         array_push_back(&t->members, m);
         if (is_struct_or_union(parent)) {
+            if (size_of(m.type) == 0) {
+                if (is_array(m.type) && !t->is_flexible) {
+                    t->is_flexible = 1;
+                } else {
+                    error("Member '%s' has incomplete type.", str_raw(m.name));
+                    exit(1);
+                }
+            }
+            if (is_flexible(m.type)) {
+                if (is_struct(parent)) {
+                    error("Cannot add flexible struct member.");
+                    exit(1);
+                }
+                t->is_flexible = 1;
+            }
             if (LONG_MAX - m.offset < size_of(m.type)) {
                 error("Object is too large.");
                 exit(1);
@@ -575,6 +591,18 @@ int is_vararg(Type type)
     assert(is_function(type));
     t = get_typetree_handle(type.ref);
     return t->is_vararg;
+}
+
+int is_flexible(Type type)
+{
+    struct typetree *t;
+
+    if (is_struct_or_union(type)) {
+        t = get_typetree_handle(type.ref);
+        return t->is_flexible;
+    }
+
+    return 0;
 }
 
 static int typetree_equal(const struct typetree *a, const struct typetree *b)

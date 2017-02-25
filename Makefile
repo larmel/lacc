@@ -40,7 +40,7 @@ test-%: bin/%
 	@$(foreach file,$(wildcard test/c11/*.c),\
 		./check.sh "$< -std=c11" $(file) "$(CC) -std=c11";)
 	@$(foreach file,$(wildcard test/c99/*.c),\
-		./check.sh "$< -std=c99" $(file) "$(CC) -std=c99";)
+		./check.sh "$< -std=c99" $(file) "$(CC) -std=c99 -Wno-psabi";)
 	@$(foreach file,$(wildcard test/*.c),./check.sh $< $(file);)
 
 test: test-lacc
