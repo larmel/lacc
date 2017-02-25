@@ -759,7 +759,7 @@ const struct member *find_type_member(Type type, String name)
     return NULL;
 }
 
-int fprinttype(FILE *stream, Type type)
+static int print_type(FILE *stream, Type type, int depth)
 {
     struct typetree *t;
     struct member *m;
@@ -801,13 +801,13 @@ int fprinttype(FILE *stream, Type type)
         break;
     case T_POINTER:
         n += fputs("* ", stream);
-        n += fprinttype(stream, type_deref(type));
+        n += print_type(stream, type_deref(type), depth + 1);
         break;
     case T_FUNCTION:
         t = get_typetree_handle(type.ref);
         n += fputs("(", stream);
         for (i = 0; i < nmembers(type); ++i) {
-            n += fprinttype(stream, get_member(type, i)->type);
+            n += print_type(stream, get_member(type, i)->type, depth + 1);
             if (i < nmembers(type) - 1) {
                 n += fputs(", ", stream);
             }
@@ -816,7 +816,7 @@ int fprinttype(FILE *stream, Type type)
             n += fputs(", ...", stream);
         }
         n += fputs(") -> ", stream);
-        n += fprinttype(stream, t->next);
+        n += print_type(stream, t->next, depth + 1);
         break;
     case T_ARRAY:
         t = get_typetree_handle(type.ref);
@@ -825,12 +825,12 @@ int fprinttype(FILE *stream, Type type)
         } else {
             n += fputs("[] ", stream);
         }
-        n += fprinttype(stream, t->next);
+        n += print_type(stream, t->next, depth + 1);
         break;
     case T_STRUCT:
     case T_UNION:
         t = get_typetree_handle(type.ref);
-        if (t->tag.len) {
+        if (t->tag.len && depth) {
             n += fprintf(stream, "%s ", is_union(type) ? "union" : "struct");
             n += fprintf(stream, "%s", str_raw(t->tag));
         } else {
@@ -838,7 +838,7 @@ int fprinttype(FILE *stream, Type type)
             for (i = 0; i < nmembers(type); ++i) {
                 m = get_member(type, i);
                 n += fprintf(stream, ".%s::", str_raw(m->name));
-                n += fprinttype(stream, m->type);
+                n += print_type(stream, m->type, depth + 1);
                 if (m->field_width) {
                     n += fprintf(stream, " (+%lu:%d:%d)",
                         m->offset, m->field_offset, m->field_width);
@@ -855,4 +855,9 @@ int fprinttype(FILE *stream, Type type)
     }
 
     return n;
+}
+
+int fprinttype(FILE *stream, Type type)
+{
+    return print_type(stream, type, 0);
 }
