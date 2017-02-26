@@ -20,6 +20,7 @@ struct token
     ident__elif = IDENT("elif"),
     ident__endif = IDENT("endif"),
     ident__error = IDENT("error"),
+    ident__line = IDENT("line"),
     ident__VA_ARGS__ = IDENT("__VA_ARGS__");
 
 enum state {
@@ -614,6 +615,40 @@ static struct macro preprocess_define(
     return macro;
 }
 
+/*
+ * Handle #line directive, which is in one of the forms:
+ *
+ *     #line 42
+ *     #line 42 "foo.c"
+ *
+ * Update line number, and optionally name, of file being processed.
+ */
+static void preprocess_line_directive(const struct token *line)
+{
+    struct token t;
+    String s;
+
+    t = *line++;
+    if (t.token == PREP_NUMBER) {
+        t = convert_preprocessing_number(t);
+    }
+
+    if (t.token != NUMBER || !is_int(t.type) || t.d.val.i <= 0) {
+        error("Expected positive integer in #line directive.");
+        exit(1);
+    }
+
+    current_file_line = t.d.val.i - 1;
+    if (line->token == STRING) {
+        current_file_path = line->d.string;
+        line++;
+    } else if (line->token != NEWLINE) {
+        s = tokstr(*line);
+        error("'%s' is not a valid file name.", str_raw(s));
+        exit(1);
+    }
+}
+
 void preprocess_directive(TokenArray *array)
 {
     struct number num;
@@ -622,11 +657,14 @@ void preprocess_directive(TokenArray *array)
     String s;
     const struct token *line = array->data;
 
-    if (line->token == IF || !tok_cmp(*line, ident__elif)) {
-        /*
-         * Perform macro expansion only for if and elif directives,
-         * before doing the expression parsing.
-         */
+    /*
+     * Perform macro expansion only for if, elif and line directives,
+     * before doing any expression parsing.
+     */
+    if (line->token == IF
+        || !tok_cmp(*line, ident__elif)
+        || (in_active_block() && !tok_cmp(*line, ident__line)))
+    {
         expand(array);
         line = array->data;
     }
@@ -701,6 +739,8 @@ void preprocess_directive(TokenArray *array)
             undef(line->d.string);
         } else if (!tok_cmp(*line, ident__include)) {
             preprocess_include(line + 1);
+        } else if (!tok_cmp(*line, ident__line)) {
+            preprocess_line_directive(line + 1);
         } else if (!tok_cmp(*line, ident__error)) {
             array->data++;
             array->length--;

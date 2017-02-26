@@ -421,27 +421,39 @@ static int is_directive(const char *line)
 
 char *getprepline(void)
 {
+    static int stale;
+
     struct source *source;
     char *line;
+    int loc;
 
     do {
         if (!array_len(&source_stack)) {
             return NULL;
         }
         source = &array_back(&source_stack);
+        loc = source->line;
+        if (stale) {
+            current_file_path = source->path;
+            current_file_line = source->line;
+            stale = 0;
+        }
         line = initial_preprocess_line(source);
-        if (!line && pop() == EOF) {
-            return NULL;
+        current_file_line += source->line - loc;
+        if (!line) {
+            stale = 1;
+            if (pop() == EOF) {
+                return NULL;
+            }
         }
         if (!in_active_block() && !is_directive(line)) {
             line = NULL;
         }
     } while (!line);
 
-    current_file_path = source->path;
-    current_file_line = source->line;
     if (context.verbose) {
         verbose("(%s, %d): `%s`", str_raw(source->path), source->line, line);
     }
+
     return line;
 }
