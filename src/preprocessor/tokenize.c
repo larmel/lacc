@@ -657,6 +657,7 @@ static size_t write_escaped_char(int c, char *buf)
         break;
     case '\\':
     case '\"':
+    case '\'':
         buf[i++] = '\\';
     default:
         buf[i++] = c;

@@ -272,6 +272,68 @@ static char read_trigraph(char c)
 }
 
 /*
+ * Consume characters forming a quoted string or character literal.
+ *
+ * Initial preprocessing must consider quoted text because it is allowed
+ * to have embedded comments, which should not be replaced by single
+ * whitespace.
+ *
+ * Handle trigraphs and line continuations as in normal input.
+ */
+static size_t read_literal(const char *line, char **buf, int *lines)
+{
+    char c;
+    char *ptr;
+    const char *end, *esc, q = *line;
+
+    end = line;
+    ptr = *buf;
+    assert(q == '"' || q == '\'');
+    *ptr++ = *end++;
+
+    while ((c = *end) != '\0') {
+        switch (c) {
+        case '\\':
+            if (end[1] == '\n') {
+                *lines += 1;
+                end += 2;
+                continue;
+            } else if (end[1] != '\0') {
+                *ptr++ = *end++;
+            }
+            break;
+        case '?':
+            if (end[1] == '?') {
+                c = read_trigraph(end[2]);
+                if (c) {
+                    end += 3;
+                    *ptr++ = c;
+                    continue;
+                }
+            }
+            break;
+        default:
+            if (c == q) {
+                esc = ptr - 1;
+                /* Do not break if character is escaped. */
+                while (esc >= line && *esc == '\\') {
+                    esc -= 1;
+                }
+                if (((ptr - esc) & 1) != 0) {
+                    *ptr++ = *end++;
+                    *buf = ptr;
+                    return end - line;
+                }    
+            }
+            break;
+        }
+        *ptr++ = *end++;
+    }
+
+    return 0;
+}
+
+/*
  * Read initial part of line, until forming a complete source line ready
  * for tokenization. Store the result in rline, with the following
  * mutations done:
@@ -308,20 +370,29 @@ static size_t read_line(const char *line, size_t len, int *linecount)
             return end + 1 - line;
         case '\\':
             if (end[1] == '\n') {
+                lines += 1;
                 end += 2;
-                break;
+                continue;
             }
-            goto normal;
+            break;
         case '?':
             if (end[1] == '?') {
                 c = read_trigraph(end[2]);
                 if (c) {
                     end += 3;
                     *ptr++ = c;
-                    break;
+                    continue;
                 }
             }
-            goto normal;
+            break;
+        case '\'':
+        case '"':
+            count = read_literal(end, &ptr, &lines);
+            end += count;
+            if (!count) {
+                return 0;
+            }
+            continue;
         case '*':
             if (ptr > rline && ptr[-1] == '/') {
                 count = read_comment(end + 1, &lines);
@@ -330,14 +401,13 @@ static size_t read_line(const char *line, size_t len, int *linecount)
                 }
                 end += count + 1;
                 ptr[-1] = ' ';
-                break;
+                continue;
             }
-normal:
-        default:
-            *ptr++ = *end++;
             break;
         }
+        *ptr++ = *end++;
     } while (end - line < len);
+
     return 0;
 }
 
