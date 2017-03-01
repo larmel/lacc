@@ -199,6 +199,7 @@ void init(const char *path)
 
     rlen = FILE_BUFFER_SIZE;
     rline = malloc(rlen);
+    rline[0] = '\0';
 
     if (path) {
         sep = strrchr(path, '/');
@@ -338,7 +339,7 @@ static size_t read_literal(const char *line, char **buf, int *lines)
             if (c == q) {
                 esc = ptr - 1;
                 /* Do not break if character is escaped. */
-                while (esc >= line && *esc == '\\') {
+                while (*esc == '\\') {
                     esc -= 1;
                 }
                 if (((ptr - esc) & 1) != 0) {
@@ -376,13 +377,14 @@ static size_t read_line(const char *line, size_t len, int *linecount)
     const char *end;
     char *ptr, c;
 
-    if (len > rlen) {
-        rlen = len;
+    if (len >= rlen) {
+        rlen = len + 1;
         rline = realloc(rline, rlen);
     }
 
     lines = 0;
-    ptr = rline;
+    ptr = rline + 1;
+    assert(ptr[-1] == '\0');
     end = line;
     do {
         switch (*end) {
@@ -416,7 +418,7 @@ static size_t read_line(const char *line, size_t len, int *linecount)
             }
             continue;
         case '/':
-            if (ptr > rline && ptr[-1] == '/') {
+            if (ptr[-1] == '/') {
                 count = read_line_comment(end + 1, &lines);
                 if (!count) {
                     return 0;
@@ -427,7 +429,7 @@ static size_t read_line(const char *line, size_t len, int *linecount)
             }
             break;
         case '*':
-            if (ptr > rline && ptr[-1] == '/') {
+            if (ptr[-1] == '/') {
                 count = read_comment(end + 1, &lines);
                 if (!count) {
                     return 0;
@@ -512,7 +514,7 @@ static char *initial_preprocess_line(struct source *fn)
     } while (!added);
 
     fn->processed += added;
-    return rline;
+    return rline + 1;
 }
 
 static int is_directive(const char *line)
