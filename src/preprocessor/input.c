@@ -251,6 +251,28 @@ static size_t read_comment(const char *line, int *linecount)
 }
 
 /*
+ * Read single line comment ending at the first newline. Return number
+ * of characters read, or 0 if end of input reached.
+ */
+static size_t read_line_comment(const char *line, int *linecount)
+{
+    char c;
+    const char *ptr;
+
+    ptr = line;
+    do {
+        c = *ptr++;
+        if (c == '\\' && *ptr == '\n') {
+            *linecount += 1;
+            ptr++;
+        } else if (c == '\n') {
+            return ptr - line;
+        }
+    } while (c != '\0');
+    return 0;
+}
+
+/*
  * Read trigraph character, produced by pattern '??X', where X is the
  * input.
  */
@@ -393,6 +415,17 @@ static size_t read_line(const char *line, size_t len, int *linecount)
                 return 0;
             }
             continue;
+        case '/':
+            if (ptr > rline && ptr[-1] == '/') {
+                count = read_line_comment(end + 1, &lines);
+                if (!count) {
+                    return 0;
+                }
+                ptr[-1] = '\0';
+                *linecount += lines + 1;
+                return end + count + 1 - line;
+            }
+            break;
         case '*':
             if (ptr > rline && ptr[-1] == '/') {
                 count = read_comment(end + 1, &lines);
