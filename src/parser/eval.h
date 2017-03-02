@@ -101,6 +101,21 @@ struct expression eval_return(
     struct block *block);
 
 /*
+ * Allocate stack space for variable length array, with size in bytes
+ * determined by run-time evaluated expression.
+ */
+void eval_vla_alloc(
+    struct definition *def,
+    struct block *block,
+    const struct symbol *sym);
+
+/* Evaluate size of variable length array. */
+struct expression eval_vla_size(
+    struct definition *def,
+    struct block *block,
+    Type type);
+
+/*
  * Evaluate left->expr || right->expr, where right_top is a pointer to
  * the top of the block chain ending up with right. Returns the next
  * block of execution.

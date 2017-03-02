@@ -11,7 +11,7 @@
  *
  * Valid invocations are:
  *
- *   type_create(T_ARRAY, <Type elem>, <size_t length>)
+ *   type_create(T_ARRAY, <Type elem>, <size_t length>, <vla length>)
  *   type_create(T_POINTER, <Type next>)
  *   type_create(T_FUNCTION, <Type return>)
  *   type_create(T_STRUCT)
@@ -64,6 +64,9 @@ void type_seal(Type parent);
  */
 void type_set_array_size(Type type, size_t size);
 
+/* Number of elements in array. */
+size_t type_array_len(Type type);
+
 /*
  * Complete declarator by joining target to tail of outer pointer,
  * function, or array type.
@@ -81,6 +84,16 @@ void type_set_array_size(Type type, size_t size);
  */
 Type type_patch_declarator(Type head, Type target);
 
+/*
+ * Remove symbol references from prototype declaration, pointing to
+ * function parameters or VLA length constraints that will be invalid
+ * beyond prototype scope.
+ *
+ * For example, a declaration like int foo(int n, int a[][n]) will be
+ * converted to int foo(int n, int a[][*]).
+ */
+void type_clean_prototype(Type type);
+
 /* Specify name for tagged struct or union type. */
 void type_set_tag(Type type, String tag);
 
@@ -89,6 +102,9 @@ void type_set_tag(Type type, String tag);
  * function parameter. Returns NULL in the case no member is found.
  */
 const struct member *find_type_member(Type type, String name);
+
+/* Get symbol holding number of elements in given VLA type. */
+const struct symbol *type_vla_length(Type type);
 
 /* */
 int is_compatible(Type l, Type r);

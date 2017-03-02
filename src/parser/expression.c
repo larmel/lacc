@@ -75,14 +75,14 @@ static struct block *parse__builtin_va_arg(
 
     consume('(');
     block = assignment_expression(def, block);
+    value = eval(def, block, block->expr);
     consume(',');
     type = declaration_specifiers(NULL, NULL);
     if (peek().token != ')') {
-        type = declarator(type, NULL);
+        block = declarator(def, block, type, &type, NULL);
     }
 
     consume(')');
-    value = eval(def, block, block->expr);
     block->expr = eval_expr(def, block, IR_OP_VA_ARG, value, type);
     return block;
 }
@@ -126,7 +126,8 @@ static struct block *primary_expression(
             type_create(
                 T_ARRAY,
                 basic_type__char,
-                (size_t) tok.d.string.len + 1),
+                (size_t) tok.d.string.len + 1,
+                NULL),
             SYM_STRING_VALUE,
             LINK_INTERN);
         /*
@@ -470,7 +471,7 @@ static struct block *unary_expression(
                 consume('(');
                 type = declaration_specifiers(NULL, NULL);
                 if (peek().token != ')') {
-                    type = declarator(type, NULL);
+                    block = declarator(def, block, type, &type, NULL);
                 }
                 consume(')');
                 break;
@@ -481,21 +482,24 @@ exprsize:   head = cfg_block_init(def);
             tail = unary_expression(def, head);
             type = tail->expr.type;
         }
-        if (is_function(type)) {
-            error("Cannot apply 'sizeof' to function type.");
-        }
         if (!size_of(type)) {
-            error("Cannot apply 'sizeof' to incomplete type.");
+            if (is_vla(type)) {
+                block->expr = eval_vla_size(def, block, type);
+            } else {
+                error("Cannot apply 'sizeof' to incomplete type.");
+                exit(1);
+            }
+        } else {
+            value = imm_unsigned(basic_type__unsigned_long, size_of(type));
+            block->expr = as_expr(value);
         }
-        value = imm_unsigned(basic_type__unsigned_long, size_of(type));
-        block->expr = as_expr(value);
         break;
     case ALIGNOF:
         next();
         consume('(');
         type = declaration_specifiers(NULL, NULL);
         if (peek().token != ')') {
-            type = declarator(type, NULL);
+            block = declarator(def, block, type, &type, NULL);
         }
         if (is_function(type)) {
             error("Cannot apply '_Alignof' to function type.");
@@ -553,7 +557,7 @@ static struct block *cast_expression(
             consume('(');
             type = declaration_specifiers(NULL, NULL);
             if (peek().token != ')') {
-                type = declarator(type, NULL);
+                block = declarator(def, block, type, &type, NULL);
             }
             consume(')');
             block = cast_expression(def, block);

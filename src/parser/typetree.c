@@ -1,6 +1,7 @@
 #include "typetree.h"
 #include <lacc/array.h>
 #include <lacc/context.h>
+#include <lacc/symbol.h>
 
 #include <assert.h>
 #include <limits.h>
@@ -34,6 +35,7 @@ struct typetree {
     unsigned int is_volatile : 1;
     unsigned int is_vararg : 1;
     unsigned int is_flexible : 1;
+    unsigned int is_vla : 1;
 
     /*
      * Total storage size in bytes for struct, union and basic types,
@@ -41,6 +43,18 @@ struct typetree {
      * of array type.
      */
     size_t size;
+
+    /*
+     * Symbol holding size of variable length array. Type of variable is
+     * always size_t (unsigned long).
+     *
+     * Special value NULL means any length '*', if is_vla is set. The
+     * flag is always set if vlen is not NULL.
+     *
+     * Normal size member is zero for VLA types, and size_of still
+     * returns 0 without error.
+     */
+    const struct symbol *vlen;
 
     /* Function parameters, or struct/union members. */
     array_of(struct member) members;
@@ -256,6 +270,7 @@ static size_t adjust_member_alignment(Type parent, Type type)
 Type type_create(enum type tt, ...)
 {
     Type type = {0}, next;
+    const struct symbol *sym;
     struct typetree *t;
     size_t elem;
     va_list args;
@@ -280,7 +295,8 @@ Type type_create(enum type tt, ...)
     case T_ARRAY:
         next = va_arg(args, Type);
         elem = va_arg(args, size_t);
-        if (elem > LONG_MAX / size_of(next)) {
+        sym = va_arg(args, const struct symbol *);
+        if (elem * size_of(next) > LONG_MAX) {
             error("Array is too large (%lu elements).", elem);
             exit(1);
         }
@@ -288,6 +304,10 @@ Type type_create(enum type tt, ...)
         t = get_typetree_handle(type.ref);
         t->size = elem;
         t->next = next;
+        if (sym) {
+            t->vlen = sym;
+            t->is_vla = 1;
+        }
         break;
     case T_FUNCTION:
         next = va_arg(args, Type);
@@ -366,6 +386,38 @@ Type type_patch_declarator(Type head, Type target)
     }
 
     return next;
+}
+
+void type_clean_prototype(Type type)
+{
+    int i;
+    struct member *m;
+    struct typetree *t;
+
+    switch (type_of(type)) {
+    case T_POINTER:
+        type_clean_prototype(type_next(type));
+        break;
+    case T_ARRAY:
+        t = get_typetree_handle(type.ref);
+        if (t->is_vla) {
+            t->vlen = NULL;
+        }
+        type_clean_prototype(t->next);
+        break;
+    case T_STRUCT:
+    case T_UNION:
+        t = get_typetree_handle(type.ref);
+        if (t->tag.len)
+            break;
+    case T_FUNCTION:
+        for (i = 0; i < nmembers(type); ++i) {
+            m = get_member(type, i);
+            m->sym = NULL;
+            type_clean_prototype(m->type);
+        }
+        break;
+    }
 }
 
 void type_set_tag(Type type, String tag)
@@ -594,6 +646,18 @@ int is_vararg(Type type)
     return t->is_vararg;
 }
 
+int is_vla(Type type)
+{
+    struct typetree *t;
+
+    if (is_array(type)) {
+        t = get_typetree_handle(type.ref);
+        return t->is_vla || is_vla(t->next);
+    }
+
+    return 0;
+}
+
 int is_flexible(Type type)
 {
     struct typetree *t;
@@ -738,6 +802,24 @@ size_t size_of(Type type)
     }
 }
 
+size_t type_array_len(Type type)
+{
+    struct typetree *t;
+    assert(is_array(type));
+
+    t = get_typetree_handle(type.ref);
+    return t->size;
+}
+
+const struct symbol *type_vla_length(Type type)
+{
+    struct typetree *t;
+    assert(is_vla(type));
+
+    t = get_typetree_handle(type.ref);
+    return t->vlen;
+}
+
 Type type_deref(Type type)
 {
     assert(is_pointer(type));
@@ -852,7 +934,13 @@ static int print_type(FILE *stream, Type type, int depth)
         break;
     case T_ARRAY:
         t = get_typetree_handle(type.ref);
-        if (t->size) {
+        if (t->is_vla) {
+            if (t->vlen) {
+                n += fprintf(stream, "[%s] ", sym_name(t->vlen));
+            } else {
+                n += fputs("[*] ", stream);
+            }
+        } else if (t->size) {
             n += fprintf(stream, "[%lu] ", t->size);
         } else {
             n += fputs("[] ", stream);

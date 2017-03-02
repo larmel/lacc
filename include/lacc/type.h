@@ -104,6 +104,8 @@ extern const Type
  *     int  c : 7;    // offset = 4, field_width = 7, field_offset = 5
  * }
  *
+ * Symbol is used for function parameters, pointing to the actual
+ * instances registered in the definition.
  */
 struct member {
     String name;
@@ -125,6 +127,12 @@ Type type_next(Type type);
 
 /* A function takes variable arguments if last parameter is '...'. */
 int is_vararg(Type type);
+
+/*
+ * Determine whether type is a variable length array, with size only
+ * available at runtime.
+ */
+int is_vla(Type type);
 
 /*
  * Determine whether struct or union type contains a flexible array

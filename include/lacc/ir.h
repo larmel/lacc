@@ -117,13 +117,18 @@ struct expression {
  *
  * Handle va_start as a separate statement, as it requires knowledge
  * about memory layout only available to backend.
+ *
+ * Variable length arrays are allocated when declared, and deallocated
+ * all at once when exiting function scope. Expression holds the size
+ * in bytes to be allocated to VLA t.
  */
 struct statement {
     enum sttype {
-        IR_EXPR,     /* (expr)         */
-        IR_PARAM,    /* param (expr)   */
-        IR_VA_START, /* va_start(expr) */
-        IR_ASSIGN    /* t = expr       */
+        IR_EXPR,      /* (expr)              */
+        IR_PARAM,     /* param (expr)        */
+        IR_VA_START,  /* va_start(expr)      */
+        IR_ASSIGN,    /* t = expr            */
+        IR_VLA_ALLOC  /* vla_alloc t, (expr) */
     } st;
     unsigned long out;
     struct var t;

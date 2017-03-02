@@ -70,6 +70,13 @@ struct symbol {
      */
     int stack_offset;
 
+    /*
+     * Location in memory of variable length array. Set on IR_VLA_ALLOC
+     * to current position of stack pointer after subtracting total size
+     * of the array.
+     */
+    const struct symbol *vla_address;
+
     /* Scope depth. */
     int depth;
 
@@ -88,6 +95,12 @@ extern const struct symbol *decl_memcpy;
 
 /* Get the full name, including numeric value to disambiguate. */
 const char *sym_name(const struct symbol *sym);
+
+/*
+ * Determine if given symbol is a temporary value generated during
+ * evaluation.
+ */
+int is_temporary(const struct symbol *sym);
 
 /*
  * Create a floating point constant, which can be stored and loaded from

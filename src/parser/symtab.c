@@ -107,6 +107,11 @@ void sym_release_temporary(struct symbol *sym)
     array_push_back(&temporaries, sym);
 }
 
+int is_temporary(const struct symbol *sym)
+{
+    return strcmp(".t", str_raw(sym->name)) == 0;
+}
+
 /*
  * Initialize hash table with initial size heuristic based on scope
  * depth. As a special case, depth 1 containing function arguments is
@@ -482,9 +487,15 @@ void output_symbols(FILE *stream, struct namespace *ns)
 
         fprintf(stream, "%s :: ", sym_name(sym));
         fprinttype(stream, sym->type);
-        fprintf(stream, ", size=%lu", size_of(sym->type));
+        if (size_of(sym->type)) {
+            fprintf(stream, ", size=%lu", size_of(sym->type));
+        }
+
         if (sym->stack_offset) {
-            fprintf(stream, " (stack_offset: %d)", sym->stack_offset);
+            fprintf(stream, ", (stack_offset: %d)", sym->stack_offset);
+        }
+        if (sym->vla_address) {
+            fprintf(stream, ", (vla_address: %s)", sym_name(sym->vla_address));
         }
 
         if (sym->symtype == SYM_CONSTANT) {

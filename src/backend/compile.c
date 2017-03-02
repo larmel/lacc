@@ -178,12 +178,6 @@ static int displacement_from_offset(size_t offset)
     return (int) offset;
 }
 
-static int is_temporary(const struct symbol *sym)
-{
-    const char *str = str_raw(sym->name);
-    return str[0] == '.' && str[1] == 't';
-}
-
 static int is_register_allocated(struct var v)
 {
     return v.kind == DIRECT
@@ -1236,7 +1230,7 @@ static int allocate_locals(
         sym = array_get(&def->locals, i);
         assert(!sym->stack_offset);
         assert(sym->symtype == SYM_DEFINITION);
-        if (sym->linkage == LINK_NONE && sym->slot == 0) {
+        if (sym->linkage == LINK_NONE && sym->slot == 0 && !is_vla(sym->type)) {
             stack_offset -= EIGHTBYTES(sym->type) * 8;
             sym->stack_offset = stack_offset - reg_offset;
         }
@@ -1300,6 +1294,7 @@ static int return_address_offset;
  *     could have been passed in registers.
  *  4) Parameters passed in registers.
  *  5) Local variables.
+ *  6) Variable length arrays (not allocated here).
  *
  */
 static int enter(struct definition *def)
@@ -1310,7 +1305,7 @@ static int enter(struct definition *def)
         next_sse_reg = 0,
         mem_offset = 16,    /* Offset of PC_MEMORY parameters. */
         reg_offset = 0,     /* Offset of %rsp to save temp registers. */
-        stack_offset = 0;   /* Offset of %rsp to for local variables. */
+        stack_offset = 0;   /* Offset of %rsp for local variables. */
     struct var ref;
     struct symbol *sym;
     struct param_class res, arg;
@@ -2546,6 +2541,27 @@ static enum reg compile_expression(struct expression expr)
     return compile_assign(target, expr);
 }
 
+/*
+ * Allocate a variable length array, storing the address of the first
+ * element to sym->vla_address.
+ */
+static void compile_vla_alloc(
+    const struct symbol *sym,
+    struct expression size)
+{
+    enum reg ax;
+    assert(is_vla(sym->type));
+
+    /* Subtract aligned variable length from %rsp. */
+    ax = compile_expression(size);
+    emit(INSTR_SUB, OPT_REG_REG, reg(ax, 8), reg(SP, 8));
+    emit(INSTR_MOV, OPT_IMM_REG, constant(-16, 8), reg(R11, 8));
+    emit(INSTR_AND, OPT_REG_REG, reg(R11, 8), reg(SP, 8));
+
+    /* Assign current stack location to VLA symbol. */
+    store(SP, var_direct(sym->vla_address));
+}
+
 static void compile_statement(struct statement stmt)
 {
     switch (stmt.st) {
@@ -2561,6 +2577,11 @@ static void compile_statement(struct statement stmt)
         stmt.t.type = basic_type__void;
     case IR_ASSIGN:
         compile_assign(stmt.t, stmt.expr);
+        break;
+    case IR_VLA_ALLOC:
+        assert(stmt.t.kind == DIRECT);
+        assert(stmt.t.symbol);
+        compile_vla_alloc(stmt.t.symbol, stmt.expr);
         break;
     }
 
