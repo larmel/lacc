@@ -47,9 +47,6 @@ static enum reg
     ret_int_reg[] = {AX, DX},
     ret_sse_reg[] = {XMM0, XMM1};
 
-static int
-    temp_int_regs_used;
-
 /*
  * Keep track of used registers when evaluating expressions, not having
  * to explicitly tell which register is to be used in all rules.
@@ -1251,31 +1248,28 @@ static int allocate_locals(
  * Assign a subset of local variables to temporary registers, populating
  * sym->slot.
  *
- * Return number of bytes allocated, which must be taken into account
- * when placing other temporaries and parameters on stack.
+ * Return number of registers allocated.
  */
 static int allocate_registers(struct definition *def)
 {
-    int i, offset;
+    int i, regs;
     struct symbol *sym;
 
-    offset = 0;
-    temp_int_regs_used = 0;
+    regs = 0;
     for (i = 0; i < array_len(&def->locals); ++i) {
         sym = array_get(&def->locals, i);
         if (is_temporary(sym)
             && sym->slot == 0
             && is_arithmetic(sym->type)
             && (is_integer(sym->type) || is_pointer(sym->type))
-            && temp_int_regs_used < TEMP_INT_REGS)
+            && regs < TEMP_INT_REGS)
         {
             assert(sym->linkage == LINK_NONE);
-            sym->slot = ++temp_int_regs_used;
-            offset += 8;
+            sym->slot = ++regs;
         }
     }
 
-    return offset;
+    return regs;
 }
 
 /*
@@ -1292,8 +1286,8 @@ static int return_address_offset;
 /*
  * Emit code for entering a function.
  *
- * Return number of bytes subtracted from %rsp allocated for local
- * variables.
+ * Return number of temporary registers pushed to stack, which must be
+ * restored on return.
  *
  * The stack frame contains, in order:
  *
@@ -1309,7 +1303,7 @@ static int return_address_offset;
  */
 static int enter(struct definition *def)
 {
-    int i, n,
+    int i, n, regs,
         register_args = 0,  /* Arguments passed in registers. */
         next_integer_reg = 0,
         next_sse_reg = 0,
@@ -1329,7 +1323,8 @@ static int enter(struct definition *def)
     assert(is_function(type));
 
     /* Figure out how many registers are used for temporaries. */
-    reg_offset = allocate_registers(def);
+    regs = allocate_registers(def);
+    reg_offset = regs * 8;
 
     /*
      * Address of return value is passed as first integer argument. If
@@ -1381,7 +1376,7 @@ static int enter(struct definition *def)
     }
 
     stack_offset = allocate_locals(def, reg_offset, stack_offset);
-    for (i = 0; i < temp_int_regs_used; ++i)
+    for (i = 0; i < regs; ++i)
         emit(INSTR_PUSH, OPT_REG, reg(temp_int_reg[i], 8));
 
     /*
@@ -1450,7 +1445,7 @@ static int enter(struct definition *def)
         count_register_classifications(arg, &next_integer_reg, &next_sse_reg);
     }
 
-    return -stack_offset;
+    return regs;
 }
 
 /*
@@ -2656,7 +2651,7 @@ static void compile_return(Type func, struct expression expr)
  * object, branchhing to the correct next block. All scalar expressions
  * are allowed.
  */
-static void compile_block(struct block *block, Type type, int stack)
+static void compile_block(struct block *block, Type type, int regs)
 {
     int i;
     enum reg ax;
@@ -2683,11 +2678,13 @@ static void compile_block(struct block *block, Type type, int stack)
             relase_regs();
             assert(x87_stack == 0);
         }
-        if (temp_int_regs_used) {
-            if (stack)
-                emit(INSTR_ADD, OPT_IMM_REG, constant(stack, 8), reg(SP, 8));
-            for (i = temp_int_regs_used; i > 0; --i)
+        if (regs) {
+            emit(INSTR_LEA, OPT_MEM_REG,
+                location(address(-regs * 8, BP, 0, 0), 8),
+                reg(SP, 8));
+            for (i = regs; i > 0; --i) {
                 emit(INSTR_POP, OPT_REG, reg(temp_int_reg[i - 1], 8));
+            }
         }
         emit(INSTR_LEAVE, OPT_NONE);
         emit(INSTR_RET, OPT_NONE);
@@ -2695,7 +2692,7 @@ static void compile_block(struct block *block, Type type, int stack)
         if (block->jump[0]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
         } else {
-            compile_block(block->jump[0], type, stack);
+            compile_block(block->jump[0], type, regs);
         }
     } else {
         assert(block->jump[0]);
@@ -2774,10 +2771,10 @@ static void compile_block(struct block *block, Type type, int stack)
         if (block->jump[1]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
         } else {
-            compile_block(block->jump[1], type, stack);
+            compile_block(block->jump[1], type, regs);
         }
 
-        compile_block(block->jump[0], type, stack);
+        compile_block(block->jump[0], type, regs);
     }
 }
 
@@ -2916,7 +2913,7 @@ static void compile_data(struct definition *def)
 
 static void compile_function(struct definition *def)
 {
-    int stack;
+    int regs;
 
     assert(is_function(def->symbol->type));
     enter_context(def->symbol);
@@ -2924,10 +2921,10 @@ static void compile_function(struct definition *def)
     emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(BP, 8));
 
     /* Make sure parameters and local variables are placed on stack. */
-    stack = enter(def);
+    regs = enter(def);
 
     /* Recursively assemble body. */
-    compile_block(def->body, def->symbol->type, stack);
+    compile_block(def->body, def->symbol->type, regs);
 }
 
 void set_compile_target(FILE *stream, const char *file)
