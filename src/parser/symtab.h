@@ -79,6 +79,9 @@ struct symbol *sym_add(
     enum symtype symtype,
     enum linkage linkage);
 
+/* Add symbol to current scope of given namespace. */
+void sym_make_visible(struct namespace *ns, struct symbol *sym);
+
 /*
  * Create a symbol with the provided type and add it to current scope in
  * identifier namespace. Used to hold temporary values in expression

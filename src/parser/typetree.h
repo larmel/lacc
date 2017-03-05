@@ -35,7 +35,7 @@ Type type_apply_qualifiers(Type type, Type other);
  * For functions taking variable number of arguments, the last member
  * should be passed as "...".
  */
-void type_add_member(Type parent, String name, Type type);
+void type_add_member(Type parent, String name, Type type, struct symbol *sym);
 
 /*
  * Add unnamed struct or union member, which itself has to be struct or

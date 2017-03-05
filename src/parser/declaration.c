@@ -47,6 +47,7 @@ static Type parameter_list(Type base)
 {
     String name;
     Type func, type;
+    struct symbol *sym;
 
     func = type_create(T_FUNCTION, base);
     while (peek().token != ')') {
@@ -59,7 +60,14 @@ static Type parameter_list(Type base)
             }
             break;
         }
-        type_add_member(func, name, type);
+        if (is_array(type)) {
+            type = type_create(T_POINTER, type_next(type));
+        }
+        sym = NULL;
+        if (name.len) {
+            sym = sym_add(&ns_ident, name, type, SYM_DEFINITION, LINK_NONE);
+        }
+        type_add_member(func, name, type, sym);
         if (peek().token != ',') {
             break;
         }
@@ -67,7 +75,7 @@ static Type parameter_list(Type base)
         if (peek().token == DOTS) {
             consume(DOTS);
             assert(!is_vararg(func));
-            type_add_member(func, str_init("..."), basic_type__void);
+            type_add_member(func, str_init("..."), basic_type__void, NULL);
             assert(is_vararg(func));
             break;
         }
@@ -95,7 +103,7 @@ static Type identifier_list(Type base)
                 error("Unexpected type '%t' in identifier list.");
                 exit(1);
             }
-            type_add_member(type, t.d.string, get_type_placeholder());
+            type_add_member(type, t.d.string, get_type_placeholder(), NULL);
             if (peek().token == ',') {
                 next();
             } else break;
@@ -185,11 +193,15 @@ static Type direct_declarator(Type base, String *name)
     case '(':
         next();
         t = peek();
+        push_scope(&ns_tag);
+        push_scope(&ns_ident);
         if (t.token == IDENTIFIER && !get_typedef(t.d.string)) {
             type = identifier_list(base);
         } else {
             type = parameter_list(base);
         }
+        pop_scope(&ns_ident);
+        pop_scope(&ns_tag);
         consume(')');
         break;
     default:
@@ -263,7 +275,7 @@ static void member_declaration_list(Type type)
                         exit(1);
                     }
                 } else {
-                    type_add_member(type, name, decl_type);
+                    type_add_member(type, name, decl_type, NULL);
                 }
             }
             if (peek().token == ',') {
@@ -995,7 +1007,6 @@ static void define_builtin__func__(String name)
 static void parameter_declaration_list(struct definition *def, Type type)
 {
     int i;
-    struct symbol *sym;
     struct member *param;
 
     assert(is_function(type));
@@ -1013,15 +1024,20 @@ static void parameter_declaration_list(struct definition *def, Type type)
         if (is_type_placeholder(param->type)) {
             param->type = basic_type__int;
         }
-        sym = sym_lookup(&ns_ident, param->name);
-        if (!sym || sym->depth != 1) {
-            sym = sym_add(&ns_ident,
-                param->name,
-                param->type,
-                SYM_DEFINITION,
-                LINK_NONE);
+        if (!param->sym) {
+            param->sym = sym_lookup(&ns_ident, param->name);
+            if (!param->sym || param->sym->depth != 1) {
+                param->sym = sym_add(&ns_ident,
+                    param->name,
+                    param->type,
+                    SYM_DEFINITION,
+                    LINK_NONE);
+            }
+        } else {
+            assert(param->sym->depth == current_scope_depth(&ns_ident));
+            sym_make_visible(&ns_ident, param->sym);
         }
-        array_push_back(&def->params, sym);
+        array_push_back(&def->params, param->sym);
     }
 }
 

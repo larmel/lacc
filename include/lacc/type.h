@@ -111,6 +111,7 @@ struct member {
     size_t offset;
     short field_width;
     short field_offset;
+    struct symbol *sym;
 };
 
 /* Get the number of struct or union members, or function parameters. */

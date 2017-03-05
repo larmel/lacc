@@ -412,21 +412,18 @@ struct member *get_member(Type type, int n)
     return &array_get(&t->members, n);
 }
 
-void type_add_member(Type parent, String name, Type type)
+void type_add_member(Type parent, String name, Type type, struct symbol *sym)
 {
     struct member m = {0};
 
     assert(is_struct_or_union(parent) || is_function(parent));
-    if (is_function(parent)) {
-        if (is_array(type)) {
-            type = type_create(T_POINTER, type_next(type));
-        }
-    } else {
+    if (!is_function(parent)) {
         m.offset = adjust_member_alignment(parent, type);
     }
 
     m.name = name;
     m.type = type;
+    m.sym = sym;
     add_member(parent, m);
 }
 
@@ -528,7 +525,7 @@ void type_add_anonymous_member(Type parent, Type type)
     } else {
         for (i = 0; i < nmembers(type); ++i) {
             m = array_get(&t->members, i);
-            type_add_member(parent, m.name, m.type);
+            type_add_member(parent, m.name, m.type, NULL);
         }
     }
 }

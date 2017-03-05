@@ -249,19 +249,16 @@ static void apply_type(struct symbol *sym, Type type)
 
     if (conflict) {
         error("Incompatible declaration of %s :: %t, cannot apply type '%t'.",
-            sym->name, sym->type, type);
+            str_raw(sym->name), sym->type, type);
         exit(1);
     }
 }
 
-static void add_symbol_to_current_scope(
-    struct namespace *ns,
-    struct symbol *sym)
+void sym_make_visible(struct namespace *ns, struct symbol *sym)
 {
     unsigned cap;
     struct scope *scope;
 
-    array_push_back(&ns->symbol, sym);
     scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
     switch (scope->state) {
     case SCOPE_CREATED:
@@ -346,7 +343,8 @@ struct symbol *sym_add(
         sym->n = ++n;
     }
 
-    add_symbol_to_current_scope(ns, sym);
+    array_push_back(&ns->symbol, sym);
+    sym_make_visible(ns, sym);
     verbose(
         "\t[type: %s, link: %s]\n"
         "\t%s :: %t",
