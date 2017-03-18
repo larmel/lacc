@@ -35,7 +35,11 @@ struct typetree {
     unsigned int is_vararg : 1;
     unsigned int is_flexible : 1;
 
-    /* Total storage size in bytes, returned for sizeof. */
+    /*
+     * Total storage size in bytes for struct, union and basic types,
+     * equal to what is returned for sizeof. Number of elements in case
+     * of array type.
+     */
     size_t size;
 
     /* Function parameters, or struct/union members. */
@@ -282,7 +286,7 @@ Type type_create(enum type tt, ...)
         }
         type = alloc_type(T_ARRAY);
         t = get_typetree_handle(type.ref);
-        t->size = elem * size_of(next);
+        t->size = elem;
         t->next = next;
         break;
     case T_FUNCTION:
@@ -722,11 +726,13 @@ size_t size_of(Type type)
         return 8;
     case T_LDOUBLE:
         return 16;
-    case T_ARRAY:
     case T_STRUCT:
     case T_UNION:
         t = get_typetree_handle(type.ref);
         return t->size;
+    case T_ARRAY:
+        t = get_typetree_handle(type.ref);
+        return t->size * size_of(t->next);
     default:
         return 0;
     }
@@ -762,10 +768,11 @@ void type_set_array_size(Type type, size_t size)
 {
     struct typetree *t;
     assert(is_array(type));
+    assert(size > 0);
 
     t = get_typetree_handle(type.ref);
     assert(t->size == 0);
-    t->size = size;
+    t->size = size / size_of(t->next);
 }
 
 const struct member *find_type_member(Type type, String name)
@@ -846,7 +853,7 @@ static int print_type(FILE *stream, Type type, int depth)
     case T_ARRAY:
         t = get_typetree_handle(type.ref);
         if (t->size) {
-            n += fprintf(stream, "[%lu] ", t->size / size_of(t->next));
+            n += fprintf(stream, "[%lu] ", t->size);
         } else {
             n += fputs("[] ", stream);
         }
