@@ -9,6 +9,10 @@
 
 static struct hash_table strtab;
 
+/* Buffer used to concatenate strings before registering them. */
+static char *catbuf;
+static size_t catlen;
+
 /*
  * Every unique string encountered, being identifiers or literals, is
  * kept for the lifetime of the program. To save allocations, store the
@@ -44,6 +48,7 @@ static String str_hash_key(void *ref)
 static void strtab_free(void)
 {
     hash_destroy(&strtab);
+    free(catbuf);
 }
 
 String str_register(const char *str, size_t len)
@@ -79,24 +84,15 @@ String str_register(const char *str, size_t len)
 
 String str_cat(String a, String b)
 {
-    static char buf[SHORT_STRING_LEN + 1];
-    int len;
-    char *str;
-    String s;
+    size_t len;
 
     len = a.len + b.len;
-    if (len < SHORT_STRING_LEN) {
-        str = buf;
-    } else {
-        str = calloc(len + 1, sizeof(*str));
+    if (len > catlen) {
+        catlen = len;
+        catbuf = realloc(catbuf, catlen);
     }
 
-    memcpy(str, str_raw(a), a.len);
-    memcpy(str + a.len, str_raw(b), b.len);
-    s = str_register(str, len);
-    if (str != buf) {
-        free(str);
-    }
-
-    return s;
+    memcpy(catbuf, str_raw(a), a.len);
+    memcpy(catbuf + a.len, str_raw(b), b.len);
+    return str_register(catbuf, len);
 }
