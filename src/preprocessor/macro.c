@@ -13,6 +13,8 @@
 #include <stdlib.h>
 #include <time.h>
 
+#define XSTR(s) STR(s)
+#define STR(s) #s
 #define HASH_TABLE_BUCKETS 1024
 
 static struct hash_table macro_hash_table;
@@ -766,10 +768,10 @@ void register_builtin_definitions(void)
     register_macro("__SIZEOF_POINTER__", "8");
 
 #ifdef __linux__
-    register_macro("__linux__", "1");
+    register_macro("__linux__", XSTR(__linux__));
 #endif
 #ifdef __unix__
-    register_macro("__unix__", "1");
+    register_macro("__unix__", XSTR(__unix__));
 #endif
 
     switch (context.standard) {
