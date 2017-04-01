@@ -1,4 +1,3 @@
-#define _XOPEN_SOURCE 500
 #include "input.h"
 #include "macro.h"
 #include "strtab.h"
@@ -159,10 +158,10 @@ static void ensure_initialized(void)
 static struct token get__line__token(void)
 {
     int len;
-    char buf[32];
+    char buf[16];
     struct token t = basic_token[PREP_NUMBER];
 
-    len = snprintf(buf, sizeof(buf), "%d", current_file_line);
+    len = sprintf(buf, "%d", current_file_line);
     t.d.string = str_register(buf, len);
     return t;
 }
