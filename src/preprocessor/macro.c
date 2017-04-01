@@ -193,24 +193,6 @@ const struct macro *definition(String name)
     return ref;
 }
 
-static int has_stringify_replacement(const struct macro *def)
-{
-    int i;
-    unsigned len = array_len(&def->replacement);
-
-    if (len > 1) {
-        for (i = 0; i < len - 1; ++i) {
-            if (array_get(&def->replacement, i).token == '#'
-                && array_get(&def->replacement, i + 1).token == PARAM)
-            {
-                return 1;
-            }
-        }
-    }
-
-    return 0;
-}
-
 void define(struct macro macro)
 {
     struct macro *ref;
@@ -226,7 +208,6 @@ void define(struct macro macro)
             str_raw(macro.name));
         exit(1);
     } else {
-        ref->stringify = has_stringify_replacement(ref);
         ref->is__file__ = !str_cmp(builtin__file__, ref->name);
         ref->is__line__ = !str_cmp(builtin__line__, ref->name);
         if (!new_macro_added) {

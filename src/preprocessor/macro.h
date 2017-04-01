@@ -16,15 +16,12 @@ struct macro {
     String name;
 
     enum {
-    	OBJECT_LIKE,
-    	FUNCTION_LIKE
+        OBJECT_LIKE,
+        FUNCTION_LIKE
     } type;
 
     /* Number of parameters required for substitution. */
-    short params;
-
-    /* Toggle whether any parameter is stringified in replacement. */
-    short stringify;
+    int params;
 
     unsigned int is__line__ : 1;
     unsigned int is__file__ : 1;
