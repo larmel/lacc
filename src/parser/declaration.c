@@ -1024,6 +1024,7 @@ static void parameter_declaration_list(struct definition *def, Type type)
         if (is_type_placeholder(param->type)) {
             param->type = basic_type__int;
         }
+        assert(!is_array(param->type));
         if (!param->sym) {
             param->sym = sym_lookup(&ns_ident, param->name);
             if (!param->sym || param->sym->depth != 1) {
@@ -1098,8 +1099,11 @@ struct block *declaration(struct definition *def, struct block *parent)
         case 0: break;
         case 1: /* Parameters from old-style function definitions. */
             param = find_type_member(def->symbol->type, name);
+            if (is_array(type)) {
+                sym->type = type_create(T_POINTER, type_next(type));
+            }
             if (param && is_type_placeholder(param->type)) {
-                ((struct member *) param)->type = type;
+                ((struct member *) param)->type = sym->type;
             } else {
                 error("Invalid parameter declaration of %s.", str_raw(name));
                 exit(1);
