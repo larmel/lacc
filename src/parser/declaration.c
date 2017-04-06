@@ -1042,20 +1042,124 @@ static void parameter_declaration_list(struct definition *def, Type type)
     }
 }
 
+/* Parse declaration with optional initializer. */
+struct block *init_declarator(
+    struct definition *def,
+    struct block *parent,
+    Type base,
+    enum symtype symtype,
+    enum linkage linkage,
+    int *is_func)
+{
+    Type type;
+    String name = {0};
+    struct symbol *sym;
+    const struct member *param;
+
+    *is_func = 0;
+    type = declarator(base, &name);
+    if (!name.len) {
+        return parent;
+    }
+
+    if (is_function(type)) {
+        symtype = SYM_DECLARATION;
+        if (linkage == LINK_NONE) {
+            linkage = LINK_EXTERN;
+        }
+        if (linkage == LINK_INTERN && current_scope_depth(&ns_ident)) {
+            error("Cannot declare static function in block scope.");
+            exit(1);
+        }
+    }
+
+    sym = sym_add(&ns_ident, name, type, symtype, linkage);
+    switch (current_scope_depth(&ns_ident)) {
+    case 0: break;
+    case 1: /* Parameters from old-style function definitions. */
+        param = find_type_member(def->symbol->type, name);
+        if (is_array(type)) {
+            sym->type = type_create(T_POINTER, type_next(type));
+        }
+        if (param && is_type_placeholder(param->type)) {
+            ((struct member *) param)->type = sym->type;
+        } else {
+            error("Invalid parameter declaration of %s.", str_raw(name));
+            exit(1);
+        }
+        break;
+    default:
+        if (symtype == SYM_DEFINITION) {
+            assert(linkage == LINK_NONE);
+            array_push_back(&def->locals, sym);
+        }
+        break;
+    }
+
+    switch (peek().token) {
+    case '=':
+        if (sym->symtype == SYM_DECLARATION) {
+            error("Extern symbol '%s' cannot be initialized.",
+                str_raw(sym->name));
+            exit(1);
+        }
+        if (!sym->depth && sym->symtype == SYM_DEFINITION) {
+            error("Symbol '%s' was already defined.", str_raw(sym->name));
+            exit(1);
+        }
+        consume('=');
+        sym->symtype = SYM_DEFINITION;
+        if (sym->linkage == LINK_NONE) {
+            assert(def);
+            assert(parent);
+            parent = initializer(def, parent, var_direct(sym));
+        } else {
+            assert(sym->depth || !parent);
+            def = cfg_init(sym);
+            initializer(def, def->body, var_direct(sym));
+        }
+        assert(size_of(sym->type) > 0);
+        break;
+    case IDENTIFIER:
+    case FIRST(type_specifier):
+    case FIRST(type_qualifier):
+    case REGISTER:
+    case '{':
+        assert(!parent);
+        assert(sym->linkage != LINK_NONE);
+        if (is_function(sym->type)) {
+            sym->symtype = SYM_DEFINITION;
+            def = cfg_init(sym);
+            push_scope(&ns_label);
+            push_scope(&ns_ident);
+            parameter_declaration_list(def, type);
+            if (context.standard >= STD_C99) {
+                define_builtin__func__(sym->name);
+            }
+            parent = block(def, def->body);
+            pop_scope(&ns_label);
+            pop_scope(&ns_ident);
+            *is_func = 1;
+        }
+    default:
+        break;
+    }
+
+    return parent;
+}
+
 /*
+ * Parse a declaration, adding new symbols to the symbol table.
+ *
  * Cover external declarations, functions, and local declarations
  * (with optional initialization code) inside functions.
  */
 struct block *declaration(struct definition *def, struct block *parent)
 {
-    String name;
-    Type base, type;
-    struct token t;
-    struct symbol *sym;
-    const struct member *param;
+    Type base;
     enum symtype symtype;
     enum linkage linkage;
-    int storage_class, is_inline;
+    int storage_class, is_inline, is_func;
 
     base = declaration_specifiers(&storage_class, &is_inline);
     switch (storage_class) {
@@ -1083,91 +1187,15 @@ struct block *declaration(struct definition *def, struct block *parent)
     }
 
     while (1) {
-        name.len = 0;
-        type = declarator(base, &name);
-        if (!name.len) {
-            consume(';');
+        parent = init_declarator(def, parent, base, symtype, linkage, &is_func);
+        if (is_func) {
             return parent;
         }
-
-        if (is_function(type)) {
-            symtype = SYM_DECLARATION;
-        }
-
-        sym = sym_add(&ns_ident, name, type, symtype, linkage);
-        switch (current_scope_depth(&ns_ident)) {
-        case 0: break;
-        case 1: /* Parameters from old-style function definitions. */
-            param = find_type_member(def->symbol->type, name);
-            if (is_array(type)) {
-                sym->type = type_create(T_POINTER, type_next(type));
-            }
-            if (param && is_type_placeholder(param->type)) {
-                ((struct member *) param)->type = sym->type;
-            } else {
-                error("Invalid parameter declaration of %s.", str_raw(name));
-                exit(1);
-            }
-            break;
-        default:
-            array_push_back(&def->locals, sym);
-            break;
-        }
-
-        switch ((t = peek()).token) {
-        case ';':
-            consume(';');
-            return parent;
-        case '=':
-            if (sym->symtype == SYM_DECLARATION) {
-                error("Extern symbol '%s' cannot be initialized.",
-                    str_raw(sym->name));
-                exit(1);
-            }
-            if (!sym->depth && sym->symtype == SYM_DEFINITION) {
-                error("Symbol '%s' was already defined.", str_raw(sym->name));
-                exit(1);
-            }
-            consume('=');
-            sym->symtype = SYM_DEFINITION;
-            if (sym->linkage == LINK_NONE) {
-                assert(def);
-                assert(parent);
-                parent = initializer(def, parent, var_direct(sym));
-            } else {
-                assert(sym->depth || !parent);
-                def = cfg_init(sym);
-                initializer(def, def->body, var_direct(sym));
-            }
-            assert(size_of(sym->type) > 0);
-            if (peek().token != ',') {
-                consume(';');
-                return parent;
-            }
-            break;
-        case IDENTIFIER:
-        case FIRST(type_specifier):
-        case FIRST(type_qualifier):
-        case REGISTER:
-        case '{':
-            assert(!parent);
-            assert(sym->linkage != LINK_NONE);
-            if (is_function(sym->type)) {
-                sym->symtype = SYM_DEFINITION;
-                def = cfg_init(sym);
-                push_scope(&ns_label);
-                push_scope(&ns_ident);
-                parameter_declaration_list(def, type);
-                if (context.standard >= STD_C99) {
-                    define_builtin__func__(sym->name);
-                }
-                parent = block(def, def->body);
-                pop_scope(&ns_label);
-                pop_scope(&ns_ident);
-                return parent;
-            }
-        default: break;
-        }
-        consume(',');
+        if (peek().token == ',') {
+            next();
+        } else break;
     }
+
+    consume(';');
+    return parent;
 }

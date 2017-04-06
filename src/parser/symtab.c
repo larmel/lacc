@@ -8,25 +8,57 @@
 #include <stdlib.h>
 #include <string.h>
 
+struct namespace
+    ns_ident = {"identifiers"},
+    ns_label = {"labels"},
+    ns_tag = {"tags"};
+
 /*
  * Maintain list of symbols allocated for temporaries, which can be
  * reused between function definitions.
  */
 static array_of(struct symbol *) temporaries;
 
-struct namespace
-    ns_ident = {"identifiers"},
-    ns_label = {"labels"},
-    ns_tag = {"tags"};
-
+/* Save memcpy reference for backend. */
 const struct symbol *decl_memcpy = NULL;
+
+/*
+ * Keep track of all function declarations globally, in order to coerce
+ * forward declarations made in inner scope.
+ *
+ * int foo(void) {
+ *     int bar(int);
+ *     return bar(42);
+ * }
+ *
+ * int bar(int a) {
+ *     return a * a;
+ * }
+ *
+ * In the above example, both references to bar must resolve to the same
+ * symbol, even though the first declaration is not in scope for the
+ * actual definition.
+ */
+static struct hash_table functions;
 
 static String sym_hash_key(void *ref)
 {
     return ((const struct symbol *) ref)->name;
 }
 
-static void sym_clear_temporaries(void)
+static struct symbol *sym_lookup_function(String name)
+{
+    static int init;
+
+    if (!init) {
+        hash_init(&functions, 1024, &sym_hash_key, NULL, NULL);
+        init = 1;
+    }
+
+    return hash_lookup(&functions, name);
+}
+
+static void sym_clear_buffers(void)
 {
     int i;
     struct symbol *sym;
@@ -37,6 +69,7 @@ static void sym_clear_temporaries(void)
     }
 
     array_clear(&temporaries);
+    hash_destroy(&functions);
 }
 
 struct symbol *sym_create_temporary(Type type)
@@ -152,7 +185,7 @@ void pop_scope(struct namespace *ns)
          * end of the translation unit.
          */
         if (ns == &ns_ident) {
-            sym_clear_temporaries();
+            sym_clear_buffers();
         }
     } else {
         array_len(&ns->scope) -= 1;
@@ -282,11 +315,28 @@ struct symbol *sym_add(
     enum symtype symtype,
     enum linkage linkage)
 {
-    struct symbol *sym;
+    struct symbol *sym = NULL;
     assert(symtype != SYM_LABEL);
 
-    /* Look up and try to complete existing tentative definition. */
-    if (symtype != SYM_STRING_VALUE && (sym = sym_lookup(ns, name))) {
+    /* All function declarations must agree, regardless of scope. */
+    if (symtype != SYM_STRING_VALUE) {
+        sym = sym_lookup(ns, name);
+        if (!sym && is_function(type)) {
+            assert(ns == &ns_ident);
+            sym = sym_lookup_function(name);
+            if (sym) {
+                apply_type(sym, type);
+                sym_make_visible(ns, sym);
+                if (current_scope_depth(ns) < sym->depth) {
+                    sym->depth = current_scope_depth(ns);
+                }
+                return sym;
+            }
+        }
+    }
+
+    /* Try to complete existing tentative definition. */
+    if (sym) {
         if (linkage == LINK_EXTERN && symtype == SYM_DECLARATION
             && (sym->symtype == SYM_TENTATIVE
                 || sym->symtype == SYM_DEFINITION))
@@ -345,6 +395,10 @@ struct symbol *sym_add(
 
     array_push_back(&ns->symbol, sym);
     sym_make_visible(ns, sym);
+    if (is_function(sym->type)) {
+        hash_insert(&functions, sym);
+    }
+
     verbose(
         "\t[type: %s, link: %s]\n"
         "\t%s :: %t",

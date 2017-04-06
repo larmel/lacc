@@ -1235,6 +1235,7 @@ static int allocate_locals(
     for (i = 0; i < array_len(&def->locals); ++i) {
         sym = array_get(&def->locals, i);
         assert(!sym->stack_offset);
+        assert(sym->symtype == SYM_DEFINITION);
         if (sym->linkage == LINK_NONE && sym->slot == 0) {
             stack_offset -= EIGHTBYTES(sym->type) * 8;
             sym->stack_offset = stack_offset - reg_offset;
