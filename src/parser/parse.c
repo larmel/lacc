@@ -222,7 +222,8 @@ struct definition *cfg_init(void)
 
 void cfg_discard(struct definition *def)
 {
-    assert(!def->symbol);
+    def->symbol = NULL;
+    cfg_empty(def);
     array_push_back(&prototypes, def);
 }
 
@@ -240,11 +241,11 @@ struct definition *parse(void)
     static struct definition *def;
 
     /*
-     * Clear memory allocated for previous result. Parse is called until
-     * no more input can be consumed.
+     * Recycle memory allocated for previous result. Parse is called
+     * until no more input can be consumed.
      */
     if (def) {
-        cfg_clear(def);
+        cfg_discard(def);
     }
 
     /*
