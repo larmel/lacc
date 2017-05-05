@@ -8,6 +8,12 @@
 # define triple(a) (3 * (a))
 #endif
 
+#pragma
+
+#if 1
+# pragma = This should be ignored
+#endif
+
 #     
 # 	 	
 #

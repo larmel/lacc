@@ -21,6 +21,7 @@ struct token
     ident__endif = IDENT("endif"),
     ident__error = IDENT("error"),
     ident__line = IDENT("line"),
+    ident__pragma = IDENT("pragma"),
     ident__VA_ARGS__ = IDENT("__VA_ARGS__");
 
 enum state {
@@ -741,6 +742,8 @@ void preprocess_directive(TokenArray *array)
             preprocess_include(line + 1);
         } else if (!tok_cmp(*line, ident__line)) {
             preprocess_line_directive(line + 1);
+        } else if (!tok_cmp(*line, ident__pragma)) {
+            /* Ignore */
         } else if (!tok_cmp(*line, ident__error)) {
             array->data++;
             array->length--;
