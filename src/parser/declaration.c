@@ -1172,9 +1172,7 @@ struct block *init_declarator(
 
     if (is_function(type)) {
         symtype = SYM_DECLARATION;
-        if (linkage == LINK_NONE) {
-            linkage = LINK_EXTERN;
-        }
+        linkage = (linkage == LINK_NONE) ? LINK_EXTERN : linkage;
         if (linkage == LINK_INTERN && current_scope_depth(&ns_ident)) {
             error("Cannot declare static function in block scope.");
             exit(1);
@@ -1235,13 +1233,11 @@ struct block *init_declarator(
         }
         consume('=');
         sym->symtype = SYM_DEFINITION;
-        if (sym->linkage == LINK_NONE) {
-            parent = initializer(def, parent, var_direct(sym));
-        } else {
-            cfg_define(def, sym);
-            initializer(def, def->body, var_direct(sym));
-        }
+        parent = initializer(def, parent, var_direct(sym));
         assert(size_of(sym->type) > 0);
+        if (sym->linkage != LINK_NONE) {
+            cfg_define(def, sym);
+        }
         break;
     case IDENTIFIER:
     case FIRST(type_specifier):
@@ -1291,7 +1287,6 @@ struct block *declaration(struct definition *def, struct block *parent)
     enum symtype symtype;
     enum linkage linkage;
     struct definition *decl;
-    struct block *block;
     int storage_class, is_inline;
 
     base = declaration_specifiers(&storage_class, &is_inline);
@@ -1322,8 +1317,7 @@ struct block *declaration(struct definition *def, struct block *parent)
     while (1) {
         if (linkage == LINK_INTERN || linkage == LINK_EXTERN) {
             decl = cfg_init();
-            block = decl->body;
-            block = init_declarator(decl, block, base, symtype, linkage);
+            init_declarator(decl, decl->body, base, symtype, linkage);
             if (!decl->symbol) {
                 cfg_discard(decl);
             } else if (is_function(decl->symbol->type)) {
