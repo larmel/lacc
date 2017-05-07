@@ -109,6 +109,9 @@ const struct symbol *type_vla_length(Type type);
 /* */
 int is_compatible(Type l, Type r);
 
+/* Determine whether a type is VLA, or pointer to VLA. */
+int is_variably_modified(Type type);
+
 /* Get the type the given pointer is pointing to. */
 Type type_deref(Type type);
 

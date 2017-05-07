@@ -1179,6 +1179,16 @@ struct block *init_declarator(
             error("Cannot declare static function in block scope.");
             exit(1);
         }
+    } else if (is_variably_modified(type)) {
+        if (current_scope_depth(&ns_ident) == 0) {
+            error("Invalid variably modified type at file scope.");
+            exit(1);
+        } else if (linkage != LINK_NONE
+            && !(is_pointer(type) && linkage == LINK_INTERN))
+        {
+            error("Invalid linkage for block scoped variably modified type.");
+            exit(1);
+        }
     }
 
     sym = sym_add(&ns_ident, name, type, symtype, linkage);

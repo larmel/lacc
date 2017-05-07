@@ -670,6 +670,17 @@ int is_flexible(Type type)
     return 0;
 }
 
+int is_variably_modified(Type type)
+{
+    switch (type_of(type)) {
+    case T_POINTER:
+        return is_variably_modified(type_next(type));
+    case T_ARRAY:
+        return is_vla(type);
+    default: return 0;
+    }
+}
+
 static int typetree_equal(const struct typetree *a, const struct typetree *b)
 {
     int i, len;
