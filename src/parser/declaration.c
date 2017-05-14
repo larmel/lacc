@@ -1165,7 +1165,12 @@ struct block *init_declarator(
     struct symbol *sym;
     const struct member *param;
 
-    parent = declarator(def, parent, base, &type, &name);
+    if (linkage == LINK_INTERN && current_scope_depth(&ns_ident) != 0) {
+        declarator(def, cfg_block_init(def), base, &type, &name);
+    } else {
+        parent = declarator(def, parent, base, &type, &name);
+    }
+
     if (!name.len) {
         return parent;
     }
@@ -1263,7 +1268,9 @@ struct block *init_declarator(
         break;
     }
 
-    if (is_function(sym->type) && sym->symtype != SYM_DEFINITION) {
+    if (linkage == LINK_INTERN
+        || (is_function(sym->type) && sym->symtype != SYM_DEFINITION))
+    {
         type_clean_prototype(sym->type);
     }
 
