@@ -716,9 +716,9 @@ static void prepare_comparison_operands(
         if (is_pointer(r->type)) {
             t1 = type_deref(l->type);
             t2 = type_deref(r->type);
-            if (!is_compatible(l->type, r->type) &&
-                !(is_void(t1) && size_of(t2)) &&
-                !(is_void(t2) && size_of(t1)))
+            if (!is_compatible_unqualified(t1, t2)
+                && !(is_void(t1) && size_of(t2))
+                && !(is_void(t2) && size_of(t1)))
             {
                 warning("Comparison between incompatible types '%t' and '%t'.",
                     l->type, r->type);
@@ -1420,34 +1420,30 @@ static struct var assign_field(
     return target;
 }
 
+static int has_qualifiers(Type a, Type b)
+{
+    return is_const(a) >= is_const(b) && is_volatile(a) >= is_volatile(b);
+}
+
 static struct var eval_assign_pointer(
     struct definition *def,
     struct block *block,
     struct var target,
     struct expression expr)
 {
-    Type p1, p2;
+    Type l, r;
     assert(is_pointer(target.type));
 
     if (is_pointer(expr.type)) {
-        p1 = type_deref(target.type);
-        p2 = type_deref(expr.type);
-        if (!is_compatible(target.type, expr.type)) {
-            if (!((is_identity(expr) && is_nullptr(expr.l))
-                || (is_void(p1) && is_object(p2))
-                || (is_object(p1) && is_void(p2))))
-            {
-                warning("Incompatible pointer assignment between %t and %t.",
-                    target.type, expr.type);
-            }
-        }
-        if (!is_identity(expr) || !is_nullptr(expr.l)) {
-            if (is_const(p1) < is_const(p2)) {
-                warning("Pointer assignment discards 'const' qualifier.");
-            }
-            if (is_volatile(p1) < is_volatile(p2)) {
-                warning("Pointer assignment discards 'volatile' qualifier.");
-            }
+        l = type_deref(target.type);
+        r = type_deref(expr.type);
+        if (!((is_compatible_unqualified(l, r) && has_qualifiers(l, r))
+            || (is_object(l) && is_void(r) && has_qualifiers(l, r))
+            || (is_void(l) && is_object(r) && has_qualifiers(l, r))
+            || (is_identity(expr) && is_nullptr(expr.l))))
+        {
+            warning("Incompatible pointer assignment between %t and %t.",
+                target.type, expr.type);
         }
     } else if (is_integer(expr.type)) {
         if (!is_identity(expr) || !is_nullptr(expr.l)) {
@@ -1510,7 +1506,7 @@ struct var eval_assign(
         }
     } else if (
         !(is_struct_or_union(target.type)
-            && is_compatible(target.type, expr.type)))
+            && is_compatible_unqualified(target.type, expr.type)))
     {
         error("Incompatible value of type %t assigned to variable of type %t.",
             expr.type, target.type);
@@ -1591,7 +1587,9 @@ struct expression eval_conditional(
 
     if (is_arithmetic(t1) && is_arithmetic(t2)) {
         type = usual_arithmetic_conversion(t1, t2);
-    } else if (is_pointer(t1) && is_pointer(t2) && is_compatible(t1, t2)) {
+    } else if (is_pointer(t1) && is_pointer(t2)
+        && is_compatible_unqualified(type_deref(t1), type_deref(t2)))
+    {
         type = t1;
         t1 = type_apply_qualifiers(type_deref(t1), type_deref(t2));
         t1 = type_create(T_POINTER, t1);
@@ -1605,7 +1603,7 @@ struct expression eval_conditional(
     } else if (is_struct_or_union(t1) && type_equal(t1, t2)) {
         type = t1;
     } else {
-        error("Incompatible types in conditional operator.");
+        error("Incompatible types (%t, %t) in conditional operator.", t1, t2);
         exit(1);
     }
 

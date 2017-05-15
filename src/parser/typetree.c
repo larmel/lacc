@@ -780,7 +780,44 @@ Type usual_arithmetic_conversion(Type t1, Type t2)
 
 int is_compatible(Type l, Type r)
 {
-    return type_equal(l, r);
+    size_t s1, s2;
+
+    if (type_of(l) != type_of(r)
+        || is_const(l) != is_const(r)
+        || is_volatile(l) != is_volatile(r))
+    {
+        return 0;
+    }
+
+    switch (type_of(l)) {
+    case T_CHAR:
+    case T_SHORT:
+    case T_INT:
+    case T_LONG:
+    case T_FLOAT:
+    case T_DOUBLE:
+    case T_LDOUBLE:
+        return 1;
+    case T_POINTER:
+        return is_compatible(type_next(l), type_next(r));
+    case T_ARRAY:
+        s1 = type_array_len(l);
+        s2 = type_array_len(r);
+        /* Also accept VLA, which returns 0 length here. */
+        if (s1 == 0 || s2 == 0 || s1 == s2) {
+            return is_compatible(type_next(l), type_next(r));
+        }
+        return 0;
+    default:
+        return type_equal(l, r);
+    }
+}
+
+int is_compatible_unqualified(Type l, Type r)
+{
+    l = remove_qualifiers(l);
+    r = remove_qualifiers(r);
+    return is_compatible(l, r);
 }
 
 size_t size_of(Type type)

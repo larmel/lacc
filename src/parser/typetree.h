@@ -109,6 +109,13 @@ const struct symbol *type_vla_length(Type type);
 /* */
 int is_compatible(Type l, Type r);
 
+/*
+ * Determine whether types are compatible if disregarding first level of
+ * qualifiers. For example, `int *` and `int * const` are compatible if
+ * the const qualifier is ignored.
+ */
+int is_compatible_unqualified(Type l, Type r);
+
 /* Determine whether a type is VLA, or pointer to VLA. */
 int is_variably_modified(Type type);
 
