@@ -10,7 +10,7 @@
  */
 enum token_type {
     END = 0,                /*  $ */
-    AUTO = END + 1,
+    AUTO,
     BREAK,
     CASE,
     CHAR,
@@ -20,7 +20,7 @@ enum token_type {
     DO,
     DOUBLE,
     NEWLINE = '\n',
-    ELSE = NEWLINE + 1,
+    ELSE,
     ENUM,
     EXTERN,
     FLOAT,
@@ -44,12 +44,12 @@ enum token_type {
     INLINE,
 
     NOT = '!',
-    VOLATILE = NOT + 1,
+    VOLATILE,
     HASH = '#',
-    WHILE = HASH + 1,
+    WHILE,
     MODULO = '%',
     AND = '&',
-    ALIGNOF = AND + 1,
+    RESTRICT,
 
     OPEN_PAREN = '(',
     CLOSE_PAREN = ')',
@@ -59,6 +59,7 @@ enum token_type {
     MINUS = '-',
     DOT = '.',
     SLASH = '/',
+    ALIGNOF,
 
     COLON = ':',
     SEMICOLON = ';',
@@ -66,7 +67,7 @@ enum token_type {
     ASSIGN = '=',
     GT = '>',
     QUESTION = '?',
-    DOTS = QUESTION + 1,    /* ... */
+    DOTS,                   /* ... */
     LOGICAL_OR,             /* || */
     LOGICAL_AND,            /* && */
     LEQ,                    /* <= */

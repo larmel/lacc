@@ -306,6 +306,9 @@ static Type pointer(Type type)
         case VOLATILE:
             type = type_set_volatile(type);
             break;
+        case RESTRICT:
+            type = type_set_restrict(type);
+            break;
         default:
             return type;
         }

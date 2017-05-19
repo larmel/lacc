@@ -33,6 +33,7 @@ struct typetree {
     unsigned int is_unsigned : 1;
     unsigned int is_const : 1;
     unsigned int is_volatile : 1;
+    unsigned int is_restrict : 1;
     unsigned int is_vararg : 1;
     unsigned int is_flexible : 1;
     unsigned int is_vla : 1;
@@ -114,16 +115,19 @@ static Type get_type_handle(int ref)
             type.is_unsigned = t->next.is_unsigned;
             type.is_const = t->next.is_const;
             type.is_volatile = t->next.is_volatile;
+            type.is_restrict = t->next.is_restrict;
             type.ref = t->next.ref;
             type.is_pointer = 1;
             type.is_pointer_const = t->is_const;
             type.is_pointer_volatile = t->is_volatile;
+            type.is_pointer_restrict = t->is_restrict;
         }
     } else {
         type.type = t->type;
         type.is_unsigned = t->is_unsigned;
         type.is_volatile = t->is_volatile;
         type.is_const = t->is_const;
+        type.is_restrict = t->is_restrict;
     }
 
     return type;
@@ -152,9 +156,11 @@ static Type remove_qualifiers(Type type)
     if (type.is_pointer) {
         type.is_pointer_const = 0;
         type.is_pointer_volatile = 0;
+        type.is_pointer_restrict = 0;
     } else {
         type.is_const = 0;
         type.is_volatile = 0;
+        type.is_restrict = 0;
     }
 
     return type;
@@ -354,12 +360,33 @@ Type type_set_volatile(Type type)
     return type;
 }
 
+Type type_set_restrict(Type type)
+{
+    if (!is_pointer(type)) {
+        error("Cannot apply 'restrict' qualifier to non-pointer types.");
+        exit(1);
+    }
+
+    if (type.is_pointer) {
+        if (type.is_pointer_restrict) {
+            error("Duplicate 'restrict' qualifier.");
+        }
+        type.is_pointer_restrict = 1;
+    } else {
+        type.is_restrict = 1;
+    }
+
+    return type;
+}
+
 Type type_apply_qualifiers(Type type, Type other)
 {
     if (is_const(other))
         type = type_set_const(type);
     if (is_volatile(other))
         type = type_set_volatile(type);
+    if (is_restrict(other))
+        type = type_set_restrict(type);
     return type;
 }
 
@@ -784,7 +811,8 @@ int is_compatible(Type l, Type r)
 
     if (type_of(l) != type_of(r)
         || is_const(l) != is_const(r)
-        || is_volatile(l) != is_volatile(r))
+        || is_volatile(l) != is_volatile(r)
+        || is_restrict(l) != is_restrict(r))
     {
         return 0;
     }
@@ -932,6 +960,9 @@ static int print_type(FILE *stream, Type type, int depth)
 
     if (is_volatile(type))
         n += fputs("volatile ", stream);
+
+    if (is_restrict(type))
+        n += fputs("restrict ", stream);
 
     if (is_unsigned(type))
         n += fputs("unsigned ", stream);

@@ -39,12 +39,12 @@ const struct token basic_token[] = {
 /* 0x20 */  IDN(INLINE, "inline"),      TOK(NOT, "!"),
             IDN(VOLATILE, "volatile"),  TOK(HASH, "#"),
             IDN(WHILE, "while"),        TOK(MODULO, "%"),
-            TOK(AND, "&"),              TOK(ALIGNOF, "_Alignof"),
+            TOK(AND, "&"),              TOK(RESTRICT, "restrict"),
 /* 0x28 */  TOK(OPEN_PAREN, "("),       TOK(CLOSE_PAREN, ")"),
             TOK(STAR, "*"),             TOK(PLUS, "+"),
             TOK(COMMA, ","),            TOK(MINUS, "-"),
             TOK(DOT, "."),              TOK(SLASH, "/"),
-/* 0x30 */  {0},                        {0},
+/* 0x30 */  TOK(ALIGNOF, "_Alignof"),   {0},
             {0},                        {0},
             {0},                        {0},
             {0},                        {0},
@@ -439,8 +439,9 @@ static struct token strtoident(char *in, char **endptr)
 
     switch (*in++) {
     case '_':
-        if (context.standard >= STD_C11)
+        if (context.standard >= STD_C11) {
             if (S7('A', 'l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF);
+        }
         break;
     case 'a':
         if (S3('u', 't', 'o')) MATCH(AUTO);
@@ -480,7 +481,9 @@ static struct token strtoident(char *in, char **endptr)
         if (S1('f')) MATCH(IF);
         if (*in++ == 'n') {
             if (S1('t')) MATCH(INT);
-            if (S4('l', 'i', 'n', 'e')) MATCH(INLINE);
+            if (context.standard >= STD_C99) {
+                if (S4('l', 'i', 'n', 'e')) MATCH(INLINE);
+            }
         }
         break;
     case 'l':
@@ -490,6 +493,9 @@ static struct token strtoident(char *in, char **endptr)
         if (*in++ == 'e') {
             if (S6('g', 'i', 's', 't', 'e', 'r')) MATCH(REGISTER);
             if (S4('t', 'u', 'r', 'n')) MATCH(RETURN);
+            if (context.standard >= STD_C99) {
+                if (S6('s', 't', 'r', 'i', 'c', 't')) MATCH(RESTRICT);
+            }
         }
         break;
     case 's':
@@ -737,9 +743,6 @@ struct token tokenize(char *in, char **endptr)
 
     if (isalpha(*in) || *in == '_') {
         tok = strtoident(in, endptr);
-        if (tok.token == INLINE && context.standard == STD_C89) {
-            tok.token = IDENTIFIER;
-        }
     } else if (*in == '\0') {
         tok = basic_token[END];
     } else if (isdigit(*in) || (*in == '.' && isdigit(in[1]))) {

@@ -30,7 +30,7 @@ enum type {
  *
  *     int
  *     const int * volatile
- *     unsigned short const * const.
+ *     unsigned short const * const restrict.
  *
  * For function, array, aggregate, and deeper pointer types, the type is
  * encoded in an opaque structure referenced by ref. All other types are
@@ -41,10 +41,11 @@ typedef struct {
     unsigned int is_unsigned : 1;
     unsigned int is_const : 1;
     unsigned int is_volatile : 1;
+    unsigned int is_restrict : 1;
     unsigned int is_pointer : 1;
     unsigned int is_pointer_const : 1;
     unsigned int is_pointer_volatile : 1;
-    unsigned int : 2;
+    unsigned int is_pointer_restrict : 1;
     int ref : 16;
 } Type;
 
@@ -75,6 +76,8 @@ typedef struct {
 #define is_const(t) ((t).is_pointer ? (t).is_pointer_const : (t).is_const)
 #define is_volatile(t) ( \
     (t).is_pointer ? (t).is_pointer_volatile : (t).is_volatile)
+#define is_restrict(t) ( \
+    (t).is_pointer ? (t).is_pointer_restrict : (t).is_restrict)
 
 /* Statically initialized, unqualified instances of common types. */
 extern const Type

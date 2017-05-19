@@ -19,11 +19,10 @@
  */
 Type type_create(enum type, ...);
 
-/* Add const qualifier to type. */
+/* Add const, volatile, and restrict qualifiers to type. */
 Type type_set_const(Type type);
-
-/* Add volatile qualifier to type. */
 Type type_set_volatile(Type type);
+Type type_set_restrict(Type type);
 
 /* Set qualifiers from other on type. */
 Type type_apply_qualifiers(Type type, Type other);
