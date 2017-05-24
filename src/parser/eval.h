@@ -101,6 +101,16 @@ struct expression eval_return(
     struct block *block);
 
 /*
+ * Evaluate (expr) as a separate statement.
+ *
+ * No-op of expression cannot have side effects.
+ */
+struct expression eval_expression_statement(
+    struct definition *def,
+    struct block *block,
+    struct expression expr);
+
+/*
  * Allocate stack space for variable length array, with size in bytes
  * determined by run-time evaluated expression.
  */

@@ -1731,6 +1731,7 @@ static enum reg compile_call(struct var target, struct var ptr)
     pc = classify(ret);
     mem_used = push_function_arguments(func, pc);
     if (pc.eightbyte[0] == PC_MEMORY) {
+        assert(!is_void(target.type));
         load_address(target, param_int_reg[0]);
     }
 

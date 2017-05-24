@@ -454,9 +454,7 @@ struct block *statement(struct definition *def, struct block *parent)
     case INCREMENT:
     case DECREMENT:
         parent = expression(def, parent);
-        if (has_side_effects(parent->expr)) {
-            eval(def, parent, parent->expr);
-        }
+        parent->expr = eval_expression_statement(def, parent, parent->expr);
         consume(';');
         break;
     default:

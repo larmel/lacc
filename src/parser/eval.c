@@ -75,6 +75,7 @@ static struct var create_var(struct definition *def, Type type)
     struct symbol *tmp;
     struct var res;
     assert(def);
+    assert(!is_void(type));
 
     tmp = sym_create_temporary(type);
     res = var_direct(tmp);
@@ -291,6 +292,34 @@ static void emit_ir(struct block *block, enum sttype st, ...)
         array_push_back(&block->code, stmt);
         va_end(args);
     }
+}
+
+/*
+ * Evaluate standalone expressions which are not assigned to a variable.
+ *
+ * Unless the expression is a function call, it can be ignored. As a
+ * special case, function calls returning non-primitive values are
+ * explicitly evaluated to a new temporary. This is to easier support
+ * call convention in x86_64, where the callee writes the result object
+ * and we have to provide some valid storage.
+ */
+struct expression eval_expression_statement(
+    struct definition *def,
+    struct block *block,
+    struct expression expr)
+{
+    struct var res;
+
+    if (has_side_effects(expr)) {
+        if (!is_struct_or_union(expr.type)) {
+            emit_ir(block, IR_EXPR, expr);
+        } else {
+            res = create_var(def, expr.type);
+            emit_ir(block, IR_ASSIGN, res, expr);
+        }
+    }
+
+    return as_expr(var_void());
 }
 
 struct var eval(
