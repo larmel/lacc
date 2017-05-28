@@ -322,6 +322,7 @@ struct symbol *sym_add(
 {
     struct symbol *sym = NULL;
     assert(symtype != SYM_LABEL);
+    assert(symtype != SYM_TAG || ns == &ns_tag);
 
     /* All function declarations must agree, regardless of scope. */
     if (symtype != SYM_STRING_VALUE) {
@@ -398,6 +399,10 @@ struct symbol *sym_add(
         sym->n = ++n;
     }
 
+    if (sym->symtype == SYM_TAG || sym->symtype == SYM_TYPEDEF) {
+        type_set_tag(type, sym);
+    }
+
     array_push_back(&ns->symbol, sym);
     sym_make_visible(ns, sym);
     if (is_function(sym->type)) {
@@ -411,6 +416,7 @@ struct symbol *sym_add(
             sym->symtype == SYM_TENTATIVE ? "tentative" :
             sym->symtype == SYM_DECLARATION ? "declaration" :
             sym->symtype == SYM_TYPEDEF ? "typedef" :
+            sym->symtype == SYM_TAG ? "tag" :
             sym->symtype == SYM_CONSTANT ? "number" : "string"),
         (sym->linkage == LINK_INTERN ? "intern" :
             sym->linkage == LINK_EXTERN ? "extern" : "none"),
@@ -467,7 +473,7 @@ void output_symbols(FILE *stream, struct namespace *ns)
 
     for (i = 0; i < array_len(&ns->symbol); ++i) {
         if (!i) {
-            verbose("namespace %s:", ns->name);
+            fprintf(stream, "namespace %s:\n", ns->name);
         }
 
         sym = array_get(&ns->symbol, i);
@@ -477,16 +483,42 @@ void output_symbols(FILE *stream, struct namespace *ns)
                 (sym->linkage == LINK_INTERN) ? "static" : "global");
         }
 
-        fprintf(stream, "%s ",
-            (sym->symtype == SYM_TENTATIVE) ? "tentative" : 
-            (sym->symtype == SYM_DEFINITION) ? "definition" :
-            (sym->symtype == SYM_DECLARATION) ? "declaration" :
-            (sym->symtype == SYM_TYPEDEF) ? "typedef" :
-            (sym->symtype == SYM_CONSTANT) ? "number" :
-            (sym->symtype == SYM_STRING_VALUE) ? "string" : "label");
+        switch (sym->symtype) {
+        case SYM_TENTATIVE:
+            fprintf(stream, "tentative ");
+            break;
+        case SYM_DEFINITION:
+            fprintf(stream, "definition ");
+            break;
+        case SYM_DECLARATION:
+            fprintf(stream, "declaration ");
+            break;
+        case SYM_TYPEDEF:
+            fprintf(stream, "typedef ");
+            break;
+        case SYM_TAG:
+            if (is_struct(sym->type)) {
+                fprintf(stream, "struct ");
+            } else if (is_union(sym->type)) {
+                fprintf(stream, "union ");
+            } else {
+                assert(type_equal(basic_type__int, sym->type));
+                fprintf(stream, "enum ");
+            }
+            break;
+        case SYM_CONSTANT:
+            fprintf(stream, "number ");
+            break;
+        case SYM_STRING_VALUE:
+            fprintf(stream, "string ");
+            break;
+        case SYM_LABEL:
+            fprintf(stream, "label ");
+            break;
+        }
 
         fprintf(stream, "%s :: ", sym_name(sym));
-        fprinttype(stream, sym->type);
+        fprinttype(stream, sym->type, sym);
         if (size_of(sym->type)) {
             fprintf(stream, ", size=%lu", size_of(sym->type));
         }

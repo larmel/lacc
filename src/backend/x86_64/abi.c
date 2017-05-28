@@ -150,7 +150,7 @@ void dump_classification(struct param_class pc, Type type)
 {
     int i;
     printf("TYPE: ");
-    fprinttype(stdout, type);
+    fprinttype(stdout, type, NULL);
     printf("\n");
     printf("CLASS: %lu eightbyte\n", EIGHTBYTES(type));
     if (pc.eightbyte[0] == PC_MEMORY) {

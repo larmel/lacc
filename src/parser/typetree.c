@@ -68,10 +68,10 @@ struct typetree {
     Type next;
 
     /*
-     * Name of struct or union typedef, stored in order to be able to
-     * print self-referential types.
+     * Reference to typedef, or struct, union or enum tag. Stored in
+     * order to be able to print self-referential types.
      */
-    String tag;
+    const struct symbol *tag;
 };
 
 /*
@@ -435,7 +435,7 @@ void type_clean_prototype(Type type)
     case T_STRUCT:
     case T_UNION:
         t = get_typetree_handle(type.ref);
-        if (t->tag.len)
+        if (t->tag)
             break;
     case T_FUNCTION:
         for (i = 0; i < nmembers(type); ++i) {
@@ -447,14 +447,29 @@ void type_clean_prototype(Type type)
     }
 }
 
-void type_set_tag(Type type, String tag)
+/*
+ * Associate type with a tag symbol, which can be used to print self-
+ * referential struct or union types, or typedef'ed objects.
+ *
+ * This is only relevant for diagnostics, and since basic types do not
+ * have room to store a tag, just ignore that case. This means that if
+ * you have following, the verbose output of a will be int, not i32.
+ *
+ *  typedef int i32;
+ *  i32 a;
+ * 
+ */
+void type_set_tag(Type type, const struct symbol *tag)
 {
     struct typetree *t;
 
-    assert(is_struct_or_union(type));
-    t = get_typetree_handle(type.ref);
-    assert(t->tag.len == 0);
-    t->tag = tag;
+    assert(tag->symtype == SYM_TAG || tag->symtype == SYM_TYPEDEF);
+    if (type.ref) {
+        t = get_typetree_handle(type.ref);
+        if (!t->tag || tag->symtype != SYM_TYPEDEF) {
+            t->tag = tag;
+        }
+    }
 }
 
 size_t type_alignment(Type type)
@@ -949,10 +964,11 @@ const struct member *find_type_member(Type type, String name)
     return NULL;
 }
 
-static int print_type(FILE *stream, Type type, int depth)
+int fprinttype(FILE *stream, Type type, const struct symbol *expand)
 {
     struct typetree *t;
     struct member *m;
+    const char *s;
     int i, n = 0;
 
     if (is_const(type))
@@ -994,13 +1010,14 @@ static int print_type(FILE *stream, Type type, int depth)
         break;
     case T_POINTER:
         n += fputs("* ", stream);
-        n += print_type(stream, type_deref(type), depth + 1);
+        n += fprinttype(stream, type_deref(type), NULL);
         break;
     case T_FUNCTION:
         t = get_typetree_handle(type.ref);
         n += fputs("(", stream);
         for (i = 0; i < nmembers(type); ++i) {
-            n += print_type(stream, get_member(type, i)->type, depth + 1);
+            m = get_member(type, i);
+            n += fprinttype(stream, m->type, NULL);
             if (i < nmembers(type) - 1) {
                 n += fputs(", ", stream);
             }
@@ -1009,7 +1026,7 @@ static int print_type(FILE *stream, Type type, int depth)
             n += fputs(", ...", stream);
         }
         n += fputs(") -> ", stream);
-        n += print_type(stream, t->next, depth + 1);
+        n += fprinttype(stream, t->next, NULL);
         break;
     case T_ARRAY:
         t = get_typetree_handle(type.ref);
@@ -1024,20 +1041,25 @@ static int print_type(FILE *stream, Type type, int depth)
         } else {
             n += fputs("[] ", stream);
         }
-        n += print_type(stream, t->next, depth + 1);
+        n += fprinttype(stream, t->next, NULL);
         break;
     case T_STRUCT:
     case T_UNION:
         t = get_typetree_handle(type.ref);
-        if (t->tag.len && depth) {
-            n += fprintf(stream, "%s ", is_union(type) ? "union" : "struct");
-            n += fprintf(stream, "%s", str_raw(t->tag));
+        if (t->tag && (t->tag != expand)) {
+            if (t->tag->symtype == SYM_TAG) {
+                s = is_union(type) ? "union" : "struct";
+                n += fprintf(stream, "%s %s", s, sym_name(t->tag));
+            } else {
+                assert(t->tag->symtype == SYM_TYPEDEF);
+                n += fprintf(stream, "%s", sym_name(t->tag));
+            }
         } else {
             n += fputc('{', stream);
             for (i = 0; i < nmembers(type); ++i) {
                 m = get_member(type, i);
                 n += fprintf(stream, ".%s::", str_raw(m->name));
-                n += print_type(stream, m->type, depth + 1);
+                n += fprinttype(stream, m->type, NULL);
                 if (m->field_width) {
                     n += fprintf(stream, " (+%lu:%d:%d)",
                         m->offset, m->field_offset, m->field_width);
@@ -1054,9 +1076,4 @@ static int print_type(FILE *stream, Type type, int depth)
     }
 
     return n;
-}
-
-int fprinttype(FILE *stream, Type type)
-{
-    return print_type(stream, type, 0);
 }

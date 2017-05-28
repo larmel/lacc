@@ -93,8 +93,11 @@ Type type_patch_declarator(Type head, Type target);
  */
 void type_clean_prototype(Type type);
 
-/* Specify name for tagged struct or union type. */
-void type_set_tag(Type type, String tag);
+/*
+ * Specify tag for struct or union type, or typedef. The tag symbol will
+ * always be prioritized over typedef.
+ */
+void type_set_tag(Type type, const struct symbol *tag);
 
 /*
  * Find type member of the given name, meaning struct or union field, or

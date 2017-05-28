@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MAX_BUF_LEN 256
+#define MAX_BUF_LEN 1024
 #define BUFFERS 4
 
 static char buffer[BUFFERS][MAX_BUF_LEN];
@@ -144,7 +144,7 @@ static void dot_print_expr(struct expression expr)
             fprintf(stream, "%s", vartostr(expr.l));
         } else {
             fputc('(', stream);
-            fprinttype(stream, expr.type);
+            fprinttype(stream, expr.type, NULL);
             fprintf(stream, ") %s", vartostr(expr.l));
         }
         break;
@@ -153,7 +153,7 @@ static void dot_print_expr(struct expression expr)
         break;
     case IR_OP_VA_ARG:
         fprintf(stream, "va_arg(%s, ", vartostr(expr.l));
-        fprinttype(stream, expr.type);
+        fprinttype(stream, expr.type, NULL);
         fputc(')', stream);
         break;
     case IR_OP_NOT:

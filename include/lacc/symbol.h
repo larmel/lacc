@@ -25,7 +25,8 @@ struct symbol {
         SYM_TYPEDEF,
         SYM_STRING_VALUE,
         SYM_CONSTANT,
-        SYM_LABEL
+        SYM_LABEL,
+        SYM_TAG
     } symtype;
 
     /*

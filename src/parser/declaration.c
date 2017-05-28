@@ -393,8 +393,8 @@ static Type struct_or_union_declaration(void)
         sym = sym_lookup(&ns_tag, name);
         if (!sym) {
             type = type_create(kind);
-            sym = sym_add(&ns_tag, name, type, SYM_TYPEDEF, LINK_NONE);
-            type_set_tag(type, sym->name);
+            sym = sym_add(&ns_tag, name, type, SYM_TAG, LINK_NONE);
+            type = sym->type;
         } else if (is_integer(sym->type)) {
             error("Tag '%s' was previously declared as enum.",
                 str_raw(sym->name));
@@ -480,7 +480,7 @@ static void enum_declaration(void)
                 &ns_tag,
                 name,
                 basic_type__int,
-                SYM_TYPEDEF,
+                SYM_TAG,
                 LINK_NONE);
         } else if (!is_integer(tag->type)) {
             error("Tag '%s' was previously defined as aggregate type.",

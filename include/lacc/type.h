@@ -158,7 +158,10 @@ int type_equal(Type l, Type r);
  */
 Type usual_arithmetic_conversion(Type t1, Type t2);
 
-/* Print type to stream, returning number of characters written. */
-int fprinttype(FILE *stream, Type type);
+/*
+ * Print type to stream, returning number of characters written.
+ * Optionally expand a specific tag or typedef symbol.
+ */
+int fprinttype(FILE *stream, Type type, const struct symbol *expand);
 
 #endif

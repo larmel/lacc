@@ -66,7 +66,7 @@ static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
             }
             break;
         case 't':
-            n += fprinttype(stream, va_arg(ap, Type));
+            n += fprinttype(stream, va_arg(ap, Type), NULL);
             break;
         default:
             format--;
