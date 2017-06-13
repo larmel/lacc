@@ -433,12 +433,6 @@ static TokenArray expand_macro(
                 if (!array_get(&args[i], 0).leading_whitespace) {
                     array_get(&args[i], 0).leading_whitespace = 1;
                 }
-                for (j = 0; j < array_len(&args[i]); ++j) {
-                    t = array_get(&args[i], j);
-                    if (t.is_expandable) {
-                        array_get(&args[i], j).disable_expand = 1;
-                    }
-                }
             }
         }
 
