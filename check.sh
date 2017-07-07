@@ -4,12 +4,16 @@ prog="$1"
 file="$2"
 comp="$3"
 if [[ -z "$file" || ! -f "$file" ]]; then
-	echo "Usage: $0 <compiler> <file> {<reference compiler>}";
+	echo "Usage: $0 <compiler> <file> [<reference compiler>]";
 	exit 1
 fi
 
 if [[ -z "$comp" ]]; then
-	comp="cc -std=c89 -Wno-psabi"
+	comp="gcc -std=c89 -Wno-psabi"
+	gcc -v 2>&1 >/dev/null | grep "enable-default-pie" > /dev/null
+	if [ "$?" -eq "0" ]; then
+		comp+=" -no-pie"
+	fi
 fi
 
 $comp $file -o ${file}.out
@@ -33,7 +37,7 @@ function check {
 			return 1
 		fi
 	elif [ "$1" == "-S" ]; then
-		cc -c ${file}.s -o ${file}.o
+		$comp -c ${file}.s -o ${file}.o
 		if [ "$?" -ne "0" ]; then
 			echo "$(tput setaf 1)Assembly failed!$(tput sgr 0)";
 			return 1
@@ -41,7 +45,7 @@ function check {
 	else
 		mv ${file}.s ${file}.o
 	fi
-	cc ${file}.o -o ${file}.out -lm
+	$comp ${file}.o -o ${file}.out -lm
 	if [ "$?" -ne "0" ]; then
 		echo "$(tput setaf 1)Linking failed!$(tput sgr 0)";
 		return 1

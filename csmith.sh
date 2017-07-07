@@ -1,11 +1,12 @@
 #!/bin/bash
 
 directory="csmith"
-csmith_home="$1"
 csmith_options="--no-packed-struct --float"
-if [[ -z "$csmith_home" ]]
+csmith_include="$1"
+compiler="$2"
+if [[ -z "$csmith_include" || -z "$compiler" ]]
 then
-	echo "Usage: $0 <csmith home path>"
+	echo "Usage: $0 <csmith include path> <reference compiler>"
 	exit
 fi
 
@@ -14,9 +15,9 @@ while [ true ]
 do
 	filename="${directory}/${n}.c"
 	program="${directory}/${n}"
-	${csmith_home}/src/csmith ${csmith_options} > ${filename}
+	csmith ${csmith_options} > ${filename}
 
-	cc -w -std=c99 -I ${csmith_home}/runtime ${filename} -o ${program}
+	${compiler} -w -std=c99 -I ${csmith_include} ${filename} -o ${program}
 	timeout 1 ${program} > /dev/null
 	if [ $? -ne 0 ]
 	then
@@ -26,8 +27,8 @@ do
 
 	rm ${program}
 	./check.sh \
-		"bin/lacc -w -std=c99 -I ${csmith_home}/runtime" ${filename} \
-		"cc -w -std=c99 -I ${csmith_home}/runtime"
+		"bin/lacc -w -std=c99 -I ${csmith_include}" ${filename} \
+		"${compiler} -w -std=c99 -I ${csmith_include}"
 	if [ $? -ne 0 ]
 	then
 		break

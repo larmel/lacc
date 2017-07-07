@@ -7,9 +7,15 @@ INSTALL_PATH := /usr/local
 SOURCE_LIB_PATH := $(ROOT)/include/stdlib
 INSTALL_LIB_PATH := $(INSTALL_PATH)/lib/lacc/include
 INSTALL_BIN_PATH := $(INSTALL_PATH)/bin
-CSMITH_HOME_PATH := ~/Code/csmith
+CSMITH_INCLUDE_PATH ?= /usr/include/csmith
 
-CFLAGS := -Wall -pedantic -std=c89 -I include/ -Wno-missing-braces -Wno-psabi
+ifeq ($(origin CC), default)
+CC := gcc -Wno-psabi
+ifeq ($(shell gcc -v 2>&1 >/dev/null | grep "enable-default-pie" > /dev/null; echo $$?), 0)
+CC += -no-pie
+endif
+endif
+CFLAGS ?= -Wall -pedantic -std=c89 -I include/ -Wno-missing-braces
 LACCFLAGS := -I include/ -D'LACC_STDLIB_PATH="$(SOURCE_LIB_PATH)"'
 
 all: bin/lacc
@@ -40,9 +46,9 @@ test-%: bin/%
 	@$(foreach file,$(wildcard test/c11/*.c),\
 		./check.sh "$< -std=c11" $(file) "$(CC) -std=c11";)
 	@$(foreach file,$(wildcard test/c99/*.c),\
-		./check.sh "$< -std=c99" $(file) "$(CC) -std=c99 -Wno-psabi";)
+		./check.sh "$< -std=c99" $(file) "$(CC) -std=c99";)
 	@$(foreach file,$(wildcard test/*.c),\
-		./check.sh $< $(file) "$(CC) -std=c89 -Wno-psabi -w";)
+		./check.sh $< $(file) "$(CC) -std=c89 -w";)
 
 test: test-lacc
 
@@ -57,14 +63,14 @@ uninstall:
 
 csmith-test: bin/lacc
 	@mkdir -p csmith
-	./csmith.sh $(CSMITH_HOME_PATH)
+	./csmith.sh "$(CSMITH_INCLUDE_PATH)" "$(CC)"
 
 creduce-prepare-%: csmith/%.c bin/lacc
 	@mkdir -p creduce
-	bin/lacc -std=c99 -I $(CSMITH_HOME_PATH)/runtime -w -E $< -o creduce/reduce.c
-	bin/lacc -std=c99 -c -I $(CSMITH_HOME_PATH)/runtime $< -o creduce/reduce.o
+	bin/lacc -std=c99 -I $(CSMITH_INCLUDE_PATH) -w -E $< -o creduce/reduce.c
+	bin/lacc -std=c99 -c -I $(CSMITH_INCLUDE_PATH) $< -o creduce/reduce.o
 	$(CC) creduce/reduce.o -o creduce/reduce -lm
-	$(CC) -std=c99 -I $(CSMITH_HOME_PATH)/runtime $< -o creduce/reduce-cc
+	$(CC) -std=c99 -I $(CSMITH_INCLUDE_PATH) $< -o creduce/reduce-cc
 	cp creduce.sh creduce/
 	creduce/reduce 1 > creduce/lacc.out && creduce/reduce-cc 1 > creduce/cc.out
 	diff --side-by-side --suppress-common-lines creduce/lacc.out creduce/cc.out | head -n 1
@@ -76,5 +82,4 @@ clean:
 	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s
 
-.PHONY: all test test-% install uninstall \
-	csmith-test creduce-prepare-% creduce-check clean
+.PHONY: all test test-% install uninstall csmith-test creduce-prepare-% creduce-check clean
