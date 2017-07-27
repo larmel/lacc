@@ -101,7 +101,7 @@ Expressions also contain variable operands, which can encode memory locations, a
  * `IMMEDIATE` operands hold a constant number, or string. Evaluation of immediate operands do constant folding automatically.
 
 ### Parser
-The parser is hand coded recursive descent, with main parts split into [src/parser/declaration.c](src/parser/declaration.c), [src/parser/expression.c](src/parser/expression.c), and [src/parser/statement.c](src/parser/statement.c).
+The parser is hand coded recursive descent, with main parts split into [src/parser/declaration.c](src/parser/declaration.c), [src/parser/initializer.c](src/parser/initializer.c), [src/parser/expression.c](src/parser/expression.c), and [src/parser/statement.c](src/parser/statement.c).
 The current function control flow graph, and the current active basic block in that graph, are passed as arguments to each production.
 The graph is gradually constructed as new three-address code instructions are added to the current block.
 
