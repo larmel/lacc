@@ -1,6 +1,7 @@
 #include "eval.h"
 #include "expression.h"
 #include "initializer.h"
+#include "parse.h"
 #include "typetree.h"
 #include <lacc/context.h>
 #include <lacc/token.h>
@@ -12,6 +13,7 @@ static const struct var var__immediate_zero = {IMMEDIATE, {T_INT}};
 static struct block *initialize_member(
     struct definition *def,
     struct block *block,
+    struct block *values,
     struct var target);
 
 static int is_string(struct expression expr)
@@ -31,7 +33,7 @@ static int is_string(struct expression expr)
  */
 static void zero_initialize(
     struct definition *def,
-    struct block *block,
+    struct block *values,
     struct var target)
 {
     int i;
@@ -52,7 +54,7 @@ static void zero_initialize(
         target.type = type_next(target.type);
         for (i = 0; i < size / size_of(target.type); ++i) {
             target.offset = var.offset + i * size_of(target.type);
-            zero_initialize(def, block, target);
+            zero_initialize(def, values, target);
         }
         break;
     case T_CHAR:
@@ -65,7 +67,7 @@ static void zero_initialize(
     case T_POINTER:
         var = var__immediate_zero;
         var.type = target.type;
-        eval_assign(def, block, target, as_expr(var));
+        eval_assign(def, values, target, as_expr(var));
         break;
     default:
         error("Cannot zero-initialize object of type '%t'.", target.type);
@@ -75,7 +77,7 @@ static void zero_initialize(
 
 static void zero_initialize_bytes(
     struct definition *def,
-    struct block *block,
+    struct block *values,
     struct var target,
     size_t bytes)
 {
@@ -103,7 +105,7 @@ static void zero_initialize_bytes(
             target.type = basic_type__long;
             break;
         }
-        zero_initialize(def, block, target);
+        zero_initialize(def, values, target);
         target.offset += size_of(target.type);
         bytes -= size;
     }
@@ -230,6 +232,7 @@ static void initialize_trailing_padding(
 static struct block *initialize_struct_or_union(
     struct definition *def,
     struct block *block,
+    struct block *values,
     struct var target)
 {
     int i, m;
@@ -249,7 +252,7 @@ static struct block *initialize_struct_or_union(
         target.type = member->type;
         target.field_offset = member->field_offset;
         target.field_width = member->field_width;
-        block = initialize_member(def, block, target);
+        block = initialize_member(def, block, values, target);
     } else {
         m = nmembers(type);
         i = 0;
@@ -261,27 +264,27 @@ static struct block *initialize_struct_or_union(
                     || prev->field_offset != member->field_offset)
                     break;
             }
-            initialize_padding(def, block, target, prev, member);
+            initialize_padding(def, values, target, prev, member);
             target.type = member->type;
             prev = member;
             target.offset = filled + member->offset;
             target.field_offset = member->field_offset;
             target.field_width = member->field_width;
-            block = initialize_member(def, block, target);
+            block = initialize_member(def, block, values, target);
         } while (i < m && next_element());
 
         while (i < m) {
             member = get_member(type, i++);
-            initialize_padding(def, block, target, prev, member);
+            initialize_padding(def, values, target, prev, member);
             target.type = member->type;
             prev = member;
             target.offset = filled + member->offset;
             target.field_offset = member->field_offset;
             target.field_width = member->field_width;
-            zero_initialize(def, block, target);
+            zero_initialize(def, values, target);
         }
 
-        initialize_trailing_padding(def, block, target, type);
+        initialize_trailing_padding(def, values, target, type);
     }
 
     return block;
@@ -309,6 +312,7 @@ static struct block *initialize_struct_or_union(
 static struct block *initialize_array(
     struct definition *def,
     struct block *block,
+    struct block *values,
     struct var target)
 {
     Type type = target.type;
@@ -319,20 +323,20 @@ static struct block *initialize_array(
     if (is_aggregate(type_next(target.type))) {
         target.type = type_next(target.type);
         do {
-            block = initialize_member(def, block, target);
+            block = initialize_member(def, block, values, target);
             target.offset += size_of(target.type);
         } while (next_element());
     } else {
         block = read_initializer_element(def, block, target);
         if (is_char(type_next(target.type)) && is_string(block->expr)) {
-            target = eval_assign(def, block, target, block->expr);
+            target = eval_assign(def, values, target, block->expr);
         } else {
             target.type = type_next(target.type);
-            eval_assign(def, block, target, block->expr);
+            eval_assign(def, values, target, block->expr);
             target.offset += size_of(target.type);
             while (next_element()) {
                 block = read_initializer_element(def, block, target);
-                eval_assign(def, block, target, block->expr);
+                eval_assign(def, values, target, block->expr);
                 target.offset += size_of(target.type);
             }
         }
@@ -345,7 +349,7 @@ static struct block *initialize_array(
     } else {
         target.type = type_next(type);
         while (target.offset - filled < size_of(type)) {
-            zero_initialize(def, block, target);
+            zero_initialize(def, values, target);
             target.offset += size_of(target.type);
         }
     }
@@ -357,18 +361,19 @@ static struct block *initialize_array(
 static struct block *initialize_member(
     struct definition *def,
     struct block *block,
+    struct block *values,
     struct var target)
 {
     assert(target.kind == DIRECT);
     if (is_struct_or_union(target.type)) {
         if (peek().token == '{') {
             next();
-            block = initialize_struct_or_union(def, block, target);
+            block = initialize_struct_or_union(def, block, values, target);
             if (peek().token == ',')
                 next();
             consume('}');
         } else {
-            block = initialize_struct_or_union(def, block, target);
+            block = initialize_struct_or_union(def, block, values, target);
         }
     } else if (is_array(target.type)) {
         if (!size_of(target.type)) {
@@ -377,16 +382,16 @@ static struct block *initialize_member(
         }
         if (peek().token == '{') {
             next();
-            block = initialize_array(def, block, target);
+            block = initialize_array(def, block, values, target);
             if (peek().token == ',')
                 next();
             consume('}');
         } else {
-            block = initialize_array(def, block, target);
+            block = initialize_array(def, block, values, target);
         }
     } else {
         block = read_initializer_element(def, block, target);
-        eval_assign(def, block, target, block->expr);
+        eval_assign(def, values, target, block->expr);
     }
 
     return block;
@@ -395,6 +400,7 @@ static struct block *initialize_member(
 static struct block *initialize_object(
     struct definition *def,
     struct block *block,
+    struct block *values,
     struct var target)
 {
     assert(target.kind == DIRECT);
@@ -402,24 +408,36 @@ static struct block *initialize_object(
     if (peek().token == '{') {
         next();
         if (is_struct_or_union(target.type)) {
-            block = initialize_struct_or_union(def, block, target);
+            block = initialize_struct_or_union(def, block, values, target);
         } else if (is_array(target.type)) {
-            block = initialize_array(def, block, target);
+            block = initialize_array(def, block, values, target);
         } else {
-            block = initialize_object(def, block, target);
+            block = initialize_object(def, block, values, target);
         }
         if (peek().token == ',') {
             next();
         }
         consume('}');
     } else if (is_array(target.type)) {
-        block = initialize_array(def, block, target);
+        block = initialize_array(def, block, values, target);
     } else {
         block = read_initializer_element(def, block, target);
-        eval_assign(def, block, target, block->expr);
+        eval_assign(def, values, target, block->expr);
     }
 
     return block;
+}
+
+/*
+ * Evaluate sequence of IR_ASSIGN statements in a separate block. This
+ * is appended at the end after all expressions inside initializers are
+ * evaluated.
+ */
+static struct block *get_initializer_block()
+{
+    static struct block *block;
+
+    return !block ? (block = cfg_block_init(NULL)) : block;
 }
 
 struct block *initializer(
@@ -427,6 +445,17 @@ struct block *initializer(
     struct block *block,
     const struct symbol *sym)
 {
+    struct block *values = get_initializer_block();
     struct var target = var_direct(sym);
-    return initialize_object(def, block, target);
+
+    if (peek().token == '{' || is_array(sym->type)) {
+        block = initialize_object(def, block, values, target);
+        array_concat(&block->code, &values->code);
+        array_empty(&values->code);
+    } else {
+        block = read_initializer_element(def, block, target);
+        eval_assign(def, block, target, block->expr);
+    }
+
+    return block;
 }
