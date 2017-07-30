@@ -392,12 +392,13 @@ static struct block *initialize_member(
     return block;
 }
 
-struct block *initializer(
+static struct block *initialize_object(
     struct definition *def,
     struct block *block,
     struct var target)
 {
     assert(target.kind == DIRECT);
+
     if (peek().token == '{') {
         next();
         if (is_struct_or_union(target.type)) {
@@ -405,10 +406,11 @@ struct block *initializer(
         } else if (is_array(target.type)) {
             block = initialize_array(def, block, target);
         } else {
-            block = initializer(def, block, target);
+            block = initialize_object(def, block, target);
         }
-        if (peek().token == ',')
+        if (peek().token == ',') {
             next();
+        }
         consume('}');
     } else if (is_array(target.type)) {
         block = initialize_array(def, block, target);
@@ -418,4 +420,13 @@ struct block *initializer(
     }
 
     return block;
+}
+
+struct block *initializer(
+    struct definition *def,
+    struct block *block,
+    const struct symbol *sym)
+{
+    struct var target = var_direct(sym);
+    return initialize_object(def, block, target);
 }

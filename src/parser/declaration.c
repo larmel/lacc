@@ -817,7 +817,7 @@ struct block *init_declarator(
         }
         consume('=');
         sym->symtype = SYM_DEFINITION;
-        parent = initializer(def, parent, var_direct(sym));
+        parent = initializer(def, parent, sym);
         assert(size_of(sym->type) > 0);
         if (sym->linkage != LINK_NONE) {
             cfg_define(def, sym);
