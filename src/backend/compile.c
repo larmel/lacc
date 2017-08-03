@@ -10,11 +10,6 @@
 #include <limits.h>
 #include <stdarg.h>
 
-#define BASIC_TYPE_UNSIGNED(w) \
-    ((w) == 1) ? basic_type__unsigned_char : \
-    ((w) == 2) ? basic_type__unsigned_short : \
-    ((w) == 4) ? basic_type__unsigned_int : basic_type__unsigned_long;
-
 static int (*enter_context)(const struct symbol *);
 static int (*emit_instruction)(struct instruction);
 static int (*emit_data)(struct immediate);
@@ -276,6 +271,50 @@ static struct immediate constant(long n, int w)
     imm.d.qword = n;
     imm.w = w;
     return imm;
+}
+
+/*
+ * Return smallest type big enough to cover the i'th eightbyte slice of
+ * aggregate type. Scalar types are returned as is.
+ */
+static Type slice_type(Type type, struct param_class pc, int i)
+{
+    size_t width;
+
+    assert(i >= 0 && i < 4);
+    assert(pc.eightbyte[i] == PC_INTEGER || pc.eightbyte[i] == PC_SSE);
+    if (!is_scalar(type)) {
+        width = size_of(type);
+        if ((i + 1) * 8 < width) {
+            type = basic_type__unsigned_long;
+        } else switch (width % 8) {
+        case 1:
+            type = basic_type__unsigned_char;
+            break;
+        case 2:
+            type = basic_type__unsigned_short;
+            break;
+        case 3:
+        case 4:
+            type = basic_type__unsigned_int;
+            break;
+        default:
+            type = basic_type__unsigned_long;
+            break;
+        }
+
+        if (pc.eightbyte[i] == PC_SSE) {
+            width = size_of(type) % 8;
+            if (width == 4) {
+                type = basic_type__float;
+            } else {
+                assert(width == 0);
+                type = basic_type__double;
+            }
+        }
+    }
+
+    return type;
 }
 
 static void count_register_classifications(
@@ -1059,21 +1098,10 @@ static void move_to_from_registers(
         for (i = 0; i < n; ++i) {
             if (pc.eightbyte[i] == PC_INTEGER) {
                 r = *intregs++;
-                if (!is_scalar(type)) {
-                    var.type = (i < n - 1) ?
-                        basic_type__unsigned_long :
-                        BASIC_TYPE_UNSIGNED(size_of(type) % 8);
-                }
             } else {
-                assert(pc.eightbyte[i] == PC_SSE);
                 r = *sseregs++;
-                if (size_of(type) % 8 == 4) {
-                    var.type = basic_type__float;
-                } else {
-                    assert(size_of(type) % 8 == 0);
-                    var.type = basic_type__double;
-                }
             }
+            var.type = slice_type(type, pc, i);
             if (toggle_load) {
                 load(var, r);
             } else {
@@ -1615,11 +1643,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         while ((i = integer_regs_loaded + sse_regs_loaded) < n) {
             switch (pc.eightbyte[i]) {
             case PC_INTEGER:
-                if (!is_scalar(res.type)) {
-                    slice.type = (i < n - 1) ?
-                        basic_type__unsigned_long :
-                        BASIC_TYPE_UNSIGNED(size_of(res.type) % 8);
-                }
+                slice.type = slice_type(res.type, pc, i);
                 i = integer_regs_loaded++;
                 w = size_of(slice.type);
                 emit(INSTR_MOV, OPT_MEM_REG,
@@ -2424,15 +2448,7 @@ static enum reg compile_cast(
     case PC_SSE:
         if (EIGHTBYTES(type) == 1) {
             if (is_struct_or_union(type)) {
-                assert(EIGHTBYTES(type) == 1);
-                if (pc.eightbyte[0] == PC_INTEGER) {
-                    type = BASIC_TYPE_UNSIGNED(w);
-                } else {
-                    assert(pc.eightbyte[0] == PC_SSE);
-                    type = (size_of(type) == 4)
-                        ? basic_type__float
-                        : basic_type__double;
-                }
+                type = slice_type(type, pc, 0);
                 l.type = type;
             }
             if (!is_void(target.type)) {
