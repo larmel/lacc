@@ -78,8 +78,11 @@ creduce-prepare-%: csmith/%.c bin/lacc
 creduce-check: bin/lacc
 	./check.sh "bin/lacc -std=c99" creduce/reduce.c "$(CC) -std=c99"
 
+sqlite-test: bin/lacc
+	./sqlite.sh "bin/lacc -std=c89" "$(CC) -std=c89"
+
 clean:
 	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s
 
-.PHONY: all test test-% install uninstall csmith-test creduce-prepare-% creduce-check clean
+.PHONY: all install uninstall test test-% %-test csmith-% creduce-% clean
