@@ -54,12 +54,11 @@ static void strtab_free(void)
 String str_register(const char *str, size_t len)
 {
     static int initialized;
-    String data, *ref;
+    String data = {0}, *ref;
     assert(len >= 0);
 
     if (len < SHORT_STRING_LEN) {
         memcpy(data.a.str, str, len);
-        data.a.str[len] = '\0';
         data.a.len = len;
         ref = &data;
     } else {

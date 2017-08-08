@@ -45,12 +45,11 @@ int fprintstr(FILE *stream, String str)
 
 String str_init(const char *str)
 {
-    String s;
+    String s = {0};
 
     s.len = strlen(str);
     if (s.len < SHORT_STRING_LEN) {
         memcpy(s.a.str, str, s.len);
-        s.a.str[s.len] = '\0';
     } else {
         s.p.str = str;
     }
@@ -60,12 +59,15 @@ String str_init(const char *str)
 
 int str_cmp(String s1, String s2)
 {
+    long *a, *b;
     if (s1.len != s2.len) {
         return 1;
     }
 
     if (s1.len < SHORT_STRING_LEN) {
-        return memcmp(s1.a.str, s2.a.str, s1.len);
+        a = (long *) ((void *) &s1);
+        b = (long *) ((void *) &s2);
+        return a[0] != b[0] || a[1] != b[1];
     }
 
     return memcmp(s1.p.str, s2.p.str, s1.len);
