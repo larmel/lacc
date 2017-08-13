@@ -33,13 +33,15 @@ static int printchar(FILE *stream, char c)
 int fprintstr(FILE *stream, String str)
 {
     int n, i;
+    const char *raw;
+
+    raw = str_raw(str);
+    putc('"', stream);
+    for (n = 0, i = 0; i < str.len; ++i) {
+        n += printchar(stream, raw[i]);
+    }
 
     putc('"', stream);
-    for (n = 0, i = 0; i < str.len; ++i)
-        n += printchar(stream, str_raw(str)[i]);
-
-    putc('"', stream);
-
     return n + 2;
 }
 
