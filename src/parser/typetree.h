@@ -101,9 +101,12 @@ void type_set_tag(Type type, const struct symbol *tag);
 
 /*
  * Find type member of the given name, meaning struct or union field, or
- * function parameter. Returns NULL in the case no member is found.
+ * function parameter.
+ *
+ * Returns NULL in the case no member is found. Index is bound to the
+ * numberic index of the member in the member list, or -1 if not found.
  */
-const struct member *find_type_member(Type type, String name);
+const struct member *find_type_member(Type type, String name, int *index);
 
 /* Get symbol holding number of elements in given VLA type. */
 const struct symbol *type_vla_length(Type type);

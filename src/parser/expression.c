@@ -323,7 +323,7 @@ static struct block *postfix_expression(
         case '.':
             consume('.');
             tok = consume(IDENTIFIER);
-            mbr = find_type_member(root.type, tok.d.string);
+            mbr = find_type_member(root.type, tok.d.string, NULL);
             if (!mbr) {
                 error("Invalid access, no member named '%s'.",
                     str_raw(tok.d.string));
@@ -343,7 +343,7 @@ static struct block *postfix_expression(
             if (is_pointer(root.type)
                 && is_struct_or_union(type_deref(root.type)))
             {
-                mbr = find_type_member(type_deref(root.type), tok.d.string);
+                mbr = find_type_member(type_deref(root.type), tok.d.string, NULL);
                 if (!mbr) {
                     error("Invalid access, no member named '%s'.",
                         str_raw(tok.d.string));

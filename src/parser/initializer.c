@@ -14,6 +14,21 @@ static struct block *initialize_member(
     struct block *values,
     struct var target);
 
+/*
+ * Evaluate sequence of IR_ASSIGN statements in a separate block. This
+ * is appended at the end after all expressions inside initializers are
+ * evaluated.
+ *
+ * Padding initialization is handled only after the whole initializer is
+ * read, as postprocessing of the statements in this block.
+ */
+static struct block *get_initializer_block(int i)
+{
+    static struct block *block[3];
+
+    return !block[i] ? (block[i] = cfg_block_init(NULL)) : block[i];
+}
+
 static struct block *read_initializer_element(
     struct definition *def,
     struct block *block,
@@ -40,11 +55,24 @@ static struct block *read_initializer_element(
     return block;
 }
 
-static int next_element(void)
+enum current_object_state {
+    CURRENT,        /* Current object. */
+    DESIGNATOR,     /* In designator. */
+    MEMBER
+};
+
+static int next_element(enum current_object_state state)
 {
     struct token t = peek();
     if (t.token == ',') {
-        if (peekn(2).token != '}') {
+        switch (peekn(2).token) {
+        case '}':
+            break;
+        case '.':
+            if (state != CURRENT) {
+                break;
+            }
+        default:
             next();
             return 1;
         }
@@ -53,62 +81,215 @@ static int next_element(void)
     return 0;
 }
 
+static struct var access_member(
+    struct var target,
+    const struct member *member,
+    size_t offset)
+{
+    target.type = member->type;
+    target.field_offset = member->field_offset;
+    target.field_width = member->field_width;
+    target.offset = offset + member->offset;
+    return target;
+}
+
+static const struct member *get_named_member(
+    Type type,
+    String name,
+    int *i)
+{
+    const struct member *member;
+
+    member = find_type_member(type, name, i);
+    if (member == NULL) {
+        error("%t has no member named %s.", type, str_raw(name));
+        exit(1);
+    }
+
+    return member;
+}
+
 /*
- * Initialize members of a struct or union.
+ * Initialize the first union member, or the last member specified by a
+ * designator.
  *
- * Only the first element of a union can be initialized. If the first
- * element is not also the largest member, or if there is padding, the
- * remaining memory is undefined.
+ * If the initialized element is not also the largest member, or if
+ * there is padding, the remaining memory is undefined.
+ *
+ * With designators, there can be arbitrary many member initializers,
+ * but only the last one should count. Evaluate each member in its own
+ * block to cleanly reset.
+ *
+ *     union {
+ *         struct { int x, y; } p;
+ *         int q;
+ *     } foo = {{1, 2}, .q = 3};
+ *
+ * In the above definition, we want the value of foo.p.y to be 0, even
+ * though the assignment to .q does not overwrite it.
+ */
+static struct block *initialize_union(
+    struct definition *def,
+    struct block *block,
+    struct block *values,
+    struct var target,
+    enum current_object_state state)
+{
+    int done;
+    size_t filled;
+    struct block *init;
+    const struct member *member;
+    Type type;
+    String name;
+
+    done = 0;
+    filled = target.offset;
+    type = target.type;
+    init = get_initializer_block(2);
+    assert(is_union(type));
+    assert(nmembers(type) > 0);
+
+    do {
+        if (peek().token == '.') {
+            next();
+            name = consume(IDENTIFIER).d.string;
+            member = get_named_member(type, name, NULL);
+            target = access_member(target, member, filled);
+            if (peek().token == '=') {
+                next();
+            }
+        } else if (!done) {
+            member = get_member(type, 0);
+            target = access_member(target, member, filled);
+        } else break;
+        array_empty(&init->code);
+        block = initialize_member(def, block, init, target);
+        done = 1;
+    } while (next_element(state));
+
+    array_concat(&values->code, &init->code);
+    return block;
+}
+
+/*
+ * Initialize members of a struct.
  *
  * Members of structs can have overlapping offsets from anonymous union
  * fields. Act as if only the first element is initialized by skipping
  * all consecutive elements with the same offset.
  */
-static struct block *initialize_struct_or_union(
+static struct block *initialize_struct(
     struct definition *def,
     struct block *block,
     struct block *values,
-    struct var target)
+    struct var target,
+    enum current_object_state state)
 {
     int i, m;
     size_t filled;
     Type type;
+    String name;
     const struct member *member, *prev;
 
+    prev = NULL;
     target.lvalue = 1;
     filled = target.offset;
     type = target.type;
-    prev = NULL;
-    assert(is_struct_or_union(type));
+    assert(is_struct(type));
     assert(nmembers(type) > 0);
 
-    if (is_union(type)) {
-        member = get_member(type, 0);
-        target.type = member->type;
-        target.field_offset = member->field_offset;
-        target.field_width = member->field_width;
-        block = initialize_member(def, block, values, target);
-    } else {
-        m = nmembers(type);
-        i = 0;
-        do {
+    m = nmembers(type);
+    i = 0;
+    do {
+        if (peek().token == '.') {
+            next();
+            name = consume(IDENTIFIER).d.string;
+            member = get_named_member(type, name, &i);
+            target = access_member(target, member, filled);
+            if (peek().token == '=') {
+                next();
+            }
+            block = initialize_member(def, block, values, target);
+            prev = member;
+            i += 1;
+        } else {
             while (1) {
-                member = get_member(type, i++);
+                member = get_member(type, i);
+                i += 1;
                 if (!prev
                     || prev->offset != member->offset
                     || prev->field_offset != member->field_offset)
                     break;
             }
-            target.type = member->type;
             prev = member;
-            target.offset = filled + member->offset;
-            target.field_offset = member->field_offset;
-            target.field_width = member->field_width;
+            target = access_member(target, member, filled);
             block = initialize_member(def, block, values, target);
-        } while (i < m && next_element());
+            if (i >= m)
+                break;
+        }
+    } while (next_element(state));
+
+    return block;
+}
+
+static struct block *initialize_struct_or_union(
+    struct definition *def,
+    struct block *block,
+    struct block *values,
+    struct var target,
+    enum current_object_state state)
+{
+    assert(is_struct_or_union(target.type));
+    assert(nmembers(target.type) > 0);
+
+    if (is_union(target.type)) {
+        block = initialize_union(def, block, values, target, state);
+    } else {
+        block = initialize_struct(def, block, values, target, state);
     }
 
     return block;
+}
+
+static int next_array_element(enum current_object_state state)
+{
+    struct token t = peek();
+    if (t.token == ',') {
+        t = peekn(2);
+        switch (t.token) {
+        case '}':
+        case '.':
+            break;
+        case '[':
+            if (state != CURRENT) {
+                break;
+            }
+        default:
+            next();
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int try_parse_index(size_t *index)
+{
+    struct var num;
+
+    if (peek().token == '[') {
+        next();
+        num = constant_expression();
+        if (!is_integer(num.type)) {
+            error("Array designator must have integer value.");
+            exit(1);
+        }
+        consume(']');
+        *index = num.imm.i;
+        return 1;
+    }
+
+    return 0;
 }
 
 static int is_string(struct expression expr)
@@ -142,38 +323,50 @@ static struct block *initialize_array(
     struct definition *def,
     struct block *block,
     struct block *values,
-    struct var target)
+    struct var target,
+    enum current_object_state state)
 {
-    Type type = target.type;
+    Type type, elem;
+    size_t initial, width, i;
 
-    assert(is_array(type));
+    assert(is_array(target.type));
     assert(target.kind == DIRECT);
-    if (is_aggregate(type_next(target.type))) {
-        target.type = type_next(target.type);
-        do {
-            block = initialize_member(def, block, values, target);
-            target.offset += size_of(target.type);
-        } while (next_element());
-    } else {
+
+    i = 0;
+    type = target.type;
+    elem = type_next(type);
+    width = size_of(elem);
+    initial = target.offset;
+
+    /*
+     * Need to read expression to determine if element is a string
+     * constant, or an integer like "Hello"[2].
+     */
+    if (is_char(elem) && peek().token != '[') {
         block = read_initializer_element(def, block, target);
-        if (is_char(type_next(target.type)) && is_string(block->expr)) {
+        if (is_string(block->expr)) {
             target = eval_assign(def, values, target, block->expr);
         } else {
-            target.type = type_next(target.type);
+            target.type = elem;
             eval_assign(def, values, target, block->expr);
-            target.offset += size_of(target.type);
-            while (next_element()) {
-                block = read_initializer_element(def, block, target);
-                eval_assign(def, values, target, block->expr);
-                target.offset += size_of(target.type);
-            }
+            goto next;
         }
+    } else {
+        target.type = elem;
+        do {
+            if (try_parse_index(&i) && peek().token == '=') {
+                next();
+            }
+            target.offset = initial + (i * width);
+            block = initialize_member(def, block, values, target);
+next:       i += 1;
+        } while (next_array_element(state));
     }
 
     if (!size_of(type)) {
         assert(is_array(target.symbol->type));
         assert(!size_of(target.symbol->type));
-        type_set_array_size(target.symbol->type, target.offset);
+        type_set_array_size(target.symbol->type, initial + (i * width));
     }
 
     return block;
@@ -189,12 +382,12 @@ static struct block *initialize_member(
     if (is_struct_or_union(target.type)) {
         if (peek().token == '{') {
             next();
-            block = initialize_struct_or_union(def, block, values, target);
+            block = initialize_struct_or_union(def, block, values, target, CURRENT);
             if (peek().token == ',')
                 next();
             consume('}');
         } else {
-            block = initialize_struct_or_union(def, block, values, target);
+            block = initialize_struct_or_union(def, block, values, target, DESIGNATOR);
         }
     } else if (is_array(target.type)) {
         if (!size_of(target.type)) {
@@ -203,15 +396,21 @@ static struct block *initialize_member(
         }
         if (peek().token == '{') {
             next();
-            block = initialize_array(def, block, values, target);
+            block = initialize_array(def, block, values, target, CURRENT);
             if (peek().token == ',')
                 next();
             consume('}');
         } else {
-            block = initialize_array(def, block, values, target);
+            block = initialize_array(def, block, values, target, DESIGNATOR);
         }
     } else {
-        block = read_initializer_element(def, block, target);
+        if (peek().token == '{') {
+            next();
+            block = read_initializer_element(def, block, target);
+            consume('}');
+        } else {
+            block = read_initializer_element(def, block, target);
+        }
         eval_assign(def, values, target, block->expr);
     }
 
@@ -229,9 +428,9 @@ static struct block *initialize_object(
     if (peek().token == '{') {
         next();
         if (is_struct_or_union(target.type)) {
-            block = initialize_struct_or_union(def, block, values, target);
+            block = initialize_struct_or_union(def, block, values, target, CURRENT);
         } else if (is_array(target.type)) {
-            block = initialize_array(def, block, values, target);
+            block = initialize_array(def, block, values, target, CURRENT);
         } else {
             block = initialize_object(def, block, values, target);
         }
@@ -240,7 +439,7 @@ static struct block *initialize_object(
         }
         consume('}');
     } else if (is_array(target.type)) {
-        block = initialize_array(def, block, values, target);
+        block = initialize_array(def, block, values, target, MEMBER);
     } else {
         block = read_initializer_element(def, block, target);
         eval_assign(def, values, target, block->expr);
@@ -396,21 +595,6 @@ static void initialize_trailing_padding(
     }
 }
 
-/*
- * Evaluate sequence of IR_ASSIGN statements in a separate block. This
- * is appended at the end after all expressions inside initializers are
- * evaluated.
- *
- * Padding initialization is handled only after the whole initializer is
- * read, as postprocessing of the statements in this block.
- */
-static struct block *get_initializer_block(int i)
-{
-    static struct block *block[2];
-
-    return !block[i] ? (block[i] = cfg_block_init(NULL)) : block[i];
-}
-
 #ifndef NDEBUG
 static void validate_initializer_block(struct block *block)
 {
@@ -437,7 +621,40 @@ static void validate_initializer_block(struct block *block)
 #endif
 
 /*
- * Fill in any missing padding initialization in assignment statment
+ * Reorder initializer assignments to increasing offsets, and remove
+ * duplicate assignments to the same element.
+ */
+static void sort_and_trim(struct block *values)
+{
+    int i, j;
+    struct statement *code, tmp;
+
+    code = &array_get(&values->code, 0);
+    for (i = 1; i < array_len(&values->code); ++i) {
+        j = i - 1;
+        while (j >= 0 && code[j].t.offset > code[j + 1].t.offset) {
+            tmp = code[j];
+            code[j] = code[j + 1];
+            code[j + 1] = tmp;
+            if (j == 0) {
+                break;
+            } else {
+                j--;
+            }
+        }
+
+        if (code[j].t.offset == code[j + 1].t.offset
+            && code[j].t.field_offset == code[j + 1].t.field_offset)
+        {
+            assert(code[j].t.field_width == code[j + 1].t.field_width);
+            array_erase(&values->code, j);
+            i -= 1;
+        }
+    }
+}
+
+/*
+ * Fill in any missing padding initialization in assignment statement
  * list.
  *
  * The input block contains a list of assignments to the same variable,
@@ -451,16 +668,20 @@ static struct block *postprocess_object_initialization(
     int i;
     struct statement st;
     struct var field;
-    struct block *block = get_initializer_block(1);
+    struct block *block;
 
+    assert(target.offset == 0);
+    sort_and_trim(values);
+    block = get_initializer_block(1);
     for (i = 0; i < array_len(&values->code); ++i) {
         st = array_get(&values->code, i);
-        assert(st.st == IR_ASSIGN);
-        assert(target.offset <= st.t.offset);
         field = st.t;
 
-        initialize_padding(def, block, target, field);
+        assert(st.st == IR_ASSIGN);
+        assert(field.offset >= 0);
+        assert(target.offset <= field.offset);
 
+        initialize_padding(def, block, target, field);
         array_push_back(&block->code, st);
         target.offset = field.offset;
         if (field.field_width) {

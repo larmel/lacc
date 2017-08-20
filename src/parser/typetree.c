@@ -184,7 +184,7 @@ static void add_member(Type parent, struct member m)
         assert(is_function(parent));
         t->is_vararg = 1;
     } else {
-        if (m.name.len && find_type_member(parent, m.name)) {
+        if (m.name.len && find_type_member(parent, m.name, NULL)) {
             error("Member '%s' already exists.", str_raw(m.name));
             exit(1);
         }
@@ -948,7 +948,7 @@ void type_set_array_size(Type type, size_t size)
     t->size = size / size_of(t->next);
 }
 
-const struct member *find_type_member(Type type, String name)
+const struct member *find_type_member(Type type, String name, int *index)
 {
     int i;
     const struct member *member;
@@ -957,8 +957,15 @@ const struct member *find_type_member(Type type, String name)
     for (i = 0; i < nmembers(type); ++i) {
         member = get_member(type, i);
         if (!str_cmp(name, member->name)) {
+            if (index) {
+                *index = i;
+            }
             return member;
         }
+    }
+
+    if (index) {
+        *index = -1;
     }
 
     return NULL;

@@ -778,7 +778,7 @@ struct block *init_declarator(
     case 0: break;
     case 1: /* Parameters from old-style function definitions. */
         assert(def->symbol);
-        param = find_type_member(def->symbol->type, name);
+        param = find_type_member(def->symbol->type, name, NULL);
         if (is_array(type)) {
             sym->type = type_create(T_POINTER, type_next(type));
         }
