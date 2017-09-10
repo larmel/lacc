@@ -102,7 +102,7 @@ struct var var_direct(const struct symbol *sym)
     default:
         assert(sym->symtype != SYM_LABEL);
         var.kind = DIRECT;
-        var.lvalue = str_raw(sym->name)[0] != '.';
+        var.lvalue = !is_temporary(sym);
         break;
     }
 

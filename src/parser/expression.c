@@ -1,6 +1,7 @@
-#include "expression.h"
 #include "declaration.h"
 #include "eval.h"
+#include "expression.h"
+#include "initializer.h"
 #include "parse.h"
 #include "symtab.h"
 #include "typetree.h"
@@ -195,38 +196,20 @@ static void pop_argument_list(void)
     array_empty(list);
 }
 
-static struct block *postfix_expression(
+static struct block *postfix(
     struct definition *def,
     struct block *block)
 {
     struct expression root;
     struct var value, copy;
     const struct member *mbr;
-    const struct symbol *sym;
     struct token tok;
     int i;
     Type type;
     ExprArray *args;
 
-    /*
-     * Special case for function calls directly on an identifier which
-     * is not declared. Add a declaration like 'extern int foo()' to the
-     * current scope.
-     */
-    if (context.standard == STD_C89) {
-        tok = peek();
-        if (tok.token == IDENTIFIER && peekn(2).token == '(') {
-            sym = sym_lookup(&ns_ident, tok.d.string);
-            if (!sym) {
-                type = type_create(T_FUNCTION, basic_type__int);
-                sym_add(&ns_ident, tok.d.string, type,
-                    SYM_DECLARATION, LINK_EXTERN);
-            }
-        }
-    }
-
-    block = primary_expression(def, block);
     root = block->expr;
+
     while (1) {
         switch ((tok = peek()).token) {
         case '[':
@@ -375,6 +358,35 @@ static struct block *postfix_expression(
     }
 }
 
+static struct block *postfix_expression(
+    struct definition *def,
+    struct block *block)
+{
+    const struct symbol *sym;
+    struct token tok;
+    Type type;
+
+    /*
+     * Special case for function calls directly on an identifier which
+     * is not declared. Add a declaration like 'extern int foo()' to the
+     * current scope.
+     */
+    if (context.standard == STD_C89) {
+        tok = peek();
+        if (tok.token == IDENTIFIER && peekn(2).token == '(') {
+            sym = sym_lookup(&ns_ident, tok.d.string);
+            if (!sym) {
+                type = type_create(T_FUNCTION, basic_type__int);
+                sym_add(&ns_ident, tok.d.string, type,
+                    SYM_DECLARATION, LINK_EXTERN);
+            }
+        }
+    }
+
+    block = primary_expression(def, block);
+    return postfix(def, block);
+}
+
 static struct block *unary_expression(
     struct definition *def,
     struct block *block)
@@ -517,9 +529,35 @@ exprsize:   head = cfg_block_init(def);
     return block;
 }
 
+static struct block *compound_literal(
+    struct definition *def,
+    struct block *block,
+    Type type)
+{
+    struct var var;
+    struct symbol *sym;
+
+    sym = sym_create_unnamed(type);
+    if (sym->linkage == LINK_INTERN) {
+        def = cfg_init();
+        initializer(def, def->body, sym);
+        cfg_define(def, sym);
+    } else {
+        array_push_back(&def->locals, sym);
+        block = initializer(def, block, sym);
+    }
+
+    var = var_direct(sym);
+    block->expr = as_expr(var);
+    return block;
+}
+
 /*
  * This rule needs two lookahead; to see beyond the initial parenthesis
  * whether it is actually a cast or an expression.
+ *
+ * Also handle compound literals, which are really postfix expressions,
+ * but have the same prefix as a cast expression.
  */
 static struct block *cast_expression(
     struct definition *def,
@@ -538,16 +576,21 @@ static struct block *cast_expression(
             if (!sym || sym->symtype != SYM_TYPEDEF)
                 break;
         case FIRST(type_name):
-            consume('(');
+            next();
             type = declaration_specifiers(NULL, NULL);
             if (peek().token != ')') {
                 block = declarator(def, block, type, &type, NULL);
             }
             consume(')');
-            block = cast_expression(def, block);
-            value = eval(def, block, block->expr);
-            block->expr = eval_expr(def, block, IR_OP_CAST, value, type);
-            return block;
+            if (peek().token == '{') {
+                block = compound_literal(def, block, type);
+                return postfix(def, block);
+            } else {
+                block = cast_expression(def, block);
+                value = eval(def, block, block->expr);
+                block->expr = eval_expr(def, block, IR_OP_CAST, value, type);
+                return block;
+            }
         default:
             break;
         }

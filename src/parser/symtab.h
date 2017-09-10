@@ -89,6 +89,9 @@ void sym_make_visible(struct namespace *ns, struct symbol *sym);
  */
 struct symbol *sym_create_temporary(Type type);
 
+/* Create an unnamed variable, produced by a compound literal. */
+struct symbol *sym_create_unnamed(Type type);
+
 /* Create a label. */
 struct symbol *sym_create_label(void);
 

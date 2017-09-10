@@ -15,6 +15,7 @@ struct namespace
 
 /* Name prefixes assigned to compiler generated symbols. */
 #define PREFIX_TEMPORARY ".t"
+#define PREFIX_UNNAMED ".u"
 #define PREFIX_CONSTANT ".C"
 #define PREFIX_STRING ".LC"
 #define PREFIX_LABEL ".L"
@@ -418,6 +419,25 @@ struct symbol *sym_create_temporary(Type type)
     sym->symtype = SYM_DEFINITION;
     sym->linkage = LINK_NONE;
     sym->name = str_init(PREFIX_TEMPORARY);
+    sym->type = type;
+    sym->n = ++n;
+    return sym;
+}
+
+struct symbol *sym_create_unnamed(Type type)
+{
+    static int n;
+    struct symbol *sym;
+
+    sym = alloc_sym();
+    if (current_scope_depth(&ns_ident) == 0) {
+        sym->linkage = LINK_INTERN;
+    } else {
+        sym->linkage = LINK_NONE;
+    }
+
+    sym->symtype = SYM_DEFINITION;
+    sym->name = str_init(PREFIX_UNNAMED);
     sym->type = type;
     sym->n = ++n;
     return sym;
