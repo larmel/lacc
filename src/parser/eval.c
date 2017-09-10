@@ -1385,7 +1385,7 @@ static struct var eval_assign_string_literal(
         assert(target.kind == DIRECT);
         assert(target.offset == 0);
         assert(size_of(target.symbol->type) == 0);
-        type_set_array_size(target.symbol->type, size_of(expr.type));
+        set_array_length(target.symbol->type, size_of(expr.type));
         target.type = expr.type;
         emit_ir(block, IR_ASSIGN, target, expr);
     } else {

@@ -58,10 +58,10 @@ void type_add_field(Type parent, String name, Type type, int width);
 void type_seal(Type parent);
 
 /*
- * Complete array by setting size, called after reading initializer
- * elements.
+ * Complete array type by specifying a length, called after reading
+ * initializer elements.
  */
-void type_set_array_size(Type type, size_t size);
+void set_array_length(Type type, size_t length);
 
 /* Number of elements in array. */
 size_t type_array_len(Type type);

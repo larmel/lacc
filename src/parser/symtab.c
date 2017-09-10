@@ -279,7 +279,7 @@ static void apply_type(struct symbol *sym, Type type)
             conflict = 0;
             if (!size_of(sym->type)) {
                 assert(size_of(type));
-                type_set_array_size(sym->type, size_of(type));
+                set_array_length(sym->type, type_array_len(type));
             }
         }
     default: break;

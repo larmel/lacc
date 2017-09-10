@@ -366,7 +366,7 @@ next:       i += 1;
     if (!size_of(type)) {
         assert(is_array(target.symbol->type));
         assert(!size_of(target.symbol->type));
-        type_set_array_size(target.symbol->type, initial + (i * width));
+        set_array_length(target.symbol->type, i);
     }
 
     return block;

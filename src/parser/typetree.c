@@ -937,15 +937,15 @@ Type type_next(Type type)
     return t->next;
 }
 
-void type_set_array_size(Type type, size_t size)
+void set_array_length(Type type, size_t length)
 {
     struct typetree *t;
     assert(is_array(type));
-    assert(size > 0);
+    assert(length > 0);
 
     t = get_typetree_handle(type.ref);
     assert(t->size == 0);
-    t->size = size / size_of(t->next);
+    t->size = length;
 }
 
 const struct member *find_type_member(Type type, String name, int *index)
