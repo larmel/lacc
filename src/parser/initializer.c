@@ -34,22 +34,26 @@ static struct block *read_initializer_element(
     struct block *block,
     struct var target)
 {
-    int ops;
+    size_t ops;
     struct var value;
+    const struct block *top;
 
     ops = array_len(&block->code);
+    top = block;
     block = assignment_expression(def, block);
     value = block->expr.l;
-    if (target.symbol->linkage != LINK_NONE
-        && (array_len(&block->code) - ops > 0
+
+    if (target.symbol->linkage != LINK_NONE) {
+        if (block != top
+            || array_len(&block->code) - ops > 0
             || !is_identity(block->expr)
             || (!is_constant(value) && value.kind != ADDRESS
-                && !(value.kind == DIRECT && is_function(value.type)))
-            || (value.kind == ADDRESS
-                && value.symbol->linkage == LINK_NONE)))
-    {
-        error("Initializer must be computable at load time.");
-        exit(1);
+                && !(value.kind == DIRECT
+                    && (is_function(value.type) || is_array(value.type)))))
+        {
+            error("Initializer must be computable at load time.");
+            exit(1);
+        }
     }
 
     return block;

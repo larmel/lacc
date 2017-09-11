@@ -33,7 +33,13 @@ void verify(void) {
 		obj.v[0], obj.v[1], obj.v[2], obj.v[3], obj.k, sizeof(obj));
 }
 
+int arr[] = {1, 2, 3, 4, 5};
+int *a = arr,
+    *b = &arr[1],
+    *c = arr + 2,
+    *d = ((int *)&arr[2]) + 2;
+
 int main(void) {
 	verify();
-	return 0;
+	return printf("%d, %d, %d, %d\n", *a, *b, *c, *d);
 }
