@@ -54,12 +54,6 @@ static array_of(struct block *) expressions;
  */
 static array_of(struct block *) blocks;
 
-/*
- * Keep track of symbols used for jump target labels, and recycle them
- * between definitions.
- */
-static array_of(struct symbol *) labels;
-
 static void recycle_block(struct block *block)
 {
     struct expression expr = {0};
@@ -81,15 +75,13 @@ static void cfg_empty(struct definition *def)
     for (i = 0; i < array_len(&def->locals); ++i) {
         sym = array_get(&def->locals, i);
         if (is_temporary(sym)) {
-            sym_release_temporary(sym);
+            sym_discard(sym);
         }
     }
-
     for (i = 0; i < array_len(&def->labels); ++i) {
         sym = array_get(&def->labels, i);
-        array_push_back(&labels, sym);
+        sym_discard(sym);
     }
-
     for (i = 0; i < array_len(&def->nodes); ++i) {
         recycle_block(array_get(&def->nodes, i));
     }
@@ -108,15 +100,13 @@ static void cfg_clear(struct definition *def)
     for (i = 0; i < array_len(&def->locals); ++i) {
         sym = array_get(&def->locals, i);
         if (is_temporary(sym)) {
-            sym_release_temporary(sym);
+            sym_discard(sym);
         }
     }
-
     for (i = 0; i < array_len(&def->labels); ++i) {
         sym = array_get(&def->labels, i);
-        array_push_back(&labels, sym);
+        sym_discard(sym);
     }
-
     for (i = 0; i < array_len(&def->nodes); ++i) {
         recycle_block(array_get(&def->nodes, i));
     }
@@ -133,7 +123,6 @@ static void cleanup(void)
     int i;
     struct definition *def;
     struct block *block;
-    struct symbol *sym;
 
     for (i = 0; i < array_len(&expressions); ++i) {
         block = array_get(&expressions, i);
@@ -145,10 +134,6 @@ static void cleanup(void)
         array_clear(&block->code);
         free(block);
     }
-    for (i = 0; i < array_len(&labels); ++i) {
-        sym = array_get(&labels, i);
-        free(sym);
-    }
     for (i = 0; i < array_len(&prototypes); ++i) {
         def = array_get(&prototypes, i);
         cfg_clear(def);
@@ -158,7 +143,6 @@ static void cleanup(void)
     array_clear(&prototypes);
     array_clear(&expressions);
     array_clear(&blocks);
-    array_clear(&labels);
 }
 
 struct block *cfg_block_init(struct definition *def)
@@ -183,24 +167,9 @@ struct block *cfg_block_init(struct definition *def)
 
 struct symbol *create_label(struct definition *def)
 {
-    static int n;
-    struct symbol *sym;
-
-    if (array_len(&labels)) {
-        sym = array_pop_back(&labels);
-        sym->stack_offset = 0;
-        sym->index = 0;
-    } else {
-        sym = calloc(1, sizeof(*sym));
-        sym->type = basic_type__void;
-        sym->symtype = SYM_LABEL;
-        sym->linkage = LINK_INTERN;
-        sym->name = str_init(".L");
-    }
-
-    sym->n = ++n;
-    array_push_back(&def->labels, sym);
-    return sym;
+    struct symbol *label = sym_create_label();
+    array_push_back(&def->labels, label);
+    return label;
 }
 
 struct definition *cfg_init(void)

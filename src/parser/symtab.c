@@ -13,11 +13,33 @@ struct namespace
     ns_label = {"labels"},
     ns_tag = {"tags"};
 
+/* Name prefixes assigned to compiler generated symbols. */
+#define PREFIX_TEMPORARY ".t"
+#define PREFIX_CONSTANT ".C"
+#define PREFIX_STRING ".LC"
+#define PREFIX_LABEL ".L"
+
 /*
- * Maintain list of symbols allocated for temporaries, which can be
- * reused between function definitions.
+ * Maintain list of symbols allocated for temporaries and labels, which
+ * can be reused between function definitions.
+ *
+ * Calling sym_discard will push symbols back into this list.
  */
 static array_of(struct symbol *) temporaries;
+
+static struct symbol *alloc_sym(void)
+{
+    struct symbol *sym;
+
+    if (array_len(&temporaries)) {
+        sym = array_pop_back(&temporaries);
+        memset(sym, 0, sizeof(*sym));
+    } else {
+        sym = calloc(1, sizeof(*sym));
+    }
+
+    return sym;
+}
 
 /* Save memcpy reference for backend. */
 const struct symbol *decl_memcpy = NULL;
@@ -70,46 +92,6 @@ static void sym_clear_buffers(void)
 
     array_clear(&temporaries);
     hash_destroy(&functions);
-}
-
-struct symbol *sym_create_temporary(Type type)
-{
-    /*
-     * Count number of temporary variables, giving each new one a unique
-     * name by setting the counter instead of creating a string.
-     */
-    static int n;
-
-    struct symbol *sym;
-
-    if (array_len(&temporaries)) {
-        sym = array_pop_back(&temporaries);
-        sym->stack_offset = 0;
-        sym->index = 0;
-        sym->slot = 0;
-        assert(sym->symtype == SYM_DEFINITION);
-        assert(sym->linkage == LINK_NONE);
-    } else {
-        sym = calloc(1, sizeof(*sym));
-        sym->symtype = SYM_DEFINITION;
-        sym->linkage = LINK_NONE;
-        sym->name = str_init(".t");
-        sym->n = ++n;
-    }
-
-    sym->type = type;
-    return sym;
-}
-
-void sym_release_temporary(struct symbol *sym)
-{
-    assert(sym->linkage == LINK_NONE);
-    array_push_back(&temporaries, sym);
-}
-
-int is_temporary(const struct symbol *sym)
-{
-    return strcmp(".t", str_raw(sym->name)) == 0;
 }
 
 /*
@@ -320,6 +302,8 @@ struct symbol *sym_add(
     enum symtype symtype,
     enum linkage linkage)
 {
+    static int n;
+
     struct symbol *sym = NULL;
     assert(symtype != SYM_LABEL);
     assert(symtype != SYM_TAG || ns == &ns_tag);
@@ -380,7 +364,7 @@ struct symbol *sym_add(
     }
 
     /* Create new symbol. */
-    sym = calloc(1, sizeof(*sym));
+    sym = alloc_sym();
     sym->depth = current_scope_depth(ns);
     sym->name = name;
     sym->type = type;
@@ -391,11 +375,10 @@ struct symbol *sym_add(
     }
 
     /*
-     * Scoped static variable must get unique name in order to not
+     * Scoped static variable are given unique names in order to not
      * collide with other external declarations.
      */
-    if (linkage == LINK_INTERN && (sym->depth || symtype == SYM_STRING_VALUE)) {
-        static int n;
+    if (linkage == LINK_INTERN && sym->depth) {
         sym->n = ++n;
     }
 
@@ -426,23 +409,81 @@ struct symbol *sym_add(
     return sym;
 }
 
+struct symbol *sym_create_temporary(Type type)
+{
+    static int n;
+    struct symbol *sym;
+
+    sym = alloc_sym();
+    sym->symtype = SYM_DEFINITION;
+    sym->linkage = LINK_NONE;
+    sym->name = str_init(PREFIX_TEMPORARY);
+    sym->type = type;
+    sym->n = ++n;
+    return sym;
+}
+
+struct symbol *sym_create_label(void)
+{
+    static int n;
+    struct symbol *sym;
+
+    sym = alloc_sym();
+    sym->type = basic_type__void;
+    sym->symtype = SYM_LABEL;
+    sym->linkage = LINK_INTERN;
+    sym->name = str_init(PREFIX_LABEL);
+    sym->n = ++n;
+    return sym;
+}
+
 struct symbol *sym_create_constant(Type type, union value val)
 {
-    static struct symbol data = {
-        SHORT_STRING_INIT(".C"),
-        {0},
-        SYM_CONSTANT,
-        LINK_INTERN
-    };
+    static int n;
+    struct symbol *sym;
 
-    struct symbol *sym = malloc(sizeof(*sym));
-    array_push_back(&ns_ident.symbol, sym);
-    data.n++;
-    *sym = data;
+    sym = alloc_sym();
     sym->type = type;
     sym->constant_value = val;
-    sym->referenced = 1;
+    sym->symtype = SYM_CONSTANT;
+    sym->linkage = LINK_INTERN;
+    sym->name = str_init(PREFIX_CONSTANT);
+    sym->n = ++n;
+    array_push_back(&ns_ident.symbol, sym);
     return sym;
+}
+
+/*
+ * Store string value directly on symbol, memory ownership is in string
+ * table from previously called str_register. The symbol now exists as
+ * if declared static char .LC[] = "...".
+ */
+struct symbol *sym_create_string(String str)
+{
+    static int n;
+    struct symbol *sym;
+
+    sym = alloc_sym();
+    sym->type =
+        type_create(T_ARRAY, basic_type__char, (size_t) str.len + 1, NULL);
+    sym->string_value = str;
+    sym->symtype = SYM_STRING_VALUE;
+    sym->linkage = LINK_INTERN;
+    sym->name = str_init(PREFIX_STRING);
+    sym->n = ++n;
+    array_push_back(&ns_ident.symbol, sym);
+    return sym;
+}
+
+void sym_discard(struct symbol *sym)
+{
+    array_push_back(&temporaries, sym);
+}
+
+int is_temporary(const struct symbol *sym)
+{
+    const char *raw = str_raw(sym->name);
+    return strcmp(PREFIX_TEMPORARY, raw) == 0;
 }
 
 const struct symbol *yield_declaration(struct namespace *ns)
@@ -452,18 +493,99 @@ const struct symbol *yield_declaration(struct namespace *ns)
     while (ns->cursor < array_len(&ns->symbol)) {
         sym = array_get(&ns->symbol, ns->cursor);
         ns->cursor++;
-        if (sym->symtype == SYM_TENTATIVE ||
-            sym->symtype == SYM_STRING_VALUE ||
-            (sym->symtype == SYM_CONSTANT && is_real(sym->type)) ||
-            (sym->symtype == SYM_DECLARATION &&
-                sym->linkage == LINK_EXTERN &&
-                (sym->referenced || sym == decl_memcpy)))
-        {
-            return sym;
+        switch (sym->symtype) {
+        case SYM_TENTATIVE:
+        case SYM_STRING_VALUE:
+            break;
+        case SYM_CONSTANT:
+            if (is_real(sym->type)) {
+                break;
+            }
+            continue;
+        case SYM_DECLARATION:
+            if (sym->linkage == LINK_EXTERN
+                && (sym->referenced || sym == decl_memcpy))
+            {
+                break;
+            }
+        default:
+            continue;
         }
+        return sym;
     }
 
     return NULL;
+}
+
+static void print_symbol(FILE *stream, const struct symbol *sym)
+{
+    fprintf(stream, "%*s", sym->depth * 2, "");
+    if (sym->linkage != LINK_NONE) {
+        fprintf(stream, "%s ",
+            (sym->linkage == LINK_INTERN) ? "static" : "global");
+    }
+
+    switch (sym->symtype) {
+    case SYM_TENTATIVE:
+        fprintf(stream, "tentative ");
+        break;
+    case SYM_DEFINITION:
+        fprintf(stream, "definition ");
+        break;
+    case SYM_DECLARATION:
+        fprintf(stream, "declaration ");
+        break;
+    case SYM_TYPEDEF:
+        fprintf(stream, "typedef ");
+        break;
+    case SYM_TAG:
+        if (is_struct(sym->type)) {
+            fprintf(stream, "struct ");
+        } else if (is_union(sym->type)) {
+            fprintf(stream, "union ");
+        } else {
+            assert(type_equal(basic_type__int, sym->type));
+            fprintf(stream, "enum ");
+        }
+        break;
+    case SYM_CONSTANT:
+        fprintf(stream, "number ");
+        break;
+    case SYM_STRING_VALUE:
+        fprintf(stream, "string ");
+        break;
+    case SYM_LABEL:
+        fprintf(stream, "label ");
+        break;
+    }
+
+    fprintf(stream, "%s :: ", sym_name(sym));
+    fprinttype(stream, sym->type, sym);
+    if (size_of(sym->type)) {
+        fprintf(stream, ", size=%lu", size_of(sym->type));
+    }
+
+    if (sym->stack_offset) {
+        fprintf(stream, ", (stack_offset: %d)", sym->stack_offset);
+    }
+    if (sym->vla_address) {
+        fprintf(stream, ", (vla_address: %s)", sym_name(sym->vla_address));
+    }
+
+    if (sym->symtype == SYM_CONSTANT) {
+        if (is_signed(sym->type)) {
+            fprintf(stream, ", value=%ld", sym->constant_value.i);
+        } else if (is_unsigned(sym->type)) {
+            fprintf(stream, ", value=%lu", sym->constant_value.u);
+        } else if (is_float(sym->type)) {
+            fprintf(stream, ", value=%ff", sym->constant_value.f);
+        } else if (is_double(sym->type)) {
+            fprintf(stream, ", value=%f", sym->constant_value.d);
+        } else {
+            assert(is_long_double(sym->type));
+            fprintf(stream, ", value=%Lf", sym->constant_value.ld);
+        }
+    }
 }
 
 void output_symbols(FILE *stream, struct namespace *ns)
@@ -477,74 +599,7 @@ void output_symbols(FILE *stream, struct namespace *ns)
         }
 
         sym = array_get(&ns->symbol, i);
-        fprintf(stream, "%*s", sym->depth * 2, "");
-        if (sym->linkage != LINK_NONE) {
-            fprintf(stream, "%s ",
-                (sym->linkage == LINK_INTERN) ? "static" : "global");
-        }
-
-        switch (sym->symtype) {
-        case SYM_TENTATIVE:
-            fprintf(stream, "tentative ");
-            break;
-        case SYM_DEFINITION:
-            fprintf(stream, "definition ");
-            break;
-        case SYM_DECLARATION:
-            fprintf(stream, "declaration ");
-            break;
-        case SYM_TYPEDEF:
-            fprintf(stream, "typedef ");
-            break;
-        case SYM_TAG:
-            if (is_struct(sym->type)) {
-                fprintf(stream, "struct ");
-            } else if (is_union(sym->type)) {
-                fprintf(stream, "union ");
-            } else {
-                assert(type_equal(basic_type__int, sym->type));
-                fprintf(stream, "enum ");
-            }
-            break;
-        case SYM_CONSTANT:
-            fprintf(stream, "number ");
-            break;
-        case SYM_STRING_VALUE:
-            fprintf(stream, "string ");
-            break;
-        case SYM_LABEL:
-            fprintf(stream, "label ");
-            break;
-        }
-
-        fprintf(stream, "%s :: ", sym_name(sym));
-        fprinttype(stream, sym->type, sym);
-        if (size_of(sym->type)) {
-            fprintf(stream, ", size=%lu", size_of(sym->type));
-        }
-
-        if (sym->stack_offset) {
-            fprintf(stream, ", (stack_offset: %d)", sym->stack_offset);
-        }
-        if (sym->vla_address) {
-            fprintf(stream, ", (vla_address: %s)", sym_name(sym->vla_address));
-        }
-
-        if (sym->symtype == SYM_CONSTANT) {
-            if (is_signed(sym->type)) {
-                fprintf(stream, ", value=%ld", sym->constant_value.i);
-            } else if (is_unsigned(sym->type)) {
-                fprintf(stream, ", value=%lu", sym->constant_value.u);
-            } else if (is_float(sym->type)) {
-                fprintf(stream, ", value=%ff", sym->constant_value.f);
-            } else if (is_double(sym->type)) {
-                fprintf(stream, ", value=%f", sym->constant_value.d);
-            } else {
-                assert(is_long_double(sym->type));
-                fprintf(stream, ", value=%Lf", sym->constant_value.ld);
-            }
-        }
-
+        print_symbol(stream, sym);
         fprintf(stream, "\n");
     }
 }

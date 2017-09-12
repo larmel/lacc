@@ -89,11 +89,17 @@ void sym_make_visible(struct namespace *ns, struct symbol *sym);
  */
 struct symbol *sym_create_temporary(Type type);
 
+/* Create a label. */
+struct symbol *sym_create_label(void);
+
+/* Create a symbol representing a string constant. */
+struct symbol *sym_create_string(String str);
+
 /*
  * Release memory used for a temporary symbol, allowing it to be reused
  * in a different function.
  */
-void sym_release_temporary(struct symbol *sym);
+void sym_discard(struct symbol *sym);
 
 /*
  * Retrieve next tentative definition or declaration from given scope.

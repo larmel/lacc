@@ -92,6 +92,10 @@ static struct block *parse__builtin_va_arg(
  * behave as macros, thus should be no problem parsing as function call
  * in primary expression. Constructs like (va_arg)(args, int) will not
  * work with this scheme.
+ *
+ * String constants become IMMEDIATE of type [] char, with a reference
+ * to the new symbol containing the string literal. Decays into char *
+ * on evaluation.
  */
 static struct block *primary_expression(
     struct definition *def,
@@ -120,27 +124,7 @@ static struct block *primary_expression(
         consume(')');
         break;
     case STRING:
-        sym = sym_add(
-            &ns_ident,
-            str_init(".LC"),
-            type_create(
-                T_ARRAY,
-                basic_type__char,
-                (size_t) tok.d.string.len + 1,
-                NULL),
-            SYM_STRING_VALUE,
-            LINK_INTERN);
-        /*
-         * Store string value directly on symbol, memory ownership is in
-         * string table from previously called str_register. The symbol
-         * now exists as if declared static char .LC[] = "...".
-         */
-        ((struct symbol *) sym)->string_value = tok.d.string;
-        /*
-         * Result is an IMMEDIATE of type [] char, with a reference to
-         * the new symbol containing the string literal. Will decay into
-         * char * on evaluation.
-         */
+        sym = sym_create_string(tok.d.string);
         block->expr = as_expr(var_direct(sym));
         assert(is_identity(block->expr));
         assert(block->expr.l.kind == IMMEDIATE);
