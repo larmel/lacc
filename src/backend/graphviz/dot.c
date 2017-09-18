@@ -99,7 +99,7 @@ static char *vartostr(const struct var var)
         case T_ARRAY:
             assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
             n = sprintf(buffer, "\\\"%s\\\"",
-                str_raw(var.symbol->string_value));
+                str_raw(var.symbol->value.string));
             break;
         }
         break;
@@ -242,7 +242,7 @@ static void dot_print_node(struct block *node)
         case IR_VLA_ALLOC:
             fprintf(stream, " | vla_alloc %s:%s (",
                 vartostr(s.t),
-                vartostr(var_direct(s.t.symbol->vla_address)));
+                vartostr(var_direct(s.t.symbol->value.vla_address)));
             dot_print_expr(s.expr);
             fputs(")", stream);
             break;

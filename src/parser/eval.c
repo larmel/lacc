@@ -94,7 +94,7 @@ struct var var_direct(const struct symbol *sym)
     switch (sym->symtype) {
     case SYM_CONSTANT:
         var.kind = IMMEDIATE;
-        var.imm = sym->constant_value;
+        var.imm = sym->value.constant;
         break;
     case SYM_STRING_VALUE:
         var.kind = IMMEDIATE;
@@ -1091,9 +1091,10 @@ static struct var rvalue(
     if (is_function(var.type)) {
         var = eval_addr(def, block, var);
     } else if (is_array(var.type)) {
-        if (is_vla(var.type) && var.symbol->vla_address) {
+        if (is_vla(var.type)) {
             if (var.kind == DIRECT) {
-                var = var_direct(var.symbol->vla_address);
+                assert(is_vla(var.symbol->type));
+                var = var_direct(var.symbol->value.vla_address);
             } else {
                 assert(var.kind == DEREF);
                 assert(!var.offset);
@@ -1215,10 +1216,10 @@ struct var eval_addr(
         exit(1);
     }
 
-    if (is_vla(var.type) && var.symbol->vla_address) {
-        assert(var.kind == DIRECT);
+    if (is_vla(var.type) && var.kind == DIRECT) {
+        assert(is_vla(var.symbol->type));
         assert(var.symbol);
-        var = var_direct(var.symbol->vla_address);
+        var = var_direct(var.symbol->value.vla_address);
         return var;
     }
 

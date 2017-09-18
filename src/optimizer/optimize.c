@@ -65,10 +65,12 @@ static int count_symbol(struct symbol *sym)
 
     if (is_object(sym->type)) {
         if (!sym->index) {
-            array_push_back(&symbols, sym);
-            sym->index = array_len(&symbols);
-            /*printf("%s => %d\n", sym_name(sym), sym->index);*/
-            return 1;
+            int len = array_len(&symbols);
+            if (len < 64) {
+                array_push_back(&symbols, sym);
+                sym->index = len + 1;
+                return 1;
+            }
         }
     } else {
         assert(!sym->index);

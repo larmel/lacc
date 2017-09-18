@@ -361,10 +361,10 @@ struct block *statement(struct definition *def, struct block *parent)
             basic_type__void,
             SYM_TENTATIVE,
             LINK_INTERN);
-        if (!sym->label_value) {
-            sym->label_value = cfg_block_init(def);
+        if (!sym->value.label) {
+            sym->value.label = cfg_block_init(def);
         }
-        parent->jump[0] = sym->label_value;
+        parent->jump[0] = sym->value.label;
         parent = cfg_block_init(def); /* Orphan, unless labeled. */
         consume(';');
         break;
@@ -430,12 +430,12 @@ struct block *statement(struct definition *def, struct block *parent)
                     basic_type__void,
                     SYM_DEFINITION,
                     LINK_INTERN);
-                if (!sym->label_value) {
+                if (!sym->value.label) {
                     assert(!sym->referenced);
-                    sym->label_value = cfg_block_init(def);
+                    sym->value.label = cfg_block_init(def);
                 }
-                parent->jump[0] = sym->label_value;
-                parent = sym->label_value;
+                parent->jump[0] = sym->value.label;
+                parent = sym->value.label;
             }
             consume(':');
             break;

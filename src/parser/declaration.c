@@ -445,7 +445,7 @@ static void enumerator_list(void)
             basic_type__int,
             SYM_CONSTANT,
             LINK_NONE);
-        sym->constant_value.i = count++;
+        sym->value.constant.i = count++;
         if (peek().token != ',')
             break;
         consume(',');
@@ -456,7 +456,7 @@ static void enumerator_list(void)
 /*
  * Consume enum definition, which represents an int type.
  *
- * Use constant_value as a sentinel to represent definition, checked on
+ * Use value.constant as a sentinel to represent definition, checked on
  * lookup to detect duplicate definitions.
  */
 static void enum_declaration(void)
@@ -484,12 +484,12 @@ static void enum_declaration(void)
             exit(1);
         }
         if (peek().token == '{') {
-            if (tag->constant_value.i) {
+            if (tag->value.constant.i) {
                 error("Redefiniton of enum '%s'.", str_raw(tag->name));
                 exit(1);
             }
             enumerator_list();
-            tag->constant_value.i = 1;
+            tag->value.constant.i = 1;
         }
     } else {
         enumerator_list();
@@ -655,7 +655,7 @@ static void define_builtin__func__(String name)
         type,
         SYM_STRING_VALUE,
         LINK_INTERN);
-    sym->string_value = name;
+    sym->value.string = name;
 }
 
 /*
@@ -720,7 +720,7 @@ static struct block *declare_vla(
     assert(is_vla(sym->type));
     addr = sym_create_temporary(type_create(T_POINTER, type_next(sym->type)));
     array_push_back(&def->locals, addr);
-    sym->vla_address = addr;
+    sym->value.vla_address = addr;
     eval_vla_alloc(def, block, sym);
     return block;
 }

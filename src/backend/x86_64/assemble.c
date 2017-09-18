@@ -211,7 +211,7 @@ int asm_symbol(const struct symbol *sym)
         out("\t.size\t%s, %d\n", sym_name(sym), size_of(sym->type));
         out("%s:\n", sym_name(sym));
         out("\t.string\t");
-        fprintstr(asm_output, sym->string_value);
+        fprintstr(asm_output, sym->value.string);
         out("\n");
         break;
     case SYM_CONSTANT:
@@ -219,16 +219,16 @@ int asm_symbol(const struct symbol *sym)
         out("\t.align\t%d\n", sym_alignment(sym));
         out("%s:\n", sym_name(sym));
         if (is_float(sym->type)) {
-            out("\t.long\t%lu\n", sym->constant_value.u & 0xFFFFFFFFu);
+            out("\t.long\t%lu\n", sym->value.constant.u & 0xFFFFFFFFu);
         } else if (is_double(sym->type)) {
-            out("\t.quad\t%ld\n", sym->constant_value.i);
+            out("\t.quad\t%ld\n", sym->value.constant.i);
         } else {
             union {
                 long double ld;
                 long i[2];
             } conv = {0};
             assert(is_long_double(sym->type));
-            conv.ld = sym->constant_value.ld;
+            conv.ld = sym->value.constant.ld;
             out("\t.quad\t%ld\n", conv.i[0]);
             out("\t.quad\t%ld\n", conv.i[1] & 0xFFFF);
         }

@@ -2576,7 +2576,7 @@ static void compile_vla_alloc(
     emit(INSTR_AND, OPT_REG_REG, reg(R11, 8), reg(SP, 8));
 
     /* Assign current stack location to VLA symbol. */
-    store(SP, var_direct(sym->vla_address));
+    store(SP, var_direct(sym->value.vla_address));
 }
 
 static void compile_statement(struct statement stmt)
@@ -2858,7 +2858,7 @@ static void compile_data_assign(struct var target, struct var val)
         case T_ARRAY:
             if (is_string(val)) {
                 imm.type = IMM_STRING;
-                imm.d.string = val.symbol->string_value;
+                imm.d.string = val.symbol->value.string;
                 break;
             }
         default: assert(0);

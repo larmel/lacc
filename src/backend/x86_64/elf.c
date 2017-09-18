@@ -588,9 +588,9 @@ int elf_symbol(const struct symbol *sym)
          */
         if (sym->symtype == SYM_STRING_VALUE) {
             elf_section_write(SHID_RODATA,
-                str_raw(sym->string_value), entry.st_size);
+                str_raw(sym->value.string), entry.st_size);
         } else {
-            elf_section_write(SHID_RODATA, &sym->constant_value, entry.st_size);
+            elf_section_write(SHID_RODATA, &sym->value.constant, entry.st_size);
         }
     } else if (sym->linkage == LINK_INTERN) {
         elf_section_align(SHID_BSS, sym_alignment(sym));

@@ -9,86 +9,86 @@
 
 struct block;
 
+enum symtype {
+    SYM_DEFINITION = 0,
+    SYM_TENTATIVE,
+    SYM_DECLARATION,
+    SYM_TYPEDEF,
+    SYM_STRING_VALUE,
+    SYM_CONSTANT,
+    SYM_LABEL,
+    SYM_TAG
+};
+
+/* Visibility of external declarations, LINK_NONE for other symbols. */
+enum linkage {
+    LINK_NONE = 0,
+    LINK_INTERN,
+    LINK_EXTERN
+};
+
 /*
  * A symbol represents declarations that may have a storage location at
- * runtime, such as functions, static and local variables. Store offset
- * to base pointer for automatic variables and function arguments.
+ * runtime, such as functions, static and local variables.
  */
 struct symbol {
     String name;
     Type type;
 
-    enum symtype {
-        SYM_DEFINITION = 0,
-        SYM_TENTATIVE,
-        SYM_DECLARATION,
-        SYM_TYPEDEF,
-        SYM_STRING_VALUE,
-        SYM_CONSTANT,
-        SYM_LABEL,
-        SYM_TAG
-    } symtype;
+    unsigned int symtype : 8;
+    unsigned int linkage : 8;
+    unsigned int referenced : 1; /* Mark symbol as used. */
+    unsigned int slot : 7;       /* Register allocation slot. */
+    unsigned int index : 8;      /* Enumeration used in optimization. */
 
     /*
-     * Visibility of external declarations, or LINK_NONE for other
-     * symbols.
+     * Tag to disambiguate temporaries, strings, constants, labels, and
+     * scoped static variables.
      */
-    enum linkage {
-        LINK_NONE = 0,
-        LINK_INTERN,
-        LINK_EXTERN
-    } linkage;
+    short n;
 
     /*
-     * Hold a constant integral or floating point value. Used for
-     * enumeration members and numbers which must be loaded from memory
-     * in assembly code. Denoted by symtype SYM_CONSTANT.
+     * Scope depth; 0 for global, 1 for function parameters, > 1 for
+     * local or scoped static variables.
      */
-    union value constant_value;
-
-    /*
-     * String literals are also handled as symbols, having type [] const
-     * char. Denoted by symtype SYM_STRING_VALUE. Free string constants
-     * are always named '.LC', disambiguated with n.
-     */
-    String string_value;
-
-    /*
-     * Symbols in label namespace hold a pointer to the block they
-     * represent.
-     */
-    struct block *label_value;
-
-    /*
-     * Tag to disambiguate differently scoped static variables with the
-     * same name.
-     */
-    int n;
+    short depth;
 
     /*
      * Parameter or local variable offset to base pointer. This is kept
      * as 0 during parsing, but assigned when passed to back-end.
+     *
+     * Also used for index into .symtab during ELF generation.
      */
     int stack_offset;
 
-    /*
-     * Location in memory of variable length array. Set on IR_VLA_ALLOC
-     * to current position of stack pointer after subtracting total size
-     * of the array.
-     */
-    const struct symbol *vla_address;
+    union {
+        /*
+         * Hold a constant integral or floating point value. Used for
+         * enumeration members and numbers which must be loaded from
+         * memory in assembly code. Denoted by symtype SYM_CONSTANT.
+         */
+        union value constant;
 
-    /* Scope depth. */
-    int depth;
+        /*
+         * String literals are also handled as symbols, having type []
+         * const char. Denoted by symtype SYM_STRING_VALUE. Free string
+         * constants are always named '.LC', disambiguated with n.
+         */
+        String string;
 
-    /* Number of times symbol has been referenced in the program. */
-    int referenced;
+        /*
+         * Symbols in label namespace hold a pointer to the block they
+         * represent.
+         */
+        struct block *label;
 
-    /* Counter used for enumeration during optimization. */
-    int index;
-
-    /* Register allocation slot. */
-    int slot;
+        /*
+         * Location in memory of variable length array. Set to current
+         * position of stack pointer on IR_VLA_ALLOC, after subtracting
+         * total size of the array.
+         */
+        const struct symbol *vla_address;
+    } value;
 };
 
 /* Holds the declaration for memcpy, which is needed for codegen. */

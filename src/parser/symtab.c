@@ -198,7 +198,7 @@ struct symbol *sym_lookup(struct namespace *ns, String name)
         if (scope->state == SCOPE_INITIALIZED) {
             sym = hash_lookup(&scope->table, name);
             if (sym) {
-                sym->referenced += 1;
+                sym->referenced = 1;
                 return sym;
             }
         }
@@ -464,7 +464,7 @@ struct symbol *sym_create_constant(Type type, union value val)
 
     sym = alloc_sym();
     sym->type = type;
-    sym->constant_value = val;
+    sym->value.constant = val;
     sym->symtype = SYM_CONSTANT;
     sym->linkage = LINK_INTERN;
     sym->name = str_init(PREFIX_CONSTANT);
@@ -486,7 +486,7 @@ struct symbol *sym_create_string(String str)
     sym = alloc_sym();
     sym->type =
         type_create(T_ARRAY, basic_type__char, (size_t) str.len + 1, NULL);
-    sym->string_value = str;
+    sym->value.string = str;
     sym->symtype = SYM_STRING_VALUE;
     sym->linkage = LINK_INTERN;
     sym->name = str_init(PREFIX_STRING);
@@ -588,22 +588,23 @@ static void print_symbol(FILE *stream, const struct symbol *sym)
     if (sym->stack_offset) {
         fprintf(stream, ", (stack_offset: %d)", sym->stack_offset);
     }
-    if (sym->vla_address) {
-        fprintf(stream, ", (vla_address: %s)", sym_name(sym->vla_address));
+    if (is_vla(sym->type)) {
+        fprintf(stream, ", (vla_address: %s)",
+            sym_name(sym->value.vla_address));
     }
 
     if (sym->symtype == SYM_CONSTANT) {
         if (is_signed(sym->type)) {
-            fprintf(stream, ", value=%ld", sym->constant_value.i);
+            fprintf(stream, ", value=%ld", sym->value.constant.i);
         } else if (is_unsigned(sym->type)) {
-            fprintf(stream, ", value=%lu", sym->constant_value.u);
+            fprintf(stream, ", value=%lu", sym->value.constant.u);
         } else if (is_float(sym->type)) {
-            fprintf(stream, ", value=%ff", sym->constant_value.f);
+            fprintf(stream, ", value=%ff", sym->value.constant.f);
         } else if (is_double(sym->type)) {
-            fprintf(stream, ", value=%f", sym->constant_value.d);
+            fprintf(stream, ", value=%f", sym->value.constant.d);
         } else {
             assert(is_long_double(sym->type));
-            fprintf(stream, ", value=%Lf", sym->constant_value.ld);
+            fprintf(stream, ", value=%Lf", sym->value.constant.ld);
         }
     }
 }
