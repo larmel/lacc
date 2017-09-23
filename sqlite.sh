@@ -16,7 +16,7 @@ fi
 
 # Build with lacc
 $lacc -c sqlite/shell.c -o bin/shell.o
-valgrind $lacc -DSQLITE_DEBUG -DSQLITE_MEMDEBUG -c sqlite/sqlite3.c -o bin/sqlite3.o
+valgrind $lacc -DSQLITE_DEBUG -DSQLITE_MEMDEBUG -c -v sqlite/sqlite3.c -o bin/sqlite3.o > /dev/null
 $comp bin/shell.o bin/sqlite3.o -o bin/sqlite -lm -lpthread -ldl
 
 # Build with reference compiler
