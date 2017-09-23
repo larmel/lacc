@@ -8,6 +8,7 @@
 
 enum type {
     T_VOID,
+    T_BOOL,
     T_CHAR,
     T_SHORT,
     T_INT,
@@ -56,18 +57,19 @@ typedef struct {
 #define is_object(t) (!is_function(t))
 #define is_function(t) (type_of(t) == T_FUNCTION)
 #define is_struct_or_union(t) (is_struct(t) || is_union(t))
+#define is_bool(t) (type_of(t) == T_BOOL)
 #define is_char(t) (type_of(t) == T_CHAR)
 #define is_int(t) (type_of(t) == T_INT)
-#define is_integer(t) (type_of(t) >= T_CHAR && type_of(t) <= T_LONG)
+#define is_integer(t) (type_of(t) >= T_BOOL && type_of(t) <= T_LONG)
 #define is_signed(t) (!is_unsigned(t) && is_integer(t))
-#define is_unsigned(t) (!(t).is_pointer && (t).is_unsigned)
+#define is_unsigned(t) ((!(t).is_pointer && (t).is_unsigned) || is_bool(t))
 #define is_pointer(t) (type_of(t) == T_POINTER)
 #define is_real(t) (type_of(t) >= T_FLOAT && type_of(t) <= T_LDOUBLE)
 #define is_float(t) (type_of(t) == T_FLOAT)
 #define is_double(t) (type_of(t) == T_DOUBLE)
 #define is_long_double(t) (type_of(t) == T_LDOUBLE)
-#define is_arithmetic(t) (type_of(t) >= T_CHAR && type_of(t) <= T_LDOUBLE)
-#define is_scalar(t) (type_of(t) >= T_CHAR && type_of(t) <= T_POINTER)
+#define is_arithmetic(t) (type_of(t) >= T_BOOL && type_of(t) <= T_LDOUBLE)
+#define is_scalar(t) (type_of(t) >= T_BOOL && type_of(t) <= T_POINTER)
 #define is_aggregate(t) (is_array(t) || is_struct_or_union(t))
 #define is_void(t) (type_of(t) == T_VOID)
 #define is_array(t) (type_of(t) == T_ARRAY)
@@ -82,6 +84,7 @@ typedef struct {
 /* Statically initialized, unqualified instances of common types. */
 extern const Type
     basic_type__void,
+    basic_type__bool,
     basic_type__char,
     basic_type__short,
     basic_type__int,

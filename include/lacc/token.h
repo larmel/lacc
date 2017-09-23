@@ -60,6 +60,7 @@ enum token_type {
     DOT = '.',
     SLASH = '/',
     ALIGNOF,
+    BOOL = ALIGNOF + 3,
 
     COLON = ':',
     SEMICOLON = ';',

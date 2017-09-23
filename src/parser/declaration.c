@@ -338,7 +338,7 @@ static void member_declaration_list(Type type)
             name.len = 0;
             declarator(NULL, NULL, decl_base, &decl_type, &name);
             if (is_struct_or_union(type) && peek().token == ':') {
-                if (!is_int(decl_type)) {
+                if (!is_int(decl_type) && !is_bool(decl_type)) {
                     error("Unsupported type '%t' for bit-field.", decl_type);
                     exit(1);
                 }
@@ -520,6 +520,10 @@ Type declaration_specifiers(int *storage_class, int *is_inline)
         case VOID:
             next();
             type.type = T_VOID;
+            break;
+        case BOOL:
+            next();
+            type.type = T_BOOL;
             break;
         case CHAR:
             next();

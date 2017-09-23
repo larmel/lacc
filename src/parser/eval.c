@@ -374,6 +374,9 @@ union value convert(union value val, Type type, Type to)
               : is_unsigned(type) ? (long double) val.u
               : val.ld;
         break;
+    case T_BOOL:
+        val.u = !is_zero_value(val, type);
+        break;
     case T_CHAR:
         if (is_signed(to)) {
             val.i = is_float_below(val, type, CHAR_MIN) ? CHAR_MIN
@@ -1407,12 +1410,13 @@ static struct var assign_field(
 {
     Type type;
     long mask;
-    assert(is_field(target));
 
-    if (target.field_width == size_of(basic_type__int) * 8) {
-        type = target.type;
-    } else {
+    assert(is_field(target));
+    if (size_of(target.type) == size_of(basic_type__int)) {
         type = basic_type__int;
+    } else {
+        assert(size_of(target.type) == size_of(basic_type__bool));
+        type = basic_type__bool;
     }
 
     if (is_immediate(expr)) {
@@ -1489,6 +1493,26 @@ static struct var eval_assign_pointer(
     return target;
 }
 
+/*
+ * Convert expression to boolean before assignment. Numeric values are
+ * compared to zero.
+ */
+static struct expression eval_bool(
+    struct definition *def,
+    struct block *block,
+    struct expression expr)
+{
+    struct var val;
+
+    if (!is_bool(expr.type)) {
+        val = eval(def, block, expr);
+        expr = eval_expr(def, block, IR_OP_NE,
+            imm_signed(basic_type__long, 0), val);
+    }
+
+    return expr;
+}
+
 struct var eval_assign(
     struct definition *def,
     struct block *block,
@@ -1507,6 +1531,10 @@ struct var eval_assign(
     } else if (is_identity(expr)) {
         var = rvalue(def, block, expr.l);
         expr = as_expr(var);
+    }
+
+    if (is_bool(target.type)) {
+        expr = eval_bool(def, block, expr);
     }
 
     if (is_pointer(target.type)) {

@@ -780,6 +780,7 @@ static struct code encode_bitwise(
     unsigned char opcode)
 {
     struct code c = {0};
+    int s; /* sign-extend */
 
     switch (optype) {
     default: assert(0);
@@ -793,16 +794,16 @@ static struct code encode_bitwise(
     case OPT_IMM_REG:
         assert(a.imm.w == b.reg.w);
         assert(a.imm.w == 4 || a.imm.w == 1);
-        assert(a.imm.w != 1 || b.reg.r == AX);
         if (b.reg.r == AX && (!is_byte_imm(a.imm) || b.reg.w < 4)) {
             c.val[c.len++] = (opcode + 0x04) | w(a.imm);
             memcpy(&c.val[c.len], &a.imm.d.dword, a.imm.w);
             c.len += a.imm.w;
         } else  {
+            s = is_byte_imm(a.imm) && b.reg.w > 1;
             if (is_64_bit_reg(b.reg.r)) {
                 c.val[c.len++] = REX | B(b.reg);
             }
-            c.val[c.len++] = 0x80 | is_byte_imm(a.imm) << 1 | w(a.imm);
+            c.val[c.len++] = 0x80 | s << 1 | w(a.imm);
             c.val[c.len++] = (opcode + 0xC0) | reg(b.reg);
             if (is_byte_imm(a.imm)) {
                 c.val[c.len++] = a.imm.d.byte;

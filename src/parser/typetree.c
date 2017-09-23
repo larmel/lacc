@@ -12,6 +12,7 @@
 
 const Type
     basic_type__void           = { T_VOID },
+    basic_type__bool           = { T_BOOL },
     basic_type__char           = { T_CHAR },
     basic_type__short          = { T_SHORT },
     basic_type__int            = { T_INT },
@@ -568,9 +569,10 @@ void type_add_field(Type parent, String name, Type type, size_t width)
 
     assert(is_struct_or_union(parent));
     assert(type_equal(type, basic_type__int)
-        || type_equal(type, basic_type__unsigned_int));
+        || type_equal(type, basic_type__unsigned_int)
+        || is_bool(type));
 
-    if (width > size_of(type) * 8) {
+    if (width > size_of(type) * 8 || (is_bool(type) && width > 1)) {
         error("Width of bit-field (%lu bits) exceeds width of type %t.",
             width, type);
         exit(1);
@@ -839,6 +841,7 @@ int is_compatible(Type l, Type r)
     }
 
     switch (type_of(l)) {
+    case T_BOOL:
     case T_CHAR:
     case T_SHORT:
     case T_INT:
@@ -874,6 +877,7 @@ size_t size_of(Type type)
     struct typetree *t;
 
     switch (type_of(type)) {
+    case T_BOOL:
     case T_CHAR:
         return 1;
     case T_SHORT:
@@ -993,12 +997,15 @@ int fprinttype(FILE *stream, Type type, const struct symbol *expand)
     if (is_restrict(type))
         n += fputs("restrict ", stream);
 
-    if (is_unsigned(type))
+    if (is_unsigned(type) && !is_bool(type))
         n += fputs("unsigned ", stream);
 
     switch (type_of(type)) {
     case T_VOID:
         n += fputs("void", stream);
+        break;
+    case T_BOOL:
+        n += fputs("_Bool", stream);
         break;
     case T_CHAR:
         n += fputs("char", stream);

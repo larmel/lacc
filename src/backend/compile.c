@@ -460,7 +460,6 @@ static void load_field(struct var v, enum reg r)
     int mask;
 
     assert(is_field(v));
-    assert(size_of(v.type) == size_of(basic_type__int));
     assert(v.field_width > 0 && v.field_width < 32);
     assert(v.field_offset + v.field_width <= 32);
 
@@ -975,7 +974,6 @@ static void store_op(
         opc = is_float(target.type) ? INSTR_MOVSS : INSTR_MOVSD;
         assert(optype == OPT_REG);
     } else if (is_field(target)) {
-        assert(w == size_of(basic_type__int));
         assert(target.field_width > 0 && target.field_width < 32);
         field = target;
         field.field_width = 0;
@@ -2832,6 +2830,7 @@ static void compile_data_assign(struct var target, struct var val)
                 imm.d.addr.disp = displacement_from_offset(val.offset);
                 break;
             }
+        case T_BOOL:
         case T_CHAR:
         case T_SHORT:
         case T_INT:
@@ -2899,8 +2898,10 @@ static void zero_fill_data(size_t bytes)
 
 static void compile_data(struct definition *def)
 {
-    int i, value, mask;
+    int i, mask;
+    union value value;
     struct statement st, fl;
+    size_t field_size;
     size_t
         total_size = size_of(def->symbol->type),
         initialized = 0;
@@ -2914,7 +2915,8 @@ static void compile_data(struct definition *def)
 
         initialized = st.t.offset;
         if (is_field(st.t)) {
-            value = 0;
+            field_size = 0;
+            value.i = 0;
             fl = st;
             do {
                 assert(fl.st == IR_ASSIGN);
@@ -2924,17 +2926,28 @@ static void compile_data(struct definition *def)
                 assert(is_integer(fl.expr.type));
                 assert(fl.expr.l.kind == IMMEDIATE);
                 mask = ((1 << fl.t.field_width) - 1);
-                value |= (fl.expr.l.imm.i & mask) << fl.t.field_offset;
+                value.i |= (fl.expr.l.imm.i & mask) << fl.t.field_offset;
+                if (size_of(fl.t.type) > field_size) {
+                    field_size = size_of(fl.t.type);
+                }
                 i += 1;
                 if (i == array_len(&def->body->code))
                     break;
                 fl = array_get(&def->body->code, i);
             } while (is_field(fl.t) && fl.t.offset == initialized);
             i -= 1;
-            st.t.type = basic_type__int;
+            switch (field_size) {
+            default: assert(0);
+            case 1:
+                st.t.type = basic_type__char;
+                break;
+            case 4:
+                st.t.type = basic_type__int;
+                break;
+            }
             st.t.field_offset = 0;
             st.t.field_width = 0;
-            compile_data_assign(st.t, var_int(value));
+            compile_data_assign(st.t, var_numeric(st.t.type, value));
         } else {
             assert(st.st == IR_ASSIGN);
             assert(st.t.kind == DIRECT);

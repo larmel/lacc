@@ -45,7 +45,7 @@ const struct token basic_token[] = {
             TOK(COMMA, ","),            TOK(MINUS, "-"),
             TOK(DOT, "."),              TOK(SLASH, "/"),
 /* 0x30 */  TOK(ALIGNOF, "_Alignof"),   {0},
-            {0},                        {0},
+            {0},                        TOK(BOOL, "_Bool"),
             {0},                        {0},
             {0},                        {0},
 /* 0x38 */  {0},                        {0},
@@ -439,6 +439,7 @@ static struct token strtoident(char *in, char **endptr)
 
     switch (*in++) {
     case '_':
+        if (S4('B', 'o', 'o', 'l')) MATCH(BOOL);
         if (context.standard >= STD_C11) {
             if (S7('A', 'l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF);
         }

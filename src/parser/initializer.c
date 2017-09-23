@@ -488,6 +488,7 @@ static void zero_initialize(
             zero_initialize(def, values, target);
         }
         break;
+    case T_BOOL:
     case T_CHAR:
     case T_SHORT:
     case T_INT:
@@ -587,13 +588,28 @@ static void initialize_trailing_padding(
     struct var target,
     size_t size)
 {
+    assert(size >= target.offset);
     if (target.field_offset) {
-        target.type = basic_type__int;
-        target.field_width = 32 - target.field_offset;
+        switch (size - target.offset) {
+        case 0: assert(0);
+        case 1:
+        case 2:
+        case 3:
+            assert(target.field_offset < 8);
+            target.type = basic_type__char;
+            target.field_width = 8 - target.field_offset;
+            break;
+        case 4:
+        default:
+            target.type = basic_type__int;
+            target.field_width = 32 - target.field_offset;
+            break;
+        }
         zero_initialize(def, block, target);
         target.offset += size_of(target.type);
     }
 
+    assert(size >= target.offset);
     if (size > target.offset) {
         zero_initialize_bytes(def, block, target, size - target.offset);
     }
