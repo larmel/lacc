@@ -11,42 +11,33 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
+static int is_zero_value(union value value, Type type)
+{
+    assert(is_scalar(type));
+    switch (type_of(type)) {
+    case T_FLOAT:
+        return value.f == 0.0f;
+    case T_DOUBLE:
+        return value.d == 0.0;
+    case T_LDOUBLE:
+        return value.ld == 0.0L;
+    default:
+        return value.u == 0l;
+    }
+}
+
 int is_immediate_true(struct expression expr)
 {
-    union value val;
-    Type type;
-
-    if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
-        val = expr.l.imm;
-        type = expr.type;
-        assert(is_scalar(type));
-        return
-            is_signed(type) ? val.i != 0l :
-            is_unsigned(type) || is_pointer(type) ? val.u != 0ul :
-            is_float(type) ? val.f != 0.0f :
-            is_double(type) ? val.d != 0.0 : val.ld != 0.0L;
-    }
-
-    return 0;
+    return is_identity(expr)
+        && expr.l.kind == IMMEDIATE
+        && !is_zero_value(expr.l.imm, expr.type);
 }
 
 int is_immediate_false(struct expression expr)
 {
-    union value val;
-    Type type;
-
-    if (is_identity(expr) && expr.l.kind == IMMEDIATE) {
-        val = expr.l.imm;
-        type = expr.type;
-        assert(is_scalar(type));
-        return
-            is_signed(type) ? val.i == 0l :
-            is_unsigned(type) || is_pointer(type) ? val.u == 0ul :
-            is_float(type) ? val.f == 0.0f :
-            is_double(type) ? val.d == 0.0 : val.ld == 0.0L;
-    }
-
-    return 0;
+    return is_identity(expr)
+        && expr.l.kind == IMMEDIATE
+        && is_zero_value(expr.l.imm, expr.type);
 }
 
 static int is_nullptr(struct var val)
@@ -358,8 +349,6 @@ struct var eval(
     ((is_float(t) && (v).f < n) \
         || (is_double(t) && (v).d < n) \
         || (is_long_double(t) && (v).ld < n))
-
-
 
 union value convert(union value val, Type type, Type to)
 {
