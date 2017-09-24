@@ -45,11 +45,11 @@ void type_add_member(Type parent, String name, Type type, struct symbol *sym);
 void type_add_anonymous_member(Type parent, Type type);
 
 /*
- * Add bitfield to struct.
+ * Add bitfield to struct or union.
  *
- * Type must be either signed or unsigned int.
+ * Field type must be either signed or unsigned int.
  */
-void type_add_field(Type parent, String name, Type type, int width);
+void type_add_field(Type parent, String name, Type type, size_t width);
 
 /*
  * Commit type members and calculate final trailing padding. Must be

@@ -348,7 +348,7 @@ static void member_declaration_list(Type type)
                     error("Negative width in bit-field.");
                     exit(1);
                 }
-                type_add_field(type, name, decl_type, expr.imm.i);
+                type_add_field(type, name, decl_type, expr.imm.u);
             } else {
                 if (!name.len) {
                     if (is_struct_or_union(decl_type)) {

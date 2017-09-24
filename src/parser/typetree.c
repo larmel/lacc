@@ -560,7 +560,7 @@ static const struct member *get_last_field_member(struct typetree *t)
  *
  * Anonymous union fields are ignored, not needed for alignment.
  */
-void type_add_field(Type parent, String name, Type type, int width)
+void type_add_field(Type parent, String name, Type type, size_t width)
 {
     struct member m = {0};
     struct typetree *t;
@@ -569,6 +569,12 @@ void type_add_field(Type parent, String name, Type type, int width)
     assert(is_struct_or_union(parent));
     assert(type_equal(type, basic_type__int)
         || type_equal(type, basic_type__unsigned_int));
+
+    if (width > size_of(type) * 8) {
+        error("Width of bit-field (%lu bits) exceeds width of type %t.",
+            width, type);
+        exit(1);
+    }
 
     if (name.len && !width) {
         error("Zero length field %s.", str_raw(name));
