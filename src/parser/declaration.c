@@ -161,7 +161,7 @@ static struct block *array_declarator_length(
         exit(1);
     }
 
-    if (!is_unsigned(val.type)) {
+    if (!type_equal(val.type, basic_type__unsigned_long)) {
         val = eval(def, block,
             eval_expr(def, block, IR_OP_CAST, val, basic_type__unsigned_long));
     } else if (val.kind == DIRECT && !is_temporary(val.symbol)) {

@@ -1,13 +1,13 @@
 int printf(const char *, ...);
 
-void print(int n, int arr[n]) {
+void print(unsigned n, int arr[n]) {
 	int i;
 	for (i = 0; i < n; ++i) {
 		printf("%d\n", arr[i]);
 	}
 }
 
-int foo(int n) {
+int foo(unsigned short n) {
 	int i, a[n];
 	int b[n];
 
