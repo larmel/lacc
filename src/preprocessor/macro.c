@@ -424,8 +424,9 @@ static TokenArray expand_macro(
 {
     int i, j;
     struct token t;
-    TokenArray list = expand_stringify_and_paste(def, args);
+    TokenArray list;
 
+    list = expand_stringify_and_paste(def, args);
     if (def->params > 0) {
         for (i = 0; i < def->params; ++i) {
             expand(&args[i]);
@@ -442,6 +443,7 @@ static TokenArray expand_macro(
                 j = t.d.val.i;
                 if (!array_len(&args[j])) {
                     array_erase(&list, i);
+                    i--;
                 } else {
                     array_replace_slice(&list, i, 1, &args[j]);
                 }
