@@ -62,6 +62,8 @@ enum token_type {
     ALIGNOF,
     BOOL = ALIGNOF + 3,
 
+    STATIC_ASSERT = ALIGNOF + 8,
+
     COLON = ':',
     SEMICOLON = ';',
     LT = '<',

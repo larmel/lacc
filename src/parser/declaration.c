@@ -949,6 +949,31 @@ struct block *init_declarator(
     return parent;
 }
 
+static void static_assertion(void)
+{
+    struct var val;
+    String message;
+
+    consume(STATIC_ASSERT);
+    consume('(');
+
+    val = constant_expression();
+    consume(',');
+    message = consume(STRING).d.string;
+
+    if (val.kind != IMMEDIATE || !is_integer(val.type)) {
+        error("Expression in static assertion must be an integer constant.");
+        exit(1);
+    }
+
+    if (val.imm.i == 0) {
+        error(str_raw(message));
+        exit(1);
+    }
+
+    consume(')');
+}
+
 /*
  * Parse a declaration list, beginning with a base set of specifiers,
  * followed by a list of declarators.
@@ -967,6 +992,12 @@ struct block *declaration(struct definition *def, struct block *parent)
     enum linkage linkage;
     struct definition *decl;
     int storage_class, is_inline;
+
+    if (peek().token == STATIC_ASSERT) {
+        static_assertion();
+        consume(';');
+        return parent;
+    }
 
     base = declaration_specifiers(&storage_class, &is_inline);
     switch (storage_class) {

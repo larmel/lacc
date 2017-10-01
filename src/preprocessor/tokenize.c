@@ -48,7 +48,7 @@ const struct token basic_token[] = {
             {0},                        TOK(BOOL, "_Bool"),
             {0},                        {0},
             {0},                        {0},
-/* 0x38 */  {0},                        {0},
+/* 0x38 */  IDN(STATIC_ASSERT, ""),     {0},
             TOK(COLON, ":"),            TOK(SEMICOLON, ";"),
             TOK(LT, "<"),               TOK(ASSIGN, "="),
             TOK(GT, ">"),               TOK(QUESTION, "?"),
@@ -440,8 +440,12 @@ static struct token strtoident(char *in, char **endptr)
     switch (*in++) {
     case '_':
         if (S4('B', 'o', 'o', 'l')) MATCH(BOOL);
-        if (context.standard >= STD_C11) {
-            if (S7('A', 'l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF);
+        if (S7('A', 'l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF);
+        if (!strncmp(in, "Static_assert", 12)) {
+            ident = basic_token[STATIC_ASSERT];
+            ident.d.string = str_init("_Static_assert");
+            *endptr = start + ident.d.string.len;
+            return ident;
         }
         break;
     case 'a':
