@@ -34,6 +34,14 @@ static Type get_type_placeholder(void)
     return t;
 }
 
+static struct block *parameter_declarator(
+    struct definition *def,
+    struct block *block,
+    Type base,
+    Type *type,
+    String *name,
+    size_t *length);
+
 /*
  * Parse a function parameter list, adding symbols to scope.
  *
@@ -59,6 +67,7 @@ static struct block *parameter_list(
     Type *func)
 {
     String name;
+    size_t length;
     struct block *block;
     struct member *param;
 
@@ -69,8 +78,9 @@ static struct block *parameter_list(
 
     while (peek().token != ')') {
         name.len = 0;
+        length = 0;
         base = declaration_specifiers(NULL, NULL);
-        block = declarator(def, block, base, &base, &name);
+        block = parameter_declarator(def, block, base, &base, &name, &length);
         if (is_void(base)) {
             if (nmembers(*func)) {
                 error("Incomplete type in parameter list.");
@@ -82,6 +92,7 @@ static struct block *parameter_list(
             base = type_create(T_POINTER, type_next(base));
         }
         param = type_add_member(*func, name, base);
+        param->offset = length;
         if (name.len) {
             param->sym =
                 sym_add(&ns_ident, name, base, SYM_DEFINITION, LINK_NONE);
@@ -131,8 +142,55 @@ static Type identifier_list(Type base)
     return type;
 }
 
+struct array_param {
+    char is_const;
+    char is_volatile;
+    char is_restrict;
+    char is_static;
+};
+
+static void array_param_qualifiers(struct array_param *cvrs)
+{
+    if (!cvrs) {
+        return;
+    }
+
+    if (peek().token == STATIC) {
+        next();
+        cvrs->is_static = 1;
+    }
+
+    while (1) {
+        switch (peek().token) {
+        case CONST:
+            cvrs->is_const = 1;
+            next();
+            continue;
+        case VOLATILE:
+            cvrs->is_volatile = 1;
+            next();
+            continue;
+        case RESTRICT:
+            cvrs->is_restrict = 1;
+            next();
+            continue;
+        default:
+            break;
+        }
+        break;
+    }
+
+    if (peek().token == STATIC && !cvrs->is_static) {
+        next();
+        cvrs->is_static = 1;
+    }
+}
+
 /*
  * Parse expression determining length of array.
+ *
+ * Function parameters can have type qualifiers and 'static' declared
+ * with the array length.
  *
  * Variable length arrays must be ensured to evaluate to a new temporary
  * only associated with this type, such that sizeof always returns the
@@ -140,7 +198,8 @@ static Type identifier_list(Type base)
  */
 static struct block *array_declarator_length(
     struct definition *def,
-    struct block *block)
+    struct block *block,
+    struct array_param *cvrs)
 {
     struct var val;
 
@@ -148,6 +207,9 @@ static struct block *array_declarator_length(
         val = constant_expression();
         block = cfg_block_init(NULL);
     } else {
+        if (cvrs) {
+            array_param_qualifiers(cvrs);
+        }
         block = assignment_expression(def, block);
         val = eval(def, block, block->expr);
     }
@@ -187,15 +249,18 @@ static struct block *array_declarator(
     struct definition *def,
     struct block *block,
     Type base,
-    Type *type)
+    Type *type,
+    size_t *static_length)
 {
     struct var val;
     size_t length = 0;
+    struct array_param cvrs = {0};
     const struct symbol *sym = NULL;
 
     consume('[');
     if (peek().token != ']') {
-        block = array_declarator_length(def, block);
+        block =
+            array_declarator_length(def, block, static_length ? &cvrs : NULL);
         val = eval(def, block, block->expr);
         assert(type_equal(val.type, basic_type__unsigned_long));
         if (val.kind == IMMEDIATE) {
@@ -209,7 +274,7 @@ static struct block *array_declarator(
 
     consume(']');
     if (peek().token == '[') {
-        block = array_declarator(def, block, base, &base);
+        block = array_declarator(def, block, base, &base, NULL);
     }
 
     if (!size_of(base) && !is_vla(base)) {
@@ -217,7 +282,16 @@ static struct block *array_declarator(
         exit(1);
     }
 
-    *type = type_create(T_ARRAY, base, length, sym);
+    if (static_length) {
+        *static_length = length;
+        *type = type_create(T_POINTER, base);
+        if (cvrs.is_const) type_set_const(*type);
+        if (cvrs.is_volatile) type_set_volatile(*type);
+        if (cvrs.is_restrict) type_set_restrict(*type);
+    } else {
+        *type = type_create(T_ARRAY, base, length, sym);
+    }
+
     return block;
 }
 
@@ -237,7 +311,8 @@ static struct block *direct_declarator(
     struct block *block,
     Type base,
     Type *type,
-    String *name)
+    String *name,
+    size_t *length)
 {
     struct token t;
     Type head = basic_type__void;
@@ -255,6 +330,9 @@ static struct block *direct_declarator(
         next();
         block = declarator(def, block, head, &head, name);
         consume(')');
+        if (!is_void(head)) {
+            length = NULL;
+        }
         break;
     default:
         break;
@@ -262,7 +340,7 @@ static struct block *direct_declarator(
 
     switch (peek().token) {
     case '[':
-        block = array_declarator(def, block, base, type);
+        block = array_declarator(def, block, base, type, length);
         break;
     case '(':
         next();
@@ -311,6 +389,22 @@ static Type pointer(Type type)
     }
 }
 
+static struct block *parameter_declarator(
+    struct definition *def,
+    struct block *block,
+    Type base,
+    Type *type,
+    String *name,
+    size_t *length)
+{
+    assert(type);
+    while (peek().token == '*') {
+        base = pointer(base);
+    }
+
+    return direct_declarator(def, block, base, type, name, length);
+}
+
 struct block *declarator(
     struct definition *def,
     struct block *block,
@@ -318,12 +412,7 @@ struct block *declarator(
     Type *type,
     String *name)
 {
-    assert(type);
-    while (peek().token == '*') {
-        base = pointer(base);
-    }
-
-    return direct_declarator(def, block, base, type, name);
+    return parameter_declarator(def, block, base, type, name, NULL);
 }
 
 static void member_declaration_list(Type type)

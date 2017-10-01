@@ -1040,6 +1040,10 @@ int fprinttype(FILE *stream, Type type, const struct symbol *expand)
         n += fputs("(", stream);
         for (i = 0; i < nmembers(type); ++i) {
             m = get_member(type, i);
+            if (m->offset) {
+                assert(is_pointer(m->type));
+                fprintf(stream, "static(%lu) ", m->offset);
+            }
             n += fprinttype(stream, m->type, NULL);
             if (i < nmembers(type) - 1) {
                 n += fputs(", ", stream);

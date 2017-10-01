@@ -110,6 +110,10 @@ extern const Type
  *     int  c : 7;    // offset = 4, field_width = 7, field_offset = 5
  * }
  *
+ *
+ * Offset is also used for array parameters marked static, storing the
+ * minimal guaranteed number of elements in the array.
+ *
  * Symbol is used for function parameters, pointing to the actual
  * instances registered in the definition.
  */
