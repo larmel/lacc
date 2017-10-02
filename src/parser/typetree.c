@@ -174,7 +174,7 @@ static Type remove_qualifiers(Type type)
  *
  * Verify that a named struct or union member does not already exist.
  */
-static void add_member(Type parent, struct member m)
+static struct member *add_member(Type parent, struct member m)
 {
     struct typetree *t;
 
@@ -184,37 +184,41 @@ static void add_member(Type parent, struct member m)
         assert(!t->is_vararg);
         assert(is_function(parent));
         t->is_vararg = 1;
-    } else {
-        if (m.name.len && find_type_member(parent, m.name, NULL)) {
-            error("Member '%s' already exists.", str_raw(m.name));
-            exit(1);
-        }
-        array_push_back(&t->members, m);
-        if (is_struct_or_union(parent)) {
-            if (size_of(m.type) == 0) {
-                if (is_array(m.type) && !t->is_flexible) {
-                    t->is_flexible = 1;
-                } else {
-                    error("Member '%s' has incomplete type.", str_raw(m.name));
-                    exit(1);
-                }
-            }
-            if (is_flexible(m.type)) {
-                if (is_struct(parent)) {
-                    error("Cannot add flexible struct member.");
-                    exit(1);
-                }
+        return NULL;
+    }
+
+    if (m.name.len && find_type_member(parent, m.name, NULL)) {
+        error("Member '%s' already exists.", str_raw(m.name));
+        exit(1);
+    }
+
+    array_push_back(&t->members, m);
+    if (is_struct_or_union(parent)) {
+        if (size_of(m.type) == 0) {
+            if (is_array(m.type) && !t->is_flexible) {
                 t->is_flexible = 1;
-            }
-            if (LONG_MAX - m.offset < size_of(m.type)) {
-                error("Object is too large.");
+            } else {
+                error("Member '%s' has incomplete type.", str_raw(m.name));
                 exit(1);
             }
-            if (t->size < m.offset + size_of(m.type)) {
-                t->size = m.offset + size_of(m.type);
+        }
+        if (is_flexible(m.type)) {
+            if (is_struct(parent)) {
+                error("Cannot add flexible struct member.");
+                exit(1);
             }
+            t->is_flexible = 1;
+        }
+        if (LONG_MAX - m.offset < size_of(m.type)) {
+            error("Object is too large.");
+            exit(1);
+        }
+        if (t->size < m.offset + size_of(m.type)) {
+            t->size = m.offset + size_of(m.type);
         }
     }
+
+    return &array_back(&t->members);
 }
 
 /*
@@ -511,7 +515,7 @@ struct member *get_member(Type type, int n)
     return &array_get(&t->members, n);
 }
 
-void type_add_member(Type parent, String name, Type type, struct symbol *sym)
+struct member *type_add_member(Type parent, String name, Type type)
 {
     struct member m = {0};
 
@@ -522,8 +526,7 @@ void type_add_member(Type parent, String name, Type type, struct symbol *sym)
 
     m.name = name;
     m.type = type;
-    m.sym = sym;
-    add_member(parent, m);
+    return add_member(parent, m);
 }
 
 static int pack_field(const struct member *prev, struct member *m)
@@ -631,7 +634,7 @@ void type_add_anonymous_member(Type parent, Type type)
     } else {
         for (i = 0; i < nmembers(type); ++i) {
             m = array_get(&t->members, i);
-            type_add_member(parent, m.name, m.type, NULL);
+            type_add_member(parent, m.name, m.type);
         }
     }
 }

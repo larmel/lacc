@@ -59,8 +59,8 @@ static struct block *parameter_list(
     Type *func)
 {
     String name;
-    struct symbol *sym;
     struct block *block;
+    struct member *param;
 
     *func = type_create(T_FUNCTION, base);
     block = current_scope_depth(&ns_ident) == 1
@@ -81,11 +81,11 @@ static struct block *parameter_list(
         if (is_array(base)) {
             base = type_create(T_POINTER, type_next(base));
         }
-        sym = NULL;
+        param = type_add_member(*func, name, base);
         if (name.len) {
-            sym = sym_add(&ns_ident, name, base, SYM_DEFINITION, LINK_NONE);
+            param->sym =
+                sym_add(&ns_ident, name, base, SYM_DEFINITION, LINK_NONE);
         }
-        type_add_member(*func, name, base, sym);
         if (peek().token != ',') {
             break;
         }
@@ -93,7 +93,7 @@ static struct block *parameter_list(
         if (peek().token == DOTS) {
             consume(DOTS);
             assert(!is_vararg(*func));
-            type_add_member(*func, str_init("..."), basic_type__void, NULL);
+            type_add_member(*func, str_init("..."), basic_type__void);
             assert(is_vararg(*func));
             break;
         }
@@ -121,7 +121,7 @@ static Type identifier_list(Type base)
                 error("Unexpected type '%t' in identifier list.");
                 exit(1);
             }
-            type_add_member(type, t.d.string, get_type_placeholder(), NULL);
+            type_add_member(type, t.d.string, get_type_placeholder());
             if (peek().token == ',') {
                 next();
             } else break;
@@ -358,7 +358,7 @@ static void member_declaration_list(Type type)
                         exit(1);
                     }
                 } else {
-                    type_add_member(type, name, decl_type, NULL);
+                    type_add_member(type, name, decl_type);
                 }
             }
             if (peek().token == ',') {
