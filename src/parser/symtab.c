@@ -350,6 +350,15 @@ struct symbol *sym_add(
             {
                 apply_type(sym, type);
                 sym->symtype = SYM_TENTATIVE;
+            } else if (
+                sym->linkage == linkage
+                && sym->symtype == SYM_DEFINITION
+                && symtype == SYM_DECLARATION)
+            {
+                if (!type_equal(sym->type, type)) {
+                    error("Conflicting types for %s.", str_raw(name));
+                    exit(1);
+                }
             } else if (sym->symtype != symtype || sym->linkage != linkage) {
                 error("Declaration of '%s' does not match prior declaration.",
                     str_raw(name));

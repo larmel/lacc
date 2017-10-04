@@ -2,7 +2,7 @@ int puts(const char *);
 
 int noop(void);
 
-int foo(char *list[5]) {
+static int foo(char *list[5]) {
 	puts(list[0]);
 	puts(list[1]);
 	return sizeof(list[6]);
@@ -11,6 +11,8 @@ int foo(char *list[5]) {
 int prints(int n, ...) {
 	return n;
 }
+
+static int foo(char *list[]);
 
 char s1[] = "Hello";
 char *s2 = "World";
