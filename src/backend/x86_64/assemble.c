@@ -12,8 +12,8 @@
 #define I0(instr)           out("\t%s\n", instr)
 #define I1(instr, a)        out("\t%s\t%s\n", instr, a)
 #define I2(instr, a, b)     out("\t%s\t%s, %s\n", instr, a, b)
-#define S1(instr, w, a)     out("\t%s%c\t%s\n", instr, SUFFIX(w), a)
-#define S2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
+#define U1(instr, w, a)     out("\t%s%c\t%s\n", instr, SUFFIX(w), a)
+#define U2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
 #define X1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87SFX(w), a);
 #define Y1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87IFX(w), a);
 
@@ -86,7 +86,7 @@ static const char *mnemonic(struct registr reg)
     }
 }
 
-static const char *address(struct address addr)
+static const char *asm_address(struct address addr)
 {
     static char buf[MAX_OPERAND_TEXT_LENGTH];
 
@@ -261,7 +261,7 @@ int asm_text(struct instruction instr)
     case OPT_MEM:
     case OPT_MEM_REG:
         ws = instr.source.mem.w;
-        source = address(instr.source.mem.addr);
+        source = asm_address(instr.source.mem.addr);
         break;
     default:
         break;
@@ -277,49 +277,49 @@ int asm_text(struct instruction instr)
     case OPT_REG_MEM:
     case OPT_IMM_MEM:
         wd = instr.dest.mem.w;
-        destin = address(instr.dest.mem.addr);
+        destin = asm_address(instr.dest.mem.addr);
         break;
     default:
         break;
     }
 
     switch (instr.opcode) {
-    case INSTR_ADD:      S2("add", wd, source, destin); break;
+    case INSTR_ADD:      U2("add", wd, source, destin); break;
     case INSTR_ADDSD:    I2("addsd", source, destin); break;
     case INSTR_ADDSS:    I2("addss", source, destin); break;
     case INSTR_CVTSS2SD: I2("cvtss2sd", source, destin); break;
     case INSTR_CVTSD2SS: I2("cvtsd2ss", source, destin); break;
-    case INSTR_CVTSI2SS: S2("cvtsi2ss", ws, source, destin); break;
-    case INSTR_CVTSI2SD: S2("cvtsi2sd", ws, source, destin); break;
-    case INSTR_CVTTSD2SI:S2("cvttsd2si", wd, source, destin); break;
-    case INSTR_CVTTSS2SI:S2("cvttss2si", wd, source, destin); break;
+    case INSTR_CVTSI2SS: U2("cvtsi2ss", ws, source, destin); break;
+    case INSTR_CVTSI2SD: U2("cvtsi2sd", ws, source, destin); break;
+    case INSTR_CVTTSD2SI:U2("cvttsd2si", wd, source, destin); break;
+    case INSTR_CVTTSS2SI:U2("cvttss2si", wd, source, destin); break;
     case INSTR_CDQ:      I0("cdq"); break;
     case INSTR_CQO:      I0("cqo"); break;
-    case INSTR_DIV:      S1("div", ws, source); break;
+    case INSTR_DIV:      U1("div", ws, source); break;
     case INSTR_DIVSD:    I2("divsd", source, destin); break;
     case INSTR_DIVSS:    I2("divss", source, destin); break;
-    case INSTR_SUB:      S2("sub", wd, source, destin); break;
+    case INSTR_SUB:      U2("sub", wd, source, destin); break;
     case INSTR_SUBSD:    I2("subsd", source, destin); break;
     case INSTR_SUBSS:    I2("subss", source, destin); break;
-    case INSTR_NOT:      S1("not", ws, source); break;
-    case INSTR_MUL:      S1("mul", ws, source); break;
-    case INSTR_XOR:      S2("xor", wd, source, destin); break;
-    case INSTR_AND:      S2("and", wd, source, destin); break;
-    case INSTR_OR:       S2("or", wd, source, destin); break;
-    case INSTR_SHL:      S2("shl", wd, source, destin); break;
-    case INSTR_SHR:      S2("shr", wd, source, destin); break;
-    case INSTR_SAR:      S2("sar", wd, source, destin); break;
-    case INSTR_IDIV:     S1("idiv", ws, source); break;
-    case INSTR_MOV:      S2("mov", wd, source, destin); break;
+    case INSTR_NOT:      U1("not", ws, source); break;
+    case INSTR_MUL:      U1("mul", ws, source); break;
+    case INSTR_XOR:      U2("xor", wd, source, destin); break;
+    case INSTR_AND:      U2("and", wd, source, destin); break;
+    case INSTR_OR:       U2("or", wd, source, destin); break;
+    case INSTR_SHL:      U2("shl", wd, source, destin); break;
+    case INSTR_SHR:      U2("shr", wd, source, destin); break;
+    case INSTR_SAR:      U2("sar", wd, source, destin); break;
+    case INSTR_IDIV:     U1("idiv", ws, source); break;
+    case INSTR_MOV:      U2("mov", wd, source, destin); break;
     case INSTR_MOVZX:
         assert(ws == 1 || ws == 2);
         assert(ws < wd);
-        S2((ws == 1) ? "movzb" : "movzw", wd, source, destin);
+        U2((ws == 1) ? "movzb" : "movzw", wd, source, destin);
         break;
     case INSTR_MOVSX:
         assert(ws == 1 || ws == 2 || ws == 4);
         assert(ws < wd);
-        S2((ws == 1) ? "movsb" : (ws == 2) ? "movsw" : "movsl",
+        U2((ws == 1) ? "movsb" : (ws == 2) ? "movsw" : "movsl",
             wd, source, destin);
         break;
     case INSTR_MOVAPS:
@@ -341,13 +341,13 @@ int asm_text(struct instruction instr)
     case INSTR_SETNGE:   I1("setnge", source); break;
     case INSTR_SETNP:    I1("setnp", source); break;
     case INSTR_SETNE:    I1("setne", source); break;
-    case INSTR_TEST:     S2("test", wd, source, destin); break;
+    case INSTR_TEST:     U2("test", wd, source, destin); break;
     case INSTR_UCOMISS:  I2("ucomiss", source, destin); break;
     case INSTR_UCOMISD:  I2("ucomisd", source, destin); break;
-    case INSTR_CMP:      S2("cmp", wd, source, destin); break;
-    case INSTR_LEA:      S2("lea", wd, source, destin); break;
-    case INSTR_PUSH:     S1("push", ws, source); break;
-    case INSTR_POP:      S1("pop", ws, source); break;
+    case INSTR_CMP:      U2("cmp", wd, source, destin); break;
+    case INSTR_LEA:      U2("lea", wd, source, destin); break;
+    case INSTR_PUSH:     U1("push", ws, source); break;
+    case INSTR_POP:      U1("pop", ws, source); break;
     case INSTR_PXOR:     I2("pxor", source, destin); break;
     case INSTR_JMP:      I1("jmp", source); break;
     case INSTR_JE:       I1("je", source); break;

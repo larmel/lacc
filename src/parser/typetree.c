@@ -81,7 +81,7 @@ struct typetree {
  */
 static array_of(struct typetree) types;
 
-static void cleanup(void)
+static void deallocate_typetrees(void)
 {
     int i;
     struct typetree *t;
@@ -142,7 +142,7 @@ static Type alloc_type(enum type tt)
 
     if (!init) {
         init = 1;
-        atexit(cleanup);
+        atexit(deallocate_typetrees);
     }
 
     t.type = tt;

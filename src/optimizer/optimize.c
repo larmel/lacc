@@ -11,7 +11,7 @@ static int optimization_level;
 /*
  * Serialized control flow graph. Topologically sorted if non-cyclical.
  */
-static array_of(struct block *) blocks;
+static array_of(struct block *) blocklist;
 
 /*
  * List of symbols used in the control flow graph.
@@ -29,7 +29,7 @@ static int serialize_basic_blocks(struct block *block)
         return 0;
 
     block->color = BLACK;
-    array_push_back(&blocks, block);
+    array_push_back(&blocklist, block);
     if (block->jump[0]) {
         serialize_basic_blocks(block->jump[0]);
         if (block->jump[1]) {
@@ -47,8 +47,8 @@ static void initialize_dataflow(void)
     struct statement *st;
     int i, j;
 
-    for (i = 0; i < array_len(&blocks); ++i) {
-        block = array_get(&blocks, i);
+    for (i = 0; i < array_len(&blocklist); ++i) {
+        block = array_get(&blocklist, i);
         block->in = 0;
         block->out = 0;
         for (j = 0; j < array_len(&block->code); ++j) {
@@ -169,8 +169,8 @@ static int traverse(int (*callback)(struct block *))
     int i, n;
     struct block *block;
 
-    for (i = 0, n = 0; i < array_len(&blocks); ++i) {
-        block = array_get(&blocks, i);
+    for (i = 0, n = 0; i < array_len(&blocklist); ++i) {
+        block = array_get(&blocklist, i);
         n += callback(block);
     }
 
@@ -250,7 +250,7 @@ void optimize(struct definition *def)
     if (!optimization_level || !is_function(def->symbol->type))
         return;
 
-    array_empty(&blocks);
+    array_empty(&blocklist);
     array_empty(&symbols);
     serialize_basic_blocks(def->body);
     traverse(&skip_empty_blocks);
@@ -275,6 +275,6 @@ void optimize(struct definition *def)
 
 void pop_optimization(void)
 {
-    array_clear(&blocks);
+    array_clear(&blocklist);
     array_clear(&symbols);
 }

@@ -118,7 +118,7 @@ static void cfg_clear(struct definition *def)
     free(def);
 }
 
-static void cleanup(void)
+static void deallocate_cfg(void)
 {
     int i;
     struct definition *def;
@@ -232,7 +232,7 @@ struct definition *parse(void)
      */
     if (!deque_len(&definitions)) {
         assert(peek().token == END);
-        cleanup();
+        deallocate_cfg();
         def = NULL;
     } else {
         def = deque_pop_front(&definitions);

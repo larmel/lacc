@@ -129,7 +129,7 @@ static void read_defined_operator(TokenArray *line)
         exit(1);
     }
 
-    if (definition(t.d.string))
+    if (macro_definition(t.d.string))
         t = tokenize("1", &endptr);
     else
         t = tokenize("0", &endptr);
@@ -229,7 +229,7 @@ static int read_complete_line(TokenArray *line, struct token t, int directive)
             if (directive && !tok_cmp(t, ident__defined)) {
                 read_defined_operator(line);
             } else {
-                def = definition(t.d.string);
+                def = macro_definition(t.d.string);
                 if (def) {
                     macros += 1;
                     if (def->type == FUNCTION_LIKE) {
@@ -273,7 +273,7 @@ static int refill_expanding_line(TokenArray *line)
         for (i = 0; i < len; ++i) {
             t = array_get(line, i);
             if (t.is_expandable && !t.disable_expand) {
-                def = definition(t.d.string);
+                def = macro_definition(t.d.string);
                 if (def && def->type == FUNCTION_LIKE) {
                     i += skip_or_read_expansion(def, line, i + 1);
                     n += 1;

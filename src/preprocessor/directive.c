@@ -55,12 +55,12 @@ struct number {
  */
 static array_of(enum state) branch_stack;
 
-static void push(enum state c)
+static void push_state(enum state c)
 {
     array_push_back(&branch_stack, c);
 }
 
-static enum state pop(void)
+static enum state pop_state(void)
 {
     enum state val;
 
@@ -98,7 +98,7 @@ static void expect(const struct token *list, int token)
     }
 }
 
-static struct number expression(
+static struct number preprocess_expression(
     const struct token *list,
     const struct token **endptr);
 
@@ -109,7 +109,7 @@ static struct number expression(
  * Normalize all values to be of type long or unsigned long. Floating
  * point numbers are not permitted by the standard.
  */
-static struct number eval_primary(
+static struct number preprocess_primary(
     const struct token *list,
     const struct token **endptr)
 {
@@ -129,7 +129,7 @@ static struct number eval_primary(
         num.val = list->d.val;
         break;
     case '(':
-        num = expression(list + 1, &list);
+        num = preprocess_expression(list + 1, &list);
         expect(list, ')');
         break;
     default:
@@ -139,7 +139,7 @@ static struct number eval_primary(
             exit(1);
         }
     case IDENTIFIER:
-        assert(!definition(list->d.string));
+        assert(!macro_definition(list->d.string));
         num.type = basic_type__long;
         num.val.i = 0;
         break;
@@ -162,7 +162,7 @@ static struct number eval_primary(
     return num;
 }
 
-static struct number eval_unary(
+static struct number preprocess_unary(
     const struct token *list,
     const struct token **endptr)
 {
@@ -170,13 +170,13 @@ static struct number eval_unary(
 
     switch (list->token) {
     case '+':
-        r = eval_unary(list + 1, endptr);
+        r = preprocess_unary(list + 1, endptr);
         if (is_signed(r.type)) {
             r.val.i = + r.val.i;
         }
         return r;
     case '-':
-        r = eval_unary(list + 1, endptr);
+        r = preprocess_unary(list + 1, endptr);
         if (is_signed(r.type)) {
             r.val.i = - r.val.i;
         } else {
@@ -184,7 +184,7 @@ static struct number eval_unary(
         }
         return r;
     case '~':
-        r = eval_unary(list + 1, endptr);
+        r = preprocess_unary(list + 1, endptr);
         if (is_signed(r.type)) {
             r.val.i = ~ r.val.i;
         } else {
@@ -192,7 +192,7 @@ static struct number eval_unary(
         }
         return r;
     case '!':
-        r = eval_unary(list + 1, endptr);
+        r = preprocess_unary(list + 1, endptr);
         if (is_signed(r.type)) {
             r.val.i = ! r.val.i;
         } else {
@@ -200,7 +200,7 @@ static struct number eval_unary(
         }
         return r;
     default:
-        return eval_primary(list, endptr);
+        return preprocess_primary(list, endptr);
     }
 }
 
@@ -222,17 +222,17 @@ static int both_signed(struct number *l, struct number *r)
     return is_signed(type);
 }
 
-static struct number eval_multiplicative(
+static struct number preprocess_multiplicative(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_unary(list, &list);
+    l = preprocess_unary(list, &list);
     while (1) {
         switch (list->token) {
         case '*':
-            r = eval_unary(list + 1, &list);
+            r = preprocess_unary(list + 1, &list);
             if (both_signed(&l, &r)) {
                 l.val.i *= r.val.i;
             } else {
@@ -240,7 +240,7 @@ static struct number eval_multiplicative(
             }
             break;
         case '/':
-            r = eval_unary(list + 1, &list);
+            r = preprocess_unary(list + 1, &list);
             if (r.val.i == 0) {
                 error("Division by zero.");
                 exit(1);
@@ -251,7 +251,7 @@ static struct number eval_multiplicative(
             }
             break;
         case '%':
-            r = eval_unary(list + 1, &list);
+            r = preprocess_unary(list + 1, &list);
             if (r.val.i == 0) {
                 error("Modulo by zero.");
                 exit(1);
@@ -268,17 +268,17 @@ static struct number eval_multiplicative(
     }
 }
 
-static struct number eval_additive(
+static struct number preprocess_additive(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_multiplicative(list, &list);
+    l = preprocess_multiplicative(list, &list);
     while (1) {
         switch (list->token) {
         case '+':
-            r = eval_multiplicative(list + 1, &list);
+            r = preprocess_multiplicative(list + 1, &list);
             if (both_signed(&l, &r)) {
                 l.val.i += r.val.i;
             } else {
@@ -286,7 +286,7 @@ static struct number eval_additive(
             }
             break;
         case '-':
-            r = eval_multiplicative(list + 1, &list);
+            r = preprocess_multiplicative(list + 1, &list);
             if (both_signed(&l, &r)) {
                 l.val.i -= r.val.i;
             } else {
@@ -300,17 +300,17 @@ static struct number eval_additive(
     }
 }
 
-static struct number eval_shift(
+static struct number preprocess_shift(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_additive(list, &list);
+    l = preprocess_additive(list, &list);
     while (1) {
         switch (list->token) {
         case LSHIFT:
-            r = eval_additive(list + 1, &list);
+            r = preprocess_additive(list + 1, &list);
             if (both_signed(&l, &r)) {
                 l.val.i <<= r.val.i;
             } else {
@@ -318,7 +318,7 @@ static struct number eval_shift(
             }
             break;
         case RSHIFT:
-            r = eval_additive(list + 1, &list);
+            r = preprocess_additive(list + 1, &list);
             if (both_signed(&l, &r)) {
                 l.val.i >>= r.val.i;
             } else {
@@ -332,38 +332,38 @@ static struct number eval_shift(
     }
 }
 
-static struct number eval_relational(
+static struct number preprocess_relational(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_shift(list, &list);
+    l = preprocess_shift(list, &list);
     while (1) {
         switch (list->token) {
         case '<':
-            r = eval_shift(list + 1, &list);
+            r = preprocess_shift(list + 1, &list);
             l.val.i = both_signed(&l, &r)
                     ? l.val.i < r.val.i
                     : l.val.u < r.val.u;
             l.type = basic_type__long;
             break;
         case '>':
-            r = eval_shift(list + 1, &list);
+            r = preprocess_shift(list + 1, &list);
             l.val.i = both_signed(&l, &r)
                     ? l.val.i > r.val.i
                     : l.val.u > r.val.u;
             l.type = basic_type__long;
             break;
         case LEQ:
-            r = eval_shift(list + 1, &list);
+            r = preprocess_shift(list + 1, &list);
             l.val.i = both_signed(&l, &r)
                     ? l.val.i <= r.val.i
                     : l.val.u <= r.val.u;
             l.type = basic_type__long;
             break;
         case GEQ:
-            r = eval_shift(list + 1, &list);
+            r = preprocess_shift(list + 1, &list);
             l.val.i = both_signed(&l, &r)
                     ? l.val.i >= r.val.i
                     : l.val.u >= r.val.u;
@@ -376,23 +376,23 @@ static struct number eval_relational(
     }
 }
 
-static struct number eval_equality(
+static struct number preprocess_equality(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_relational(list, &list);
+    l = preprocess_relational(list, &list);
     switch (list->token) {
     case EQ:
-        r = eval_equality(list + 1, &list);
+        r = preprocess_equality(list + 1, &list);
         l.val.i = both_signed(&l, &r)
                 ? l.val.i == r.val.i
                 : l.val.u == r.val.u;
         l.type = basic_type__long;
         break;
     case NEQ:
-        r = eval_equality(list + 1, &list);
+        r = preprocess_equality(list + 1, &list);
         l.val.i = both_signed(&l, &r)
                 ? l.val.i != r.val.i
                 : l.val.u != r.val.u;
@@ -406,15 +406,15 @@ static struct number eval_equality(
     return l;
 }
 
-static struct number eval_and(
+static struct number preprocess_and(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_equality(list, &list);
+    l = preprocess_equality(list, &list);
     if (list->token == '&') {
-        r = eval_and(list + 1, &list);
+        r = preprocess_and(list + 1, &list);
         if (both_signed(&l, &r)) {
             l.val.i &= r.val.i;
         } else {
@@ -426,15 +426,15 @@ static struct number eval_and(
     return l;
 }
 
-static struct number eval_exclusive_or(
+static struct number preprocess_exclusive_or(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_and(list, &list);
+    l = preprocess_and(list, &list);
     if (list->token == '^') {
-        r = eval_exclusive_or(list + 1, &list);
+        r = preprocess_exclusive_or(list + 1, &list);
         if (both_signed(&l, &r)) {
             l.val.i ^= r.val.i;
         } else {
@@ -446,15 +446,15 @@ static struct number eval_exclusive_or(
     return l;
 }
 
-static struct number eval_inclusive_or(
+static struct number preprocess_inclusive_or(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_exclusive_or(list, &list);
+    l = preprocess_exclusive_or(list, &list);
     if (list->token == '|') {
-        r = eval_exclusive_or(list + 1, &list);
+        r = preprocess_exclusive_or(list + 1, &list);
         if (both_signed(&l, &r)) {
             l.val.i |= r.val.i;
         } else {
@@ -466,15 +466,15 @@ static struct number eval_inclusive_or(
     return l;
 }
 
-static struct number eval_logical_and(
+static struct number preprocess_logical_and(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_inclusive_or(list, &list);
+    l = preprocess_inclusive_or(list, &list);
     if (list->token == LOGICAL_AND) {
-        r = eval_logical_and(list + 1, &list);
+        r = preprocess_logical_and(list + 1, &list);
         l.val.i = l.val.u && r.val.u;
         l.type = basic_type__long;
     }
@@ -483,15 +483,15 @@ static struct number eval_logical_and(
     return l;
 }
 
-static struct number eval_logical_or(
+static struct number preprocess_logical_or(
     const struct token *list,
     const struct token **endptr)
 {
     struct number l, r;
 
-    l = eval_logical_and(list, &list);
+    l = preprocess_logical_and(list, &list);
     if (list->token == LOGICAL_OR) {
-        r = eval_logical_or(list + 1, &list);
+        r = preprocess_logical_or(list + 1, &list);
         l.val.i = l.val.u || r.val.u;
         l.type = basic_type__long;
     }
@@ -500,17 +500,17 @@ static struct number eval_logical_or(
     return l;
 }
 
-static struct number expression(
+static struct number preprocess_expression(
     const struct token *list,
     const struct token **endptr)
 {
     struct number a, b, c;
 
-    a = eval_logical_or(list, &list);
+    a = preprocess_logical_or(list, &list);
     if (list->token == '?') {
-        b = expression(list + 1, &list);
+        b = preprocess_expression(list + 1, &list);
         expect(list, ':');
-        c = expression(list + 1, &list);
+        c = preprocess_expression(list + 1, &list);
         if (both_signed(&b, &c)) {
             a.val.i = a.val.u ? b.val.i : c.val.i;
             a.type = basic_type__long;
@@ -617,7 +617,7 @@ static struct macro preprocess_define(
 }
 
 /*
- * Handle #line directive, which is in one of the forms:
+ * Handle #line directive, which is in one of the following forms:
  *
  *     #line 42
  *     #line 42 "foo.c"
@@ -676,34 +676,34 @@ void preprocess_directive(TokenArray *array)
          * example can function-like macros be undefined.
          */
         if (in_active_block()) {
-            num = expression(line + 1, &line);
-            push(num.val.i ? BRANCH_LIVE : BRANCH_DEAD);
+            num = preprocess_expression(line + 1, &line);
+            push_state(num.val.i ? BRANCH_LIVE : BRANCH_DEAD);
         } else {
-            push(BRANCH_DISABLED);
+            push_state(BRANCH_DISABLED);
         }
     } else if (line->token == ELSE) {
-        state = pop();
+        state = pop_state();
         if (in_active_block()) {
-            push(state == BRANCH_DEAD ? BRANCH_LIVE : BRANCH_DISABLED);
+            push_state(state == BRANCH_DEAD ? BRANCH_LIVE : BRANCH_DISABLED);
         } else {
             assert(state == BRANCH_DISABLED);
-            push(BRANCH_DISABLED);
+            push_state(BRANCH_DISABLED);
         }
     } else if (!tok_cmp(*line, ident__elif)) {
-        state = pop();
+        state = pop_state();
         if (in_active_block()) {
             if (state == BRANCH_DEAD) {
-                num = expression(line + 1, &line);
-                push(num.val.i ? BRANCH_LIVE : BRANCH_DEAD);
+                num = preprocess_expression(line + 1, &line);
+                push_state(num.val.i ? BRANCH_LIVE : BRANCH_DEAD);
             } else {
-                push(BRANCH_DISABLED);
+                push_state(BRANCH_DISABLED);
             }
         } else {
             assert(state == BRANCH_DISABLED);
-            push(BRANCH_DISABLED);
+            push_state(BRANCH_DISABLED);
         }
     } else if (!tok_cmp(*line, ident__endif)) {
-        pop();
+        pop_state();
     } else if (!tok_cmp(*line, ident__ifndef)) {
         if (in_active_block()) {
             line++;
@@ -711,10 +711,10 @@ void preprocess_directive(TokenArray *array)
                 error("Expected identifier in 'ifndef' clause.");
                 exit(1);
             }
-            def = definition(line->d.string) == NULL;
-            push(def ? BRANCH_LIVE : BRANCH_DEAD);
+            def = macro_definition(line->d.string) == NULL;
+            push_state(def ? BRANCH_LIVE : BRANCH_DEAD);
         } else {
-            push(BRANCH_DISABLED);
+            push_state(BRANCH_DISABLED);
         }
     } else if (!tok_cmp(*line, ident__ifdef)) {
         if (in_active_block()) {
@@ -723,10 +723,10 @@ void preprocess_directive(TokenArray *array)
                 error("Expected identifier in 'ifdef' clause.");
                 exit(1);
             }
-            def = definition(line->d.string) != NULL;
-            push(def ? BRANCH_LIVE : BRANCH_DEAD);
+            def = macro_definition(line->d.string) != NULL;
+            push_state(def ? BRANCH_LIVE : BRANCH_DEAD);
         } else {
-            push(BRANCH_DISABLED);
+            push_state(BRANCH_DISABLED);
         }
     } else if (in_active_block()) {
         if (!tok_cmp(*line, ident__define)) {

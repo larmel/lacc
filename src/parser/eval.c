@@ -46,7 +46,7 @@ static int is_nullptr(struct var val)
         && is_immediate_false(as_expr(val));
 }
 
-static int is_string(struct var val)
+int is_string(struct var val)
 {
     return val.kind == IMMEDIATE && val.symbol
         && val.symbol->symtype == SYM_STRING_VALUE;

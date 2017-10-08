@@ -237,6 +237,9 @@ struct definition {
 /* Convert variable to no-op IR_OP_CAST expression. */
 struct expression as_expr(struct var var);
 
+/* Return 1 for string values, 0 otherwise. */
+int is_string(struct var val);
+
 /*
  * A direct reference to given symbol, with two exceptions:
  * SYM_CONSTANT and SYM_STRING_VALUE reduce to IMMEDIATE values.

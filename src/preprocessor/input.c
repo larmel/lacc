@@ -67,7 +67,7 @@ static struct source *current_file(void)
     return &array_get(&source_stack, array_len(&source_stack) - 1);
 }
 
-static void push(struct source source)
+static void push_file(struct source source)
 {
     assert(source.file);
     assert(source.path.len);
@@ -79,7 +79,7 @@ static void push(struct source source)
     array_push_back(&source_stack, source);
 }
 
-static int pop(void)
+static int pop_file(void)
 {
     unsigned len;
     struct source source;
@@ -101,7 +101,7 @@ static int pop(void)
 
 static void finalize(void)
 {
-    while (pop() != EOF)
+    while (pop_file() != EOF)
         ;
 
     array_clear(&source_stack);
@@ -149,7 +149,7 @@ void include_file(const char *name)
     if (source.file) {
         source.path = str_register(path, strlen(path));
         source.dirlen = strrchr(path, '/') - path;
-        push(source);
+        push_file(source);
     } else {
         include_system_file(name);
     }
@@ -179,7 +179,7 @@ void include_system_file(const char *name)
     }
 
     if (source.file) {
-        push(source);
+        push_file(source);
     } else {
         error("Unable to resolve include file '%s'.", name);
         exit(1);
@@ -216,7 +216,7 @@ void init(const char *path)
         source.path = str_init("<stdin>");
     }
 
-    push(source);
+    push_file(source);
     atexit(finalize);
 }
 
@@ -548,7 +548,7 @@ char *getprepline(void)
         current_file_line += source->line - loc;
         if (!line) {
             stale = 1;
-            if (pop() == EOF) {
+            if (pop_file() == EOF) {
                 return NULL;
             }
         }

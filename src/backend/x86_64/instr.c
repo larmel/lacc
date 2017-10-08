@@ -6,7 +6,7 @@
  * Map register enum values to register encoding. Depends on register
  * enumeration values.
  */
-#define reg(arg) (((arg).r - 1) % 8)
+#define regi(arg) (((arg).r - 1) % 8)
 #define is_64_bit(arg) ((arg).w >> 3)
 #define is_32_bit(arg) (((arg).w >> 2) & 1)
 #define is_16_bit(arg) (((arg).w >> 1) & 1)
@@ -189,7 +189,7 @@ static struct code mov(
         if (rrex(b.reg)) {
             c.val[c.len++] = REX | W(b.reg) | B(b.reg);
         }
-        c.val[c.len++] = 0xB8 | w(b.reg) << 3 | reg(b.reg);
+        c.val[c.len++] = 0xB8 | w(b.reg) << 3 | regi(b.reg);
         if (a.imm.w == 1) {
             assert(a.imm.type == IMM_INT);
             c.val[c.len++] = a.imm.d.byte;
@@ -201,7 +201,7 @@ static struct code mov(
             if (is_64_bit(b.reg)) {
                 /* Special case, not using alternative encoding. */
                 c.val[1] = 0xC7;
-                c.val[2] = 0xC0 | reg(b.reg);
+                c.val[2] = 0xC0 | regi(b.reg);
                 c.len = 3;
             }
             if (a.imm.type == IMM_INT) {
@@ -227,7 +227,7 @@ static struct code mov(
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
         c.val[c.len++] = 0x88 | w(a.reg);
-        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        c.val[c.len++] = 0xC0 | regi(a.reg) << 3 | regi(b.reg);
         break;
     case OPT_REG_MEM:
         if (is_16_bit(a.reg)) {
@@ -237,14 +237,14 @@ static struct code mov(
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | mrex(b.mem.addr);
         }
         c.val[c.len++] = 0x88 | w(a.reg);
-        encode_addr(&c, reg(a.reg), b.mem.addr, 0, 0);
+        encode_addr(&c, regi(a.reg), b.mem.addr, 0, 0);
         break;
     case OPT_MEM_REG:
         if (rrex(b.reg) || mrex(a.mem.addr)) {
             c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
         }
         c.val[c.len++] = 0x8A + w(b.reg);
-        encode_addr(&c, reg(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
         break;
     case OPT_IMM_MEM:
         assert(a.imm.type == IMM_INT);
@@ -289,12 +289,12 @@ static struct code movsx(
         c.val[c.len++] = REX | W(b.reg) | R(b.reg) | B(a.reg);
         if (a.reg.w == 4) {
             c.val[c.len++] = 0x63;
-            c.val[c.len++] = 0xC0 | reg(b.reg) << 3 | reg(a.reg);
+            c.val[c.len++] = 0xC0 | regi(b.reg) << 3 | regi(a.reg);
         } else {
             assert(a.reg.w == 1 || a.reg.w == 2);
             c.val[c.len++] = 0x0F;
             c.val[c.len++] = 0xBE | w(a.reg);
-            c.val[c.len++] = 0xC0 | reg(b.reg) << 3 | reg(a.reg);
+            c.val[c.len++] = 0xC0 | regi(b.reg) << 3 | regi(a.reg);
         }
         break;
     case OPT_MEM_REG:
@@ -308,7 +308,7 @@ static struct code movsx(
             c.val[c.len++] = 0x0F;
             c.val[c.len++] = 0xBE | w(a.mem);
         }
-        encode_addr(&c, reg(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
         break;
     }
 
@@ -328,7 +328,7 @@ static struct code movzx(
         }
         c.val[c.len++] = 0x0F;
         c.val[c.len++] = 0xB6 | w(a.reg);
-        c.val[c.len++] = 0xC0 | reg(b.reg) << 3 | reg(a.reg);
+        c.val[c.len++] = 0xC0 | regi(b.reg) << 3 | regi(a.reg);
     } else if (optype == OPT_MEM_REG) {
         if (mrex(a.mem.addr) || rrex(b.reg)) {
             c.val[c.len] = REX | W(b.reg) | R(b.reg);
@@ -336,14 +336,14 @@ static struct code movzx(
         }
         c.val[c.len++] = 0x0F;
         c.val[c.len++] = 0xB6 | w(a.mem);
-        encode_addr(&c, reg(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
     } else
         assert(0);
 
     return c;
 }
 
-static struct code push(enum instr_optype optype, union operand op)
+static struct code encode_push(enum instr_optype optype, union operand op)
 {
     struct code c = {0};
 
@@ -353,7 +353,7 @@ static struct code push(enum instr_optype optype, union operand op)
         if (is_64_bit_reg(op.reg.r)) {
             c.val[c.len++] = REX | B(op.reg);
         }
-        c.val[c.len++] = 0x50 | R(op.reg) | reg(op.reg);
+        c.val[c.len++] = 0x50 | R(op.reg) | regi(op.reg);
         break;
     case OPT_IMM:
         assert(op.imm.w == 8);
@@ -380,7 +380,7 @@ static struct code push(enum instr_optype optype, union operand op)
     return c;
 }
 
-static struct code pop(enum instr_optype optype, union operand op)
+static struct code encode_pop(enum instr_optype optype, union operand op)
 {
     struct code c = {0};
     assert(optype == OPT_REG);
@@ -390,11 +390,11 @@ static struct code pop(enum instr_optype optype, union operand op)
         c.val[c.len++] = REX | B(op.reg);
     }
 
-    c.val[c.len++] = 0x58 | W(op.reg) | reg(op.reg);
+    c.val[c.len++] = 0x58 | W(op.reg) | regi(op.reg);
     return c;
 }
 
-static struct code sub(
+static struct code encode_sub(
     enum instr_optype optype,
     union operand a,
     union operand b)
@@ -406,7 +406,7 @@ static struct code sub(
         assert(is_64_bit(b.reg));
         c.val[c.len++] = REX | W(b.reg) | B(b.reg);
         c.val[c.len++] = 0x81 | is_byte_imm(a.imm) << 1;
-        c.val[c.len++] = 0xE8 | reg(b.reg);
+        c.val[c.len++] = 0xE8 | regi(b.reg);
         if (is_byte_imm(a.imm)) {
             c.val[c.len++] = a.imm.d.byte;
         } else if (is_32bit_imm(a.imm)) {
@@ -419,7 +419,7 @@ static struct code sub(
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
         c.val[c.len++] = 0x28 | w(a.reg);
-        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        c.val[c.len++] = 0xC0 | regi(a.reg) << 3 | regi(b.reg);
         break;
     default: assert(0);
     }
@@ -427,7 +427,7 @@ static struct code sub(
     return c;
 }
 
-static struct code add(
+static struct code encode_add(
     enum instr_optype optype,
     union operand a,
     union operand b)
@@ -441,14 +441,14 @@ static struct code add(
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
         c.val[c.len++] = 0x00 | w(a.reg);
-        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        c.val[c.len++] = 0xC0 | regi(a.reg) << 3 | regi(b.reg);
         break;
     case OPT_IMM_REG:
         assert(a.imm.type == IMM_INT);
         if (rrex(b.reg))
             c.val[c.len++] = REX | W(b.reg) | B(b.reg);
         c.val[c.len++] = 0x80 | is_byte_imm(a.imm) << 1 | w(b.reg);
-        c.val[c.len++] = 0xC0 | reg(b.reg);
+        c.val[c.len++] = 0xC0 | regi(b.reg);
         if (is_byte_imm(a.imm)) {
             c.val[c.len++] = a.imm.d.byte;
         } else {
@@ -480,21 +480,21 @@ static struct code add(
             c.val[c.len++] = REX | W(a.reg) | R(a.reg);
         }
         c.val[c.len++] = 0x00 | is_64_bit_reg(a.reg.r) << 1 | w(b.mem);
-        encode_addr(&c, reg(a.reg), b.mem.addr, 0, 0);
+        encode_addr(&c, regi(a.reg), b.mem.addr, 0, 0);
         break;
     case OPT_MEM_REG:
         if (rrex(b.reg) || mrex(a.mem.addr)) {
             c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
         }
         c.val[c.len++] = 0x00 | !is_64_bit_reg(b.reg.r) << 1 | w(b.reg);
-        encode_addr(&c, reg(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
         break;
     }
 
     return c;
 }
 
-static struct code call(enum instr_optype optype, union operand op)
+static struct code encode_call(enum instr_optype optype, union operand op)
 {
     struct code c = {{0}};
 
@@ -510,7 +510,7 @@ static struct code call(enum instr_optype optype, union operand op)
         assert(is_64_bit_reg(op.reg.r));
         c.val[c.len++] = REX | w(op.reg);
         c.val[c.len++] = 0xFF;
-        c.val[c.len++] = 0xD0 | reg(op.reg);
+        c.val[c.len++] = 0xD0 | regi(op.reg);
     }
 
     return c;
@@ -537,7 +537,7 @@ static struct code cmp(
             break;
         }
         c.val[c.len++] = 0x80 | w(b.reg) | (is_byte_imm(a.imm) << 1);
-        c.val[c.len++] = 0xF8 | reg(b.reg);
+        c.val[c.len++] = 0xF8 | regi(b.reg);
         if (is_byte_imm(a.imm)) {
             /* Sign extend bit is set. */
             c.val[c.len++] = a.imm.d.byte;
@@ -553,7 +553,7 @@ static struct code cmp(
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
         c.val[c.len++] = 0x38 | w(a.reg);
-        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        c.val[c.len++] = 0xC0 | regi(a.reg) << 3 | regi(b.reg);
         break;
     case OPT_IMM_MEM:
         assert(!mrex(b.mem.addr));
@@ -573,14 +573,14 @@ static struct code cmp(
             c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
         }
         c.val[c.len++] = 0x3A | w(b.reg);
-        encode_addr(&c, reg(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
         break;
     case OPT_REG_MEM:
         if (mrex(b.mem.addr) || rrex(a.reg)) {
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | mrex(b.mem.addr);
         }
         c.val[c.len++] = 0x38 | w(a.reg);
-        encode_addr(&c, reg(a.reg), b.mem.addr, 0, 0);
+        encode_addr(&c, regi(a.reg), b.mem.addr, 0, 0);
         break;
     default: assert(0);
     }
@@ -646,7 +646,7 @@ static struct code lea(
 
     c.val[c.len++] = REX | W(b.reg) | R(b.reg);
     c.val[c.len++] = 0x8D;
-    encode_addr(&c, reg(b.reg), a.mem.addr, 0, 1);
+    encode_addr(&c, regi(b.reg), a.mem.addr, 0, 1);
     return c;
 }
 
@@ -676,11 +676,11 @@ static struct code setcc(
 
     c.val[c.len++] = 0x0F;
     c.val[c.len++] = 0x90 | cond;
-    c.val[c.len++] = 0xC0 | reg(op.reg);
+    c.val[c.len++] = 0xC0 | regi(op.reg);
     return c;
 }
 
-static struct code test(
+static struct code encode_test(
     enum instr_optype optype,
     union operand a,
     union operand b)
@@ -692,11 +692,11 @@ static struct code test(
         c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
     }
     c.val[c.len++] = 0x84 | w(a.reg);
-    c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+    c.val[c.len++] = 0xC0 | regi(a.reg) << 3 | regi(b.reg);
     return c;
 }
 
-static struct code not(enum instr_optype optype, union operand op)
+static struct code encode_not(enum instr_optype optype, union operand op)
 {
     struct code c = {{0}};
     assert(optype == OPT_REG);
@@ -704,11 +704,11 @@ static struct code not(enum instr_optype optype, union operand op)
     if (is_64_bit_reg(op.reg.r) || op.reg.w > 4)
         c.val[c.len++] = REX | W(op.reg) | B(op.reg);
     c.val[c.len++] = 0xF6 | w(op.reg);
-    c.val[c.len++] = 0xD0 | reg(op.reg);
+    c.val[c.len++] = 0xD0 | regi(op.reg);
     return c;
 }
 
-static struct code mul(enum instr_optype optype, union operand op)
+static struct code encode_mul(enum instr_optype optype, union operand op)
 {
     struct code c = {{0}};
 
@@ -716,7 +716,7 @@ static struct code mul(enum instr_optype optype, union operand op)
         if (is_64_bit_reg(op.reg.r) || op.reg.w > 4)
             c.val[c.len++] = REX | W(op.reg) | B(op.reg);
         c.val[c.len++] = 0xF6 | w(op.reg);
-        c.val[c.len++] = 0xE0 | reg(op.reg);
+        c.val[c.len++] = 0xE0 | regi(op.reg);
     } else {
         assert(optype == OPT_MEM);
         if (op.mem.w > 4) {
@@ -738,7 +738,7 @@ static struct code encode_div(enum instr_optype optype, union operand op)
             c.val[c.len++] = REX | W(op.reg) | B(op.reg);
         }
         c.val[c.len++] = 0xF6 | w(op.reg);
-        c.val[c.len++] = 0xF0 | reg(op.reg);
+        c.val[c.len++] = 0xF0 | regi(op.reg);
     } else {
         assert(optype == OPT_MEM);
         if (op.mem.w > 4) {
@@ -758,7 +758,7 @@ static struct code encode_signed_div(enum instr_optype optype, union operand op)
     if (optype == OPT_REG) {
         c.val[c.len++] = REX | W(op.reg) | B(op.reg);
         c.val[c.len++] = 0xF6 | w(op.reg);
-        c.val[c.len++] = 0xF8 | reg(op.reg);
+        c.val[c.len++] = 0xF8 | regi(op.reg);
     } else {
         assert(optype == OPT_MEM);
         c.val[c.len++] = REX | W(op.mem) | is_64_bit_reg(op.mem.addr.base);
@@ -789,7 +789,7 @@ static struct code encode_bitwise(
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
         c.val[c.len++] = opcode | w(a.reg);
-        c.val[c.len++] = 0xC0 | reg(a.reg) << 3 | reg(b.reg);
+        c.val[c.len++] = 0xC0 | regi(a.reg) << 3 | regi(b.reg);
         break;
     case OPT_IMM_REG:
         assert(a.imm.w == b.reg.w);
@@ -804,7 +804,7 @@ static struct code encode_bitwise(
                 c.val[c.len++] = REX | B(b.reg);
             }
             c.val[c.len++] = 0x80 | s << 1 | w(a.imm);
-            c.val[c.len++] = (opcode + 0xC0) | reg(b.reg);
+            c.val[c.len++] = (opcode + 0xC0) | regi(b.reg);
             if (is_byte_imm(a.imm)) {
                 c.val[c.len++] = a.imm.d.byte;
             } else {
@@ -838,7 +838,7 @@ static struct code encode_shift(
             c.val[c.len++] = REX | W(b.reg) | B(b.reg);
         }
         c.val[c.len++] = 0xD2 | w(b.reg);
-        c.val[c.len++] = (opcode + 0xE0) | reg(b.reg);
+        c.val[c.len++] = (opcode + 0xE0) | regi(b.reg);
     } else {
         assert(optype == OPT_IMM_REG);
         assert(a.imm.type == IMM_INT);
@@ -848,10 +848,10 @@ static struct code encode_shift(
         }
         if (a.imm.d.byte == 1) {
             c.val[c.len++] = 0xD0 | w(b.reg);
-            c.val[c.len++] = (opcode + 0xE0) | reg(b.reg);
+            c.val[c.len++] = (opcode + 0xE0) | regi(b.reg);
         } else {
             c.val[c.len++] = 0xC0 | w(b.reg);
-            c.val[c.len++] = (opcode + 0xE0) | reg(b.reg);
+            c.val[c.len++] = (opcode + 0xE0) | regi(b.reg);
             c.val[c.len++] = a.imm.d.byte;
         }
     }
@@ -885,7 +885,7 @@ static struct code sse_mov(
     case OPT_REG_REG:
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = 0x11;
-        c.val[c.len++] = 0xC0 | (reg(a.reg) << 3) | reg(b.reg);
+        c.val[c.len++] = 0xC0 | (regi(a.reg) << 3) | regi(b.reg);
         break;
     case OPT_MEM_REG:
         if (rrex(b.reg) || mrex(a.mem.addr)) {
@@ -893,7 +893,7 @@ static struct code sse_mov(
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = 0x10;
-        encode_addr(&c, reg(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
         break;
     case OPT_REG_MEM:
         if (rrex(a.reg) || mrex(b.mem.addr)) {
@@ -901,7 +901,7 @@ static struct code sse_mov(
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = 0x11;
-        encode_addr(&c, reg(a.reg), b.mem.addr, 0, 0);
+        encode_addr(&c, regi(a.reg), b.mem.addr, 0, 0);
         break;
     default: assert(0);
     }
@@ -919,7 +919,7 @@ static struct code ucomiss(
 
     c.val[c.len++] = PREFIX_SSE;
     c.val[c.len++] = 0x2E;
-    c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
+    c.val[c.len++] = 0xC0 | (regi(b.reg) << 3) | regi(a.reg);
     return c;
 }
 
@@ -934,7 +934,7 @@ static struct code ucomisd(
     c.val[c.len++] = 0x66;
     c.val[c.len++] = PREFIX_SSE;
     c.val[c.len++] = 0x2E;
-    c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
+    c.val[c.len++] = 0xC0 | (regi(b.reg) << 3) | regi(a.reg);
     return c;
 }
 
@@ -958,7 +958,7 @@ static struct code sse_enc(
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = opcode2;
-        encode_addr(&c, reg(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
     } else {
         assert(optype == OPT_REG_REG);
         if (rrex(a.reg) || rrex(b.reg)) {
@@ -966,7 +966,7 @@ static struct code sse_enc(
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = opcode2;
-        c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
+        c.val[c.len++] = 0xC0 | (regi(b.reg) << 3) | regi(a.reg);
     }
 
     return c;
@@ -997,7 +997,7 @@ static struct code pxor(
     c.val[c.len++] = 0x66;
     c.val[c.len++] = 0x0F;
     c.val[c.len++] = 0xEF;
-    c.val[c.len++] = 0xC0 | (reg(b.reg) << 3) | reg(a.reg);
+    c.val[c.len++] = 0xC0 | (regi(b.reg) << 3) | regi(a.reg);
     return c;
 }
 
@@ -1139,7 +1139,7 @@ struct code encode(struct instruction instr)
     switch (instr.opcode) {
     default: assert(0);
     case INSTR_ADD:
-        return add(instr.optype, instr.source, instr.dest);
+        return encode_add(instr.optype, instr.source, instr.dest);
     case INSTR_ADDSD:
         return sse_enc(instr.optype, 0xF2, 0x58, instr.source, instr.dest, 0);
     case INSTR_ADDSS:
@@ -1161,9 +1161,9 @@ struct code encode(struct instruction instr)
     case INSTR_CQO:
         return cqo();
     case INSTR_NOT:
-        return not(instr.optype, instr.source);
+        return encode_not(instr.optype, instr.source);
     case INSTR_MUL:
-        return mul(instr.optype, instr.source);
+        return encode_mul(instr.optype, instr.source);
     case INSTR_MULSD:
         return sse_enc(instr.optype, 0xF2, 0x59, instr.source, instr.dest, 0);
     case INSTR_MULSS:
@@ -1187,7 +1187,7 @@ struct code encode(struct instruction instr)
     case INSTR_SAR:
         return encode_shift(instr.optype, instr.source, instr.dest, 0x18);
     case INSTR_CALL:
-        return call(instr.optype, instr.source);
+        return encode_call(instr.optype, instr.source);
     case INSTR_CMP:
         return cmp(instr.optype, instr.source, instr.dest);
     case INSTR_IDIV:
@@ -1205,13 +1205,13 @@ struct code encode(struct instruction instr)
     case INSTR_MOVSS:
         return sse_mov(instr.optype, 0xF3, instr.source, instr.dest);
     case INSTR_PUSH:
-        return push(instr.optype, instr.source);
+        return encode_push(instr.optype, instr.source);
     case INSTR_POP:
-        return pop(instr.optype, instr.source);
+        return encode_pop(instr.optype, instr.source);
     case INSTR_PXOR:
         return pxor(instr.optype, instr.source, instr.dest);
     case INSTR_SUB:
-        return sub(instr.optype, instr.source, instr.dest);
+        return encode_sub(instr.optype, instr.source, instr.dest);
     case INSTR_SUBSD:
         return sse_enc(instr.optype, 0xF2, 0x5C, instr.source, instr.dest, 0);
     case INSTR_SUBSS:
@@ -1282,7 +1282,7 @@ struct code encode(struct instruction instr)
     case INSTR_SETNP:
         return setcc(instr.optype, TEST_NP, instr.source);
     case INSTR_TEST:
-        return test(instr.optype, instr.source, instr.dest);
+        return encode_test(instr.optype, instr.source, instr.dest);
     case INSTR_FLD:
         return x87_encode_transfer(0x00, instr.source);
     case INSTR_FILD:

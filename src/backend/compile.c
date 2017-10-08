@@ -156,13 +156,6 @@ static struct registr reg(enum reg r, int w)
     return v;
 }
 
-static int is_string(struct var val)
-{
-    return
-        val.kind == IMMEDIATE && val.symbol &&
-        val.symbol->symtype == SYM_STRING_VALUE;
-}
-
 static int displacement_from_offset(size_t offset)
 {
     if (offset > INT_MAX) {

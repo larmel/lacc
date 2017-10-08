@@ -120,7 +120,7 @@ static void *macro_hash_add(void *ref)
     return macro;
 }
 
-static void cleanup(void)
+static void deallocate_macro_tables(void)
 {
     int i;
     TokenArray list;
@@ -139,7 +139,7 @@ static void cleanup(void)
     array_clear(&stacks);
 }
 
-static void ensure_initialized(void)
+static void macro_ensure_initialized(void)
 {
     static int done;
 
@@ -150,7 +150,7 @@ static void ensure_initialized(void)
             macro_hash_key,
             macro_hash_add,
             macro_hash_del);
-        atexit(cleanup);
+        atexit(deallocate_macro_tables);
         done = 1;
     }
 }
@@ -177,11 +177,11 @@ static struct token get__file__token(void)
  * Replace __FILE__ with file name, and __LINE__ with line number, by
  * mutating the replacement list on the fly.
  */
-const struct macro *definition(String name)
+const struct macro *macro_definition(String name)
 {
     struct macro *ref;
 
-    ensure_initialized();
+    macro_ensure_initialized();
     ref = hash_lookup(&macro_hash_table, name);
     if (ref) {
         if (ref->is__file__) {
@@ -201,7 +201,7 @@ void define(struct macro macro)
         builtin__file__ = SHORT_STRING_INIT("__FILE__"),
         builtin__line__ = SHORT_STRING_INIT("__LINE__");
 
-    ensure_initialized();
+    macro_ensure_initialized();
     new_macro_added = 0;
     ref = hash_insert(&macro_hash_table, &macro);
     if (macrocmp(ref, &macro)) {
@@ -219,7 +219,7 @@ void define(struct macro macro)
 
 void undef(String name)
 {
-    ensure_initialized();
+    macro_ensure_initialized();
     hash_remove(&macro_hash_table, name);
 }
 
@@ -558,7 +558,7 @@ static int expand_line(ExpandStack *scope, TokenArray *list)
             continue;
         }
 
-        def = definition(t.d.string);
+        def = macro_definition(t.d.string);
         if (!def)
             continue;
 
@@ -685,7 +685,7 @@ struct token stringify(const TokenArray *list)
     return str;
 }
 
-static TokenArray parse(char *str)
+static TokenArray parse_string(char *str)
 {
     char *endptr;
     struct token param = {PARAM};
@@ -710,7 +710,7 @@ static void register_macro(const char *key, char *value)
     struct macro macro = {{{0}}, OBJECT_LIKE};
 
     macro.name = str_init(key);
-    macro.replacement = parse(value);
+    macro.replacement = parse_string(value);
     define(macro);
 }
 

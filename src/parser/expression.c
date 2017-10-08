@@ -148,7 +148,7 @@ typedef array_of(struct expression) ExprArray;
 static array_of(ExprArray *) args;
 static unsigned max_depth;
 
-static void cleanup(void)
+static void deallocate_argument_lists(void)
 {
     int i;
     ExprArray *a;
@@ -169,7 +169,7 @@ static ExprArray *push_argument_list(void)
     ExprArray *list;
 
     if (!init) {
-        atexit(cleanup);
+        atexit(deallocate_argument_lists);
         init = 1;
     }
 

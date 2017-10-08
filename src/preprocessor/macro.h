@@ -54,7 +54,7 @@ void define(struct macro macro);
 void undef(String name);
 
 /* Look up definition of identifier, or NULL if not defined. */
-const struct macro *definition(String name);
+const struct macro *macro_definition(String name);
 
 /*
  * Expand a list of tokens, replacing any macro definitions. Mutates

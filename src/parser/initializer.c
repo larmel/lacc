@@ -296,13 +296,6 @@ static int try_parse_index(size_t *index)
     return 0;
 }
 
-static int is_string(struct expression expr)
-{
-    return is_identity(expr)
-        && expr.l.kind == IMMEDIATE && expr.l.symbol
-        && expr.l.symbol->symtype == SYM_STRING_VALUE;
-}
-
 /*
  * Initialize array types with brace-enclosed values, or string literal.
  *
@@ -348,7 +341,7 @@ static struct block *initialize_array(
      */
     if (is_char(elem) && peek().token != '[') {
         block = read_initializer_element(def, block, target);
-        if (is_string(block->expr)) {
+        if (is_identity(block->expr) && is_string(block->expr.l)) {
             target = eval_assign(def, values, target, block->expr);
         } else {
             target.type = elem;
