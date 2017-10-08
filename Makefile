@@ -81,6 +81,13 @@ creduce-check: bin/lacc
 sqlite-test: bin/lacc
 	./sqlite.sh "bin/lacc -std=c89" "$(CC) -std=c89"
 
+bin/amalgamation.c: amalgamation.py
+	@mkdir -p $(dir $@)
+	python amalgamation.py
+
+bin/amalgamation: bin/amalgamation.c
+	$(CC) $(CFLAGS) -O3 -D'LACC_STDLIB_PATH="$(INSTALL_LIB_PATH)"' -DNDEBUG $^ -o $@
+
 clean:
 	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s

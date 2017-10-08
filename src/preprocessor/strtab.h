@@ -1,7 +1,7 @@
 #ifndef STRTAB_H
 #define STRTAB_H
 
-#include "lacc/string.h"
+#include <lacc/string.h>
 
 #include <stddef.h>
 
