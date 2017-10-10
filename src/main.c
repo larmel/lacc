@@ -1,4 +1,3 @@
-#define _XOPEN_SOURCE 500
 #include "backend/compile.h"
 #include "optimizer/optimize.h"
 #include "parser/parse.h"
@@ -91,12 +90,17 @@ static void define_macro(const char *arg)
     static char line[1024];
     char *sep;
 
+    if (strlen(arg) + 20 > sizeof(line)) {
+        fprintf(stderr, "Macro definition exceeds length limit.\n");
+        exit(1);
+    }
+
     sep = strchr(arg, '=');
     if (sep) {
-        snprintf(line, sizeof(line), "#define %s", arg);
+        sprintf(line, "#define %s", arg);
         *(line + 8 + (sep - arg)) = ' ';
     } else {
-        snprintf(line, sizeof(line), "#define %s 1", arg);
+        sprintf(line, "#define %s 1", arg);
     }
 
     inject_line(line);

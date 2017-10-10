@@ -1,4 +1,3 @@
-#define _XOPEN_SOURCE 500 /* snprintf */
 #include "parser/typetree.h"
 #include "preprocessor/input.h"
 #include <lacc/context.h>
@@ -6,15 +5,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#define PRINT_BUF_SIZE 2048
-
 struct context context = {0};
-
-/*
- * Static limits on output length, for simplicity. Store arguments and
- * substrings from format here temporarily.
- */
-static char message[PRINT_BUF_SIZE];
 
 /*
  * Custom implementation of printf, handling a restricted set of
@@ -29,56 +20,53 @@ static char message[PRINT_BUF_SIZE];
 static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
 {
     int n = 0;
-    const char *cursor = format;
 
-    if (!format)
+    if (!format) {
         return n;
-
-    while (*format) {
-        if (*format++ != '%' || *format == '%')
-            continue;
-
-        /* Print format string up to this point. */
-        snprintf(message, format - cursor, "%s", cursor);
-        n += fputs(message, stream);
-
-        /* Print format. */
-        switch (*format++) {
-        case 's':
-            n += fputs(va_arg(ap, char *), stream);
-            break;
-        case 'c':
-            n += fprintf(stream, "%c", va_arg(ap, int));
-            break;
-        case 'd':
-            n += fprintf(stream, "%d", va_arg(ap, int));
-            break;
-        case 'l':
-            switch (*format++) {
-            case 'u':
-                n += fprintf(stream, "%lu", va_arg(ap, unsigned long));
-                break;
-            case 'd':
-                n += fprintf(stream, "%ld", va_arg(ap, long));
-                break;
-            default:
-                format -= 2;
-            }
-            break;
-        case 't':
-            n += fprinttype(stream, va_arg(ap, Type), NULL);
-            break;
-        default:
-            format--;
-            break;
-        }
-
-        /* Start of un-printed format string. */
-        cursor = format;
     }
 
-    /* Print rest of format string, which contained no formatters. */
-    n += fputs(cursor, stream);
+    while (*format) {
+        if (*format != '%') {
+            putc(*format, stream);
+            format++;
+            n++;
+        } else {
+            switch (format[1]) {
+            case 's':
+                n += fputs(va_arg(ap, char *), stream);
+                break;
+            case 'c':
+                n += fprintf(stream, "%c", va_arg(ap, int));
+                break;
+            case 'd':
+                n += fprintf(stream, "%d", va_arg(ap, int));
+                break;
+            case 'l':
+                switch (*format++) {
+                case 'u':
+                    n += fprintf(stream, "%lu", va_arg(ap, unsigned long));
+                    break;
+                case 'd':
+                    n += fprintf(stream, "%ld", va_arg(ap, long));
+                    break;
+                default:
+                    format -= 2;
+                }
+                break;
+            case 't':
+                n += fprinttype(stream, va_arg(ap, Type), NULL);
+                break;
+            default:
+                putc(*format, stream);
+                putc(format[1], stream);
+                n++;
+                break;
+            }
+
+            format += 2;
+        }
+    }
+
     return n;
 }
 

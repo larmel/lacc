@@ -1,4 +1,3 @@
-#define _XOPEN_SOURCE 500 /* snprintf */
 #include "symtab.h"
 #include "typetree.h"
 #include <lacc/context.h>
@@ -210,9 +209,17 @@ struct symbol *sym_lookup(struct namespace *ns, String name)
 const char *sym_name(const struct symbol *sym)
 {
     static char name[128];
+    const char *raw;
 
-    if (!sym->n)
-        return str_raw(sym->name);
+    raw = str_raw(sym->name);
+    if (!sym->n) {
+        return raw;
+    }
+
+    if (strlen(raw) > 100) {
+        error("Symbol name %s exceeds limit.", raw);
+        exit(1);
+    }
 
     /*
      * Temporary variables and string literals are named '.t' and '.LC',
@@ -220,10 +227,11 @@ const char *sym_name(const struct symbol *sym)
      * between. For other variables, which are disambiguated statics,
      * insert a period between the name and the number.
      */
-    if (str_raw(sym->name)[0] == '.')
-        snprintf(name, sizeof(name), "%s%d", str_raw(sym->name), sym->n);
-    else
-        snprintf(name, sizeof(name), "%s.%d", str_raw(sym->name), sym->n);
+    if (str_raw(sym->name)[0] == '.') {
+        sprintf(name, "%s%d", raw, sym->n);
+    } else {
+        sprintf(name, "%s.%d", raw, sym->n);
+    }
 
     return name;
 }

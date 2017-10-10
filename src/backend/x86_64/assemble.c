@@ -1,4 +1,3 @@
-#define _XOPEN_SOURCE 500 /* snprintf */
 #include "abi.h"
 #include "assemble.h"
 
@@ -92,30 +91,27 @@ static const char *address(struct address addr)
     static char buf[MAX_OPERAND_TEXT_LENGTH];
 
     struct registr reg = {0, 8};
-    int w = 0,
-        s = sizeof(buf);
+    int w = 0;
 
     if (addr.sym) {
         if (addr.disp != 0) {
-            w += snprintf(buf + w, s - w, "%s%s%d",
-                sym_name(addr.sym),
-                (addr.disp > 0) ? "+" : "",
-                addr.disp);
+            w += sprintf(buf, "%s%s%d",
+                sym_name(addr.sym), (addr.disp > 0) ? "+" : "", addr.disp);
         } else {
-            w += snprintf(buf + w, s - w, "%s", sym_name(addr.sym));
+            w += sprintf(buf, "%s", sym_name(addr.sym));
         }
     } else if (addr.disp != 0) {
-        w += snprintf(buf + w, s - w, "%d", addr.disp);
+        w += sprintf(buf, "%d", addr.disp);
     }
 
     if (addr.base) {
         reg.r = addr.base;
-        w += snprintf(buf + w, s - w, "(%s", mnemonic(reg));
+        w += sprintf(buf + w, "(%s", mnemonic(reg));
         if (addr.offset) {
             reg.r = addr.offset;
-            w += snprintf(buf + w, s - w, ",%s,%d", mnemonic(reg), addr.mult);
+            w += sprintf(buf + w, ",%s,%d", mnemonic(reg), addr.mult);
         }
-        snprintf(buf + w, s - w, ")");
+        sprintf(buf + w, ")");
     }
 
     return buf;
@@ -130,26 +126,25 @@ static const char *immediate(struct immediate imm, int *size)
     case IMM_INT:
         *size = imm.w;
         if (imm.w < 8) {
-            snprintf(buf, sizeof(buf), "$%d",
+            sprintf(buf, "$%d",
                 (imm.w == 1) ? imm.d.byte :
                 (imm.w == 2) ? imm.d.word : imm.d.dword);
         } else {
-            snprintf(buf, sizeof(buf), "$%ld", imm.d.qword);
+            sprintf(buf, "$%ld", imm.d.qword);
         }
         break;
     case IMM_ADDR:
         assert(imm.d.addr.sym);
         if (imm.d.addr.sym->symtype == SYM_STRING_VALUE) {
             if (imm.d.addr.disp != 0) {
-                snprintf(buf, sizeof(buf), "$%s%s%d",
+                sprintf(buf, "$%s%s%d",
                     sym_name(imm.d.addr.sym),
-                    (imm.d.addr.disp > 0) ? "+" : "",
-                    imm.d.addr.disp);
+                    (imm.d.addr.disp > 0) ? "+" : "", imm.d.addr.disp);
             } else {
-                snprintf(buf, sizeof(buf), "$%s", sym_name(imm.d.addr.sym));
+                sprintf(buf, "$%s", sym_name(imm.d.addr.sym));
             }
         } else {
-            snprintf(buf, sizeof(buf), "%s", sym_name(imm.d.addr.sym));
+            sprintf(buf, "%s", sym_name(imm.d.addr.sym));
         }
         break;
     case IMM_STRING:

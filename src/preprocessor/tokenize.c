@@ -1,4 +1,3 @@
-#define _XOPEN_SOURCE 500 /* snprintf */
 #include "strtab.h"
 #include "tokenize.h"
 #include <lacc/context.h>

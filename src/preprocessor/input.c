@@ -1,4 +1,3 @@
-#define _XOPEN_SOURCE 600 /* isblank */
 #include "directive.h"
 #include "input.h"
 #include "strtab.h"
@@ -519,8 +518,10 @@ static char *initial_preprocess_line(struct source *fn)
 
 static int is_directive(const char *line)
 {
-    while (isblank(*line))
+    while (*line == ' ' || *line == '\t') {
         line++;
+    }
+
     return *line == '#';
 }
 
