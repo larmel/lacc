@@ -532,6 +532,7 @@ void elf_init(FILE *output, const char *file)
     };
 
     Elf64_Sym entry = {0};
+
     object_file_output = output;
     elf_symtab_add(entry);
     if (file) {
@@ -656,8 +657,10 @@ int elf_flush(void)
 {
     int i;
 
-    for (i = 1; i < SHNUM; ++i)
+    assert(object_file_output);
+    for (i = 1; i < SHNUM; ++i) {
         shdr[i].sh_name = elf_strtab_add(SHID_SHSTRTAB, shname[i]);
+    }
 
     /* Write remaining data to section buffers. */
     flush_symtab_globals();

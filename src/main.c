@@ -63,6 +63,10 @@ static void flag(const char *arg)
 static void open_output_handle(const char *file)
 {
     output = fopen(file, "w");
+    if (output == NULL) {
+        fprintf(stderr, "Could not open output file '%s'.\n", file);
+        exit(1);
+    }
 }
 
 static void set_c_std(const char *std)
