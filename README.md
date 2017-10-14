@@ -203,41 +203,39 @@ Performance
 -----------
 Some effort has been put into making the compiler itself fast (although the generated code is still very much unoptimized).
 Serving as both a performance benchmark and correctness test, we use the [sqlite](https://sqlite.org/download.html) database engine.
-The source code is distributed as a single 7 MB large C file spanning almost 200 K lines (including comments and whitespace), which is perfect for stress testing the compiler.
+The source code is distributed as a single ~7 MB large C file spanning more than 200 K lines (including comments and whitespace), which is perfect for stress testing the compiler.
 
-The following experiments were run on an i7 4770K, compiling version 3.15.2 of sqlite3. Measurements are made from compiling to object code (-c).
+The following experiments were run on a laptop with an i5-7300U CPU, compiling version 3.20.1 of sqlite3. Measurements are made from compiling to object code (-c).
 
 ### Compilation speed
 
 It takes around 200 ms to compile the file with lacc, but rather than time we look at a more accurate sampling of CPU cycles and instructions executed compared to other compilers.
 Hardware performance counter data is collected with `perf stat`, and memory allocations with `valgrind --trace-children=yes`.
-Only counting contributions from the compiler itself (`cc1` executable) while running GCC and clang.
-The numbers for lacc is from an optimized build produced by GCC (-O3).
+Only counting contributions from the compiler itself (`cc1` executable) while running GCC.
+Results for clang is missing because it for some reason crashes under valgrind.
+The numbers for lacc is from an optimized build produced by clang (-O3).
 
 | Compiler      | Cycles        | Instructions   | Allocations | Bytes allocated |
 |:--------------|--------------:|---------------:|------------:|----------------:|
-| lacc          |   684,568,056 |    907,765,923 |      61,197 |      30,744,139 |
-| tcc (0.9.26)  |   252,278,233 |    390,117,688 |     101,420 |      15,908,753 |
-| gcc (5.2.1)   | 8,937,133,232 | 13,614,565,033 |   1,584,001 |   1,816,848,537 |
-| clang (3.6.2) | 3,510,155,745 |  4,238,137,539 |     802,535 |     251,267,607 |
+| lacc          |   587,037,895 |    809,729,053 |      62,305 |      30,986,825 |
+| tcc (0.9.27)  |   231,212,025 |    389,553,813 |       2,795 |      22,969,302 |
+| gcc (6.3.0)   | 9,128,950,153 | 14,009,317,914 |   1,508,037 |     715,297,766 |
+| clang (4.0.0) | 4,037,958,570 |  5,538,918,744 |           - |               - |
 
-There is yet work to be done to get closer to [TCC](http://bellard.org/tcc/),
-which is probably one of the fastest C compilers available.
+There is yet work to be done to get closer to [TCC](http://bellard.org/tcc/), which is probably one of the fastest C compilers available.
 Still, we are within reasonable distance from TCC performance, and an order of magnitude better than GCC.
 
 ### Codegen quality
 
-One can compare the relative quality of code generated from lacc and GCC by looking at the number of dynamic instructions executed by the selfhost binary
-versus a binary built by GCC.
+We can compare the relative quality of code generated from lacc and GCC by looking at the number of dynamic instructions executed by the selfhost binary versus a binary built by GCC.
 In both cases we do not enable any optimizations, so this is a measure of code generated with -O0.
 
 | Compiler        | Cycles        | Instructions   |
 |:----------------|--------------:|---------------:|
-| lacc            | 1,026,916,607 |  1,468,839,572 |
-| lacc (selfhost) | 1,583,754,195 |  2,265,180,877 |
+| lacc            | 1,039,023,504 |  1,568,160,799 |
+| lacc (selfhost) | 1,545,791,224 |  2,279,713,970 |
 
-Around 60 % more instructions executed by the selfhost binary, showing that lacc
-generates more naive code than GCC.
+Around 50 % more instructions executed by the selfhost binary, showing that lacc generates more naive code than GCC.
 Improving the backend with more efficient instruction selection is a priority, so these numbers should get closer in the future.
 
 References
