@@ -340,9 +340,6 @@ Type type_create(enum type tt, ...)
 Type type_set_const(Type type)
 {
     if (type.is_pointer) {
-        if (type.is_pointer_const) {
-            error("Duplicate 'const' qualifier.");
-        }
         type.is_pointer_const = 1;
     } else {
         type.is_const = 1;
@@ -354,9 +351,6 @@ Type type_set_const(Type type)
 Type type_set_volatile(Type type)
 {
     if (type.is_pointer) {
-        if (type.is_pointer_volatile) {
-            error("Duplicate 'volatile' qualifier.");
-        }
         type.is_pointer_volatile = 1;
     } else {
         type.is_volatile = 1;
@@ -373,9 +367,6 @@ Type type_set_restrict(Type type)
     }
 
     if (type.is_pointer) {
-        if (type.is_pointer_restrict) {
-            error("Duplicate 'restrict' qualifier.");
-        }
         type.is_pointer_restrict = 1;
     } else {
         type.is_restrict = 1;
