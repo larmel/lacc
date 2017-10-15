@@ -208,6 +208,9 @@ static struct block *for_statement(
     struct definition *def,
     struct block *parent)
 {
+    int declared;
+    struct token tok;
+    const struct symbol *sym;
     struct block
         *top = cfg_block_init(def),
         *body = cfg_block_init(def),
@@ -220,13 +223,29 @@ static struct block *for_statement(
 
     set_break_target(old_break_target, next);
 
+    declared = 0;
     consume(FOR);
     consume('(');
-    if (peek().token != ';') {
+    switch ((tok = peek()).token) {
+    case IDENTIFIER:
+        sym = sym_lookup(&ns_ident, tok.d.string);
+        if (!sym || sym->symtype != SYM_TYPEDEF) {
+            parent = expression(def, parent);
+            consume(';');
+            break;
+        }
+    case FIRST(type_name):
+        declared = 1;
+        push_scope(&ns_ident);
+        parent = declaration(def, parent);
+        break;
+    default:
         parent = expression(def, parent);
+    case ';':
+        consume(';');
+        break;
     }
 
-    consume(';');
     if (peek().token != ';') {
         parent->jump[0] = top;
         top = expression(def, top);
@@ -268,6 +287,10 @@ static struct block *for_statement(
 
     restore_break_target(old_break_target);
     restore_continue_target(old_continue_target);
+    if (declared) {
+        pop_scope(&ns_ident);
+    }
+
     return next;
 }
 
