@@ -955,11 +955,13 @@ void set_array_length(Type type, size_t length)
 const struct member *find_type_member(Type type, String name, int *index)
 {
     int i;
+    struct typetree *t;
     const struct member *member;
 
     assert(is_struct_or_union(type) || is_function(type));
-    for (i = 0; i < nmembers(type); ++i) {
-        member = get_member(type, i);
+    t = get_typetree_handle(type.ref);
+    for (i = 0; i < array_len(&t->members); ++i) {
+        member = &array_get(&t->members, i);
         if (!str_cmp(name, member->name)) {
             if (index) {
                 *index = i;
