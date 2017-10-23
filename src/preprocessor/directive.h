@@ -14,7 +14,8 @@ extern struct token
     ident__elif,
     ident__endif,
     ident__error,
-    ident__pragma;
+    ident__pragma,
+    ident__Pragma;
 
 /*
  * Preprocess a line starting with a '#' directive. Borrows ownership of

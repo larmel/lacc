@@ -22,6 +22,7 @@ struct token
     ident__error = IDENT("error"),
     ident__line = IDENT("line"),
     ident__pragma = IDENT("pragma"),
+    ident__Pragma = IDENT("_" "Pragma"),
     ident__VA_ARGS__ = IDENT("__VA_ARGS__");
 
 enum state {
