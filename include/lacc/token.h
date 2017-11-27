@@ -46,10 +46,10 @@ enum token_type {
     NOT = '!',
     VOLATILE,
     HASH = '#',
-    WHILE,
+    DOLLAR = '$',
     MODULO = '%',
     AND = '&',
-    RESTRICT,
+    WHILE,
 
     OPEN_PAREN = '(',
     CLOSE_PAREN = ')',
@@ -59,10 +59,11 @@ enum token_type {
     MINUS = '-',
     DOT = '.',
     SLASH = '/',
+    RESTRICT,
     ALIGNOF,
-    BOOL = ALIGNOF + 3,
+    BOOL,
 
-    STATIC_ASSERT = ALIGNOF + 8,
+    STATIC_ASSERT = BOOL + 6,
 
     COLON = ':',
     SEMICOLON = ';',
@@ -70,7 +71,7 @@ enum token_type {
     ASSIGN = '=',
     GT = '>',
     QUESTION = '?',
-    DOTS,                   /* ... */
+    AMPERSAND = '@',
     LOGICAL_OR,             /* || */
     LOGICAL_AND,            /* && */
     LEQ,                    /* <= */
@@ -93,10 +94,13 @@ enum token_type {
     XOR_ASSIGN,             /* ^= */
     OR_ASSIGN,              /* |= */
     TOKEN_PASTE,            /* ## */
+    DOTS,                   /* ... */
 
     OPEN_BRACKET = '[',
+    BACKSLASH = '\\',
     CLOSE_BRACKET = ']',
     XOR = '^',
+    BACKTICK = '`',
     OPEN_CURLY = '{',
     OR = '|',
     CLOSE_CURLY = '}',

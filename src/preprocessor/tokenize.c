@@ -37,21 +37,21 @@ const struct token basic_token[] = {
             IDN(UNSIGNED, "unsigned"),  IDN(VOID, "void"),
 /* 0x20 */  IDN(INLINE, "inline"),      TOK(NOT, "!"),
             IDN(VOLATILE, "volatile"),  TOK(HASH, "#"),
-            IDN(WHILE, "while"),        TOK(MODULO, "%"),
-            TOK(AND, "&"),              TOK(RESTRICT, "restrict"),
+            TOK(DOLLAR, "$"),           TOK(MODULO, "%"),
+            TOK(AND, "&"),              IDN(WHILE, "while"),
 /* 0x28 */  TOK(OPEN_PAREN, "("),       TOK(CLOSE_PAREN, ")"),
             TOK(STAR, "*"),             TOK(PLUS, "+"),
             TOK(COMMA, ","),            TOK(MINUS, "-"),
             TOK(DOT, "."),              TOK(SLASH, "/"),
-/* 0x30 */  TOK(ALIGNOF, "_Alignof"),   {0},
-            {0},                        TOK(BOOL, "_Bool"),
+/* 0x30 */  TOK(RESTRICT, "restrict"),  TOK(ALIGNOF, "_Alignof"),
+            TOK(BOOL, "_Bool"),         {0},
             {0},                        {0},
             {0},                        {0},
 /* 0x38 */  IDN(STATIC_ASSERT, ""),     {0},
             TOK(COLON, ":"),            TOK(SEMICOLON, ";"),
             TOK(LT, "<"),               TOK(ASSIGN, "="),
             TOK(GT, ">"),               TOK(QUESTION, "?"),
-/* 0x40 */  TOK(DOTS, "..."),           TOK(LOGICAL_OR, "||"),
+/* 0x40 */  TOK(AMPERSAND, "@"),        TOK(LOGICAL_OR, "||"),
             TOK(LOGICAL_AND, "&&"),     TOK(LEQ, "<="),
             TOK(GEQ, ">="),             TOK(EQ, "=="),
             TOK(NEQ, "!="),             TOK(ARROW, "->"),
@@ -62,12 +62,12 @@ const struct token basic_token[] = {
 /* 0x50 */  TOK(MINUS_ASSIGN, "-="),    TOK(LSHIFT_ASSIGN, "<<="),
             TOK(RSHIFT_ASSIGN, ">>="),  TOK(AND_ASSIGN, "&="),
             TOK(XOR_ASSIGN, "^="),      TOK(OR_ASSIGN, "|="),
-            TOK(TOKEN_PASTE, "##"),     {0},
+            TOK(TOKEN_PASTE, "##"),     TOK(DOTS, "..."),
 /* 0x58 */  {0},                        {0},
             {0},                        TOK(OPEN_BRACKET, "["),
-            {0},                        TOK(CLOSE_BRACKET, "]"),
+            TOK(BACKSLASH, "\\"),       TOK(CLOSE_BRACKET, "]"),
             TOK(XOR, "^"),              {0},
-/* 0x60 */  {0},                        {0},
+/* 0x60 */  TOK(BACKTICK, "`"),         {0},
             {0},                        {0},
             {0},                        {0},
             {0},                        {0},
@@ -552,6 +552,7 @@ static struct token strtoident(char *in, char **endptr)
 static struct token strtoop(char *in, char **endptr)
 {
     char *start = in;
+    struct token t;
 
     switch (*in++) {
     case '*':
@@ -614,7 +615,13 @@ static struct token strtoop(char *in, char **endptr)
     }
 
     *endptr = start + 1;
-    return basic_token[(int) *start];
+    t = basic_token[(int) *start];
+    if (t.token == END) {
+        error("Unknown token '%c'", (int) *start);
+        exit(1);
+    }
+
+    return t;
 }
 
 static int skip_spaces(char *in, char **endptr)
