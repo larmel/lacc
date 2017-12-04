@@ -108,7 +108,8 @@ static Type get_type_handle(int ref)
     struct typetree *t;
 
     t = get_typetree_handle(ref);
-    if (t->type == T_POINTER) {
+    switch (t->type) {
+    case T_POINTER:
         if (t->next.is_pointer) {
             assert(0);
         } else {
@@ -123,12 +124,19 @@ static Type get_type_handle(int ref)
             type.is_pointer_volatile = t->is_volatile;
             type.is_pointer_restrict = t->is_restrict;
         }
-    } else {
+        break;
+    case T_FUNCTION:
+    case T_ARRAY:
+    case T_STRUCT:
+    case T_UNION:
+        type.ref = ref;
+    default:
         type.type = t->type;
         type.is_unsigned = t->is_unsigned;
         type.is_volatile = t->is_volatile;
         type.is_const = t->is_const;
         type.is_restrict = t->is_restrict;
+        break;
     }
 
     return type;
