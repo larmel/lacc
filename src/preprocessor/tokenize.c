@@ -278,78 +278,77 @@ struct token convert_preprocessing_number(struct token t)
 
 #define isoctal(c) ((c) >= '0' && (c) < '8')
 
-/*
- * Parse character escape code, including octal and hexadecimal number
- * literals. Unescaped characters are returned as-is. Invalid escape
- * sequences continues with an error, consuming only the backslash.
- */
 static char escpchar(char *in, char **endptr)
 {
     static char buf[4];
     long n;
     int i;
 
-    if (*in == '\\') {
-        *endptr = in + 2;
-        switch (in[1]) {
-        case 'a': return 0x7;
-        case 'b': return 0x8;
-        case 't': return 0x9;
-        case 'n': return 0xa;
-        case 'v': return 0xb;
-        case 'f': return 0xc;
-        case 'r': return 0xd;
-        case '\\': return '\\';
-        case '?': return '\?';
-        case '\'': return '\'';
-        case '\"': return '\"';
-        case 'x':
-            return (char) strtol(&in[2], endptr, 16);
-        case '0':
-            if (!isoctal(in[2])) {
-                return '\0';
-            }
-        case '1':
-        case '2':
-        case '3':
-        case '4':
-        case '5':
-        case '6':
-        case '7':
-            buf[0] = in[1];
-            for (i = 1; i < 3 && isoctal(in[1 + i]); ++i) {
-                buf[i] = in[1 + i];
-            }
-            buf[i] = '\0';
-            n = strtol(buf, endptr, 8);
-            *endptr = in + i + 1;
-            return (char) n;
-        default:
-            error("Invalid escape sequence '\\%c'.", in[1]);
-            break;
+    *endptr = in + 1;
+    switch (*in) {
+    case 'a': return '\a';
+    case 'b': return '\b';
+    case 't': return '\t';
+    case 'n': return '\n';
+    case 'v': return '\v';
+    case 'f': return '\f';
+    case 'r': return '\r';
+    case '?': return '\?';
+    case '\'': return '\'';
+    case '\"': return '\"';
+    case '\\': return '\\';
+    case 'x':
+        return (char) strtol(&in[1], endptr, 16);
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+        for (i = 0; i < 3 && isoctal(in[i]); ++i) {
+            buf[i] = in[i];
         }
+        buf[i] = '\0';
+        n = strtol(buf, endptr, 8);
+        *endptr = in + i;
+        return (char) n;
+    default:
+        error("Invalid escape sequence '\\%c'.", *in);
+        exit(1);
+    }
+}
+
+char read_char(char *in, char **endptr)
+{
+    char c;
+
+    if (*in == '\\') {
+        c = escpchar(in + 1, endptr);
+    } else {
+        c = *in;
+        *endptr = in + 1;
     }
 
-    *endptr = in + 1;
-    return *in;
+    return c;
 }
 
 /*
  * Parse character literals in the format 'a', '\xaf', '\0', '\077' etc,
  * starting from *in. The position of the character after the last '
- * character is stored in endptr. If no valid conversion can be made,
- * *endptr == in.
+ * character is stored in endptr.
  */
 static struct token strtochar(char *in, char **endptr)
 {
     struct token tok = {NUMBER};
     assert(*in == '\'');
 
-    in++;
     tok.type = basic_type__int;
-    tok.d.val.i = escpchar(in, endptr);
+    tok.d.val.i = read_char(in + 1, endptr);
     if (**endptr != '\'') {
         error("Invalid character constant %c.", *in);
+        exit(1);
     }
 
     *endptr += 1;
@@ -362,7 +361,7 @@ static struct token strtochar(char *in, char **endptr)
  * escaped quotes. The input buffer is destructively overwritten while
  * resolving escape sequences.
  */
-static struct token strtostr(char *in, char **endptr)
+struct token strtostr(char *in, char **endptr)
 {
     struct token string = {STRING};
     char *start, *str;
@@ -373,7 +372,7 @@ static struct token strtostr(char *in, char **endptr)
 
     if (*in++ == '"') {
         while (*in != '"' && *in) {
-            *str++ = escpchar(in, &in);
+            *str++ = read_char(in, &in);
             len++;
         }
 
@@ -384,7 +383,7 @@ static struct token strtostr(char *in, char **endptr)
     }
 
     if (*endptr == start) {
-        error("Invalid string literal.");
+        error("Invalid string literal %s.", start);
         exit(1);
     }
 
@@ -635,106 +634,20 @@ static int skip_spaces(char *in, char **endptr)
     return in - start;
 }
 
-static size_t write_escaped_char(int c, char *buf)
-{
-    int i = 0;
-
-    switch (c) {
-    case '\a':
-        buf[i++] = '\\';
-        buf[i++] = 'a';
-        break;
-    case '\b':
-        buf[i++] = '\\';
-        buf[i++] = 'b';
-        break;
-    case '\t':
-        buf[i++] = '\\';
-        buf[i++] = 't';
-        break;
-    case '\n':
-        buf[i++] = '\\';
-        buf[i++] = 'n';
-        break;
-    case '\v':
-        buf[i++] = '\\';
-        buf[i++] = 'v';
-        break;
-    case '\f':
-        buf[i++] = '\\';
-        buf[i++] = 'f';
-        break;
-    case '\r':
-        buf[i++] = '\\';
-        buf[i++] = 'r';
-        break;
-    case '\0':
-        buf[i++] = '\\';
-        buf[i++] = '0';
-        break;
-    case '\\':
-    case '\"':
-    case '\'':
-        buf[i++] = '\\';
-    default:
-        buf[i++] = c;
-        break;
-    }
-
-    return i;
-}
-
-static size_t write_escaped_string(String str, char *buf)
-{
-    const char *raw;
-    size_t i = 0, j = 0;
-
-    raw = str_raw(str);
-    buf[j++] = '\"';
-    for (i = 0; i < str.len; ++i) {
-        j += write_escaped_char(raw[i], buf + j);
-    }
-
-    buf[j++] = '\"';
-    return j;
-}
-
 String tokstr(struct token tok)
 {
-    static char buf[512];
-    char *str;
-    size_t len;
     assert(tok.token != PARAM);
-
     switch (tok.token) {
     case NUMBER:
-        len = 0;
         if (tok.is_char_literal) {
             assert(is_signed(tok.type));
-            buf[len++] = '\'';
-            len += write_escaped_char(tok.d.val.i, buf + len);
-            buf[len++] = '\'';
-        } else if (is_unsigned(tok.type)) {
-            len = sprintf(buf,
-                (size_of(tok.type) == 8) ? "%luul" : "%luu", tok.d.val.u);
-        } else if (is_signed(tok.type)) {
-            len = sprintf(buf,
-                (size_of(tok.type) == 8) ? "%ldl" : "%ld", tok.d.val.i);
-        } else if (is_float(tok.type)) {
-            len = sprintf(buf, "%ff", tok.d.val.f);
-        } else if (is_double(tok.type)) {
-            len = sprintf(buf, "%f", tok.d.val.d);
+            tok.d.string = str_char(tok.d.val.i);
         } else {
-            assert(is_long_double(tok.type));
-            len = sprintf(buf, "%Lf", tok.d.val.ld);
+            tok.d.string = str_number(tok.d.val, tok.type);
         }
-        tok.d.string = str_register(buf, len);
         break;
     case STRING:
-        str = malloc((tok.d.string.len * 2 + 2) * sizeof(*str));
-        len = write_escaped_string(tok.d.string, str);
-        tok.d.string = str_register(str, len);
-        free(str);
+        tok.d.string = str_decoded(tok.d.string);
     default: break;
     }
 

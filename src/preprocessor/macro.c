@@ -621,67 +621,107 @@ int tok_cmp(struct token a, struct token b)
 }
 
 /*
+ * Append string to buffer, always leaving room for two extra characters
+ * intended for ending quotes and null byte.
+ */
+static char *stringify_concat(
+    char *buf,
+    size_t *cap,
+    size_t *pos,
+    struct token tok,
+    int esc)
+{
+    String strval;
+    char *endptr;
+    size_t len;
+
+    assert(buf);
+    assert(cap);
+    assert(pos);
+    strval = tokstr(tok);
+
+    len = *pos + (tok.leading_whitespace != 0) + strval.len + 2;
+    if (len >= *cap) {
+        *cap = 2 * len;
+        buf = realloc(buf, *cap);
+    }
+
+    if (tok.leading_whitespace != 0) {
+        if (esc) {
+            error("Invalid escape sequence '\\ '.");
+            exit(1);
+        }
+
+        buf[(*pos)++] = ' ';
+    }
+
+    len = strval.len;
+    memcpy(buf + *pos, str_raw(strval), len + 1);
+    if (esc) {
+        assert(*pos > 0);
+        buf[*pos - 1] = read_char(buf + *pos - 1, &endptr);
+        len = strval.len - (endptr - (buf + *pos));
+        memmove(buf + *pos, endptr, len);
+    }
+
+    *pos += len;
+    assert(*cap >= *pos + 2);
+    return buf;
+}
+
+/*
  * Convert list of tokens to a single STRING token.
  *
  * - All leading and trailing whitespace in text being stringified is
  *   ignored.
  * - Any sequence of whitespace in the middle of the text is converted
  *   to a single space in the stringified result.
- * - Quotes and special characters in STRING tokens are escaped.
+ * - Resolve escape sequence when stringifying backslash punctuator.
  */
 struct token stringify(const TokenArray *list)
 {
-    int i;
-    struct token str = {0}, tok;
-    String strval;
+    int i, esc;
+    struct token str = {STRING}, tok;
     char *buf;
-    size_t cap, len, ptr;
+    size_t cap, ptr;
 
     if (!array_len(list)) {
         str.d.string = str_init("");
     } else if (array_len(list) == 1) {
         tok = array_get(list, 0);
+        if (tok.token == '\\') {
+            error("Invalid string literal ending with '\\'.");
+            exit(1);
+        }
         str.d.string = tokstr(tok);
     } else {
-        /* Estimate 7 characters per token. */
-        cap = array_len(list) * 7 + 1;
+        cap = array_len(list) * 8;
         buf = malloc(cap);
-        len = ptr = 0;
-        buf[0] = '\0';
-
-        for (i = 0; i < array_len(list); ++i) {
+        ptr = 0;
+        for (i = 0, esc = 0; i < array_len(list); ++i) {
             tok = array_get(list, i);
-            assert(tok.token != END);
-            /*
-             * Do not include trailing space of line. This case hits
-             * when producing message for #error directives.
-             */
             if (tok.token == NEWLINE) {
                 assert(i == array_len(list) - 1);
-                break;
+            } else {
+                assert(tok.token != END);
+                if (i == 0) {
+                    tok.leading_whitespace = 0;
+                }
+
+                buf = stringify_concat(buf, &cap, &ptr, tok, esc);
+                esc = !esc && (tok.token == '\\');
             }
-            /*
-             * Reduce to a single space, and only insert between other
-             * tokens in the list.
-             */
-            strval = tokstr(tok);
-            len += strval.len + (tok.leading_whitespace && i);
-            if (len >= cap) {
-                cap = len + array_len(list) + 1;
-                buf = realloc(buf, cap);
-            }
-            if (tok.leading_whitespace && i) {
-                buf[ptr++] = ' ';
-            }
-            memcpy(buf + ptr, str_raw(strval), strval.len);
-            ptr += strval.len;
         }
 
-        str.d.string = str_register(buf, len);
+        if (esc) {
+            error("Invalid string literal ending with '\\'.");
+            exit(1);
+        }
+
+        str.d.string = str_register(buf, ptr);
         free(buf);
     }
 
-    str.token = STRING;
     return str;
 }
 

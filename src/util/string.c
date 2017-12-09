@@ -3,8 +3,9 @@
 #include <ctype.h>
 #include <string.h>
 
-static int printchar(FILE *stream, char c)
+static int printchar(FILE *stream, char ch)
 {
+    int c = (unsigned char) ch;
     if (isprint(c) && c != '"' && c != '\\') {
         putc(c, stream);
         return 1;
@@ -23,10 +24,10 @@ static int printchar(FILE *stream, char c)
         return fprintf(stream, "\\r");
     case '\\':
         return fprintf(stream, "\\\\");
-    case '"':
+    case '\"':
         return fprintf(stream, "\\\"");
     default:
-        return fprintf(stream, "\\0%02o", c);
+        return fprintf(stream, "\\%03o", c);
     }
 }
 
@@ -36,12 +37,12 @@ int fprintstr(FILE *stream, String str)
     const char *raw;
 
     raw = str_raw(str);
-    putc('"', stream);
+    putc('\"', stream);
     for (n = 0, i = 0; i < str.len; ++i) {
         n += printchar(stream, raw[i]);
     }
 
-    putc('"', stream);
+    putc('\"', stream);
     return n + 2;
 }
 

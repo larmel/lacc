@@ -2,6 +2,7 @@
 #include <lacc/hash.h>
 
 #include <assert.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -94,4 +95,138 @@ String str_cat(String a, String b)
     memcpy(catbuf, str_raw(a), a.len);
     memcpy(catbuf + a.len, str_raw(b), b.len);
     return str_register(catbuf, len);
+}
+
+static int is_printable(int c)
+{
+    unsigned char u = (unsigned char) c;
+    return u == c && isprint(u) && c != '"' && c != '\\' && c != '\'';
+}
+
+/*
+ * Give an upper bound on how many characters is necessary to serialize
+ * escaped string.
+ */
+static size_t length_estimate(String s)
+{
+    int i;
+    size_t n = 0;
+    const char *raw;
+
+    raw = str_raw(s);
+    for (i = 0; i < s.len; ++i) {
+        if (!is_printable(raw[i])) {
+            n += 1;
+        }
+    }
+
+    return n * 3 + s.len + 3;
+}
+
+static size_t write_char_escaped(char c, char *buf, size_t i)
+{
+    if (is_printable(c)) {
+        buf[i++] = c;
+    } else {
+        buf[i++] = '\\';
+        switch (c) {
+        case '\a':
+            buf[i++] = 'a';
+            break;
+        case '\b':
+            buf[i++] = 'b';
+            break;
+        case '\t':
+            buf[i++] = 't';
+            break;
+        case '\n':
+            buf[i++] = 'n';
+            break;
+        case '\v':
+            buf[i++] = 'v';
+            break;
+        case '\f':
+            buf[i++] = 'f';
+            break;
+        case '\r':
+            buf[i++] = 'r';
+            break;
+        case '\0':
+            buf[i++] = '0';
+            break;
+        case '\\':
+        case '\"':
+        case '\'':
+            buf[i++] = c;
+            break;
+        default:
+            sprintf(buf + i, "%03o", (unsigned char) c);
+            i += 3;
+            break;
+        }
+    }
+
+    return i;
+}
+
+String str_decoded(String str)
+{
+    const char *raw;
+    char *buf;
+    size_t len, i, j = 0;
+
+    raw = str_raw(str);
+    len = length_estimate(str);
+    buf = calloc(len, sizeof(*buf));
+
+    buf[j++] = '\"';
+    for (i = 0; i < str.len; ++i) {
+        assert(j < len + 2);
+        j = write_char_escaped(raw[i], buf, j);
+    }
+
+    buf[j++] = '\"';
+    str = str_register(buf, j);
+    free(buf);
+    return str;
+}
+
+String str_char(char c)
+{
+    static char buf[16];
+    size_t i = 0;
+
+    buf[i++] = '\'';
+    i = write_char_escaped(c, buf, i);
+    buf[i++] = '\'';
+    return str_register(buf, i);
+}
+
+String str_number(union value val, Type type)
+{
+    static char buf[512];
+    size_t len;
+
+    if (is_unsigned(type)) {
+        if (size_of(type) == 8) {
+            len = sprintf(buf, "%luul", val.u);
+        } else {
+            len = sprintf(buf, "%luu", val.u);
+        }
+    } else if (is_signed(type)) {
+        if (size_of(type) == 8) {
+            len = sprintf(buf, "%ldl", val.i);
+        } else {
+            len = sprintf(buf, "%ld", val.i);
+        }
+    } else if (is_float(type)) {
+        len = sprintf(buf, "%ff", val.f);
+    } else if (is_double(type)) {
+        len = sprintf(buf, "%f", val.d);
+    } else {
+        assert(is_long_double(type));
+        len = sprintf(buf, "%Lf", val.ld);
+    }
+
+    return str_register(buf, len);
 }

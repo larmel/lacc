@@ -26,4 +26,10 @@ struct token convert_preprocessing_number(struct token t);
  */
 struct token tokenize(char *in, char **endptr);
 
+/*
+ * Parse character escape code, including octal and hexadecimal number
+ * literals. Unescaped characters are returned as-is.
+ */
+char read_char(char *in, char **endptr);
+
 #endif
