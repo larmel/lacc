@@ -41,6 +41,35 @@ static struct symbol *alloc_sym(void)
     return sym;
 }
 
+/*
+ * Cache string types, to avoid creating new type for every string
+ * literal.
+ */
+struct string_type_handle {
+    size_t length;
+    Type type;
+};
+
+static array_of(struct string_type_handle) string_types;
+
+static Type get_string_type(size_t len)
+{
+    int i;
+    struct string_type_handle handle;
+
+    for (i = 0; i < array_len(&string_types); ++i) {
+        handle = array_get(&string_types, i);
+        if (handle.length == len) {
+            return handle.type;
+        }
+    }
+
+    handle.type = type_create(T_ARRAY, basic_type__char, len, NULL);
+    handle.length = len;
+    array_push_back(&string_types, handle);
+    return handle.type;
+}
+
 /* Save memcpy reference for backend. */
 const struct symbol *decl_memcpy = NULL;
 
@@ -91,6 +120,7 @@ static void sym_clear_buffers(void)
     }
 
     array_clear(&temporaries);
+    array_clear(&string_types);
     hash_destroy(&functions);
 }
 
@@ -501,8 +531,7 @@ struct symbol *sym_create_string(String str)
     struct symbol *sym;
 
     sym = alloc_sym();
-    sym->type =
-        type_create(T_ARRAY, basic_type__char, (size_t) str.len + 1, NULL);
+    sym->type = get_string_type(str.len + 1);
     sym->value.string = str;
     sym->symtype = SYM_STRING_VALUE;
     sym->linkage = LINK_INTERN;
