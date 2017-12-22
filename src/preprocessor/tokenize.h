@@ -10,11 +10,32 @@
  */
 extern const struct token basic_token[128];
 
-/* Reconstruct string representation of token. */
-String tokstr(struct token tok);
-
-/* Transform preprocessing number to actual numeric literal. */
+/*
+ * Transform preprocessing number to numeric literal, parsing the string
+ * representation to a typed number.
+ *
+ * This is done as a last step in preprocessing before handing the token
+ * over to the parser.
+ */
 struct token convert_preprocessing_number(struct token t);
+
+/*
+ * Transform preprocessing string by substituting all escape sequences
+ * by the corresponding character.
+ *
+ * This is done as a last step in preprocessing before handing the token
+ * over to the parser.
+ */
+struct token convert_preprocessing_string(struct token t);
+
+/*
+ * Transform preprocessing character to numeric literal, converting the
+ * string representation to an integer value stored in a NUMBER token.
+ *
+ * This is done as a last step in preprocessing before handing the token
+ * over to the parser.
+ */
+struct token convert_preprocessing_char(struct token t);
 
 /*
  * Parse and return next preprocessing token from given line. Assume
@@ -25,11 +46,5 @@ struct token convert_preprocessing_number(struct token t);
  * Destructively overwrites input buffer for string constants.
  */
 struct token tokenize(char *in, char **endptr);
-
-/*
- * Parse character escape code, including octal and hexadecimal number
- * literals. Unescaped characters are returned as-is.
- */
-char read_char(char *in, char **endptr);
 
 #endif

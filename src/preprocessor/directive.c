@@ -8,7 +8,7 @@
 
 #include <assert.h>
 
-#define IDENT(s) {IDENTIFIER, 0, 1, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
+#define IDENT(s) {IDENTIFIER, 0, 1, 0, {0}, {SHORT_STRING_INIT(s)}}
 
 struct token
     ident__include = IDENT("include"),
@@ -91,8 +91,8 @@ static void expect(const struct token *list, int token)
 {
     String a, b;
     if (list->token != token) {
-        a = tokstr(basic_token[token]);
-        b = tokstr(*list);
+        a = basic_token[token].d.string;
+        b = list->d.string;
         error("Expected '%s', but got '%s'.", str_raw(a), str_raw(b));
         exit(1);
     }
@@ -124,9 +124,11 @@ static struct number preprocess_primary(
         num.type = n.type;
         num.val = n.d.val;
         break;
-    case NUMBER:
-        num.type = list->type;
-        num.val = list->d.val;
+    case PREP_CHAR:
+        n = convert_preprocessing_char(*list);
+        assert(n.token == NUMBER);
+        num.type = n.type;
+        num.val = n.d.val;
         break;
     case '(':
         num = preprocess_expression(list + 1, &list);
@@ -134,7 +136,7 @@ static struct number preprocess_primary(
         break;
     default:
         if (!list->is_expandable) {
-            s = tokstr(*list);
+            s = list->d.string;
             error("Invalid primary expression '%s' in directive.", str_raw(s));
             exit(1);
         }
@@ -528,7 +530,7 @@ static void preprocess_include(const struct token line[])
 {
     String path;
 
-    if (line->token == STRING) {
+    if (line->token == PREP_STRING) {
         path = line->d.string;
         include_file(str_raw(path));
     } else if (line->token == '<') {
@@ -538,12 +540,16 @@ static void preprocess_include(const struct token line[])
             if (line->token == '>') {
                 break;
             }
-            path = str_cat(path, tokstr(*line++));
+
+            path = str_cat(path, line->d.string);
+            line++;
         }
+
         if (!path.len || line->token != '>') {
             error("Invalid include directive.");
             exit(1);
         }
+
         include_system_file(str_raw(path));
     }
 }
@@ -627,7 +633,6 @@ static struct macro preprocess_define(
 static void preprocess_line_directive(const struct token *line)
 {
     struct token t;
-    String s;
 
     t = *line++;
     if (t.token == PREP_NUMBER) {
@@ -640,12 +645,13 @@ static void preprocess_line_directive(const struct token *line)
     }
 
     current_file_line = t.d.val.i - 1;
-    if (line->token == STRING) {
+    if (line->token == PREP_STRING) {
         current_file_path = line->d.string;
         line++;
-    } else if (line->token != NEWLINE) {
-        s = tokstr(*line);
-        error("'%s' is not a valid file name.", str_raw(s));
+    }
+
+    if (line->token != NEWLINE) {
+        error("Unexpected token in #line directive.");
         exit(1);
     }
 }
@@ -751,7 +757,7 @@ void preprocess_directive(TokenArray *array)
             error("%s", str_raw(s));
             exit(1);
         } else {
-            s = tokstr(*line);
+            s = line->d.string;
             error("Unsupported preprocessor directive '%s'.", str_raw(s));
             exit(1);
         }

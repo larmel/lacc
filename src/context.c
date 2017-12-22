@@ -33,7 +33,7 @@ static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
         } else {
             switch (format[1]) {
             case 's':
-                n += fputs(va_arg(ap, char *), stream);
+                n += fputs(va_arg(ap, const char *), stream);
                 break;
             case 'c':
                 n += fprintf(stream, "%c", va_arg(ap, int));

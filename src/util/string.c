@@ -37,12 +37,12 @@ int fprintstr(FILE *stream, String str)
     const char *raw;
 
     raw = str_raw(str);
-    putc('\"', stream);
+    putc('"', stream);
     for (n = 0, i = 0; i < str.len; ++i) {
         n += printchar(stream, raw[i]);
     }
 
-    putc('\"', stream);
+    putc('"', stream);
     return n + 2;
 }
 

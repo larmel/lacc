@@ -226,7 +226,6 @@ void undef(String name)
 void print_token_array(const TokenArray *list)
 {
     int i;
-    String s;
     struct token t;
 
     putchar('[');
@@ -245,8 +244,8 @@ void print_token_array(const TokenArray *list)
             if (t.token == NEWLINE) {
                 printf("\\n");
             } else {
-                s = tokstr(t);
-                printf("%s", str_raw(s));
+                assert(t.token != NUMBER);
+                printf("%s", str_raw(t.d.string));
             }
             putchar('\'');
         }
@@ -261,8 +260,10 @@ static struct token paste(struct token left, struct token right)
     char *buf, *endptr;
     String ls, rs;
 
-    ls = tokstr(left);
-    rs = tokstr(right);
+    assert(left.token != NUMBER);
+    assert(right.token != NUMBER);
+    ls = left.d.string;
+    rs = right.d.string;
     buf = calloc(ls.len + rs.len + 1, sizeof(*buf));
     buf = strcpy(buf, str_raw(ls));
     buf = strcat(buf, str_raw(rs));
@@ -463,8 +464,8 @@ static const struct token *skip(const struct token *list, enum token_type token)
 {
     String a, b;
     if (list->token != token) {
-        a = tokstr(basic_token[token]);
-        b = tokstr(*list);
+        a = basic_token[token].d.string;
+        b = list->d.string;
         error("Expected '%s', but got '%s'.", str_raw(a), str_raw(b));
         exit(1);
     }
@@ -620,85 +621,104 @@ int tok_cmp(struct token a, struct token b)
     }
 }
 
-/*
- * Append string to buffer, always leaving room for two extra characters
- * intended for ending quotes and null byte.
- */
+static char *str_write_escaped(char *ptr, const char *str, size_t len)
+{
+    int i;
+
+    for (i = 0; i < len; ++i) {
+        if (str[i] == '"' || str[i] == '\\') {
+            *ptr++ = '\\';
+        }
+
+        *ptr++ = str[i];
+    }
+
+    return ptr;
+}
+
 static char *stringify_concat(
     char *buf,
     size_t *cap,
     size_t *pos,
-    struct token tok,
-    int esc)
+    struct token tok)
 {
-    String strval;
-    char *endptr;
     size_t len;
+    const char *raw;
+    char *ptr;
+    String str;
 
-    assert(buf);
-    assert(cap);
-    assert(pos);
-    strval = tokstr(tok);
-
-    len = *pos + (tok.leading_whitespace != 0) + strval.len + 2;
-    if (len >= *cap) {
-        *cap = 2 * len;
+    assert(tok.token != NUMBER);
+    str = tok.d.string;
+    len = (tok.leading_whitespace != 0) + str.len * 2;
+    if (*pos + len > *cap) {
+        *cap = *pos + len;
         buf = realloc(buf, *cap);
     }
 
     if (tok.leading_whitespace != 0) {
-        if (esc) {
-            error("Invalid escape sequence '\\ '.");
-            exit(1);
-        }
-
         buf[(*pos)++] = ' ';
     }
 
-    len = strval.len;
-    memcpy(buf + *pos, str_raw(strval), len + 1);
-    if (esc) {
-        assert(*pos > 0);
-        buf[*pos - 1] = read_char(buf + *pos - 1, &endptr);
-        len = strval.len - (endptr - (buf + *pos));
-        memmove(buf + *pos, endptr, len);
+    raw = str_raw(str);
+    ptr = buf + *pos;
+    switch (tok.token) {
+    case PREP_STRING:
+    case STRING:
+        *ptr++ = '\\';
+        *ptr++ = '"';
+        ptr = str_write_escaped(ptr, raw, str.len);
+        *ptr++ = '\\';
+        *ptr++ = '"';
+        break;
+    case PREP_CHAR:
+        *ptr++ = '\'';
+        ptr = str_write_escaped(ptr, raw, str.len);
+        *ptr++ = '\'';
+        break;
+    default:
+        memcpy(ptr, raw, str.len);
+        ptr += str.len;
+        break;
     }
 
-    *pos += len;
-    assert(*cap >= *pos + 2);
+    *pos += ptr - (buf + *pos);
     return buf;
 }
 
 /*
- * Convert list of tokens to a single STRING token.
+ * Convert list of tokens to a single PREP_STRING or STRING token.
  *
  * - All leading and trailing whitespace in text being stringified is
  *   ignored.
  * - Any sequence of whitespace in the middle of the text is converted
  *   to a single space in the stringified result.
- * - Resolve escape sequence when stringifying backslash punctuator.
  */
 struct token stringify(const TokenArray *list)
 {
-    int i, esc;
-    struct token str = {STRING}, tok;
-    char *buf;
+    struct token str = {PREP_STRING}, tok;
     size_t cap, ptr;
+    char *buf;
+    int i;
 
     if (!array_len(list)) {
+        str.token = STRING;
         str.d.string = str_init("");
     } else if (array_len(list) == 1) {
         tok = array_get(list, 0);
+        assert(tok.token != NUMBER);
         if (tok.token == '\\') {
             error("Invalid string literal ending with '\\'.");
             exit(1);
         }
-        str.d.string = tokstr(tok);
+        str.d.string = tok.d.string;
+        if (tok.token == STRING) {
+            str.token = STRING;
+        }
     } else {
         cap = array_len(list) * 8;
         buf = malloc(cap);
         ptr = 0;
-        for (i = 0, esc = 0; i < array_len(list); ++i) {
+        for (i = 0; i < array_len(list); ++i) {
             tok = array_get(list, i);
             if (tok.token == NEWLINE) {
                 assert(i == array_len(list) - 1);
@@ -708,12 +728,11 @@ struct token stringify(const TokenArray *list)
                     tok.leading_whitespace = 0;
                 }
 
-                buf = stringify_concat(buf, &cap, &ptr, tok, esc);
-                esc = !esc && (tok.token == '\\');
+                buf = stringify_concat(buf, &cap, &ptr, tok);
             }
         }
 
-        if (esc) {
+        if (ptr > 0 && buf[ptr - 1] == '\\') {
             error("Invalid string literal ending with '\\'.");
             exit(1);
         }

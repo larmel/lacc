@@ -291,6 +291,40 @@ static int refill_expanding_line(TokenArray *line)
     return n;
 }
 
+static const char *stringify_token(const struct token *t)
+{
+    static char buf[512];
+
+    switch (t->token) {
+    case PARAM:
+        assert(0);
+    case NUMBER:
+        if (is_unsigned(t->type)) {
+            if (size_of(t->type) == 8) {
+                sprintf(buf, "%luul", t->d.val.u);
+            } else {
+                sprintf(buf, "%luu", t->d.val.u);
+            }
+        } else if (is_signed(t->type)) {
+            if (size_of(t->type) == 8) {
+                sprintf(buf, "%ldl", t->d.val.i);
+            } else {
+                sprintf(buf, "%ld", t->d.val.i);
+            }
+        } else if (is_float(t->type)) {
+            sprintf(buf, "%ff", t->d.val.f);
+        } else if (is_double(t->type)) {
+            sprintf(buf, "%f", t->d.val.d);
+        } else {
+            assert(is_long_double(t->type));
+            sprintf(buf, "%Lf", t->d.val.ld);
+        }
+        return buf;
+    default:
+        return str_raw(t->d.string);
+    }
+}
+
 /*
  * Add preprocessed token to lookahead buffer, ready to be consumed by
  * the parser.
@@ -301,19 +335,29 @@ static int refill_expanding_line(TokenArray *line)
  */
 static void add_to_lookahead(struct token t)
 {
-    String s;
     struct token prev;
 
     if (!output_preprocessed) {
-        if (t.token == STRING && deque_len(&lookahead)) {
-            prev = deque_back(&lookahead);
-            if (prev.token == STRING) {
-                t.d.string = str_cat(prev.d.string, t.d.string);
-                deque_back(&lookahead) = t;
-                goto added;
-            }
-        } else if (t.token == PREP_NUMBER) {
+        switch (t.token) {
+        case PREP_CHAR:
+            t = convert_preprocessing_char(t);
+            break;
+        case PREP_NUMBER:
             t = convert_preprocessing_number(t);
+            break;
+        case PREP_STRING:
+            t = convert_preprocessing_string(t);
+        case STRING:
+            if (deque_len(&lookahead)) {
+                prev = deque_back(&lookahead);
+                if (prev.token == STRING) {
+                    t.d.string = str_cat(prev.d.string, t.d.string);
+                    deque_back(&lookahead) = t;
+                    goto added;
+                }
+            }
+        default:
+            break;
         }
     }
 
@@ -321,8 +365,7 @@ static void add_to_lookahead(struct token t)
 
 added:
     if (context.verbose) {
-        s = tokstr(t);
-        verbose("   token( %s )", str_raw(s));
+        verbose("   token( %s )", stringify_token(&t));
     }
 }
 
@@ -446,26 +489,30 @@ struct token peekn(int n)
 
 struct token consume(enum token_type type)
 {
-    String s;
-    struct token t = next();
+    struct token t;
+    const char *str;
 
+    t = next();
     if (t.token != type) {
-        s = tokstr(t);
         switch (type) {
         case IDENTIFIER:
+            str = "identifier";
+            break;
         case NUMBER:
+            str = "number";
+            break;
         case STRING:
-            error("Unexpected token '%s', expected %s.",
-                str_raw(s),
-                (type == IDENTIFIER) ? "identifier" :
-                (type == NUMBER) ? "number" : "string");
+            str = "string";
             break;
         default:
-            error("Unexpected token '%s', expected '%s'.",
-                str_raw(s), str_raw(basic_token[type].d.string));
+            str = str_raw(basic_token[type].d.string);
             break;
         }
-        exit(1);
+
+        if (t.token == NUMBER) {
+            error("Unexpected %s, expected %s.", stringify_token(&t), str);
+            exit(1);
+        }
     }
 
     return t;
@@ -474,18 +521,31 @@ struct token consume(enum token_type type)
 void preprocess(FILE *output)
 {
     struct token t;
-    String s;
 
     output_preprocessed = 1;
     while ((t = next()).token != END) {
         if (t.leading_whitespace) {
             fprintf(output, "%*s", t.leading_whitespace, " ");
         }
-        if (t.token == STRING) {
-            fprintstr(output, t.d.string); 
-        } else {
-            s = tokstr(t);
-            fprintf(output, "%s", str_raw(s));
+
+        switch (t.token) {
+        case NUMBER:
+            assert(0);
+            break;
+        case PREP_STRING:
+        case STRING:
+            putc('\"', output);
+            fprintf(output, "%s", str_raw(t.d.string));
+            putc('\"', output);
+            break;
+        case PREP_CHAR:
+            putc('\'', output);
+            fprintf(output, "%s", str_raw(t.d.string));
+            putc('\'', output);
+            break;
+        default:
+            fprintf(output, "%s", str_raw(t.d.string));
+            break;
         }
     }
 }

@@ -125,7 +125,9 @@ enum token_type {
      * a superset of numeric constants in C. A conversion to NUMBER
      * token is done before handed to parser.
      */
-    PREP_NUMBER
+    PREP_NUMBER,
+    PREP_CHAR,
+    PREP_STRING
 };
 
 /*
@@ -154,7 +156,6 @@ struct token {
     enum token_type token;
     unsigned int leading_whitespace : 16;
     unsigned int is_expandable : 1;
-    unsigned int is_char_literal : 1;
     unsigned int disable_expand : 1;
     Type type;
     union {

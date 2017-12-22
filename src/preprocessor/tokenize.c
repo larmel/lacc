@@ -15,8 +15,8 @@
  * Static initializer for token. Only works with string representation
  * that can fit inline.
  */
-#define TOK(t, s) {(t), 0, 0, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
-#define IDN(t, s) {(t), 0, 1, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
+#define TOK(t, s) {(t), 0, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
+#define IDN(t, s) {(t), 0, 1, 0, {0}, {SHORT_STRING_INIT(s)}}
 
 const struct token basic_token[] = {
 /* 0x00 */  TOK(END, "$"),              IDN(AUTO, "auto"),
@@ -79,8 +79,8 @@ const struct token basic_token[] = {
             {0},                        {0},
             {NUMBER},                   {IDENTIFIER, 1},
             {STRING},                   {PARAM},
-/* 0x78 */  {PREP_NUMBER},              {0},
-            {0},                        TOK(OPEN_CURLY, "{"),
+/* 0x78 */  {PREP_NUMBER},              {PREP_CHAR},
+            {PREP_STRING},              TOK(OPEN_CURLY, "{"),
             TOK(OR, "|"),               TOK(CLOSE_CURLY, "}"),
             TOK(NEG, "~"),              {0},
 };
@@ -320,7 +320,7 @@ static char escpchar(char *in, char **endptr)
     }
 }
 
-char read_char(char *in, char **endptr)
+static char read_char(char *in, char **endptr)
 {
     char c;
 
@@ -334,6 +334,110 @@ char read_char(char *in, char **endptr)
     return c;
 }
 
+static char *string_buffer;
+static size_t string_buffer_cap;
+
+static void clear_string_buffer(void)
+{
+    if (string_buffer) {
+        free(string_buffer);
+        string_buffer = NULL;
+        string_buffer_cap = 0;
+    }
+}
+
+static char *get_string_buffer(size_t length)
+{
+    if (length > string_buffer_cap) {
+        if (!string_buffer) {
+            atexit(clear_string_buffer);
+        }
+
+        string_buffer_cap = length;
+        string_buffer = realloc(string_buffer, length);
+    }
+
+    return string_buffer;
+}
+
+struct token convert_preprocessing_string(struct token t)
+{
+    struct token tok = {STRING};
+    char *raw, *ptr;
+    char *buf, *btr;
+
+    raw = (char *) str_raw(t.d.string);
+    buf = get_string_buffer(t.d.string.len);
+    btr = buf;
+    ptr = raw;
+    while (ptr - raw < t.d.string.len) {
+        *btr++ = read_char(ptr, &ptr);
+    }
+
+    tok.d.string = str_register(buf, btr - buf);
+    return tok;
+}
+
+struct token convert_preprocessing_char(struct token t)
+{
+    struct token tok = {NUMBER};
+    char *raw;
+
+    raw = (char *) str_raw(t.d.string);
+    tok.type = basic_type__int;
+    tok.d.val.i = read_char(raw, &raw);
+    return tok;
+}
+
+/*
+ * Parse character escape sequences like '\xaf', '\0', '\077' etc,
+ * starting from *in.
+ */
+static void escape_sequence(char *in, char **endptr)
+{
+    int i;
+
+    switch (*in) {
+    case 'a':
+    case 'b':
+    case 't':
+    case 'n':
+    case 'v':
+    case 'f':
+    case 'r':
+    case '?':
+    case '\'':
+    case '\"':
+    case '\\':
+        i = 1;
+        break;
+    case 'x':
+        for (i = 1; isxdigit(in[i]); ++i)
+            ;
+        if (i == 1) {
+            error("Empty hexadecimal escape sequence.");
+            exit(1);
+        }
+        break;
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+        for (i = 1; i < 3 && isoctal(in[i]); ++i)
+            ;
+        break;
+    default:
+        error("Invalid escape sequence '\\%c'.", *in);
+        exit(1);
+    }
+
+    *endptr = in + i;
+}
+
 /*
  * Parse character literals in the format 'a', '\xaf', '\0', '\077' etc,
  * starting from *in. The position of the character after the last '
@@ -341,54 +445,52 @@ char read_char(char *in, char **endptr)
  */
 static struct token strtochar(char *in, char **endptr)
 {
-    struct token tok = {NUMBER};
-    assert(*in == '\'');
+    struct token tok = {PREP_CHAR};
+    char *start;
 
-    tok.type = basic_type__int;
-    tok.d.val.i = read_char(in + 1, endptr);
-    if (**endptr != '\'') {
-        error("Invalid character constant %c.", *in);
+    assert(*in == '\'');
+    start = ++in;
+    if (*in == '\\') {
+        escape_sequence(in + 1, &in);
+    } else if (*in != '\'') {
+        in++;
+    } else {
+        error("Empty character constant.");
         exit(1);
     }
 
-    *endptr += 1;
-    tok.is_char_literal = 1;
+    if (*in != '\'') {
+        error("Multi-character constants are not supported.");
+        exit(1);
+    }
+
+    tok.d.string = str_register(start, in - start);
+    *endptr = in + 1;
     return tok;
 }
 
-/*
- * Parse string literal inputs delimited by quotation marks, handling
- * escaped quotes. The input buffer is destructively overwritten while
- * resolving escape sequences.
- */
-struct token strtostr(char *in, char **endptr)
+/* Parse string literal inputs delimited by quotation marks. */
+static struct token strtostr(char *in, char **endptr)
 {
-    struct token string = {STRING};
-    char *start, *str;
-    int len = 0;
+    struct token tok = {PREP_STRING};
+    char *start;
 
-    start = str = in;
+    assert(*in == '"');
+    start = ++in;
     *endptr = in;
 
-    if (*in++ == '"') {
-        while (*in != '"' && *in) {
-            *str++ = read_char(in, &in);
-            len++;
-        }
-
-        if (*in++ == '"') {
-            *str = '\0';
-            *endptr = in;
+    while (*in != '"') {
+        if (*in == '\\') {
+            escape_sequence(in + 1, &in);
+        } else {
+            in++;
         }
     }
 
-    if (*endptr == start) {
-        error("Invalid string literal %s.", start);
-        exit(1);
-    }
-
-    string.d.string = str_register(start, len);
-    return string;
+    assert(*in == '"');
+    tok.d.string = str_register(start, in - start);
+    *endptr = in + 1;
+    return tok;
 }
 
 /*
@@ -632,26 +734,6 @@ static int skip_spaces(char *in, char **endptr)
 
     *endptr = in;
     return in - start;
-}
-
-String tokstr(struct token tok)
-{
-    assert(tok.token != PARAM);
-    switch (tok.token) {
-    case NUMBER:
-        if (tok.is_char_literal) {
-            assert(is_signed(tok.type));
-            tok.d.string = str_char(tok.d.val.i);
-        } else {
-            tok.d.string = str_number(tok.d.val, tok.type);
-        }
-        break;
-    case STRING:
-        tok.d.string = str_decoded(tok.d.string);
-    default: break;
-    }
-
-    return tok.d.string;
 }
 
 struct token tokenize(char *in, char **endptr)
