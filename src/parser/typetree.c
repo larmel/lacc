@@ -81,19 +81,6 @@ struct typetree {
  */
 static array_of(struct typetree) types;
 
-static void deallocate_typetrees(void)
-{
-    int i;
-    struct typetree *t;
-
-    for (i = 0; i < array_len(&types); ++i) {
-        t = &array_get(&types, i);
-        array_clear(&t->members);
-    }
-
-    array_clear(&types);
-}
-
 static struct typetree *get_typetree_handle(int ref)
 {
     assert(ref > 0);
@@ -144,20 +131,36 @@ static Type get_type_handle(int ref)
 
 static Type alloc_type(enum type tt)
 {
-    static int init;
     Type type = {0};
     struct typetree t = {0};
-
-    if (!init) {
-        init = 1;
-        atexit(deallocate_typetrees);
-    }
 
     t.type = tt;
     array_push_back(&types, t);
     type.type = tt;
     type.ref = array_len(&types);
     return type;
+}
+
+void clear_types(FILE *stream)
+{
+    int i;
+    Type type;
+    struct typetree *t;
+
+    if (stream) {
+        for (i = 0; i < array_len(&types); ++i) {
+            type = get_type_handle(i + 1);
+            fprinttype(stream, type, NULL);
+            putc('\n', stream);
+        }
+    }
+
+    for (i = 0; i < array_len(&types); ++i) {
+        t = &array_get(&types, i);
+        array_clear(&t->members);
+    }
+
+    array_clear(&types);
 }
 
 static Type remove_qualifiers(Type type)
@@ -939,12 +942,12 @@ Type type_deref(Type type)
 Type type_next(Type type)
 {
     struct typetree *t;
-    assert(is_pointer(type) || is_function(type) || is_array(type));
 
     if (is_pointer(type)) {
         return type_deref(type);
     }
 
+    assert(is_function(type) || is_array(type));
     t = get_typetree_handle(type.ref);
     return t->next;
 }

@@ -2,6 +2,7 @@
 #include "optimizer/optimize.h"
 #include "parser/parse.h"
 #include "parser/symtab.h"
+#include "parser/typetree.h"
 #include "preprocessor/preprocess.h"
 #include "preprocessor/input.h"
 #include "preprocessor/macro.h"
@@ -218,6 +219,7 @@ int main(int argc, char *argv[])
 
         flush();
         pop_optimization();
+        clear_types(context.verbose ? stdout : NULL);
         pop_scope(&ns_tag);
         pop_scope(&ns_ident);
     }

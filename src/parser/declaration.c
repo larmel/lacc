@@ -87,8 +87,7 @@ static struct block *parameter_list(
                 exit(1);
             }
             break;
-        }
-        if (is_array(base)) {
+        } else if (is_array(base)) {
             base = type_create(T_POINTER, type_next(base));
         }
         param = type_add_member(*func, name, base);

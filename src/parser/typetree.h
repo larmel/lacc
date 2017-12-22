@@ -7,6 +7,15 @@
 #include <string.h>
 
 /*
+ * Deallocate memory used to store types. If not NULL, output types to
+ * stream. 
+ *
+ * This must be called once at the end of the translation unit, and
+ * before symbols are deallocated (since types can refer to tags).
+ */
+void clear_types(FILE *stream);
+
+/*
  * Initialize array, pointer, function, struct or union type.
  *
  * Valid invocations are:
