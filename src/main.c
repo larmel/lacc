@@ -27,6 +27,7 @@
 const char *program;
 static FILE *output;
 static int optimization_level;
+static int dump_symbols, dump_types;
 
 static void help(const char *arg)
 {
@@ -90,6 +91,16 @@ static void set_optimization_level(const char *level)
     optimization_level = level[2] - '0';
 }
 
+static void set_dump_state(const char *arg)
+{
+    if (!strcmp("--dump-symbols", arg)) {
+        dump_symbols = 1;
+    } else {
+        assert(!strcmp("--dump-types", arg));
+        dump_types = 1;
+    }
+}
+
 static void define_macro(const char *arg)
 {
     static char line[1024];
@@ -129,7 +140,9 @@ static char *parse_program_arguments(int argc, char *argv[])
         {"-O2", &set_optimization_level},
         {"-O3", &set_optimization_level},
         {"-std=", &set_c_std},
-        {"-D:", &define_macro}
+        {"-D:", &define_macro},
+        {"--dump-symbols", &set_dump_state},
+        {"--dump-types", &set_dump_state}
     };
 
     program = argv[0];
@@ -212,14 +225,14 @@ int main(int argc, char *argv[])
             declare(sym);
         }
 
-        if (context.verbose) {
+        if (dump_symbols) {
             output_symbols(stdout, &ns_ident);
             output_symbols(stdout, &ns_tag);
         }
 
         flush();
         pop_optimization();
-        clear_types(context.verbose ? stdout : NULL);
+        clear_types(dump_types ? stdout : NULL);
         pop_scope(&ns_tag);
         pop_scope(&ns_ident);
     }
