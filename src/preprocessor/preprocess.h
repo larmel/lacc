@@ -18,4 +18,10 @@ void preprocess(FILE *output);
  */
 void inject_line(char *line);
 
+/* Initialize data structures used for preprocessing. */
+void init_preprocessing(void);
+
+/* Free memory used for preprocessing. */
+void clear_preprocessing(void);
+
 #endif

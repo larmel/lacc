@@ -2,6 +2,7 @@
 #define MACRO_H
 
 #include <lacc/array.h>
+#include <lacc/context.h>
 #include <lacc/token.h>
 
 typedef array_of(struct token) TokenArray;
@@ -35,8 +36,17 @@ struct macro {
     TokenArray replacement;
 };
 
-/* Define standard macros. */
-void register_builtin_definitions(void);
+/* Initialize hash table used for macro definitions. */
+void init_macro_table(void);
+
+/*
+ * Define macros that are intrinsic to the compiler, or mandated by the
+ * standard.
+ */
+void register_builtin_definitions(enum cstd version);
+
+/* Free memory used for macro definitions. */
+void clear_macro_table(void);
 
 /* Stringify a list of tokens, returning a new token of type STRING. */
 struct token stringify(const TokenArray *list);

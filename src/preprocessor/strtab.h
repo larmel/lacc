@@ -17,4 +17,7 @@ String str_register(const char *str, size_t len);
 /* Concatenate two strings together. */
 String str_cat(String a, String b);
 
+/* Free memory used for string table. */
+void clear_string_table(void);
+
 #endif

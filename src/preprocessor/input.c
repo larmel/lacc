@@ -99,7 +99,7 @@ static int pop_file(void)
     return EOF;
 }
 
-static void finalize(void)
+void clear_input_buffers(void)
 {
     while (pop_file() != EOF)
         ;
@@ -191,7 +191,7 @@ void add_include_search_path(const char *path)
     array_push_back(&search_path_list, path);
 }
 
-void init(const char *path)
+void set_input_file(const char *path)
 {
     const char *sep;
     struct source source = {0};
@@ -217,7 +217,6 @@ void init(const char *path)
     }
 
     push_file(source);
-    atexit(finalize);
 }
 
 /*

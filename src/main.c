@@ -192,15 +192,16 @@ static void add_include_search_paths(void)
 
 int main(int argc, char *argv[])
 {
-    char *filename;
+    char *path;
     struct definition *def;
     const struct symbol *sym;
 
-    filename = parse_program_arguments(argc, argv);
+    init_preprocessing();
+    path = parse_program_arguments(argc, argv);
+    set_input_file(path);
+    register_builtin_definitions(context.standard);
     add_include_search_paths();
-    init(filename);
-    register_builtin_definitions();
-    set_compile_target(output, filename);
+    set_compile_target(output, path);
 
     if (context.target == TARGET_NONE) {
         preprocess(output);
@@ -237,6 +238,7 @@ int main(int argc, char *argv[])
         pop_scope(&ns_ident);
     }
 
+    clear_preprocessing();
     if (output != stdout) {
         fclose(output);
     }

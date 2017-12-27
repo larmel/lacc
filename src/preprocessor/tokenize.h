@@ -47,4 +47,11 @@ struct token convert_preprocessing_char(struct token t);
  */
 struct token tokenize(char *in, char **endptr);
 
+/*
+ * Free memory used to hold temporary strings during tokenization.
+ *
+ * Should be called exactly once before exiting.
+ */
+void clear_string_buffer(void);
+
 #endif

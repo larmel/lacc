@@ -7,7 +7,10 @@
  * Initialize with root file name, and store relative path to resolve
  * later includes. Passing NULL defaults to taking input from stdin.
  */
-void init(const char *);
+void set_input_file(const char *);
+
+/* Free resources used for reading input. */
+void clear_input_buffers(void);
 
 /*
  * Paths specified with -I, append to list of directories to search when

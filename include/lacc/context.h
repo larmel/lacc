@@ -3,22 +3,26 @@
 
 #include <stddef.h>
 
+enum target {
+    TARGET_NONE,
+    TARGET_IR_DOT,
+    TARGET_x86_64_ASM,
+    TARGET_x86_64_ELF
+};
+
+enum cstd {
+    STD_C89,
+    STD_C99,
+    STD_C11
+};
+
 /* Global information about translation unit. */
 extern struct context {
     int errors;
     int verbose;
     int suppress_warning;
-    enum target {
-        TARGET_NONE,
-        TARGET_IR_DOT,
-        TARGET_x86_64_ASM,
-        TARGET_x86_64_ELF
-    } target;
-    enum {
-        STD_C89,
-        STD_C99,
-        STD_C11
-    } standard;
+    enum target target;
+    enum cstd standard;
 } context;
 
 /*

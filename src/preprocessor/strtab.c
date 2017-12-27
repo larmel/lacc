@@ -14,6 +14,8 @@ static struct hash_table strtab;
 static char *catbuf;
 static size_t catlen;
 
+static int initialized;
+
 /*
  * Every unique string encountered, being identifiers or literals, is
  * kept for the lifetime of the program. To save allocations, store the
@@ -46,15 +48,18 @@ static String str_hash_key(void *ref)
     return *str;
 }
 
-static void strtab_free(void)
+void clear_string_table(void)
 {
-    hash_destroy(&strtab);
+    if (initialized) {
+        hash_destroy(&strtab);
+        initialized = 0;
+    }
+
     free(catbuf);
 }
 
 String str_register(const char *str, size_t len)
 {
-    static int initialized;
     String data = {0}, *ref;
     assert(len >= 0);
 
@@ -70,8 +75,6 @@ String str_register(const char *str, size_t len)
                 str_hash_key,
                 str_hash_add,
                 free);
-
-            atexit(strtab_free);
             initialized = 1;
         }
         data.p.str = str;

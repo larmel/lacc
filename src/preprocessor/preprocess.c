@@ -24,19 +24,18 @@ static int output_preprocessed;
 /* Line currently being tokenized. */
 static char *line_buffer;
 
-static void cleanup(void)
+void init_preprocessing()
 {
-    deque_destroy(&lookahead);
+    init_macro_table();
 }
 
-static void ensure_initialized(void)
+void clear_preprocessing(void)
 {
-    static int done;
-
-    if (!done) {
-        atexit(cleanup);
-        done = 1;
-    }
+    clear_macro_table();
+    clear_input_buffers();
+    clear_string_buffer();
+    clear_string_table();
+    deque_destroy(&lookahead);
 }
 
 static struct token get_token(void)
@@ -407,7 +406,6 @@ static void preprocess_line(int n)
     int i;
     struct token t;
 
-    ensure_initialized();
     do {
         t = get_token();
         if (t.token == END) {

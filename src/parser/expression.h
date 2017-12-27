@@ -11,4 +11,11 @@ struct block *assignment_expression(
 	struct definition *def,
 	struct block *block);
 
+/*
+ * Free memory used to hold function arguments.
+ *
+ * Should be called exactly once before exiting.
+ */
+void clear_argument_lists(void);
+
 #endif

@@ -120,7 +120,17 @@ static void *macro_hash_add(void *ref)
     return macro;
 }
 
-static void deallocate_macro_tables(void)
+void init_macro_table(void)
+{
+    hash_init(
+        &macro_hash_table,
+        HASH_TABLE_BUCKETS,
+        macro_hash_key,
+        macro_hash_add,
+        macro_hash_del);
+}
+
+void clear_macro_table(void)
 {
     int i;
     TokenArray list;
@@ -131,28 +141,14 @@ static void deallocate_macro_tables(void)
         list = array_get(&arrays, i);
         array_clear(&list);
     }
+
     for (i = 0; i < array_len(&stacks); ++i) {
         stack = array_get(&stacks, i);
         array_clear(&stack);
     }
+
     array_clear(&arrays);
     array_clear(&stacks);
-}
-
-static void macro_ensure_initialized(void)
-{
-    static int done;
-
-    if (!done) {
-        hash_init(
-            &macro_hash_table,
-            HASH_TABLE_BUCKETS,
-            macro_hash_key,
-            macro_hash_add,
-            macro_hash_del);
-        atexit(deallocate_macro_tables);
-        done = 1;
-    }
 }
 
 static struct token get__line__token(void)
@@ -181,7 +177,6 @@ const struct macro *macro_definition(String name)
 {
     struct macro *ref;
 
-    macro_ensure_initialized();
     ref = hash_lookup(&macro_hash_table, name);
     if (ref) {
         if (ref->is__file__) {
@@ -201,7 +196,6 @@ void define(struct macro macro)
         builtin__file__ = SHORT_STRING_INIT("__FILE__"),
         builtin__line__ = SHORT_STRING_INIT("__LINE__");
 
-    macro_ensure_initialized();
     new_macro_added = 0;
     ref = hash_insert(&macro_hash_table, &macro);
     if (macrocmp(ref, &macro)) {
@@ -219,7 +213,6 @@ void define(struct macro macro)
 
 void undef(String name)
 {
-    macro_ensure_initialized();
     hash_remove(&macro_hash_table, name);
 }
 
@@ -795,14 +788,11 @@ static char *get__date__(char *ts)
 }
 
 /*
- * Define macros that are intrinsic to the compiler, or mandated by the
- * standard.
- *
  * Current date and time are taken from ctime output, which has format
  * like "Sun Feb 19 01:26:43 2017\n". In this case, __DATE__ will be
  * "Feb 19 2017", and __TIME__ is "01:26:43".
  */
-void register_builtin_definitions(void)
+void register_builtin_definitions(enum cstd version)
 {
     time_t timestamp = time(NULL);
     char *ts = ctime(&timestamp);
@@ -828,7 +818,7 @@ void register_builtin_definitions(void)
     register_macro("__unix__", XSTR(__unix__));
 #endif
 
-    switch (context.standard) {
+    switch (version) {
     case STD_C89:
         break;
     case STD_C99:

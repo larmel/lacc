@@ -1,4 +1,5 @@
 #include "declaration.h"
+#include "expression.h"
 #include "parse.h"
 #include "symtab.h"
 #include <lacc/deque.h>
@@ -234,6 +235,7 @@ struct definition *parse(void)
         assert(peek().token == END);
         deallocate_cfg();
         def = NULL;
+        clear_argument_lists();
     } else {
         def = deque_pop_front(&definitions);
     }

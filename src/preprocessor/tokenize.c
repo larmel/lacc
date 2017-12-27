@@ -337,7 +337,7 @@ static char read_char(char *in, char **endptr)
 static char *string_buffer;
 static size_t string_buffer_cap;
 
-static void clear_string_buffer(void)
+void clear_string_buffer(void)
 {
     if (string_buffer) {
         free(string_buffer);
@@ -349,10 +349,6 @@ static void clear_string_buffer(void)
 static char *get_string_buffer(size_t length)
 {
     if (length > string_buffer_cap) {
-        if (!string_buffer) {
-            atexit(clear_string_buffer);
-        }
-
         string_buffer_cap = length;
         string_buffer = realloc(string_buffer, length);
     }
