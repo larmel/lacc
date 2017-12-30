@@ -846,7 +846,9 @@ struct block *init_declarator(
         return parent;
     }
 
-    if (is_function(type)) {
+    if (symtype == SYM_TYPEDEF) {
+        /* */
+    } else if (is_function(type)) {
         symtype = SYM_DECLARATION;
         linkage = (linkage == LINK_NONE) ? LINK_EXTERN : linkage;
         if (linkage == LINK_INTERN && current_scope_depth(&ns_ident)) {
