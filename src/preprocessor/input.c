@@ -110,6 +110,12 @@ void clear_input_buffers(void)
     free(rline);
 }
 
+static size_t path_dirlen(const char *path)
+{
+    const char *rchr = strrchr(path, '/');
+    return (rchr) ? rchr - path : 0;
+}
+
 static char *create_path(const char *path, size_t dirlen, const char *name)
 {
     static size_t path_buffer_length;
@@ -148,7 +154,7 @@ void include_file(const char *name)
     source.file = fopen(path, "r");
     if (source.file) {
         source.path = str_register(path, strlen(path));
-        source.dirlen = strrchr(path, '/') - path;
+        source.dirlen = path_dirlen(path);
         push_file(source);
     } else {
         include_system_file(name);
@@ -173,7 +179,7 @@ void include_system_file(const char *name)
         source.file = fopen(path, "r");
         if (source.file) {
             source.path = str_register(path, strlen(path));
-            source.dirlen = strrchr(path, '/') - path;
+            source.dirlen = path_dirlen(path);
             break;
         }
     }
