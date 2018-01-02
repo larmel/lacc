@@ -101,7 +101,7 @@ const struct token basic_token[] = {
  *      (\.)?(0-9){\.a-zA-Z_0-9(e+|e-|E+|E-)}*
  *
  */
-static struct token strtonum(char *in, char **endptr)
+static struct token stringtonum(char *in, char **endptr)
 {
     char *ptr = in;
     struct token tok = {PREP_NUMBER};
@@ -748,7 +748,7 @@ struct token tokenize(char *in, char **endptr)
     } else if (*in == '\0') {
         tok = basic_token[END];
     } else if (isdigit(*in) || (*in == '.' && isdigit(in[1]))) {
-        tok = strtonum(in, endptr);
+        tok = stringtonum(in, endptr);
     } else if (*in == '"') {
         tok = strtostr(in, endptr);
     } else if (*in == '\'') {
