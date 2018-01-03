@@ -101,9 +101,9 @@ const struct token basic_token[] = {
  *      (\.)?(0-9){\.a-zA-Z_0-9(e+|e-|E+|E-)}*
  *
  */
-static struct token stringtonum(char *in, char **endptr)
+static struct token stringtonum(const char *in, const char **endptr)
 {
-    char *ptr = in;
+    const char *ptr = in;
     struct token tok = {PREP_NUMBER};
 
     if (*in == '.') {
@@ -141,7 +141,7 @@ enum suffix {
     SUFFIX_ULL = SUFFIX_U | SUFFIX_LL
 };
 
-static enum suffix read_integer_suffix(char *ptr, char **endptr)
+static enum suffix read_integer_suffix(const char *ptr, const char **endptr)
 {
     enum suffix s = SUFFIX_NONE;
 
@@ -220,7 +220,7 @@ static const Type constant_integer_type(
 struct token convert_preprocessing_number(struct token t)
 {
     const char *str;
-    char *endptr;
+    const char *endptr;
     int len;
     enum suffix suffix;
     struct token tok = {NUMBER};
@@ -235,7 +235,7 @@ struct token convert_preprocessing_number(struct token t)
      * permuations of upper- and lower case.
      */
     errno = 0;
-    tok.d.val.u = strtoul(str, &endptr, 0);
+    tok.d.val.u = strtoul(str, (char **) &endptr, 0);
     suffix = read_integer_suffix(endptr, &endptr);
     if (endptr - str == len) {
         assert(isdigit(*str));
@@ -250,7 +250,7 @@ struct token convert_preprocessing_number(struct token t)
          */
         errno = 0;
         tok.type = basic_type__double;
-        tok.d.val.d = strtod(str, &endptr);
+        tok.d.val.d = strtod(str, (char **) &endptr);
         if (endptr - str < len) {
             if (*endptr == 'f' || *endptr == 'F') {
                 tok.type = basic_type__float;
@@ -278,7 +278,7 @@ struct token convert_preprocessing_number(struct token t)
 
 #define isoctal(c) ((c) >= '0' && (c) < '8')
 
-static char escpchar(char *in, char **endptr)
+static char escpchar(const char *in, const char **endptr)
 {
     static char buf[4];
     long n;
@@ -298,7 +298,7 @@ static char escpchar(char *in, char **endptr)
     case '\"': return '\"';
     case '\\': return '\\';
     case 'x':
-        return (char) strtol(&in[1], endptr, 16);
+        return (char) strtol(&in[1], (char **) endptr, 16);
     case '0':
     case '1':
     case '2':
@@ -311,7 +311,7 @@ static char escpchar(char *in, char **endptr)
             buf[i] = in[i];
         }
         buf[i] = '\0';
-        n = strtol(buf, endptr, 8);
+        n = strtol(buf, (char **) endptr, 8);
         *endptr = in + i;
         return (char) n;
     default:
@@ -320,7 +320,7 @@ static char escpchar(char *in, char **endptr)
     }
 }
 
-static char read_char(char *in, char **endptr)
+static char read_char(const char *in, const char **endptr)
 {
     char c;
 
@@ -359,10 +359,10 @@ static char *get_string_buffer(size_t length)
 struct token convert_preprocessing_string(struct token t)
 {
     struct token tok = {STRING};
-    char *raw, *ptr;
+    const char *raw, *ptr;
     char *buf, *btr;
 
-    raw = (char *) str_raw(t.d.string);
+    raw = str_raw(t.d.string);
     buf = get_string_buffer(t.d.string.len);
     btr = buf;
     ptr = raw;
@@ -377,9 +377,9 @@ struct token convert_preprocessing_string(struct token t)
 struct token convert_preprocessing_char(struct token t)
 {
     struct token tok = {NUMBER};
-    char *raw;
+    const char *raw;
 
-    raw = (char *) str_raw(t.d.string);
+    raw = str_raw(t.d.string);
     tok.type = basic_type__int;
     tok.d.val.i = read_char(raw, &raw);
     return tok;
@@ -389,7 +389,7 @@ struct token convert_preprocessing_char(struct token t)
  * Parse character escape sequences like '\xaf', '\0', '\077' etc,
  * starting from *in.
  */
-static void escape_sequence(char *in, char **endptr)
+static void escape_sequence(const char *in, const char **endptr)
 {
     int i;
 
@@ -439,10 +439,10 @@ static void escape_sequence(char *in, char **endptr)
  * starting from *in. The position of the character after the last '
  * character is stored in endptr.
  */
-static struct token strtochar(char *in, char **endptr)
+static struct token strtochar(const char *in, const char **endptr)
 {
     struct token tok = {PREP_CHAR};
-    char *start;
+    const char *start;
 
     assert(*in == '\'');
     start = ++in;
@@ -466,10 +466,10 @@ static struct token strtochar(char *in, char **endptr)
 }
 
 /* Parse string literal inputs delimited by quotation marks. */
-static struct token strtostr(char *in, char **endptr)
+static struct token strtostr(const char *in, const char **endptr)
 {
     struct token tok = {PREP_STRING};
-    char *start;
+    const char *start;
 
     assert(*in == '"');
     start = ++in;
@@ -528,9 +528,9 @@ static struct token strtostr(char *in, char **endptr)
  * Parse string as keyword or identifier. First character should be
  * alphabetic or underscore.
  */
-static struct token strtoident(char *in, char **endptr)
+static struct token strtoident(const char *in, const char **endptr)
 {
-    char *start = in;
+    const char *start = in;
     struct token ident = {IDENTIFIER};
 
     switch (*in++) {
@@ -646,9 +646,9 @@ static struct token strtoident(char *in, char **endptr)
     return ident;
 }
 
-static struct token strtoop(char *in, char **endptr)
+static struct token strtoop(const char *in, const char **endptr)
 {
-    char *start = in;
+    const char *start = in;
     struct token t;
 
     switch (*in++) {
@@ -721,9 +721,9 @@ static struct token strtoop(char *in, char **endptr)
     return t;
 }
 
-static int skip_spaces(char *in, char **endptr)
+static int skip_spaces(const char *in, const char **endptr)
 {
-    char *start = in;
+    const char *start = in;
 
     while (isspace(*in))
         in++;
@@ -732,7 +732,7 @@ static int skip_spaces(char *in, char **endptr)
     return in - start;
 }
 
-struct token tokenize(char *in, char **endptr)
+struct token tokenize(const char *in, const char **endptr)
 {
     int ws;
     struct token tok;

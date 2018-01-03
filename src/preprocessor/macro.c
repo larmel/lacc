@@ -250,7 +250,8 @@ void print_token_array(const TokenArray *list)
 static struct token paste(struct token left, struct token right)
 {
     struct token res;
-    char *buf, *endptr;
+    char *buf;
+    const char *endptr;
     String ls, rs;
 
     assert(left.token != NUMBER);
@@ -737,9 +738,9 @@ struct token stringify(const TokenArray *list)
     return str;
 }
 
-static TokenArray parse_string(char *str)
+static TokenArray parse_string(const char *str)
 {
-    char *endptr;
+    const char *endptr;
     struct token param = {PARAM};
     TokenArray arr = get_token_array();
 
@@ -757,7 +758,7 @@ static TokenArray parse_string(char *str)
     return arr;
 }
 
-static void register_macro(const char *key, char *value)
+static void register_macro(const char *key, const char *value)
 {
     struct macro macro = {{{0}}, OBJECT_LIKE};
 

@@ -46,7 +46,7 @@ static struct token get_token(void)
     if (!line_buffer && (line_buffer = getprepline()) == NULL) {
         r = basic_token[END];
     } else {
-        r = tokenize(line_buffer, &endptr);
+        r = tokenize(line_buffer, (const char **) &endptr);
         line_buffer = endptr;
         if (r.token == END) {
             /*
@@ -114,7 +114,7 @@ static void read_macro_invocation(TokenArray *line, const struct macro *macro)
 static void read_defined_operator(TokenArray *line)
 {
     int is_parens = 0;
-    char *endptr;
+    const char *endptr;
     struct token t = get_token();
 
     if (t.token == '(') {

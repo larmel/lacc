@@ -42,10 +42,8 @@ struct token convert_preprocessing_char(struct token t);
  * comments are removed and line continuations are applied. endptr is
  * set to point to one index past the last character producing the
  * token.
- *
- * Destructively overwrites input buffer for string constants.
  */
-struct token tokenize(char *in, char **endptr);
+struct token tokenize(const char *in, const char **endptr);
 
 /*
  * Free memory used to hold temporary strings during tokenization.
