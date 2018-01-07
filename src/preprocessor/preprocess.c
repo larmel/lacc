@@ -394,6 +394,25 @@ static int is_lookahead_ready(int n)
     return 1;
 }
 
+static void preprocess_pragma(TokenArray *line)
+{
+    int i;
+    struct token t;
+
+    assert(array_len(line) > 0);
+    assert(!tok_cmp(ident__pragma, array_get(line, 0)));
+    if (output_preprocessed) {
+        add_to_lookahead(basic_token['#']);
+        for (i = 0; i < array_len(line); ++i) {
+            t = array_get(line, i);
+            assert(t.token != END);
+            add_to_lookahead(t);
+        }
+    } else {
+        /* Pragma directives are not yet handled. */
+    }
+}
+
 /*
  * Consume at least one line, up until the final newline or end of file.
  * Fill up lookahead buffer to hold at least n tokens. In case of end of
@@ -425,7 +444,11 @@ static void preprocess_line(int n)
                 || !tok_cmp(t, ident__endif))
             {
                 read_complete_line(&line, t, 1);
-                preprocess_directive(&line);
+                if (!tok_cmp(t, ident__pragma)) {
+                    preprocess_pragma(&line);
+                } else {
+                    preprocess_directive(&line);
+                }
             } else {
                 line_buffer = NULL;
             }

@@ -748,8 +748,6 @@ void preprocess_directive(TokenArray *array)
             preprocess_include(line + 1);
         } else if (!tok_cmp(*line, ident__line)) {
             preprocess_line_directive(line + 1);
-        } else if (!tok_cmp(*line, ident__pragma)) {
-            /* Ignore */
         } else if (!tok_cmp(*line, ident__error)) {
             array->data++;
             array->length--;
