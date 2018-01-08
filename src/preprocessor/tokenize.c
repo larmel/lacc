@@ -278,7 +278,7 @@ struct token convert_preprocessing_number(struct token t)
 
 #define isoctal(c) ((c) >= '0' && (c) < '8')
 
-static char escpchar(const char *in, const char **endptr)
+static char convert_escape_sequence(const char *in, const char **endptr)
 {
     static char buf[4];
     long n;
@@ -298,6 +298,10 @@ static char escpchar(const char *in, const char **endptr)
     case '\"': return '\"';
     case '\\': return '\\';
     case 'x':
+        if (!isxdigit(in[1])) {
+            error("Empty hexadecimal escape sequence.");
+            exit(1);
+        }
         return (char) strtol(&in[1], (char **) endptr, 16);
     case '0':
     case '1':
@@ -320,12 +324,12 @@ static char escpchar(const char *in, const char **endptr)
     }
 }
 
-static char read_char(const char *in, const char **endptr)
+static char convert_char(const char *in, const char **endptr)
 {
     char c;
 
     if (*in == '\\') {
-        c = escpchar(in + 1, endptr);
+        c = convert_escape_sequence(in + 1, endptr);
     } else {
         c = *in;
         *endptr = in + 1;
@@ -367,7 +371,7 @@ struct token convert_preprocessing_string(struct token t)
     btr = buf;
     ptr = raw;
     while (ptr - raw < t.d.string.len) {
-        *btr++ = read_char(ptr, &ptr);
+        *btr++ = convert_char(ptr, &ptr);
     }
 
     tok.d.string = str_register(buf, btr - buf);
@@ -381,38 +385,23 @@ struct token convert_preprocessing_char(struct token t)
 
     raw = str_raw(t.d.string);
     tok.type = basic_type__int;
-    tok.d.val.i = read_char(raw, &raw);
+    tok.d.val.i = convert_char(raw, &raw);
     return tok;
 }
 
 /*
  * Parse character escape sequences like '\xaf', '\0', '\077' etc,
  * starting from *in.
+ *
+ * Input is not validated here, this must be delayed until after
+ * preprocessing when converting PREP_STRING and PREP_CHAR.
  */
-static void escape_sequence(const char *in, const char **endptr)
+static void parse_escape_sequence(const char *in, const char **endptr)
 {
-    int i;
-
-    switch (*in) {
-    case 'a':
-    case 'b':
-    case 't':
-    case 'n':
-    case 'v':
-    case 'f':
-    case 'r':
-    case '?':
-    case '\'':
-    case '\"':
-    case '\\':
-        i = 1;
-        break;
+    switch (*in++) {
     case 'x':
-        for (i = 1; isxdigit(in[i]); ++i)
-            ;
-        if (i == 1) {
-            error("Empty hexadecimal escape sequence.");
-            exit(1);
+        while (isxdigit(*in)) {
+            in++;
         }
         break;
     case '0':
@@ -423,15 +412,18 @@ static void escape_sequence(const char *in, const char **endptr)
     case '5':
     case '6':
     case '7':
-        for (i = 1; i < 3 && isoctal(in[i]); ++i)
-            ;
+        if (isoctal(*in)) {
+            in++;
+            if (isoctal(*in)) {
+                in++;
+            }
+        }
         break;
     default:
-        error("Invalid escape sequence '\\%c'.", *in);
-        exit(1);
+        break;
     }
 
-    *endptr = in + i;
+    *endptr = in;
 }
 
 /*
@@ -447,7 +439,7 @@ static struct token strtochar(const char *in, const char **endptr)
     assert(*in == '\'');
     start = ++in;
     if (*in == '\\') {
-        escape_sequence(in + 1, &in);
+        parse_escape_sequence(in + 1, &in);
     } else if (*in != '\'') {
         in++;
     } else {
@@ -477,7 +469,7 @@ static struct token strtostr(const char *in, const char **endptr)
 
     while (*in != '"') {
         if (*in == '\\') {
-            escape_sequence(in + 1, &in);
+            parse_escape_sequence(in + 1, &in);
         } else {
             in++;
         }
