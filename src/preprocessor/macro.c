@@ -705,6 +705,7 @@ struct token stringify(const TokenArray *list)
             exit(1);
         }
         str.d.string = tok.d.string;
+        str.leading_whitespace = tok.leading_whitespace;
         if (tok.token == STRING) {
             str.token = STRING;
         }
@@ -731,6 +732,7 @@ struct token stringify(const TokenArray *list)
             exit(1);
         }
 
+        str.leading_whitespace = array_get(list, 0).leading_whitespace;
         str.d.string = str_register(buf, ptr);
         free(buf);
     }
