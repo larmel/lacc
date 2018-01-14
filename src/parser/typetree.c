@@ -291,7 +291,7 @@ static size_t adjust_member_alignment(Type parent, Type type)
 
 Type type_create(enum type tt, ...)
 {
-    Type type = {0}, next;
+    Type type, next;
     const struct symbol *sym;
     struct typetree *t;
     size_t elem;
@@ -299,6 +299,7 @@ Type type_create(enum type tt, ...)
 
     va_start(args, tt);
     switch (tt) {
+    default: assert(0);
     case T_POINTER:
         next = va_arg(args, Type);
         if (next.is_pointer) {
@@ -341,7 +342,6 @@ Type type_create(enum type tt, ...)
     case T_UNION:
         type = alloc_type(tt);
         break;
-    default: assert(0);
     }
 
     va_end(args);

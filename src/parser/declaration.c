@@ -478,7 +478,6 @@ static Type struct_or_union_declaration(void)
         if (!sym) {
             type = type_create(kind);
             sym = sym_add(&ns_tag, name, type, SYM_TAG, LINK_NONE);
-            type = sym->type;
         } else if (is_integer(sym->type)) {
             error("Tag '%s' was previously declared as enum.",
                 str_raw(sym->name));

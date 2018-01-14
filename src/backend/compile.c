@@ -1943,7 +1943,7 @@ static enum reg compile_add(
     w = size_of(type);
     if (is_long_double(type)) {
         ax = load_cast(l, type);
-        cx = load_cast(r, type);
+        load_cast(r, type);
         emit(INSTR_FADDP, OPT_REG, reg(ax, w));
         assert(x87_stack == 2);
         x87_stack--;
@@ -2047,7 +2047,7 @@ static enum reg compile_sub(
     w = size_of(type);
     if (is_long_double(type)) {
         ax = load_cast(l, type);
-        cx = load_cast(r, type);
+        load_cast(r, type);
         emit(INSTR_FSUBRP, OPT_REG, reg(ax, w));
         assert(x87_stack == 2);
         x87_stack--;
@@ -2650,7 +2650,7 @@ static void compile_return(Type func, struct expression expr)
         break;
     case PC_X87:
         assert(pc.eightbyte[1] == PC_X87UP);
-        ax = compile_expression(expr);
+        compile_expression(expr);
         assert(x87_stack == 1);
         x87_stack = 0; /* Reset before next function. */
         break;

@@ -423,6 +423,7 @@ static TokenArray expand_macro(
 
     list = expand_stringify_and_paste(def, args);
     if (def->params > 0) {
+        assert(def->type == FUNCTION_LIKE);
         for (i = 0; i < def->params; ++i) {
             expand(&args[i]);
             if (array_len(&args[i])) {
