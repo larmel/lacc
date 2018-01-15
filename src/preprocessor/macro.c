@@ -690,7 +690,7 @@ static char *stringify_concat(
  */
 struct token stringify(const TokenArray *list)
 {
-    struct token str = {PREP_STRING}, tok;
+    struct token str = {0}, t;
     size_t cap, ptr;
     char *buf;
     int i;
@@ -698,44 +698,47 @@ struct token stringify(const TokenArray *list)
     if (!array_len(list)) {
         str.token = STRING;
         str.d.string = str_init("");
-    } else if (array_len(list) == 1) {
-        tok = array_get(list, 0);
-        assert(tok.token != NUMBER);
-        if (tok.token == '\\') {
-            error("Invalid string literal ending with '\\'.");
-            exit(1);
-        }
-        str.d.string = tok.d.string;
-        str.leading_whitespace = tok.leading_whitespace;
-        if (tok.token == STRING) {
-            str.token = STRING;
-        }
     } else {
-        cap = array_len(list) * 8;
-        buf = malloc(cap);
-        ptr = 0;
-        for (i = 0; i < array_len(list); ++i) {
-            tok = array_get(list, i);
-            if (tok.token == NEWLINE) {
-                assert(i == array_len(list) - 1);
-            } else {
-                assert(tok.token != END);
-                if (i == 0) {
-                    tok.leading_whitespace = 0;
-                }
-
-                buf = stringify_concat(buf, &cap, &ptr, tok);
+        t = array_get(list, 0);
+        switch (t.token) {
+        default:
+            assert(t.token != END);
+            assert(t.token != NUMBER);
+            if (array_len(list) == 1) {
+                str.token = STRING;
+                str.d.string = t.d.string;
+                str.leading_whitespace = t.leading_whitespace;
+                break;
             }
+        case '\\':
+        case STRING:
+        case PREP_STRING:
+        case PREP_CHAR:
+            str.token = PREP_STRING;
+            cap = array_len(list) * 8;
+            buf = malloc(cap);
+            ptr = 0;
+            for (i = 0; i < array_len(list); ++i) {
+                t = array_get(list, i);
+                if (t.token == NEWLINE) {
+                    assert(i == array_len(list) - 1);
+                } else {
+                    assert(t.token != END);
+                    if (i == 0) {
+                        t.leading_whitespace = 0;
+                    }
+                    buf = stringify_concat(buf, &cap, &ptr, t);
+                }
+            }
+            if (ptr > 0 && buf[ptr - 1] == '\\') {
+                error("Invalid string literal ending with '\\'.");
+                exit(1);
+            }
+            str.leading_whitespace = array_get(list, 0).leading_whitespace;
+            str.d.string = str_register(buf, ptr);
+            free(buf);
+            break;
         }
-
-        if (ptr > 0 && buf[ptr - 1] == '\\') {
-            error("Invalid string literal ending with '\\'.");
-            exit(1);
-        }
-
-        str.leading_whitespace = array_get(list, 0).leading_whitespace;
-        str.d.string = str_register(buf, ptr);
-        free(buf);
     }
 
     return str;

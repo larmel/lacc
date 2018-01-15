@@ -4,6 +4,9 @@ int puts(const char *);
 #define STR(x) #x
 
 static char *c[] = {
+	STR(
+		)
+	STR( )
 	STR(\n)
 	STR($),
 	STR(*\\\a\t\\vv)
@@ -14,7 +17,14 @@ static char *c[] = {
 		\77
 		\x1A
 		\xAt
-		\0a)
+		\0a),
+	STR( 2.34  ),
+	STR(while),
+	STR(==),
+	STR(#),
+	STR("\\ \" \t"),
+	STR(""),
+	STR(' ')
 };
 
 static int foo(void) {
