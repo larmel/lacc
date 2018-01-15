@@ -81,7 +81,7 @@ creduce-check: bin/lacc
 sqlite-test: bin/lacc
 	./sqlite.sh "bin/lacc -std=c89" "$(CC) -std=c89"
 
-bin/amalgamation.c: amalgamation.py
+bin/amalgamation.c: amalgamation.py $(SOURCES)
 	@mkdir -p $(dir $@)
 	python amalgamation.py
 
