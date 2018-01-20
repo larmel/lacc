@@ -13,3 +13,10 @@ int main() {
 #elif triple(0)
 #error Not possible
 #endif
+
+#define T1 ((1 ? -1 : (0, 0u)) < 0)
+
+#if T1
+# error Should be false
+#endif
+

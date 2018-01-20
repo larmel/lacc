@@ -503,7 +503,7 @@ static struct number preprocess_logical_or(
     return l;
 }
 
-static struct number preprocess_expression(
+static struct number preprocess_conditional(
     const struct token *list,
     const struct token **endptr)
 {
@@ -513,7 +513,7 @@ static struct number preprocess_expression(
     if (list->token == '?') {
         b = preprocess_expression(list + 1, &list);
         expect(list, ':');
-        c = preprocess_expression(list + 1, &list);
+        c = preprocess_conditional(list + 1, &list);
         if (both_signed(&b, &c)) {
             a.val.i = a.val.u ? b.val.i : c.val.i;
             a.type = basic_type__long;
@@ -525,6 +525,27 @@ static struct number preprocess_expression(
 
     *endptr = list;
     return a;
+}
+
+static struct number preprocess_expression(
+    const struct token *list,
+    const struct token **endptr)
+{
+    struct number n;
+
+    do {
+        n = preprocess_conditional(list, &list);
+    } while (list->token == ',' && list++);
+
+    *endptr = list;
+    return n;
+}
+
+static struct number preprocess_constant_expression(
+    const struct token *list,
+    const struct token **endptr)
+{
+    return preprocess_conditional(list, endptr);
 }
 
 static void preprocess_include(const struct token line[])
@@ -683,7 +704,7 @@ void preprocess_directive(TokenArray *array)
          * example can function-like macros be undefined.
          */
         if (in_active_block()) {
-            num = preprocess_expression(line + 1, &line);
+            num = preprocess_constant_expression(line + 1, &line);
             push_state(num.val.i ? BRANCH_LIVE : BRANCH_DEAD);
         } else {
             push_state(BRANCH_DISABLED);
@@ -700,7 +721,7 @@ void preprocess_directive(TokenArray *array)
         state = pop_state();
         if (in_active_block()) {
             if (state == BRANCH_DEAD) {
-                num = preprocess_expression(line + 1, &line);
+                num = preprocess_constant_expression(line + 1, &line);
                 push_state(num.val.i ? BRANCH_LIVE : BRANCH_DEAD);
             } else {
                 push_state(BRANCH_DISABLED);
