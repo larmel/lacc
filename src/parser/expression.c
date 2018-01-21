@@ -845,35 +845,61 @@ static struct block *conditional_expression(
     struct definition *def,
     struct block *block)
 {
-    struct expression condition;
-    struct block *t, *f, *next;
+    struct var temp;
+    struct block *left, *right;
+    Type type;
 
     block = logical_or_expression(def, block);
-    if (peek().token == '?') {
-        /* todo: type checking on immediate paths. */
-        condition = block->expr;
-        consume('?');
-        t = cfg_block_init(def);
+    if (peek().token != '?') {
+        return block;
+    }
+
+    if (!is_scalar(block->expr.type)) {
+        error("Conditional must be of scalar type.");
+        exit(1);
+    }
+
+    next();
+    if (is_immediate(block->expr)) {
         if (is_immediate_true(block->expr)) {
-            block = expression(def, block);
+            left = block = expression(def, block);
             consume(':');
-            conditional_expression(def, t); /* throwaway */
-        } else if (is_immediate_false(block->expr)) {
-            expression(def, t); /* throwaway */
-            consume(':');
-            block = conditional_expression(def, block);
+            right = cfg_block_init(def);
+            right = conditional_expression(def, right);
         } else {
-            f = cfg_block_init(def);
-            next = cfg_block_init(def);
-            block->jump[0] = f;
-            block->jump[1] = t;
-            t = expression(def, t);
-            t->jump[0] = next;
+            assert(is_immediate_false(block->expr));
+            left = cfg_block_init(def);
+            left = expression(def, left);
             consume(':');
-            f = conditional_expression(def, f);
-            f->jump[0] = next;
-            next->expr = eval_conditional(def, condition, t, f);
-            block = next;
+            right = block = conditional_expression(def, block);
+        }
+
+        type = eval_conditional(def, left, right);
+        if (is_void(type)) {
+            block->expr = as_expr(var_void());
+        } else {
+            block->expr = eval_expr(def, block, IR_OP_CAST,
+                eval(def, block, block->expr), type);
+        }
+    } else {
+        left = cfg_block_init(def);
+        right = cfg_block_init(def);
+        block->jump[0] = right;
+        block->jump[1] = left;
+        block = cfg_block_init(def);
+        left = expression(def, left);
+        left->jump[0] = block;
+        consume(':');
+        right = conditional_expression(def, right);
+        right->jump[0] = block;
+        type = eval_conditional(def, left, right);
+        if (is_void(type)) {
+            block->expr = as_expr(var_void());
+        } else {
+            temp = create_var(def, type);
+            left->expr = as_expr(eval_assign(def, left, temp, left->expr));
+            right->expr = as_expr(eval_assign(def, right, temp, right->expr));
+            block->expr = as_expr(temp);
         }
     }
 

@@ -52,7 +52,7 @@ int is_string(struct var val)
         && val.symbol->symtype == SYM_STRING_VALUE;
 }
 
-static struct var var_void(void)
+struct var var_void(void)
 {
     struct var var = {0};
 
@@ -61,7 +61,7 @@ static struct var var_void(void)
     return var;
 }
 
-static struct var create_var(struct definition *def, Type type)
+struct var create_var(struct definition *def, Type type)
 {
     struct symbol *tmp;
     struct var res;
@@ -1613,37 +1613,42 @@ struct expression eval_return(
     return block->expr;
 }
 
-struct expression eval_conditional(
+Type eval_conditional(
     struct definition *def,
-    struct expression a,
-    struct block *b,
-    struct block *c)
+    struct block *left,
+    struct block *right)
 {
-    struct var res, bval, cval;
-    Type t1, t2, type;
+    struct var lval, rval;
+    Type t1, t2, p1, p2, type;
 
-    if (!is_scalar(a.type)) {
-        error("Conditional must be of scalar type.");
-        exit(1);
-    }
+    lval = rvalue(def, left, eval(def, left, left->expr));
+    rval = rvalue(def, right, eval(def, right, right->expr));
 
-    bval = rvalue(def, b, eval(def, b, b->expr));
-    cval = rvalue(def, c, eval(def, c, c->expr));
-    t1 = bval.type;
-    t2 = cval.type;
+    t1 = lval.type;
+    t2 = rval.type;
+    left->expr = as_expr(lval);
+    right->expr = as_expr(rval);
 
     if (is_arithmetic(t1) && is_arithmetic(t2)) {
         type = usual_arithmetic_conversion(t1, t2);
-    } else if (is_pointer(t1) && is_pointer(t2)
-        && is_compatible_unqualified(type_deref(t1), type_deref(t2)))
-    {
+    } else if (is_pointer(t1) && is_pointer(t2)) {
+        p1 = type_deref(t1);
+        p2 = type_deref(t2);
+        if (is_compatible_unqualified(p1, p2) || is_void(p1)) {
+            type = type_apply_qualifiers(p1, p2);
+        } else if (is_void(p2)) {
+            type = type_apply_qualifiers(p2, p1);
+        } else {
+            error("Incompatible pointer types in conditional expression.");
+            exit(1);
+        }
+
+        type = type_create(T_POINTER, type);
+        type = type_apply_qualifiers(type, t1);
+        type = type_apply_qualifiers(type, t2);
+    } else if (is_pointer(t1) && is_nullptr(rval)) {
         type = t1;
-        t1 = type_apply_qualifiers(type_deref(t1), type_deref(t2));
-        t1 = type_create(T_POINTER, t1);
-        type = type_apply_qualifiers(t1, type);
-    } else if (is_pointer(t1) && is_nullptr(cval)) {
-        type = t1;
-    } else if (is_pointer(t2) && is_nullptr(bval)) {
+    } else if (is_pointer(t2) && is_nullptr(lval)) {
         type = t2;
     } else if (is_void(t1) && is_void(t2)) {
         type = t1;
@@ -1654,20 +1659,7 @@ struct expression eval_conditional(
         exit(1);
     }
 
-    if (is_void(type)) {
-        res = var_void();
-    } else {
-        if (is_immediate(a)) {
-            res = (a.l.imm.i) ? bval : cval;
-        } else {
-            res = create_var(def, type);
-            b->expr = as_expr(eval_assign(def, b, res, as_expr(bval)));
-            c->expr = as_expr(eval_assign(def, c, res, as_expr(cval)));
-            res.lvalue = 0;
-        }
-    }
-
-    return as_expr(res);
+    return type;
 }
 
 /*

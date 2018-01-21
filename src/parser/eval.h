@@ -68,12 +68,11 @@ struct expression eval_unary_minus(
  */
 struct expression eval_unary_plus(struct var val);
 
-/* Evaluate (a) ? b : c. */
-struct expression eval_conditional(
+/* Evaluate operands of (a) ? b : c, and return result type. */
+Type eval_conditional(
     struct definition *def,
-    struct expression a,
-    struct block *b,
-    struct block *c);
+    struct block *left,
+    struct block *right);
 
 /* Prepare parameter expression. */
 struct expression eval_param(
@@ -158,7 +157,13 @@ int is_immediate_true(struct expression expr);
  */
 int is_immediate_false(struct expression expr);
 
+/* Create temporary variable. */
+struct var create_var(struct definition *def, Type type);
+
 /* Create an immediate unsigned integer of the given type. */
 struct var imm_unsigned(Type type, unsigned long val);
+
+/* Immediate representing void value. */
+struct var var_void(void);
 
 #endif
