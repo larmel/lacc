@@ -232,6 +232,21 @@ static struct member *add_member(Type parent, struct member m)
     return &array_back(&t->members);
 }
 
+static Type backing_type_from_bits(int backing_bits)
+{
+    switch (backing_bits) {
+    case 8:
+        return basic_type__char;
+    case 16:
+        return basic_type__short;
+    case 32:
+        return basic_type__int;
+    default:
+        assert(backing_bits == 64);
+        return basic_type__long;
+    }
+}
+
 /*
  * Adjust alignment to next integer width after adding an unnamed zero-
  * width field member.
@@ -241,27 +256,49 @@ static struct member *add_member(Type parent, struct member m)
  * member to integer width.
  *
  * If there are no members, nothing to do. Starting with a zero width
- * field does not put the next member at offset 4.
+ * field does not put the next member at offset other than 0.
  */
-static void reset_field_alignment(Type type)
+static void reset_field_alignment(Type type, Type clear)
 {
     struct typetree *t;
-    int n, d;
+    int bits, clear_bits, mod;
+    size_t len, clear_size;
+    Type backing;
+    String name = {0};
     const struct member *m;
 
     assert(is_struct(type));
-    n = nmembers(type);
-    if (n) {
-        m = get_member(type, n - 1);
-        t = get_typetree_handle(type.ref);
-        if (m->field_width) {
-            d = m->field_offset + m->field_width;
-            if (d < 32) {
-                type_add_field(type, str_init(""), basic_type__int, 32 - d);
+    t = get_typetree_handle(type.ref);
+    len = array_len(&t->members);
+    if (!len) {
+        return;
+    }
+
+    clear_size = size_of(clear);
+    clear_bits = clear_size << 3;
+    m = &array_get(&t->members, len - 1);
+    if (m->field_width) {
+        bits = m->field_offset + m->field_width;
+        backing = backing_type_from_bits(m->field_backing);
+        if (clear_bits >= m->field_backing) {
+            assert(bits <= m->field_backing);
+            if (bits != m->field_backing) {
+                type_add_field(type, name, backing, m->field_backing - bits);
             }
-        } else if (t->size % 4 != 0) {
-            t->size += t->size % 4;
+        } else if (bits > clear_bits) {
+            mod = bits % clear_bits;
+            if (mod) {
+                type_add_field(type, name, backing, mod);
+            }
+        } else {
+            type_add_field(type, name, backing, clear_bits - bits);
         }
+    }
+
+    if (t->size < clear_size) {
+        t->size = clear_size;
+    } else if (t->size % clear_size != 0) {
+        t->size += t->size % clear_size;
     }
 }
 
@@ -531,33 +568,64 @@ struct member *type_add_member(Type parent, String name, Type type)
     return add_member(parent, m);
 }
 
-static int pack_field(const struct member *prev, struct member *m)
+/*
+ * Attempt to place next field member right after the previous one.
+ *
+ *     struct {
+ *         int a : 20;    // field_offset = 0, field_width = 20
+ *         short b : 10;  // field_offset = 20, field_width = 10
+ *         char c : 2;    // field_offset = 30, field_width = 2
+ *     }
+ *
+ * Also pack if the next field can contain the previous field.
+ *
+ *     struct {
+ *         short a : 10;  // field_offset = 0, field_width = 10
+ *         int b : 20;    // field_offset = 10, field_width = 20
+ *     }
+ *
+ */
+static int pack_field_member(struct typetree *t, struct member *field)
 {
-    int bits;
+    size_t len;
+    int i, bits;
+    struct member *m;
+    const struct member *last;
 
-    assert(prev);
-    bits = prev->field_offset + prev->field_width;
-    if (bits + m->field_width <= size_of(basic_type__int) * 8) {
-        m->offset = prev->offset;
-        m->field_offset = bits;
+    len = array_len(&t->members);
+    if (!len) {
+        return 0;
+    }
+
+    last = &array_get(&t->members, len - 1);
+    if (!last->field_width) {
+        return 0;
+    }
+
+    /* Check if possible to pack directly adjacent to last field. */
+    bits = last->field_offset + last->field_width + field->field_width;
+    if (bits <= last->field_backing) {
+        field->offset = last->offset;
+        field->field_offset = last->field_offset + last->field_width;
+        field->field_backing = last->field_backing;
+        return 1;
+    }
+
+    /* Update backing if new field has a bigger slot. */
+    if (bits <= field->field_backing) {
+        field->offset = last->offset;
+        field->field_offset = last->field_offset + last->field_width;
+        for (i = len - 1; i >= 0; --i) {
+            m = &array_get(&t->members, i);
+            if (m->field_width && m->offset == field->offset) {
+                m->field_backing = field->field_backing;
+            } else break;
+        }
+
         return 1;
     }
 
     return 0;
-}
-
-static const struct member *get_last_field_member(struct typetree *t)
-{
-    const struct member *prev;
-
-    if (array_len(&t->members)) {
-        prev = &array_back(&t->members);
-        if (prev->field_width) {
-            return prev;
-        }
-    }
-
-    return NULL;
 }
 
 /*
@@ -570,14 +638,11 @@ void type_add_field(Type parent, String name, Type type, size_t width)
 {
     struct member m = {0};
     struct typetree *t;
-    const struct member *prev;
 
     assert(is_struct_or_union(parent));
-    assert(type_equal(type, basic_type__int)
-        || type_equal(type, basic_type__unsigned_int)
-        || is_bool(type));
+    assert(is_integer(type));
 
-    if (width > size_of(type) * 8 || (is_bool(type) && width > 1)) {
+    if (width > (size_of(type) << 3) || (is_bool(type) && width > 1)) {
         error("Width of bit-field (%lu bits) exceeds width of type %t.",
             width, type);
         exit(1);
@@ -595,17 +660,17 @@ void type_add_field(Type parent, String name, Type type, size_t width)
     m.name = name;
     m.type = type;
     m.field_width = width;
+    m.field_backing = size_of(type) << 3;
     if (is_struct(parent)) {
         t = get_typetree_handle(parent.ref);
-        prev = get_last_field_member(t);
-        if (!prev || !pack_field(prev, &m)) {
+        if (!pack_field_member(t, &m)) {
             m.field_offset = 0;
             m.offset = adjust_member_alignment(parent, type);
         }
     }
 
     if (!width) {
-        reset_field_alignment(parent);
+        reset_field_alignment(parent, type);
     } else {
         add_member(parent, m);
     }
@@ -1092,8 +1157,9 @@ int fprinttype(FILE *stream, Type type, const struct symbol *expand)
                 n += fprintf(stream, ".%s::", str_raw(m->name));
                 n += fprinttype(stream, m->type, NULL);
                 if (m->field_width) {
-                    n += fprintf(stream, " (+%lu:%d:%d)",
-                        m->offset, m->field_offset, m->field_width);
+                    n += fprintf(stream, " (+%lu:%d:%d):%d",
+                        m->offset, m->field_offset, m->field_width,
+                        m->field_backing);
                 } else {
                     n += fprintf(stream, " (+%lu)", m->offset);
                 }

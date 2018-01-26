@@ -792,19 +792,23 @@ static struct code encode_bitwise(
         c.val[c.len++] = 0xC0 | regi(a.reg) << 3 | regi(b.reg);
         break;
     case OPT_IMM_REG:
-        assert(a.imm.w == b.reg.w);
-        assert(a.imm.w == 4 || a.imm.w == 1);
-        if (b.reg.r == AX && (!is_byte_imm(a.imm) || b.reg.w < 4)) {
-            c.val[c.len++] = (opcode + 0x04) | w(a.imm);
+        assert(a.imm.w <= b.reg.w);
+        assert(a.imm.w == 1 || a.imm.w == 2 || a.imm.w == 4);
+        if (a.imm.w == 2) {
+            c.val[c.len++] = PREFIX_OPERAND_SIZE;
+        }
+        if (is_64_bit_reg(b.reg.r)) {
+            c.val[c.len++] = REX | B(b.reg);
+        }
+        if (b.reg.r == AX && (!is_byte_imm(a.imm) || b.reg.w == 1)) {
+            c.val[c.len++] = opcode | 0x04 | w(a.imm);
             memcpy(&c.val[c.len], &a.imm.d.dword, a.imm.w);
             c.len += a.imm.w;
-        } else  {
+        } else {
+            /* Generic immediate-register. */
             s = is_byte_imm(a.imm) && b.reg.w > 1;
-            if (is_64_bit_reg(b.reg.r)) {
-                c.val[c.len++] = REX | B(b.reg);
-            }
             c.val[c.len++] = 0x80 | s << 1 | w(a.imm);
-            c.val[c.len++] = (opcode + 0xC0) | regi(b.reg);
+            c.val[c.len++] = (0xC0 + opcode) | regi(b.reg);
             if (is_byte_imm(a.imm)) {
                 c.val[c.len++] = a.imm.d.byte;
             } else {

@@ -448,29 +448,38 @@ static void load_sse(struct var val, enum reg r, int w)
     emit_load(opcode, val, reg(r, w));
 }
 
-static void load_field(struct var v, enum reg r)
+/* Load field value to register, either 4 or 8 bytes. */
+static void load_field(struct var v, enum reg r, int w)
 {
-    int mask;
+    int bits;
+    struct registr ax;
 
     assert(is_field(v));
-    assert(v.field_width > 0 && v.field_width < 32);
-    assert(v.field_offset + v.field_width <= 32);
+    assert(v.field_width > 0 && v.field_width < 64);
+    assert(v.field_offset + v.field_width <= 64);
 
-    emit_load(INSTR_MOV, v, reg(r, 4));
-    if (is_signed(v.type)) {
-        mask = 32 - (v.field_offset + v.field_width);
-        if (mask > 0) {
-            emit(INSTR_SHL, OPT_IMM_REG, constant(mask, 1), reg(r, 4));
-        }
-        emit(INSTR_SAR, OPT_IMM_REG,
-            constant(v.field_offset + mask, 1), reg(r, 4));
+    if (size_of(v.type) <= 4) {
+        ax = reg(r, 4);
     } else {
-        mask = ((1 << v.field_width) - 1) << v.field_offset;
-        emit(INSTR_AND, OPT_IMM_REG, constant(mask, 4), reg(r, 4));
-        if (v.field_offset) {
-            emit(INSTR_SHR, OPT_IMM_REG,
-                constant(v.field_offset, 1), reg(r, 4));
-        }
+        ax = reg(r, 8);
+    }
+
+    emit_load(INSTR_MOV, v, ax);
+    bits = (ax.w * 8) - (v.field_offset + v.field_width);
+    if (bits > 0) {
+        emit(INSTR_SHL, OPT_IMM_REG, constant(bits, 1), ax);
+    }
+
+    bits = v.field_offset + bits;
+    if (bits > 0) {
+        emit(is_signed(v.type) ? INSTR_SAR : INSTR_SHR,
+            OPT_IMM_REG,
+            constant(bits, 1),
+            ax);
+    }
+
+    if (is_signed(v.type) && w > ax.w) {
+        emit(INSTR_MOVSX, OPT_REG_REG, reg(r, 4), reg(r, 8));
     }
 }
 
@@ -486,10 +495,7 @@ static void load_int(struct var v, enum reg r, int w)
     assert(!is_real(v.type));
 
     if (is_field(v)) {
-        load_field(v, r);
-        if (is_signed(v.type) && w == 8) {
-            emit(INSTR_MOVSX, OPT_REG_REG, reg(r, 4), reg(r, 8));
-        }
+        load_field(v, r, w);
     } else {
         opcode = INSTR_MOV;
         if (v.kind == ADDRESS) {
@@ -937,6 +943,27 @@ static void store_x87(struct var v)
     }
 }
 
+static void bitwise_imm_reg(
+    enum opcode opcode,
+    struct immediate imm,
+    struct registr target)
+{
+    assert(imm.type == IMM_INT);
+    assert(target.r != R11);
+    if (imm.w == 8) {
+        if (imm.d.qword <= INT_MAX && imm.d.qword >= INT_MIN) {
+            imm.w = 4;
+            imm.d.dword = (int) imm.d.qword;
+            emit(opcode, OPT_IMM_REG, imm, target);
+        } else {
+            emit(INSTR_MOVAPS, OPT_IMM_REG, imm, reg(R11, 8));
+            emit(opcode, OPT_REG_REG, reg(R11, 8), target);
+        }
+    } else {
+        emit(opcode, OPT_IMM_REG, imm, target);
+    }
+}
+
 /*
  * Emit store of either register or immediate operand.
  *
@@ -949,12 +976,12 @@ static void store_op(
     struct var target)
 {
     size_t w;
-    int val, mask;
+    long mask;
     enum reg ax;
     enum opcode opc;
     struct var field;
-    assert(optype == OPT_IMM || optype == OPT_REG);
 
+    assert(optype == OPT_IMM || optype == OPT_REG);
     if (is_long_double(target.type)) {
         assert(optype == OPT_REG);
         store_x87(target);
@@ -967,18 +994,19 @@ static void store_op(
         opc = is_float(target.type) ? INSTR_MOVSS : INSTR_MOVSD;
         assert(optype == OPT_REG);
     } else if (is_field(target)) {
-        assert(target.field_width > 0 && target.field_width < 32);
+        assert(target.field_width > 0 && target.field_width < 64);
         field = target;
         field.field_width = 0;
         field.field_offset = 0;
         load(field, CX);
-        mask = ((1 << target.field_width) - 1) << target.field_offset;
-        emit(INSTR_AND, OPT_IMM_REG, constant(~mask, w), reg(CX, w));
+        mask = ((1L << target.field_width) - 1) << target.field_offset;
+        bitwise_imm_reg(INSTR_AND, constant(~mask, w), reg(CX, w));
         if (optype == OPT_IMM) {
             assert(op.imm.type == IMM_INT);
-            val = (op.imm.d.dword << target.field_offset) & mask;
-            if (val != 0) {
-                emit(INSTR_OR, OPT_IMM_REG, constant(val, w), reg(CX, w));
+            mask = (op.imm.d.qword << target.field_offset) & mask;
+            if (mask != 0) {
+                bitwise_imm_reg(INSTR_OR, constant(mask, w), reg(CX, w));
+                /*emit(INSTR_OR, OPT_IMM_REG, constant(val, w), reg(CX, w));*/
             }
             optype = OPT_REG;
             op.reg = reg(CX, w);
@@ -987,7 +1015,8 @@ static void store_op(
                 emit(INSTR_SHL, OPT_IMM_REG,
                     constant(target.field_offset, w), op.reg);
             }
-            emit(INSTR_AND, OPT_IMM_REG, constant(mask, w), op.reg);
+            bitwise_imm_reg(INSTR_AND, constant(mask, w), op.reg);
+            /*emit(INSTR_AND, OPT_IMM_REG, constant(mask, w), op.reg);*/
             emit(INSTR_OR, OPT_REG_REG, reg(CX, w), op.reg);
         }
     }
@@ -2891,10 +2920,11 @@ static void zero_fill_data(size_t bytes)
 
 static void compile_data(struct definition *def)
 {
-    int i, mask;
+    int i;
+    long mask;
     union value value;
     struct statement st, fl;
-    size_t field_size;
+    size_t backing_field_size;
     size_t
         total_size = size_of(def->symbol->type),
         initialized = 0;
@@ -2908,7 +2938,7 @@ static void compile_data(struct definition *def)
 
         initialized = st.t.offset;
         if (is_field(st.t)) {
-            field_size = 0;
+            backing_field_size = size_of(st.t.type);
             value.i = 0;
             fl = st;
             do {
@@ -2918,10 +2948,10 @@ static void compile_data(struct definition *def)
                 assert(is_identity(fl.expr));
                 assert(is_integer(fl.expr.type));
                 assert(fl.expr.l.kind == IMMEDIATE);
-                mask = ((1 << fl.t.field_width) - 1);
+                mask = ((1l << fl.t.field_width) - 1);
                 value.i |= (fl.expr.l.imm.i & mask) << fl.t.field_offset;
-                if (size_of(fl.t.type) > field_size) {
-                    field_size = size_of(fl.t.type);
+                if (size_of(fl.t.type) > backing_field_size) {
+                    backing_field_size = size_of(fl.t.type);
                 }
                 i += 1;
                 if (i == array_len(&def->body->code))
@@ -2929,13 +2959,19 @@ static void compile_data(struct definition *def)
                 fl = array_get(&def->body->code, i);
             } while (is_field(fl.t) && fl.t.offset == initialized);
             i -= 1;
-            switch (field_size) {
+            switch (backing_field_size) {
             default: assert(0);
             case 1:
                 st.t.type = basic_type__char;
                 break;
+            case 2:
+                st.t.type = basic_type__short;
+                break;
             case 4:
                 st.t.type = basic_type__int;
+                break;
+            case 8:
+                st.t.type = basic_type__long;
                 break;
             }
             st.t.field_offset = 0;

@@ -1412,11 +1412,21 @@ static struct var assign_field(
     long mask;
 
     assert(is_field(target));
-    if (size_of(target.type) == size_of(basic_type__int)) {
-        type = basic_type__int;
-    } else {
-        assert(size_of(target.type) == size_of(basic_type__bool));
+    assert(is_integer(target.type));
+    switch (size_of(target.type)) {
+    case 1:
         type = basic_type__bool;
+        break;
+    case 2:
+        type = basic_type__short;
+        break;
+    case 4:
+        type = basic_type__int;
+        break;
+    default:
+        assert(size_of(target.type) == 8);
+        type = basic_type__long;
+        break;
     }
 
     if (is_immediate(expr)) {

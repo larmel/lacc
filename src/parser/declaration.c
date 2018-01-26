@@ -426,7 +426,7 @@ static void member_declaration_list(Type type)
             name.len = 0;
             declarator(NULL, NULL, decl_base, &decl_type, &name);
             if (is_struct_or_union(type) && peek().token == ':') {
-                if (!is_int(decl_type) && !is_bool(decl_type)) {
+                if (!is_integer(decl_type)) {
                     error("Unsupported type '%t' for bit-field.", decl_type);
                     exit(1);
                 }
@@ -437,17 +437,15 @@ static void member_declaration_list(Type type)
                     exit(1);
                 }
                 type_add_field(type, name, decl_type, expr.imm.u);
-            } else {
-                if (!name.len) {
-                    if (is_struct_or_union(decl_type)) {
-                        type_add_anonymous_member(type, decl_type);
-                    } else {
-                        error("Missing name in member declarator.");
-                        exit(1);
-                    }
+            } else if (!name.len) {
+                if (is_struct_or_union(decl_type)) {
+                    type_add_anonymous_member(type, decl_type);
                 } else {
-                    type_add_member(type, name, decl_type);
+                    error("Missing name in member declarator.");
+                    exit(1);
                 }
+            } else {
+                type_add_member(type, name, decl_type);
             }
             if (peek().token == ',') {
                 consume(',');

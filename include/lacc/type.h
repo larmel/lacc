@@ -110,6 +110,8 @@ extern const Type
  *     int  c : 7;    // offset = 4, field_width = 7, field_offset = 5
  * }
  *
+ * Fields also store the number of bits in the backing type, being
+ * either 8, 16, 32, or 64.
  *
  * Offset is also used for array parameters marked static, storing the
  * minimal guaranteed number of elements in the array.
@@ -123,6 +125,7 @@ struct member {
     size_t offset;
     short field_width;
     short field_offset;
+    short field_backing;
     struct symbol *sym;
 };
 

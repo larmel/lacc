@@ -77,6 +77,7 @@ static char *vartostr(const struct var var)
                 }
                 break;
             }
+        case T_BOOL:
         case T_CHAR:
         case T_SHORT:
         case T_INT:
