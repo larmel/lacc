@@ -484,9 +484,9 @@ static const char *destringize(String str)
     if (len + 1 > dstr_length) {
         dstr_length = len + 1;
         dstr_buffer = realloc(dstr_buffer, dstr_length);
+        memset(dstr_buffer, '\0', dstr_length);
     }
 
-    dstr_buffer[len] = '\0';
     ptr = dstr_buffer;
     for (i = 0; i < len; ++i) {
         if (raw[i] == '\\') {
