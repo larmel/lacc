@@ -129,7 +129,7 @@ static Type get_type_handle(int ref)
     return type;
 }
 
-static Type alloc_type(enum type tt)
+Type type_create(enum type tt)
 {
     Type type = {0};
     struct typetree t = {0};
@@ -326,62 +326,64 @@ static size_t adjust_member_alignment(Type parent, Type type)
     return align;
 }
 
-Type type_create(enum type tt, ...)
+Type type_create_pointer(Type next)
 {
-    Type type, next;
-    const struct symbol *sym;
+    Type type;
     struct typetree *t;
-    size_t elem;
-    va_list args;
 
-    va_start(args, tt);
-    switch (tt) {
-    default: assert(0);
-    case T_POINTER:
-        next = va_arg(args, Type);
-        if (next.is_pointer) {
-            type = alloc_type(T_POINTER);
-            t = get_typetree_handle(type.ref);
-            t->is_const = is_const(next);
-            t->is_volatile = is_volatile(next);
-            next = remove_qualifiers(next);
-            next.is_pointer = 0;
-            t->next = next;
-        } else {
-            type = next;
-            type.is_pointer = 1;
-        }
-        break;
-    case T_ARRAY:
-        next = va_arg(args, Type);
-        elem = va_arg(args, size_t);
-        sym = va_arg(args, const struct symbol *);
-        if (elem * size_of(next) > LONG_MAX) {
-            error("Array is too large (%lu elements).", elem);
-            exit(1);
-        }
-        type = alloc_type(T_ARRAY);
+    if (next.is_pointer) {
+        type = type_create(T_POINTER);
         t = get_typetree_handle(type.ref);
-        t->size = elem;
+        t->is_const = is_const(next);
+        t->is_volatile = is_volatile(next);
+        next = remove_qualifiers(next);
+        next.is_pointer = 0;
         t->next = next;
-        if (sym) {
-            t->vlen = sym;
-            t->is_vla = 1;
-        }
-        break;
-    case T_FUNCTION:
-        next = va_arg(args, Type);
-        type = alloc_type(T_FUNCTION);
-        t = get_typetree_handle(type.ref);
-        t->next = next;
-        break;
-    case T_STRUCT:
-    case T_UNION:
-        type = alloc_type(tt);
-        break;
+    } else {
+        type = next;
+        type.is_pointer = 1;
     }
 
-    va_end(args);
+    return type;
+}
+
+Type type_create_function(Type next)
+{
+    Type type;
+    struct typetree *t;
+
+    type = type_create(T_FUNCTION);
+    t = get_typetree_handle(type.ref);
+    t->next = next;
+    return type;
+}
+
+Type type_create_array(Type next, size_t count)
+{
+    Type type;
+    struct typetree *t;
+
+    if (count * size_of(next) > LONG_MAX) {
+        error("Array is too large (%lu elements).", count);
+        exit(1);
+    }
+
+    type = type_create(T_ARRAY);
+    t = get_typetree_handle(type.ref);
+    t->size = count;
+    t->next = next;
+    return type;
+}
+
+Type type_create_vla(Type next, const struct symbol *count)
+{
+    Type type;
+    struct typetree *t;
+
+    type = type_create_array(next, 0);
+    t = get_typetree_handle(type.ref);
+    t->vlen = count;
+    t->is_vla = 1;
     return type;
 }
 
@@ -446,7 +448,7 @@ Type type_patch_declarator(Type head, Type target)
         if (is_pointer(head)) {
             next = type_next(head);
             next = type_patch_declarator(next, target);
-            next = type_create(T_POINTER, next);
+            next = type_create_pointer(next);
             next = type_apply_qualifiers(next, head);
         } else {
             assert(is_function(head) || is_array(head));

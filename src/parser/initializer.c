@@ -471,8 +471,8 @@ static void zero_initialize(
     case T_UNION:
         assert(size);
         target.type = (size % 8)
-            ? type_create(T_ARRAY, basic_type__char, size, NULL)
-            : type_create(T_ARRAY, basic_type__long, size / 8, NULL);
+            ? type_create_array(basic_type__char, size)
+            : type_create_array(basic_type__long, size / 8);
     case T_ARRAY:
         var = target;
         target.type = type_next(target.type);

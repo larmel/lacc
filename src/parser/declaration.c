@@ -71,7 +71,7 @@ static struct block *parameter_list(
     struct block *block;
     struct member *param;
 
-    *func = type_create(T_FUNCTION, base);
+    *func = type_create_function(base);
     block = current_scope_depth(&ns_ident) == 1
         ? parent
         : cfg_block_init(def);
@@ -88,7 +88,7 @@ static struct block *parameter_list(
             }
             break;
         } else if (is_array(base)) {
-            base = type_create(T_POINTER, type_next(base));
+            base = type_create_pointer(type_next(base));
         }
         param = type_add_member(*func, name, base);
         param->offset = length;
@@ -123,7 +123,7 @@ static Type identifier_list(Type base)
     struct token t;
     Type type;
 
-    type = type_create(T_FUNCTION, base);
+    type = type_create_function(base);
     if (peek().token != ')') {
         while (1) {
             t = consume(IDENTIFIER);
@@ -283,12 +283,14 @@ static struct block *array_declarator(
 
     if (static_length) {
         *static_length = length;
-        *type = type_create(T_POINTER, base);
+        *type = type_create_pointer(base);
         if (cvrs.is_const) type_set_const(*type);
         if (cvrs.is_volatile) type_set_volatile(*type);
         if (cvrs.is_restrict) type_set_restrict(*type);
+    } else if (sym) {
+        *type = type_create_vla(base, sym);
     } else {
-        *type = type_create(T_ARRAY, base, length, sym);
+        *type = type_create_array(base, length);
     }
 
     return block;
@@ -369,7 +371,7 @@ static struct block *direct_declarator(
 
 static Type pointer(Type type)
 {
-    type = type_create(T_POINTER, type);
+    type = type_create_pointer(type);
     while (1) {
         next();
         switch (peek().token) {
@@ -737,7 +739,7 @@ static void define_builtin__func__(String name)
      * Just add the symbol directly as a special string value. No
      * explicit assignment reflected in the IR.
      */
-    type = type_create(T_ARRAY, basic_type__char, (size_t) name.len + 1, NULL);
+    type = type_create_array(basic_type__char, (size_t) name.len + 1);
     sym = sym_add(
         &ns_ident,
         str_init("__func__"),
@@ -807,7 +809,7 @@ static struct block *declare_vla(
     struct symbol *addr;
 
     assert(is_vla(sym->type));
-    addr = sym_create_temporary(type_create(T_POINTER, type_next(sym->type)));
+    addr = sym_create_temporary(type_create_pointer(type_next(sym->type)));
     array_push_back(&def->locals, addr);
     sym->value.vla_address = addr;
     eval_vla_alloc(def, block, sym);
@@ -871,7 +873,7 @@ struct block *init_declarator(
         assert(def->symbol);
         param = find_type_member(def->symbol->type, name, NULL);
         if (is_array(type)) {
-            sym->type = type_create(T_POINTER, type_next(type));
+            sym->type = type_create_pointer(type_next(type));
         }
         if (param && is_type_placeholder(param->type)) {
             ((struct member *) param)->type = sym->type;

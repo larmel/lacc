@@ -315,7 +315,7 @@ static struct block *postfix(
                  * perform normal dereferencing.
                  */
                 value = eval(def, block, root);
-                value.type = type_create(T_POINTER, mbr->type);
+                value.type = type_create_pointer(mbr->type);
                 value = eval_deref(def, block, value);
                 value.field_width = mbr->field_width;
                 value.field_offset = mbr->field_offset;
@@ -370,7 +370,7 @@ static struct block *postfix_expression(
         if (tok.token == IDENTIFIER && peekn(2).token == '(') {
             sym = sym_lookup(&ns_ident, tok.d.string);
             if (!sym) {
-                type = type_create(T_FUNCTION, basic_type__int);
+                type = type_create_function(basic_type__int);
                 sym_add(&ns_ident, tok.d.string, type,
                     SYM_DECLARATION, LINK_EXTERN);
             }

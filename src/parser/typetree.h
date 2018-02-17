@@ -15,18 +15,12 @@
  */
 void clear_types(FILE *stream);
 
-/*
- * Initialize array, pointer, function, struct or union type.
- *
- * Valid invocations are:
- *
- *   type_create(T_ARRAY, <Type elem>, <size_t length>, <vla length>)
- *   type_create(T_POINTER, <Type next>)
- *   type_create(T_FUNCTION, <Type return>)
- *   type_create(T_STRUCT)
- *   type_create(T_UNION)
- */
-Type type_create(enum type, ...);
+/* Initialize array, pointer, function, struct or union type. */
+Type type_create(enum type);
+Type type_create_pointer(Type next);
+Type type_create_function(Type next);
+Type type_create_array(Type next, size_t count);
+Type type_create_vla(Type next, const struct symbol *count);
 
 /* Add const, volatile, and restrict qualifiers to type. */
 Type type_set_const(Type type);

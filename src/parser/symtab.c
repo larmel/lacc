@@ -64,7 +64,7 @@ static Type get_string_type(size_t len)
         }
     }
 
-    handle.type = type_create(T_ARRAY, basic_type__char, len, NULL);
+    handle.type = type_create_array(basic_type__char, len);
     handle.length = len;
     array_push_back(&string_types, handle);
     return handle.type;

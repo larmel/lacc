@@ -1091,7 +1091,7 @@ static struct var rvalue(
                 assert(var.kind == DEREF);
                 assert(!var.offset);
                 var.kind = DIRECT;
-                var.type = type_create(T_POINTER, type_next(var.type));
+                var.type = type_create_pointer(type_next(var.type));
             }
         } else if (var.kind == IMMEDIATE) {
             assert(var.symbol);
@@ -1101,7 +1101,7 @@ static struct var rvalue(
              * representation, only changing type from array to
              * pointer.
              */
-            var.type = type_create(T_POINTER, type_next(var.type));
+            var.type = type_create_pointer(type_next(var.type));
         } else {
             /*
              * References to arrays decay into pointer to the first
@@ -1237,7 +1237,7 @@ struct var eval_addr(
          */
         if (var.lvalue) {
             var.kind = ADDRESS;
-            var.type = type_create(T_POINTER, var.type);
+            var.type = type_create_pointer(var.type);
             break;
         }
     case ADDRESS:
@@ -1252,7 +1252,7 @@ struct var eval_addr(
              * Convert to immediate, adding the extra offset.
              */
             var.kind = IMMEDIATE;
-            var.type = type_create(T_POINTER, var.type);
+            var.type = type_create_pointer(var.type);
             var.imm.u += var.offset;
             var.offset = 0;
             var.lvalue = 0;
@@ -1266,11 +1266,11 @@ struct var eval_addr(
             tmp = var_direct(var.symbol);
             if (var.offset) {
                 ptr = eval_cast(def, block, tmp,
-                    type_create(T_POINTER, basic_type__char));
+                    type_create_pointer(basic_type__char));
                 tmp = eval(def, block,
                     eval_expr(def, block, IR_OP_ADD, ptr, var_int(var.offset)));
             }
-            tmp.type = type_create(T_POINTER, var.type);
+            tmp.type = type_create_pointer(var.type);
             var = tmp;
         }
         break;
@@ -1653,7 +1653,7 @@ Type eval_conditional(
             exit(1);
         }
 
-        type = type_create(T_POINTER, type);
+        type = type_create_pointer(type);
         type = type_apply_qualifiers(type, t1);
         type = type_apply_qualifiers(type, t2);
     } else if (is_pointer(t1) && is_nullptr(rval)) {
