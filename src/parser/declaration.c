@@ -213,12 +213,13 @@ static struct block *array_declarator_length(
         val = eval(def, block, block->expr);
     }
 
-    if (val.kind == IMMEDIATE
-        && (!is_integer(val.type)
-            || (is_signed(val.type) && val.imm.i < 1)
-            || (is_unsigned(val.type) && val.imm.u < 1)))
-    {
-        error("Array dimension must be a natural number.");
+    if (!is_integer(val.type)) {
+        error("Array dimension must be of integer type.");
+        exit(1);
+    }
+
+    if (val.kind == IMMEDIATE && is_signed(val.type) && val.imm.i < 0) {
+        error("Array dimension must be a positive number.");
         exit(1);
     }
 
@@ -229,6 +230,7 @@ static struct block *array_declarator_length(
         val = eval_copy(def, block, val);
     }
 
+    assert(is_unsigned(val.type));
     block->expr = as_expr(val);
     return block;
 }
@@ -251,15 +253,21 @@ static struct block *array_declarator(
     Type *type,
     size_t *static_length)
 {
-    struct var val;
     size_t length = 0;
+    struct var val;
     struct array_param cvrs = {0};
+    int is_incomplete = 0;
     const struct symbol *sym = NULL;
 
     consume('[');
-    if (peek().token != ']') {
-        block =
-            array_declarator_length(def, block, static_length ? &cvrs : NULL);
+    if (peek().token == ']') {
+        is_incomplete = 1;
+    } else {
+        if (static_length) {
+            block = array_declarator_length(def, block, &cvrs);
+        } else {
+            block = array_declarator_length(def, block, NULL);
+        }
         val = eval(def, block, block->expr);
         assert(type_equal(val.type, basic_type__unsigned_long));
         if (val.kind == IMMEDIATE) {
@@ -276,7 +284,7 @@ static struct block *array_declarator(
         block = array_declarator(def, block, base, &base, NULL);
     }
 
-    if (!size_of(base) && !is_vla(base)) {
+    if (!is_complete(base)) {
         error("Array has incomplete element type.");
         exit(1);
     }
@@ -287,6 +295,8 @@ static struct block *array_declarator(
         if (cvrs.is_const) type_set_const(*type);
         if (cvrs.is_volatile) type_set_volatile(*type);
         if (cvrs.is_restrict) type_set_restrict(*type);
+    } else if (is_incomplete) {
+        *type = type_create_incomplete(base);
     } else if (sym) {
         *type = type_create_vla(base, sym);
     } else {

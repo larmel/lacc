@@ -38,6 +38,7 @@ struct typetree {
     unsigned int is_vararg : 1;
     unsigned int is_flexible : 1;
     unsigned int is_vla : 1;
+    unsigned int is_incomplete : 1;
 
     /*
      * Total storage size in bytes for struct, union and basic types,
@@ -372,6 +373,18 @@ Type type_create_array(Type next, size_t count)
     t = get_typetree_handle(type.ref);
     t->size = count;
     t->next = next;
+    return type;
+}
+
+Type type_create_incomplete(Type next)
+{
+    Type type;
+    struct typetree *t;
+
+    type = type_create(T_ARRAY);
+    t = get_typetree_handle(type.ref);
+    t->next = next;
+    t->is_incomplete = 1;
     return type;
 }
 
@@ -803,6 +816,19 @@ int is_variably_modified(Type type)
     }
 }
 
+int is_complete(Type type)
+{
+    struct typetree *t;
+
+    switch (type_of(type)) {
+    case T_ARRAY:
+        t = get_typetree_handle(type.ref);
+        return !t->is_incomplete;
+    default:
+        return 1;
+    }
+}
+
 static int typetree_equal(const struct typetree *a, const struct typetree *b)
 {
     int i, len;
@@ -811,7 +837,10 @@ static int typetree_equal(const struct typetree *a, const struct typetree *b)
     if (a->type != b->type
         || a->size != b->size
         || a->is_unsigned != b->is_unsigned
-        || a->is_vararg != b->is_vararg)
+        || a->is_vararg != b->is_vararg
+        || a->is_flexible != b->is_flexible
+        || a->is_vla != b->is_vla
+        || a->is_incomplete != b->is_incomplete)
     {
         return 0;
     }
@@ -1023,11 +1052,12 @@ void set_array_length(Type type, size_t length)
 {
     struct typetree *t;
     assert(is_array(type));
-    assert(length > 0);
 
     t = get_typetree_handle(type.ref);
-    assert(t->size == 0);
+    assert(!t->size);
+    assert(t->is_incomplete);
     t->size = length;
+    t->is_incomplete = 0;
 }
 
 const struct member *find_type_member(Type type, String name, int *index)
@@ -1134,10 +1164,10 @@ int fprinttype(FILE *stream, Type type, const struct symbol *expand)
             } else {
                 n += fputs("[*] ", stream);
             }
-        } else if (t->size) {
-            n += fprintf(stream, "[%lu] ", t->size);
-        } else {
+        } else if (t->is_incomplete) {
             n += fputs("[] ", stream);
+        } else {
+            n += fprintf(stream, "[%lu] ", t->size);
         }
         n += fprinttype(stream, t->next, NULL);
         break;

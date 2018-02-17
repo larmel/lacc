@@ -20,6 +20,7 @@ Type type_create(enum type);
 Type type_create_pointer(Type next);
 Type type_create_function(Type next);
 Type type_create_array(Type next, size_t count);
+Type type_create_incomplete(Type next);
 Type type_create_vla(Type next, const struct symbol *count);
 
 /* Add const, volatile, and restrict qualifiers to type. */
@@ -126,6 +127,9 @@ int is_compatible_unqualified(Type l, Type r);
 
 /* Determine whether a type is VLA, or pointer to VLA. */
 int is_variably_modified(Type type);
+
+/* */
+int is_complete(Type type);
 
 /* Get the type the given pointer is pointing to. */
 Type type_deref(Type type);

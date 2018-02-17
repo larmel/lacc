@@ -298,9 +298,14 @@ static void apply_type(struct symbol *sym, Type type)
             && type_equal(type_next(sym->type), type_next(type)))
         {
             conflict = 0;
-            if (!size_of(sym->type)) {
-                assert(size_of(type));
+            if (!is_complete(sym->type)) {
                 set_array_length(sym->type, type_array_len(type));
+            } else if (is_complete(type)) {
+                if (type_array_len(sym->type) != type_array_len(type)) {
+                    error("Redeclaration of array `%s` with different length.",
+                        str_raw(sym->name));
+                    exit(1);
+                }
             }
         }
     default: break;

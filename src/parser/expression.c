@@ -472,16 +472,16 @@ exprsize:   head = cfg_block_init(def);
             tail = unary_expression(def, head);
             type = tail->expr.type;
         }
-        if (!size_of(type)) {
+        if (is_complete(type)) {
             if (is_vla(type)) {
                 block->expr = eval_vla_size(def, block, type);
             } else {
-                error("Cannot apply 'sizeof' to incomplete type.");
-                exit(1);
+                value = imm_unsigned(basic_type__unsigned_long, size_of(type));
+                block->expr = as_expr(value);
             }
         } else {
-            value = imm_unsigned(basic_type__unsigned_long, size_of(type));
-            block->expr = as_expr(value);
+            error("Cannot apply 'sizeof' to incomplete type.");
+            exit(1);
         }
         break;
     case ALIGNOF:

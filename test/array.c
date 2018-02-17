@@ -1,3 +1,7 @@
+extern char bytes[4];
+
+char bytes[] = {1, 2, 3, 4};
+
 int main(int argc, char *argv[])
 {
     int foo[2];
