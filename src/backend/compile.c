@@ -559,7 +559,7 @@ static void load_address(struct var v, enum reg r)
  * Use long double constant with value MAX_LONG + 1 in order to generate
  * code for converting 64 bit unsigned to long double.
  */
-static const struct symbol *get_x87_unsigned_adjust_constant(void)
+static struct var x87_unsigned_adjust_constant(void)
 {
     static const struct symbol *sym;
     union value val = {0};
@@ -569,7 +569,7 @@ static const struct symbol *get_x87_unsigned_adjust_constant(void)
         sym = sym_create_constant(basic_type__long_double, val);
     }
 
-    return sym;
+    return var_direct(sym);
 }
 
 /* Push value to stack, rounded up to always be 8 byte aligned. */
@@ -653,13 +653,14 @@ static enum reg load_x87(struct var v)
             label = create_label(definition);
             emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
             emit(INSTR_JNS, OPT_IMM, addr(label));
-            v.symbol = get_x87_unsigned_adjust_constant();
-            v.type = basic_type__long_double;
+            v = x87_unsigned_adjust_constant();
             load_x87(v);
             emit(INSTR_FADDP, OPT_REG, reg(st, 16));
             x87_stack--;
             enter_context(label);
         }
+        assert(int_regs_used == 1);
+        relase_regs();
     } else {
         assert(is_signed(v.type));
         assert(size_of(v.type) != 1);
