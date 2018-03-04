@@ -612,6 +612,10 @@ Type declaration_specifiers(int *storage_class, int *is_inline)
         *storage_class = '$';
     }
 
+    if (is_inline) {
+        *is_inline = 0;
+    }
+
     while (1) {
         switch ((tok = peek()).token) {
         case VOID:
