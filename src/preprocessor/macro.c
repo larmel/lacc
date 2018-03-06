@@ -563,8 +563,15 @@ static int expand_line(ExpandStack *scope, TokenArray *list)
             continue;
         }
 
-        if (def->type == FUNCTION_LIKE && array_get(list, i + 1).token != '(')
-            continue;
+        /* Only expand if next token is '(' */
+        if (def->type == FUNCTION_LIKE) {
+            if (i == array_len(list) - 1) {
+                continue;
+            }
+            if (array_get(list, i + 1).token != '(') {
+                continue;
+            }
+        }
 
         args = read_args(scope, def, list->data + i + 1, &endptr);
         array_push_back(scope, def->name);
