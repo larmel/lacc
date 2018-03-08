@@ -420,7 +420,12 @@ int asm_data(struct immediate data)
             out("\t.quad\t%s\n", sym_name(data.d.addr.sym));
         break;
     case IMM_STRING:
-        out("\t.string\t");
+        if (data.w == data.d.string.len) {
+            out("\t.ascii\t");
+        } else {
+            assert(data.w == data.d.string.len + 1);
+            out("\t.string\t");
+        }
         fprintstr(asm_output, data.d.string);
         out("\n");
         break;

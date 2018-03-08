@@ -1382,10 +1382,14 @@ static struct var eval_assign_string_literal(
         target.type = expr.type;
         emit_ir(block, IR_ASSIGN, target, expr);
     } else {
-        if (size_of(expr.type) > size_of(target.type)) {
+        if (size_of(expr.type) == size_of(target.type) + 1) {
+            expr.type = target.type;
+            expr.l.type = target.type;
+        } else if (size_of(expr.type) > size_of(target.type)) {
             error("Length of string literal exceeds target array size.");
             exit(1);
         }
+
         type = target.type;
         target.type = expr.type;
         emit_ir(block, IR_ASSIGN, target, expr);

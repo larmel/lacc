@@ -645,7 +645,7 @@ int elf_data(struct immediate imm)
         elf_add_reloc_data(imm.d.addr.sym, R_X86_64_64, imm.d.addr.disp);
         break;
     case IMM_STRING:
-        assert(w == imm.d.string.len + 1);
+        assert(w == imm.d.string.len + 1 || w == imm.d.string.len);
         ptr = str_raw(imm.d.string);
         break;
     }
