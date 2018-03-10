@@ -9,7 +9,7 @@ int foo() {
 
 int c;
 
-int main() {
+int main(void) {
     extern int a;
     static int b;
     {
@@ -24,3 +24,15 @@ int main() {
 int c;
 
 static int a = 3;
+
+extern int u;
+int u;
+
+int v;
+extern int v;
+
+static int w(void);
+int w(void);
+
+static int x(void);
+extern int x(void);

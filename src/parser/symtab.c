@@ -274,48 +274,99 @@ const char *sym_name(const struct symbol *sym)
  * For functions, the last parameter list is applied for as long as the
  * symbol is still tentative.
  */
-static void apply_type(struct symbol *sym, Type type)
+static void sym_apply_type(struct symbol *sym, Type type)
 {
-    int conflict = 1;
-
-    if (type_equal(sym->type, type)
-        && !(is_function(sym->type) && sym->symtype != SYM_DEFINITION))
-        return;
-
-    switch (type_of(sym->type)) {
-    case T_FUNCTION:
-        if (is_function(type)
-            && type_equal(type_next(sym->type), type_next(type)))
+    if (is_function(sym->type) && is_function(type)) {
+        if (sym->symtype == SYM_DECLARATION
+            && type_equal(type_next(sym->type), type_next(type))
+            && nmembers(sym->type) == nmembers(type))
         {
-            conflict = nmembers(sym->type) != nmembers(type);
-            if (!conflict) {
-                sym->type = type;
+            sym->type = type;
+        }
+    } else if (is_array(sym->type) && is_array(type)) {
+        if (type_equal(type_next(sym->type), type_next(type))) {
+            if (!is_complete(sym->type) && is_complete(type)) {
+                set_array_length(sym->type, type_array_len(type));
+            } else if (!is_complete(type)) {
+                return;
+            }
+        }
+    }
+
+    if (!type_equal(sym->type, type)) {
+        error("'%s' declared with different types.", sym_name(sym));
+        exit(1);
+    }
+}
+
+/*
+ * Update existing symbol from new declaration or tentative definition.
+ */
+static struct symbol *sym_redeclare(
+    struct symbol *sym,
+    struct namespace *ns,
+    Type type,
+    enum symtype symtype,
+    enum linkage linkage)
+{
+    switch (linkage) {
+    case LINK_INTERN:
+        if (sym->linkage == LINK_EXTERN) {
+            error("'%s' was previously defined non-static.", sym_name(sym));
+            exit(1);
+        }
+        sym->linkage = LINK_INTERN;
+        break;
+    case LINK_EXTERN:
+        if (sym->linkage == LINK_INTERN) {
+            if (symtype == SYM_DEFINITION || symtype == SYM_TENTATIVE) {
+                error("'%s' was previously declared static.", sym_name(sym));
+                exit(1);
             }
         }
         break;
-    case T_ARRAY:
-        if (is_array(type)
-            && type_equal(type_next(sym->type), type_next(type)))
-        {
-            conflict = 0;
-            if (!is_complete(sym->type)) {
-                set_array_length(sym->type, type_array_len(type));
-            } else if (is_complete(type)) {
-                if (type_array_len(sym->type) != type_array_len(type)) {
-                    error("Redeclaration of array `%s` with different length.",
-                        str_raw(sym->name));
-                    exit(1);
-                }
-            }
+    case LINK_NONE:
+        if (sym->depth == current_scope_depth(ns) && sym->depth) {
+            error("Duplicate definition of '%s'.", sym_name(sym));
+            exit(1);
         }
-    default: break;
+        break;
     }
 
-    if (conflict) {
-        error("Incompatible declaration of %s :: %t, cannot apply type '%t'.",
-            str_raw(sym->name), sym->type, type);
-        exit(1);
+    switch (symtype) {
+    case SYM_TENTATIVE:
+        if (sym->symtype == SYM_DECLARATION) {
+            sym->symtype = SYM_TENTATIVE;
+        }
+    case SYM_DECLARATION:
+        if (sym->symtype == SYM_DEFINITION) {
+            if (!type_equal(sym->type, type)) {
+                error("'%s' redeclared with different type.", sym_name(sym));
+                exit(1);
+            }
+        } else {
+            sym_apply_type(sym, type);
+        }
+        break;
+    case SYM_DEFINITION:
+        sym->symtype = SYM_DEFINITION;
+        sym_apply_type(sym, type);
+        break;
+    case SYM_TAG:
+    case SYM_TYPEDEF:
+    case SYM_CONSTANT:
+        if (sym->symtype != symtype || !type_equal(sym->type, type)) {
+            error("Conflicting declaration of '%s'.", sym_name(sym));
+            exit(1);
+        }
+        break;
+    case SYM_LABEL:
+    case SYM_STRING_VALUE:
+        assert(0);
+        break;
     }
+
+    return sym;
 }
 
 void sym_make_visible(struct namespace *ns, struct symbol *sym)
@@ -339,6 +390,14 @@ void sym_make_visible(struct namespace *ns, struct symbol *sym)
     scope->state = SCOPE_INITIALIZED;
 }
 
+/*
+ * Register a new symbol, or redeclare an existing one.
+ *
+ * All function declarations must agree, regardless of scope.
+ *
+ * Scoped static variable are given unique names in order to not collide
+ * with other external declarations.
+ */
 struct symbol *sym_add(
     struct namespace *ns,
     String name,
@@ -348,75 +407,29 @@ struct symbol *sym_add(
 {
     static int n;
 
-    struct symbol *sym = NULL;
+    struct symbol *sym;
     assert(symtype != SYM_LABEL);
     assert(symtype != SYM_TAG || ns == &ns_tag);
 
-    /* All function declarations must agree, regardless of scope. */
-    if (symtype != SYM_STRING_VALUE) {
-        sym = sym_lookup(ns, name);
-        if (!sym && is_function(type)) {
-            assert(ns == &ns_ident);
-            sym = sym_lookup_function(name);
-            if (sym) {
-                apply_type(sym, type);
-                sym_make_visible(ns, sym);
-                if (current_scope_depth(ns) < sym->depth) {
-                    sym->depth = current_scope_depth(ns);
-                }
-                return sym;
-            }
-        }
-    }
-
-    /* Try to complete existing tentative definition. */
-    if (sym) {
-        if (linkage == LINK_EXTERN && symtype == SYM_DECLARATION
-            && (sym->symtype == SYM_TENTATIVE
-                || sym->symtype == SYM_DEFINITION))
-        {
-            apply_type(sym, type);
-            return sym;
-        } else if (sym->depth == current_scope_depth(ns) && !sym->depth) {
-            if (sym->linkage == linkage
-                && ((sym->symtype == SYM_TENTATIVE
-                        && symtype == SYM_DEFINITION)
-                    || (sym->symtype == SYM_DEFINITION
-                        && symtype == SYM_TENTATIVE)))
-            {
-                apply_type(sym, type);
-                sym->symtype = SYM_DEFINITION;
-            } else if (
-                sym->linkage == linkage
-                && sym->symtype == SYM_DECLARATION
-                && symtype == SYM_TENTATIVE)
-            {
-                apply_type(sym, type);
-                sym->symtype = SYM_TENTATIVE;
-            } else if (
-                sym->linkage == linkage
-                && sym->symtype == SYM_DEFINITION
-                && symtype == SYM_DECLARATION)
-            {
-                if (!type_equal(sym->type, type)) {
-                    error("Conflicting types for %s.", str_raw(name));
-                    exit(1);
-                }
-            } else if (sym->symtype != symtype || sym->linkage != linkage) {
-                error("Declaration of '%s' does not match prior declaration.",
-                    str_raw(name));
-                exit(1);
-            } else {
-                apply_type(sym, type);
+    sym = sym_lookup(ns, name);
+    if (!sym && is_function(type)) {
+        assert(ns == &ns_ident);
+        sym = sym_lookup_function(name);
+        if (sym) {
+            sym_apply_type(sym, type);
+            sym_make_visible(ns, sym);
+            if (current_scope_depth(ns) < sym->depth) {
+                sym->depth = current_scope_depth(ns);
             }
             return sym;
-        } else if (sym->depth == current_scope_depth(ns) && sym->depth) {
-            error("Duplicate definition of symbol '%s'.", str_raw(name));
-            exit(1);
         }
+    } else if (sym
+        && (!current_scope_depth(ns) || linkage == LINK_EXTERN)
+        && !sym->depth)
+    {
+        return sym_redeclare(sym, ns, type, symtype, linkage);
     }
 
-    /* Create new symbol. */
     sym = alloc_sym();
     sym->depth = current_scope_depth(ns);
     sym->name = name;
@@ -427,10 +440,6 @@ struct symbol *sym_add(
         decl_memcpy = sym;
     }
 
-    /*
-     * Scoped static variable are given unique names in order to not
-     * collide with other external declarations.
-     */
     if (linkage == LINK_INTERN && sym->depth) {
         sym->n = ++n;
     }
@@ -445,19 +454,21 @@ struct symbol *sym_add(
         hash_insert(&functions, sym);
     }
 
-    verbose(
-        "\t[type: %s, link: %s]\n"
-        "\t%s :: %t",
-        (sym->symtype == SYM_DEFINITION ? "definition" :
-            sym->symtype == SYM_TENTATIVE ? "tentative" :
-            sym->symtype == SYM_DECLARATION ? "declaration" :
-            sym->symtype == SYM_TYPEDEF ? "typedef" :
-            sym->symtype == SYM_TAG ? "tag" :
-            sym->symtype == SYM_CONSTANT ? "number" : "string"),
-        (sym->linkage == LINK_INTERN ? "intern" :
-            sym->linkage == LINK_EXTERN ? "extern" : "none"),
-        sym_name(sym),
-        sym->type);
+    if (context.verbose) {
+        verbose(
+            "\t[type: %s, link: %s]\n"
+            "\t%s :: %t",
+            (sym->symtype == SYM_DEFINITION ? "definition" :
+                sym->symtype == SYM_TENTATIVE ? "tentative" :
+                sym->symtype == SYM_DECLARATION ? "declaration" :
+                sym->symtype == SYM_TYPEDEF ? "typedef" :
+                sym->symtype == SYM_TAG ? "tag" :
+                sym->symtype == SYM_CONSTANT ? "number" : "string"),
+            (sym->linkage == LINK_INTERN ? "intern" :
+                sym->linkage == LINK_EXTERN ? "extern" : "none"),
+            sym_name(sym),
+            sym->type);
+    }
 
     return sym;
 }
