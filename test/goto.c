@@ -1,3 +1,24 @@
+void abort(void);
+
+int foo(int n) {
+	int i;
+
+	for (i = 0; i < 5; ++i) {
+		if (i == n)
+			goto error;
+	}
+
+	if (i == 1)
+quit:
+error:
+		abort();
+
+	while (i == 0)
+		regret: abort();
+
+	return 0;
+}
+
 int main(void) {
 	int i = 0;
 
@@ -10,5 +31,5 @@ start:
 	}
 
 end:
-	return i;
+	return i + foo(i);
 }

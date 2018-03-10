@@ -461,13 +461,12 @@ struct block *statement(struct definition *def, struct block *parent)
                 parent = sym->value.label;
             }
             consume(':');
+            return statement(def, parent);
+        }
+        sym = sym_lookup(&ns_ident, tok.d.string);
+        if (sym && sym->symtype == SYM_TYPEDEF) {
+            parent = declaration(def, parent);
             break;
-        } else {
-            sym = sym_lookup(&ns_ident, tok.d.string);
-            if (sym && sym->symtype == SYM_TYPEDEF) {
-                parent = declaration(def, parent);
-                break;
-            }
         }
         /* Fallthrough. */
     case NUMBER:
