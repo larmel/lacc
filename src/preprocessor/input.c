@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "directive.h"
 #include "input.h"
 #include "strtab.h"
@@ -58,8 +62,8 @@ static array_of(const char *) search_path_list;
 static array_of(struct source) source_stack;
 
 /* Expose for diagnostics. */
-String current_file_path;
-int current_file_line;
+INTERNAL String current_file_path;
+INTERNAL int current_file_line;
 
 static struct source *current_file(void)
 {
@@ -99,7 +103,7 @@ static int pop_file(void)
     return EOF;
 }
 
-void clear_input_buffers(void)
+INTERNAL void clear_input_buffers(void)
 {
     while (pop_file() != EOF)
         ;
@@ -133,7 +137,7 @@ static char *create_path(const char *path, size_t dirlen, const char *name)
     return path_buffer;
 }
 
-void include_file(const char *name)
+INTERNAL void include_file(const char *name)
 {
     const char *path;
     struct source *file;
@@ -161,7 +165,7 @@ void include_file(const char *name)
     }
 }
 
-void include_system_file(const char *name)
+INTERNAL void include_system_file(const char *name)
 {
     struct source source = {0};
     const char *path;
@@ -192,12 +196,12 @@ void include_system_file(const char *name)
     }
 }
 
-void add_include_search_path(const char *path)
+INTERNAL void add_include_search_path(const char *path)
 {
     array_push_back(&search_path_list, path);
 }
 
-void set_input_file(const char *path)
+INTERNAL void set_input_file(const char *path)
 {
     const char *sep;
     struct source source = {0};
@@ -530,7 +534,7 @@ static int is_directive(const char *line)
     return *line == '#';
 }
 
-char *getprepline(void)
+INTERNAL char *getprepline(void)
 {
     static int stale;
 

@@ -16,7 +16,7 @@
  * An initializer can either be an assignment expression, or a brace-
  * enclosed initializer list.
  */
-struct block *initializer(
+INTERNAL struct block *initializer(
     struct definition *def,
     struct block *block,
     const struct symbol *sym);

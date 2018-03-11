@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "strtab.h"
 #include <lacc/hash.h>
 
@@ -48,7 +52,7 @@ static String str_hash_key(void *ref)
     return *str;
 }
 
-void clear_string_table(void)
+INTERNAL void clear_string_table(void)
 {
     if (initialized) {
         hash_destroy(&strtab);
@@ -58,7 +62,7 @@ void clear_string_table(void)
     free(catbuf);
 }
 
-String str_register(const char *str, size_t len)
+INTERNAL String str_register(const char *str, size_t len)
 {
     String data = {0}, *ref;
     assert(len >= 0);
@@ -85,7 +89,7 @@ String str_register(const char *str, size_t len)
     return *ref;
 }
 
-String str_cat(String a, String b)
+INTERNAL String str_cat(String a, String b)
 {
     size_t len;
 

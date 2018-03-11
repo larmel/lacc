@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "declaration.h"
 #include "eval.h"
 #include "expression.h"
@@ -416,7 +420,7 @@ static struct block *parameter_declarator(
     return direct_declarator(def, block, base, type, name, length);
 }
 
-struct block *declarator(
+INTERNAL struct block *declarator(
     struct definition *def,
     struct block *block,
     Type base,
@@ -602,7 +606,7 @@ static void enum_declaration(void)
  * Use a compact bit representation to hold state about declaration 
  * specifiers. Initialize storage class to sentinel value.
  */
-Type declaration_specifiers(int *storage_class, int *is_inline)
+INTERNAL Type declaration_specifiers(int *storage_class, int *is_inline)
 {
     Type type = {-1}, other;
     const Type *tagged;
@@ -837,7 +841,7 @@ static struct block *declare_vla(
  * Cover external declarations, functions, and local declarations
  * (with optional initialization code) inside functions.
  */
-struct block *init_declarator(
+INTERNAL struct block *init_declarator(
     struct definition *def,
     struct block *parent,
     Type base,
@@ -999,7 +1003,9 @@ static void static_assertion(void)
  * Terminate on hitting a function definition, otherwise read until the
  * end of statement.
  */
-struct block *declaration(struct definition *def, struct block *parent)
+INTERNAL struct block *declaration(
+    struct definition *def,
+    struct block *parent)
 {
     Type base;
     enum symtype symtype;

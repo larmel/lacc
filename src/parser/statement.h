@@ -3,8 +3,8 @@
 
 #include <lacc/ir.h>
 
-struct block *statement(struct definition *def, struct block *parent);
+INTERNAL struct block *statement(struct definition *def, struct block *parent);
 
-struct block *block(struct definition *def, struct block *parent);
+INTERNAL struct block *block(struct definition *def, struct block *parent);
 
 #endif

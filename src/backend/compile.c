@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "compile.h"
 #include "graphviz/dot.h"
 #include "x86_64/abi.h"
@@ -3009,7 +3013,7 @@ static void compile_function(struct definition *def)
     compile_block(def->body, def->symbol->type, regs);
 }
 
-void set_compile_target(FILE *stream, const char *file)
+INTERNAL void set_compile_target(FILE *stream, const char *file)
 {
     switch (context.target) {
     case TARGET_NONE:
@@ -3034,7 +3038,7 @@ void set_compile_target(FILE *stream, const char *file)
     }
 }
 
-int compile(struct definition *def)
+INTERNAL int compile(struct definition *def)
 {
     assert(decl_memcpy);
     assert(def->symbol);
@@ -3063,7 +3067,7 @@ int compile(struct definition *def)
     return 0;
 }
 
-int declare(const struct symbol *sym)
+INTERNAL int declare(const struct symbol *sym)
 {
     switch (context.target) {
     case TARGET_x86_64_ASM:
@@ -3074,7 +3078,7 @@ int declare(const struct symbol *sym)
     }
 }
 
-void flush(void)
+INTERNAL void flush(void)
 {
     array_clear(&func_args);
     if (flush_backend) {

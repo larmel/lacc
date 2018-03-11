@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "abi.h"
 #include "assemble.h"
 
@@ -155,7 +159,7 @@ static const char *immediate(struct immediate imm, int *size)
     return buf;
 }
 
-void asm_init(FILE *output, const char *file)
+INTERNAL void asm_init(FILE *output, const char *file)
 {
     asm_output = output;
     if (file) {
@@ -163,7 +167,7 @@ void asm_init(FILE *output, const char *file)
     }
 }
 
-int asm_symbol(const struct symbol *sym)
+INTERNAL int asm_symbol(const struct symbol *sym)
 {
     /*
      * Labels stay in the same function context, otherwise flush to
@@ -238,7 +242,7 @@ int asm_symbol(const struct symbol *sym)
     return 0;
 }
 
-int asm_text(struct instruction instr)
+INTERNAL int asm_text(struct instruction instr)
 {
     int ws = 0,
         wd = 0;
@@ -395,7 +399,7 @@ int asm_text(struct instruction instr)
     return 0;
 }
 
-int asm_data(struct immediate data)
+INTERNAL int asm_data(struct immediate data)
 {
     switch (data.type) {
     case IMM_INT:
@@ -433,7 +437,7 @@ int asm_data(struct immediate data)
     return 0;
 }
 
-int asm_flush(void)
+INTERNAL int asm_flush(void)
 {
     if (current_symbol) {
         if (is_function(current_symbol->type) &&

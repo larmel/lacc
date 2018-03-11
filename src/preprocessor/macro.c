@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "input.h"
 #include "macro.h"
 #include "strtab.h"
@@ -36,7 +40,7 @@ static int is_expanded(const ExpandStack *scope, String name)
     return 0;
 }
 
-TokenArray get_token_array(void)
+INTERNAL TokenArray get_token_array(void)
 {
     TokenArray list = {0};
     if (array_len(&arrays)) {
@@ -48,7 +52,7 @@ TokenArray get_token_array(void)
     return list;
 }
 
-void release_token_array(TokenArray list)
+INTERNAL void release_token_array(TokenArray list)
 {
     array_push_back(&arrays, list);
 }
@@ -120,7 +124,7 @@ static void *macro_hash_add(void *ref)
     return macro;
 }
 
-void init_macro_table(void)
+INTERNAL void init_macro_table(void)
 {
     hash_init(
         &macro_hash_table,
@@ -130,7 +134,7 @@ void init_macro_table(void)
         macro_hash_del);
 }
 
-void clear_macro_table(void)
+INTERNAL void clear_macro_table(void)
 {
     int i;
     TokenArray list;
@@ -189,7 +193,7 @@ const struct macro *macro_definition(String name)
     return ref;
 }
 
-void define(struct macro macro)
+INTERNAL void define(struct macro macro)
 {
     struct macro *ref;
     static String
@@ -211,11 +215,12 @@ void define(struct macro macro)
     }
 }
 
-void undef(String name)
+INTERNAL void undef(String name)
 {
     hash_remove(&macro_hash_table, name);
 }
 
+#if !NDEBUG
 void print_token_array(const TokenArray *list)
 {
     int i;
@@ -246,6 +251,7 @@ void print_token_array(const TokenArray *list)
 
     printf("] (%u)\n", array_len(list));
 }
+#endif
 
 static struct token paste(struct token left, struct token right)
 {
@@ -594,7 +600,7 @@ static int expand_line(ExpandStack *scope, TokenArray *list)
     return n;
 }
 
-int expand(TokenArray *list)
+INTERNAL int expand(TokenArray *list)
 {
     int n;
     ExpandStack stack = get_expand_stack();
@@ -604,7 +610,7 @@ int expand(TokenArray *list)
     return n;
 }
 
-int tok_cmp(struct token a, struct token b)
+INTERNAL int tok_cmp(struct token a, struct token b)
 {
     if (a.token != b.token)
         return 1;
@@ -695,7 +701,7 @@ static char *stringify_concat(
  * - Any sequence of whitespace in the middle of the text is converted
  *   to a single space in the stringified result.
  */
-struct token stringify(const TokenArray *list)
+INTERNAL struct token stringify(const TokenArray *list)
 {
     struct token str = {0}, t;
     size_t cap, ptr;
@@ -806,7 +812,7 @@ static char *get__date__(char *ts)
  * like "Sun Feb 19 01:26:43 2017\n". In this case, __DATE__ will be
  * "Feb 19 2017", and __TIME__ is "01:26:43".
  */
-void register_builtin_definitions(enum cstd version)
+INTERNAL void register_builtin_definitions(enum cstd version)
 {
     time_t timestamp = time(NULL);
     char *ts = ctime(&timestamp);

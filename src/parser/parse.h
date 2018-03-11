@@ -7,7 +7,7 @@
  * Parse input for the next function or object definition, or NULL on
  * end of input.
  */
-struct definition *parse(void);
+INTERNAL struct definition *parse(void);
 
 /* Create an empty control flow graph.
  *
@@ -19,15 +19,15 @@ struct definition *parse(void);
  * Declarations that only represent a prototype should not generate any
  * code, and the graph can be thrown away with cfg_discard(1).
  */
-struct definition *cfg_init(void);
+INTERNAL struct definition *cfg_init(void);
 
 /* Associate symbol with a function or global variable definition. */
-void cfg_define(struct definition *def, const struct symbol *sym);
+INTERNAL void cfg_define(struct definition *def, const struct symbol *sym);
 
 /* Release resources associated with control flow graph. */
-void cfg_discard(struct definition *def);
+INTERNAL void cfg_discard(struct definition *def);
 
 /* Create a basic block associated with control flow graph. */
-struct block *cfg_block_init(struct definition *def);
+INTERNAL struct block *cfg_block_init(struct definition *def);
 
 #endif

@@ -1,5 +1,8 @@
 #ifndef IR_H
 #define IR_H
+#if !defined(INTERNAL) || !defined(EXTERNAL)
+# error Missing amalgamation macros
+#endif
 
 #include "array.h"
 #include "symbol.h"
@@ -235,27 +238,27 @@ struct definition {
 };
 
 /* Convert variable to no-op IR_OP_CAST expression. */
-struct expression as_expr(struct var var);
+INTERNAL struct expression as_expr(struct var var);
 
 /* Return 1 for string values, 0 otherwise. */
-int is_string(struct var val);
+INTERNAL int is_string(struct var val);
 
 /*
  * A direct reference to given symbol, with two exceptions:
  * SYM_CONSTANT and SYM_STRING_VALUE reduce to IMMEDIATE values.
  */
-struct var var_direct(const struct symbol *sym);
+INTERNAL struct var var_direct(const struct symbol *sym);
 
 /* Immediate numeric value of type int. */
-struct var var_int(int value);
+INTERNAL struct var var_int(int value);
 
 /* Immediate numeric value from typed number. */
-struct var var_numeric(Type type, union value val);
+INTERNAL struct var var_numeric(Type type, union value val);
 
 /*
  * Create symbol representing a jump target, and associate it with the
  * given definition.
  */
-struct symbol *create_label(struct definition *def);
+INTERNAL struct symbol *create_label(struct definition *def);
 
 #endif

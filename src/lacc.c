@@ -1,14 +1,48 @@
-#include "backend/compile.h"
-#include "optimizer/optimize.h"
-#include "parser/parse.h"
-#include "parser/symtab.h"
-#include "parser/typetree.h"
-#include "preprocessor/preprocess.h"
-#include "preprocessor/input.h"
-#include "preprocessor/macro.h"
-#include "util/argparse.h"
-#include <lacc/context.h>
-#include <lacc/ir.h>
+#if AMALGAMATION
+# define INTERNAL static
+# define EXTERNAL static
+# include "context.c"
+# include "util/argparse.c"
+# include "util/hash.c"
+# include "util/string.c"
+# include "backend/x86_64/instr.c"
+# include "backend/x86_64/elf.c"
+# include "backend/x86_64/abi.c"
+# include "backend/x86_64/assemble.c"
+# include "backend/compile.c"
+# include "backend/graphviz/dot.c"
+# include "optimizer/transform.c"
+# include "optimizer/liveness.c"
+# include "optimizer/optimize.c"
+# include "preprocessor/tokenize.c"
+# include "preprocessor/strtab.c"
+# include "preprocessor/input.c"
+# include "preprocessor/directive.c"
+# include "preprocessor/preprocess.c"
+# include "preprocessor/macro.c"
+# include "parser/typetree.c"
+# include "parser/symtab.c"
+# include "parser/parse.c"
+# include "parser/statement.c"
+# include "parser/initializer.c"
+# include "parser/expression.c"
+# include "parser/declaration.c"
+# include "parser/eval.c"
+#else
+# define INTERNAL
+# define EXTERNAL extern
+# include "backend/compile.h"
+# include "optimizer/optimize.h"
+# include "parser/parse.h"
+# include "parser/symtab.h"
+# include "parser/typetree.h"
+# include "preprocessor/preprocess.h"
+# include "preprocessor/input.h"
+# include "preprocessor/macro.h"
+# include "util/argparse.h"
+# include <lacc/context.h>
+# include <lacc/ir.h>
+#endif
 
 #include <assert.h>
 #include <ctype.h>
@@ -24,7 +58,7 @@
 # define LACC_STDLIB_PATH "/usr/local/lib/lacc/include"
 #endif
 
-const char *program;
+static const char *program;
 static FILE *output;
 static int optimization_level;
 static int dump_symbols, dump_types;

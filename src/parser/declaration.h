@@ -3,7 +3,9 @@
 
 #include <lacc/ir.h>
 
-struct block *declaration(struct definition *def, struct block *parent);
+INTERNAL struct block *declaration(
+    struct definition *def,
+    struct block *parent);
 
 /*
  * Parse a declarator. Set name = NULL for abstract declarator, only
@@ -11,14 +13,14 @@ struct block *declaration(struct definition *def, struct block *parent);
  *
  * Declarators can produce evaluation through VLA types.
  */
-struct block *declarator(
+INTERNAL struct block *declarator(
     struct definition *def,
     struct block *parent,
     Type base,
     Type *type,
     String *name);
 
-Type declaration_specifiers(int *storage_class, int *is_inline);
+INTERNAL Type declaration_specifiers(int *storage_class, int *is_inline);
 
 #define FIRST_type_qualifier \
     CONST: case VOLATILE

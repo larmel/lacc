@@ -1,5 +1,8 @@
 #ifndef TYPE_H
 #define TYPE_H
+#if !defined(INTERNAL) || !defined(EXTERNAL)
+# error Missing amalgamation macros
+#endif
 
 #include "string.h"
 
@@ -82,7 +85,7 @@ typedef struct {
     (t).is_pointer ? (t).is_pointer_restrict : (t).is_restrict)
 
 /* Statically initialized, unqualified instances of common types. */
-extern const Type
+EXTERNAL const Type
     basic_type__void,
     basic_type__bool,
     basic_type__char,
@@ -130,48 +133,48 @@ struct member {
 };
 
 /* Get the number of struct or union members, or function parameters. */
-int nmembers(Type type);
+INTERNAL int nmembers(Type type);
 
 /* Return the n-th struct or union member, or function parameter. */
-struct member *get_member(Type type, int n);
+INTERNAL struct member *get_member(Type type, int n);
 
 /* Get pointer target, function return type, or array element type. */
-Type type_next(Type type);
+INTERNAL Type type_next(Type type);
 
 /* A function takes variable arguments if last parameter is '...'. */
-int is_vararg(Type type);
+INTERNAL int is_vararg(Type type);
 
 /*
  * Determine whether type is a variable length array, with size only
  * available at runtime.
  */
-int is_vla(Type type);
+INTERNAL int is_vla(Type type);
 
 /*
  * Determine whether struct or union type contains a flexible array
  * member.
  */
-int is_flexible(Type type);
+INTERNAL int is_flexible(Type type);
 
 /* Return size of type. If indirection, return size of tagged type. */
-size_t size_of(Type type);
+INTERNAL size_t size_of(Type type);
 
 /* Alignment in bytes. */
-size_t type_alignment(Type type);
+INTERNAL size_t type_alignment(Type type);
 
 /* Returns 1 if types are equal, 0 otherwise. */
-int type_equal(Type l, Type r);
+INTERNAL int type_equal(Type l, Type r);
 
 /*
  * Find a common real type between operands used in an expression,
  * giving the type of the result.
  */
-Type usual_arithmetic_conversion(Type t1, Type t2);
+INTERNAL Type usual_arithmetic_conversion(Type t1, Type t2);
 
 /*
  * Print type to stream, returning number of characters written.
  * Optionally expand a specific tag or typedef symbol.
  */
-int fprinttype(FILE *stream, Type type, const struct symbol *expand);
+INTERNAL int fprinttype(FILE *stream, Type type, const struct symbol *expand);
 
 #endif

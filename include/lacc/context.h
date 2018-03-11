@@ -1,5 +1,8 @@
 #ifndef CONTEXT_H
 #define CONTEXT_H
+#if !defined(INTERNAL) || !defined(EXTERNAL)
+# error Missing amalgamation macros
+#endif
 
 #include <stddef.h>
 
@@ -17,7 +20,7 @@ enum cstd {
 };
 
 /* Global information about translation unit. */
-extern struct context {
+INTERNAL struct context {
     int errors;
     int verbose;
     int suppress_warning;
@@ -29,14 +32,14 @@ extern struct context {
  * Output diagnostics info to stdout. No-op if context.verbose is not
  * set.
  */
-void verbose(const char *, ...);
+INTERNAL void verbose(const char *, ...);
 
 /*
  * Output warning to stderr. No-op if context.suppress_warning is set.
  */
-void warning(const char *, ...);
+INTERNAL void warning(const char *, ...);
 
 /* Output error to stderr. */
-void error(const char *, ...);
+INTERNAL void error(const char *, ...);
 
 #endif

@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "declaration.h"
 #include "eval.h"
 #include "expression.h"
@@ -148,7 +152,7 @@ typedef array_of(struct expression) ExprArray;
 static array_of(ExprArray *) args;
 static unsigned max_depth;
 
-void clear_argument_lists(void)
+INTERNAL void clear_argument_lists(void)
 {
     int i;
     ExprArray *a;
@@ -906,7 +910,7 @@ static struct block *conditional_expression(
     return block;
 }
 
-struct block *assignment_expression(
+INTERNAL struct block *assignment_expression(
     struct definition *def,
     struct block *block)
 {
@@ -974,7 +978,7 @@ struct block *assignment_expression(
     return block;
 }
 
-struct var constant_expression(void)
+INTERNAL struct var constant_expression(void)
 {
     struct block
         *head = cfg_block_init(NULL),
@@ -989,7 +993,7 @@ struct var constant_expression(void)
     return eval(NULL, tail, tail->expr);
 }
 
-struct block *expression(struct definition *def, struct block *block)
+INTERNAL struct block *expression(struct definition *def, struct block *block)
 {
     block = assignment_expression(def, block);
     while (peek().token == ',') {

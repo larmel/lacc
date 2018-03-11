@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "directive.h"
 #include "input.h"
 #include "macro.h"
@@ -24,12 +28,12 @@ static int output_preprocessed;
 /* Line currently being tokenized. */
 static char *line_buffer;
 
-void init_preprocessing()
+INTERNAL void init_preprocessing()
 {
     init_macro_table();
 }
 
-void clear_preprocessing(void)
+INTERNAL void clear_preprocessing(void)
 {
     clear_macro_table();
     clear_input_buffers();
@@ -601,7 +605,7 @@ static void preprocess_line(int n)
     }
 }
 
-void inject_line(char *line)
+INTERNAL void inject_line(char *line)
 {
     assert(!line_buffer);
     line_buffer = line;
@@ -613,7 +617,7 @@ void inject_line(char *line)
     line_buffer = NULL;
 }
 
-struct token next(void)
+INTERNAL struct token next(void)
 {
     if (deque_len(&lookahead) < 1) {
         preprocess_line(1);
@@ -622,12 +626,12 @@ struct token next(void)
     return deque_pop_front(&lookahead);
 }
 
-struct token peek(void)
+INTERNAL struct token peek(void)
 {
     return peekn(1);
 }
 
-struct token peekn(int n)
+INTERNAL struct token peekn(int n)
 {
     assert(n > 0);
     if (deque_len(&lookahead) < n) {
@@ -637,7 +641,7 @@ struct token peekn(int n)
     return deque_get(&lookahead, n - 1);
 }
 
-struct token consume(enum token_type type)
+INTERNAL struct token consume(enum token_type type)
 {
     struct token t;
     const char *str;
@@ -668,7 +672,7 @@ struct token consume(enum token_type type)
     return t;
 }
 
-void preprocess(FILE *output)
+INTERNAL void preprocess(FILE *output)
 {
     struct token t;
 

@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "typetree.h"
 #include <lacc/array.h>
 #include <lacc/context.h>
@@ -10,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-const Type
+INTERNAL const Type
     basic_type__void           = { T_VOID },
     basic_type__bool           = { T_BOOL },
     basic_type__char           = { T_CHAR },
@@ -130,7 +134,7 @@ static Type get_type_handle(int ref)
     return type;
 }
 
-Type type_create(enum type tt)
+INTERNAL Type type_create(enum type tt)
 {
     Type type = {0};
     struct typetree t = {0};
@@ -142,7 +146,7 @@ Type type_create(enum type tt)
     return type;
 }
 
-void clear_types(FILE *stream)
+INTERNAL void clear_types(FILE *stream)
 {
     int i;
     Type type;
@@ -327,7 +331,7 @@ static size_t adjust_member_alignment(Type parent, Type type)
     return align;
 }
 
-Type type_create_pointer(Type next)
+INTERNAL Type type_create_pointer(Type next)
 {
     Type type;
     struct typetree *t;
@@ -348,7 +352,7 @@ Type type_create_pointer(Type next)
     return type;
 }
 
-Type type_create_function(Type next)
+INTERNAL Type type_create_function(Type next)
 {
     Type type;
     struct typetree *t;
@@ -359,7 +363,7 @@ Type type_create_function(Type next)
     return type;
 }
 
-Type type_create_array(Type next, size_t count)
+INTERNAL Type type_create_array(Type next, size_t count)
 {
     Type type;
     struct typetree *t;
@@ -376,7 +380,7 @@ Type type_create_array(Type next, size_t count)
     return type;
 }
 
-Type type_create_incomplete(Type next)
+INTERNAL Type type_create_incomplete(Type next)
 {
     Type type;
     struct typetree *t;
@@ -388,7 +392,7 @@ Type type_create_incomplete(Type next)
     return type;
 }
 
-Type type_create_vla(Type next, const struct symbol *count)
+INTERNAL Type type_create_vla(Type next, const struct symbol *count)
 {
     Type type;
     struct typetree *t;
@@ -400,7 +404,7 @@ Type type_create_vla(Type next, const struct symbol *count)
     return type;
 }
 
-Type type_set_const(Type type)
+INTERNAL Type type_set_const(Type type)
 {
     if (type.is_pointer) {
         type.is_pointer_const = 1;
@@ -411,7 +415,7 @@ Type type_set_const(Type type)
     return type;
 }
 
-Type type_set_volatile(Type type)
+INTERNAL Type type_set_volatile(Type type)
 {
     if (type.is_pointer) {
         type.is_pointer_volatile = 1;
@@ -422,7 +426,7 @@ Type type_set_volatile(Type type)
     return type;
 }
 
-Type type_set_restrict(Type type)
+INTERNAL Type type_set_restrict(Type type)
 {
     if (!is_pointer(type)) {
         error("Cannot apply 'restrict' qualifier to non-pointer types.");
@@ -438,7 +442,7 @@ Type type_set_restrict(Type type)
     return type;
 }
 
-Type type_apply_qualifiers(Type type, Type other)
+INTERNAL Type type_apply_qualifiers(Type type, Type other)
 {
     if (is_const(other))
         type = type_set_const(type);
@@ -449,7 +453,7 @@ Type type_apply_qualifiers(Type type, Type other)
     return type;
 }
 
-Type type_patch_declarator(Type head, Type target)
+INTERNAL Type type_patch_declarator(Type head, Type target)
 {
     struct typetree *t;
     Type next;
@@ -474,7 +478,7 @@ Type type_patch_declarator(Type head, Type target)
     return next;
 }
 
-void type_clean_prototype(Type type)
+INTERNAL void type_clean_prototype(Type type)
 {
     int i;
     struct member *m;
@@ -518,7 +522,7 @@ void type_clean_prototype(Type type)
  *  i32 a;
  * 
  */
-void type_set_tag(Type type, const struct symbol *tag)
+INTERNAL void type_set_tag(Type type, const struct symbol *tag)
 {
     struct typetree *t;
 
@@ -531,7 +535,7 @@ void type_set_tag(Type type, const struct symbol *tag)
     }
 }
 
-size_t type_alignment(Type type)
+INTERNAL size_t type_alignment(Type type)
 {
     int i;
     size_t m = 0, d;
@@ -553,13 +557,13 @@ size_t type_alignment(Type type)
     }
 }
 
-int nmembers(Type type)
+INTERNAL int nmembers(Type type)
 {
     struct typetree *t = get_typetree_handle(type.ref);
     return array_len(&t->members);
 }
 
-struct member *get_member(Type type, int n)
+INTERNAL struct member *get_member(Type type, int n)
 {
     struct typetree *t;
 
@@ -569,7 +573,7 @@ struct member *get_member(Type type, int n)
     return &array_get(&t->members, n);
 }
 
-struct member *type_add_member(Type parent, String name, Type type)
+INTERNAL struct member *type_add_member(Type parent, String name, Type type)
 {
     struct member m = {0};
 
@@ -649,7 +653,7 @@ static int pack_field_member(struct typetree *t, struct member *field)
  *
  * Anonymous union fields are ignored, not needed for alignment.
  */
-void type_add_field(Type parent, String name, Type type, size_t width)
+INTERNAL void type_add_field(Type parent, String name, Type type, size_t width)
 {
     struct member m = {0};
     struct typetree *t;
@@ -691,7 +695,7 @@ void type_add_field(Type parent, String name, Type type, size_t width)
     }
 }
 
-void type_add_anonymous_member(Type parent, Type type)
+INTERNAL void type_add_anonymous_member(Type parent, Type type)
 {
     int i;
     size_t offset;
@@ -754,7 +758,7 @@ static size_t remove_anonymous_fields(struct typetree *t)
  * This function should only be called only once all members have been
  * added.
  */
-void type_seal(Type type)
+INTERNAL void type_seal(Type type)
 {
     struct typetree *t;
     size_t align;
@@ -772,7 +776,7 @@ void type_seal(Type type)
     }
 }
 
-int is_vararg(Type type)
+INTERNAL int is_vararg(Type type)
 {
     struct typetree *t;
 
@@ -781,7 +785,7 @@ int is_vararg(Type type)
     return t->is_vararg;
 }
 
-int is_vla(Type type)
+INTERNAL int is_vla(Type type)
 {
     struct typetree *t;
 
@@ -793,7 +797,7 @@ int is_vla(Type type)
     return 0;
 }
 
-int is_flexible(Type type)
+INTERNAL int is_flexible(Type type)
 {
     struct typetree *t;
 
@@ -805,7 +809,7 @@ int is_flexible(Type type)
     return 0;
 }
 
-int is_variably_modified(Type type)
+INTERNAL int is_variably_modified(Type type)
 {
     switch (type_of(type)) {
     case T_POINTER:
@@ -816,7 +820,7 @@ int is_variably_modified(Type type)
     }
 }
 
-int is_complete(Type type)
+INTERNAL int is_complete(Type type)
 {
     struct typetree *t;
 
@@ -870,7 +874,7 @@ static int typetree_equal(const struct typetree *a, const struct typetree *b)
  * Determine whether two types are the same. Disregard qualifiers, and
  * names of function parameters.
  */
-int type_equal(Type a, Type b)
+INTERNAL int type_equal(Type a, Type b)
 {
     struct typetree *ta, *tb;
 
@@ -892,7 +896,7 @@ int type_equal(Type a, Type b)
     return 1;
 }
 
-Type promote_integer(Type type)
+INTERNAL Type promote_integer(Type type)
 {
     assert(is_integer(type));
     if (size_of(type) < 4) {
@@ -902,7 +906,7 @@ Type promote_integer(Type type)
     return type;
 }
 
-Type usual_arithmetic_conversion(Type t1, Type t2)
+INTERNAL Type usual_arithmetic_conversion(Type t1, Type t2)
 {
     Type res;
 
@@ -929,7 +933,7 @@ Type usual_arithmetic_conversion(Type t1, Type t2)
     return remove_qualifiers(res);
 }
 
-int is_compatible(Type l, Type r)
+INTERNAL int is_compatible(Type l, Type r)
 {
     size_t s1, s2;
 
@@ -966,14 +970,14 @@ int is_compatible(Type l, Type r)
     }
 }
 
-int is_compatible_unqualified(Type l, Type r)
+INTERNAL int is_compatible_unqualified(Type l, Type r)
 {
     l = remove_qualifiers(l);
     r = remove_qualifiers(r);
     return is_compatible(l, r);
 }
 
-size_t size_of(Type type)
+INTERNAL size_t size_of(Type type)
 {
     struct typetree *t;
 
@@ -1004,7 +1008,7 @@ size_t size_of(Type type)
     }
 }
 
-size_t type_array_len(Type type)
+INTERNAL size_t type_array_len(Type type)
 {
     struct typetree *t;
     assert(is_array(type));
@@ -1013,7 +1017,7 @@ size_t type_array_len(Type type)
     return t->size;
 }
 
-const struct symbol *type_vla_length(Type type)
+INTERNAL const struct symbol *type_vla_length(Type type)
 {
     struct typetree *t;
     assert(is_vla(type));
@@ -1022,7 +1026,7 @@ const struct symbol *type_vla_length(Type type)
     return t->vlen;
 }
 
-Type type_deref(Type type)
+INTERNAL Type type_deref(Type type)
 {
     assert(is_pointer(type));
     if (type.is_pointer) {
@@ -1035,7 +1039,7 @@ Type type_deref(Type type)
     return type;
 }
 
-Type type_next(Type type)
+INTERNAL Type type_next(Type type)
 {
     struct typetree *t;
 
@@ -1048,7 +1052,7 @@ Type type_next(Type type)
     return t->next;
 }
 
-void set_array_length(Type type, size_t length)
+INTERNAL void set_array_length(Type type, size_t length)
 {
     struct typetree *t;
     assert(is_array(type));
@@ -1060,7 +1064,10 @@ void set_array_length(Type type, size_t length)
     t->is_incomplete = 0;
 }
 
-const struct member *find_type_member(Type type, String name, int *index)
+INTERNAL const struct member *find_type_member(
+    Type type,
+    String name,
+    int *index)
 {
     int i;
     struct typetree *t;
@@ -1085,7 +1092,7 @@ const struct member *find_type_member(Type type, String name, int *index)
     return NULL;
 }
 
-int fprinttype(FILE *stream, Type type, const struct symbol *expand)
+INTERNAL int fprinttype(FILE *stream, Type type, const struct symbol *expand)
 {
     struct typetree *t;
     struct member *m;

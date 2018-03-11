@@ -3,11 +3,11 @@
 
 #include <lacc/ir.h>
 
-struct block *expression(struct definition *def, struct block *block);
+INTERNAL struct block *expression(struct definition *def, struct block *block);
 
-struct var constant_expression(void);
+INTERNAL struct var constant_expression(void);
 
-struct block *assignment_expression(
+INTERNAL struct block *assignment_expression(
 	struct definition *def,
 	struct block *block);
 
@@ -16,6 +16,6 @@ struct block *assignment_expression(
  *
  * Should be called exactly once before exiting.
  */
-void clear_argument_lists(void);
+INTERNAL void clear_argument_lists(void);
 
 #endif

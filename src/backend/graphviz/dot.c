@@ -1,3 +1,7 @@
+#if !defined(AMALGAMATION) || !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "dot.h"
 
 #include <assert.h>
@@ -278,14 +282,14 @@ static void dot_print_node(struct block *node)
     }
 }
 
-void dot_init(FILE *output)
+INTERNAL void dot_init(FILE *output)
 {
     assert(!stream);
     assert(output);
     stream = output;
 }
 
-void dotgen(struct definition *def)
+INTERNAL void dotgen(struct definition *def)
 {
     assert(stream);
     fprintf(stream, "digraph {\n");

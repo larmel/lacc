@@ -37,9 +37,9 @@ struct param_class {
  * some simplifications. Classify parameter as a series of eightbytes
  * used for parameter passing and return value.
  */
-struct param_class classify(Type type);
+INTERNAL struct param_class classify(Type type);
 
 /* Alignment of symbol in bytes. */
-int sym_alignment(const struct symbol *sym);
+INTERNAL int sym_alignment(const struct symbol *sym);
 
 #endif

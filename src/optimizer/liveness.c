@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "liveness.h"
 #include "optimize.h"
 
@@ -96,7 +100,7 @@ static unsigned long def(const struct statement *s)
     return (s->st == IR_ASSIGN) ? set_def_bit(s->t) : 0ul;
 }
 
-int live_variable_analysis(struct block *block)
+INTERNAL int live_variable_analysis(struct block *block)
 {
     int i;
     unsigned long top;

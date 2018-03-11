@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include <lacc/hash.h>
 
 #include <assert.h>
@@ -165,7 +169,7 @@ static struct hash_entry *hash_chain_clear(
     return last;
 }
 
-struct hash_table *hash_init(
+INTERNAL struct hash_table *hash_init(
     struct hash_table *tab,
     unsigned cap,
     String (*key)(void *),
@@ -187,7 +191,7 @@ struct hash_table *hash_init(
  * Delete all values, putting hash_entry objects already allocated in
  * overflow slot at table[capacity].
  */
-void hash_clear(struct hash_table *tab)
+INTERNAL void hash_clear(struct hash_table *tab)
 {
     unsigned i;
     struct hash_entry *ref, *last;
@@ -212,7 +216,7 @@ void hash_clear(struct hash_table *tab)
     memset(tab->table, 0, sizeof(*tab->table) * tab->capacity);
 }
 
-void hash_destroy(struct hash_table *tab)
+INTERNAL void hash_destroy(struct hash_table *tab)
 {
     unsigned i;
     struct hash_entry *ref;
@@ -231,7 +235,7 @@ void hash_destroy(struct hash_table *tab)
     free(tab->table);
 }
 
-void *hash_insert(struct hash_table *tab, void *val)
+INTERNAL void *hash_insert(struct hash_table *tab, void *val)
 {
     struct hash_entry *ref;
 
@@ -245,7 +249,7 @@ void *hash_insert(struct hash_table *tab, void *val)
     return ref->data;
 }
 
-void *hash_lookup(struct hash_table *tab, String key)
+INTERNAL void *hash_lookup(struct hash_table *tab, String key)
 {
     struct hash_entry *ref;
 
@@ -253,7 +257,7 @@ void *hash_lookup(struct hash_table *tab, String key)
     return ref ? ref->data : NULL;
 }
 
-void hash_remove(struct hash_table *tab, String key)
+INTERNAL void hash_remove(struct hash_table *tab, String key)
 {
     struct hash_entry *ref;
 

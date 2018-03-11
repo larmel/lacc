@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "eval.h"
 #include "declaration.h"
 #include "parse.h"
@@ -26,14 +30,14 @@ static int is_zero_value(union value value, Type type)
     }
 }
 
-int is_immediate_true(struct expression expr)
+INTERNAL int is_immediate_true(struct expression expr)
 {
     return is_identity(expr)
         && expr.l.kind == IMMEDIATE
         && !is_zero_value(expr.l.imm, expr.type);
 }
 
-int is_immediate_false(struct expression expr)
+INTERNAL int is_immediate_false(struct expression expr)
 {
     return is_identity(expr)
         && expr.l.kind == IMMEDIATE
@@ -46,13 +50,13 @@ static int is_nullptr(struct var val)
         && is_immediate_false(as_expr(val));
 }
 
-int is_string(struct var val)
+INTERNAL int is_string(struct var val)
 {
     return val.kind == IMMEDIATE && val.symbol
         && val.symbol->symtype == SYM_STRING_VALUE;
 }
 
-struct var var_void(void)
+INTERNAL struct var var_void(void)
 {
     struct var var = {0};
 
@@ -61,7 +65,7 @@ struct var var_void(void)
     return var;
 }
 
-struct var create_var(struct definition *def, Type type)
+INTERNAL struct var create_var(struct definition *def, Type type)
 {
     struct symbol *tmp;
     struct var res;
@@ -75,7 +79,7 @@ struct var create_var(struct definition *def, Type type)
     return res;
 }
 
-struct var var_direct(const struct symbol *sym)
+INTERNAL struct var var_direct(const struct symbol *sym)
 {
     struct var var = {0};
 
@@ -100,7 +104,7 @@ struct var var_direct(const struct symbol *sym)
     return var;
 }
 
-struct var var_int(int value)
+INTERNAL struct var var_int(int value)
 {
     struct var var = {0};
     var.kind = IMMEDIATE;
@@ -109,7 +113,7 @@ struct var var_int(int value)
     return var;
 }
 
-struct var var_numeric(Type type, union value val)
+INTERNAL struct var var_numeric(Type type, union value val)
 {
     struct var var = {0};
     var.kind = IMMEDIATE;
@@ -126,7 +130,7 @@ static struct var imm_signed(Type type, long n)
     return var_numeric(type, val);
 }
 
-struct var imm_unsigned(Type type, unsigned long n)
+INTERNAL struct var imm_unsigned(Type type, unsigned long n)
 {
     union value val = {0};
 
@@ -163,7 +167,7 @@ static struct var imm_long_double(long double n)
     return var_numeric(basic_type__long_double, val);
 }
 
-struct expression as_expr(struct var val)
+INTERNAL struct expression as_expr(struct var val)
 {
     struct expression expr = {0};
 
@@ -294,7 +298,7 @@ static void emit_ir(struct block *block, enum sttype st, ...)
  * call convention in x86_64, where the callee writes the result object
  * and we have to provide some valid storage.
  */
-struct expression eval_expression_statement(
+INTERNAL struct expression eval_expression_statement(
     struct definition *def,
     struct block *block,
     struct expression expr)
@@ -313,7 +317,7 @@ struct expression eval_expression_statement(
     return as_expr(var_void());
 }
 
-struct var eval(
+INTERNAL struct var eval(
     struct definition *def,
     struct block *block,
     struct expression expr)
@@ -350,7 +354,7 @@ struct var eval(
         || (is_double(t) && (v).d < n) \
         || (is_long_double(t) && (v).ld < n))
 
-union value convert(union value val, Type type, Type to)
+INTERNAL union value convert(union value val, Type type, Type to)
 {
     switch (type_of(to)) {
     case T_FLOAT:
@@ -1126,7 +1130,7 @@ static struct var rvalue(
     return var;
 }
 
-struct expression eval_expr(
+INTERNAL struct expression eval_expr(
     struct definition *def,
     struct block *block,
     enum optype optype,
@@ -1178,7 +1182,7 @@ struct expression eval_expr(
     }
 }
 
-struct expression eval_unary_plus(struct var val)
+INTERNAL struct expression eval_unary_plus(struct var val)
 {
     Type type;
 
@@ -1196,7 +1200,7 @@ struct expression eval_unary_plus(struct var val)
     return as_expr(val);
 }
 
-struct var eval_addr(
+INTERNAL struct var eval_addr(
     struct definition *def,
     struct block *block,
     struct var var)
@@ -1280,7 +1284,7 @@ struct var eval_addr(
     return var;
 }
 
-struct var eval_deref(
+INTERNAL struct var eval_deref(
     struct definition *def,
     struct block *block,
     struct var var)
@@ -1527,7 +1531,7 @@ static struct expression eval_bool(
     return expr;
 }
 
-struct var eval_assign(
+INTERNAL struct var eval_assign(
     struct definition *def,
     struct block *block,
     struct var target,
@@ -1584,7 +1588,7 @@ struct var eval_assign(
     return target;
 }
 
-struct var eval_copy(
+INTERNAL struct var eval_copy(
     struct definition *def,
     struct block *block,
     struct var var)
@@ -1599,7 +1603,7 @@ struct var eval_copy(
     return eval_assign(def, block, cpy, as_expr(var));
 }
 
-struct expression eval_return(
+INTERNAL struct expression eval_return(
     struct definition *def,
     struct block *block)
 {
@@ -1627,7 +1631,7 @@ struct expression eval_return(
     return block->expr;
 }
 
-Type eval_conditional(
+INTERNAL Type eval_conditional(
     struct definition *def,
     struct block *left,
     struct block *right)
@@ -1731,7 +1735,7 @@ static struct block *eval_logical_expression(
     return r;
 }
 
-void eval_vla_alloc(
+INTERNAL void eval_vla_alloc(
     struct definition *def,
     struct block *block,
     const struct symbol *sym)
@@ -1741,7 +1745,7 @@ void eval_vla_alloc(
     emit_ir(block, IR_VLA_ALLOC, var_direct(sym), block->expr);
 }
 
-struct expression eval_vla_size(
+INTERNAL struct expression eval_vla_size(
     struct definition *def,
     struct block *block,
     Type type)
@@ -1785,7 +1789,7 @@ static int is_logical_immediate(
         && is_identity(left->expr) && left->expr.l.kind == IMMEDIATE;
 }
 
-struct block *eval_logical_or(
+INTERNAL struct block *eval_logical_or(
     struct definition *def,
     struct block *left,
     struct block *right_top,
@@ -1818,7 +1822,7 @@ struct block *eval_logical_or(
     return left;
 }
 
-struct block *eval_logical_and(
+INTERNAL struct block *eval_logical_and(
     struct definition *def,
     struct block *left,
     struct block *right_top,
@@ -1851,7 +1855,7 @@ struct block *eval_logical_and(
     return left;
 }
 
-struct expression eval_param(
+INTERNAL struct expression eval_param(
     struct definition *def,
     struct block *block,
     struct expression expr)
@@ -1870,12 +1874,14 @@ struct expression eval_param(
     return expr;
 }
 
-void param(struct block *block, struct expression expr)
+INTERNAL void param(struct block *block, struct expression expr)
 {
     emit_ir(block, IR_PARAM, expr);
 }
 
-void eval__builtin_va_start(struct block *block, struct expression arg)
+INTERNAL void eval__builtin_va_start(
+    struct block *block,
+    struct expression arg)
 {
     emit_ir(block, IR_VA_START, arg);
 }

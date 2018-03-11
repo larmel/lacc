@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "elf.h"
 
 #include <assert.h>
@@ -1138,7 +1142,7 @@ static struct code x87_encode_arithmetic(unsigned int op, union operand r)
     return c;
 }
 
-struct code encode(struct instruction instr)
+INTERNAL struct code encode(struct instruction instr)
 {
     switch (instr.opcode) {
     default: assert(0);

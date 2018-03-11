@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "directive.h"
 #include "input.h"
 #include "macro.h"
@@ -10,7 +14,7 @@
 
 #define IDENT(s) {IDENTIFIER, 0, 1, 0, {0}, {SHORT_STRING_INIT(s)}}
 
-struct token
+INTERNAL struct token
     ident__include = IDENT("include"),
     ident__defined = IDENT("defined"),
     ident__define = IDENT("define"),
@@ -78,7 +82,7 @@ static enum state pop_state(void)
     return val;
 }
 
-int in_active_block(void)
+INTERNAL int in_active_block(void)
 {
     enum state s = BRANCH_LIVE;
     if (array_len(&branch_stack)) {
@@ -678,7 +682,7 @@ static void preprocess_line_directive(const struct token *line)
     }
 }
 
-void preprocess_directive(TokenArray *array)
+INTERNAL void preprocess_directive(TokenArray *array)
 {
     struct number num;
     int def;

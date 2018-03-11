@@ -1,5 +1,8 @@
 #ifndef STRING_H
 #define STRING_H
+#if !defined(INTERNAL) || !defined(EXTERNAL)
+# error Missing amalgamation macros
+#endif
 
 #include <stddef.h>
 #include <stdio.h>
@@ -35,15 +38,15 @@ typedef union {
         : (s).len < SHORT_STRING_LEN ? (const char *) (s).a.str : (s).p.str)
 
 /* Initialize string, where the length can be determined by strlen. */
-String str_init(const char *str);
+INTERNAL String str_init(const char *str);
 
 /* Compare two strings, returning 0 if equal. */
-int str_cmp(String s1, String s2);
+INTERNAL int str_cmp(String s1, String s2);
 
 /*
  * Output string to stream, in safe encoding for textual assembly or as
  * plain C code.
  */
-int fprintstr(FILE *stream, String str);
+INTERNAL int fprintstr(FILE *stream, String str);
 
 #endif

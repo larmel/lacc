@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include <lacc/string.h>
 
 #include <ctype.h>
@@ -31,7 +35,7 @@ static int printchar(FILE *stream, char ch)
     }
 }
 
-int fprintstr(FILE *stream, String str)
+INTERNAL int fprintstr(FILE *stream, String str)
 {
     int n, i;
     const char *raw;
@@ -46,7 +50,7 @@ int fprintstr(FILE *stream, String str)
     return n + 2;
 }
 
-String str_init(const char *str)
+INTERNAL String str_init(const char *str)
 {
     String s = {0};
 
@@ -60,7 +64,7 @@ String str_init(const char *str)
     return s;
 }
 
-int str_cmp(String s1, String s2)
+INTERNAL int str_cmp(String s1, String s2)
 {
     long *a, *b;
     if (s1.len != s2.len) {

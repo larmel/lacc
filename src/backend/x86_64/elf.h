@@ -114,23 +114,23 @@ enum rel_type {
 
 #define ELF64_R_INFO(s, t) ((((long) s) << 32) + (((long) t) & 0xFFFFFFFFL))
 
-void elf_init(FILE *output, const char *file);
+INTERNAL void elf_init(FILE *output, const char *file);
 
-int elf_symbol(const struct symbol *sym);
+INTERNAL int elf_symbol(const struct symbol *sym);
 
-int elf_text(struct instruction instr);
+INTERNAL int elf_text(struct instruction instr);
 
-int elf_data(struct immediate data);
+INTERNAL int elf_data(struct immediate data);
 
 /* Write pending label offsets. Required after each function. */
-void elf_flush_text_displacements(void);
+INTERNAL void elf_flush_text_displacements(void);
 
-int elf_flush(void);
+INTERNAL int elf_flush(void);
 
 /*
  * Insert relocation entry to symbol at the current position of .text.
  */
-void elf_add_reloc_text(
+INTERNAL void elf_add_reloc_text(
     const struct symbol *symbol,
     enum rel_type type,
     int offset,
@@ -142,6 +142,6 @@ void elf_add_reloc_text(
  * and store this location as pending. All pending displacements are
  * written on flush.
  */
-int elf_text_displacement(const struct symbol *label, int instr_offset);
+INTERNAL int elf_text_displacement(const struct symbol *label, int offset);
 
 #endif

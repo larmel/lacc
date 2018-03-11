@@ -4,7 +4,7 @@
 #include "macro.h"
 #include <lacc/token.h>
 
-extern struct token
+EXTERNAL struct token
     ident__include,
     ident__defined,
     ident__define,
@@ -21,9 +21,9 @@ extern struct token
  * Preprocess a line starting with a '#' directive. Borrows ownership of
  * input. Assume input is END terminated.
  */
-void preprocess_directive(TokenArray *line);
+INTERNAL void preprocess_directive(TokenArray *line);
 
 /* Non-zero iff currently not inside a false #if directive. */
-int in_active_block(void);
+INTERNAL int in_active_block(void);
 
 #endif

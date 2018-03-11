@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "optimize.h"
 #include "liveness.h"
 #include "transform.h"
@@ -190,6 +194,7 @@ static void execute_iterative_dataflow(int (*callback)(struct block *))
     } while (changes);
 }
 
+#if !NDEBUG
 static void print_liveness_statement(unsigned long live)
 {
     int j, k;
@@ -227,8 +232,9 @@ int print_liveness(struct block *block)
 
     return 0;
 }
+#endif
 
-int is_live_after(const struct symbol *sym, const struct statement *st)
+INTERNAL int is_live_after(const struct symbol *sym, const struct statement *st)
 {
     if (optimization_level && is_object(sym->type)) {
         assert(sym->index);
@@ -238,12 +244,12 @@ int is_live_after(const struct symbol *sym, const struct statement *st)
     return 1;
 }
 
-void push_optimization(int level)
+INTERNAL void push_optimization(int level)
 {
     optimization_level = level;
 }
 
-void optimize(struct definition *def)
+INTERNAL void optimize(struct definition *def)
 {
     int syms, n;
 
@@ -273,7 +279,7 @@ void optimize(struct definition *def)
     traverse(&color_white);
 }
 
-void pop_optimization(void)
+INTERNAL void pop_optimization(void)
 {
     array_clear(&blocklist);
     array_clear(&symbols);

@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "transform.h"
 #include "liveness.h"
 
@@ -42,7 +46,7 @@ static int can_merge(
         && !is_live_after(s1.t.symbol, &s2);
 }
 
-int merge_chained_assignment(struct block *block)
+INTERNAL int merge_chained_assignment(struct block *block)
 {
     int i = 1;
     struct statement s1, s2;
@@ -66,7 +70,7 @@ int merge_chained_assignment(struct block *block)
     return 0;
 }
 
-int dead_store_elimination(struct block *block)
+INTERNAL int dead_store_elimination(struct block *block)
 {
     int i, c;
     struct statement *st;

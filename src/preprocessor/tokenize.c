@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "strtab.h"
 #include "tokenize.h"
 #include <lacc/context.h>
@@ -18,7 +22,7 @@
 #define TOK(t, s) {(t), 0, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
 #define IDN(t, s) {(t), 0, 1, 0, {0}, {SHORT_STRING_INIT(s)}}
 
-const struct token basic_token[] = {
+INTERNAL const struct token basic_token[] = {
 /* 0x00 */  TOK(END, "$"),              IDN(AUTO, "auto"),
             IDN(BREAK, "break"),        IDN(CASE, "case"),
             IDN(CHAR, "char"),          IDN(CONST, "const"),
@@ -217,7 +221,7 @@ static const Type constant_integer_type(
     return type;
 }
 
-struct token convert_preprocessing_number(struct token t)
+INTERNAL struct token convert_preprocessing_number(struct token t)
 {
     const char *str;
     const char *endptr;
@@ -341,7 +345,7 @@ static char convert_char(const char *in, const char **endptr)
 static char *string_buffer;
 static size_t string_buffer_cap;
 
-void clear_string_buffer(void)
+INTERNAL void clear_string_buffer(void)
 {
     if (string_buffer) {
         free(string_buffer);
@@ -360,7 +364,7 @@ static char *get_string_buffer(size_t length)
     return string_buffer;
 }
 
-struct token convert_preprocessing_string(struct token t)
+INTERNAL struct token convert_preprocessing_string(struct token t)
 {
     struct token tok = {STRING};
     const char *raw, *ptr;
@@ -378,7 +382,7 @@ struct token convert_preprocessing_string(struct token t)
     return tok;
 }
 
-struct token convert_preprocessing_char(struct token t)
+INTERNAL struct token convert_preprocessing_char(struct token t)
 {
     struct token tok = {NUMBER};
     const char *raw;
@@ -724,7 +728,7 @@ static int skip_spaces(const char *in, const char **endptr)
     return in - start;
 }
 
-struct token tokenize(const char *in, const char **endptr)
+INTERNAL struct token tokenize(const char *in, const char **endptr)
 {
     int ws;
     struct token tok;

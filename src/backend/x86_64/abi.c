@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "abi.h"
 
 #include <assert.h>
@@ -106,7 +110,7 @@ static struct param_class merge(struct param_class pc, int n)
     return pc;
 }
 
-struct param_class classify(Type type)
+INTERNAL struct param_class classify(Type type)
 {
     struct param_class pc = {PC_NO_CLASS};
     assert(type_of(type) != T_FUNCTION);
@@ -132,7 +136,7 @@ struct param_class classify(Type type)
     return pc;
 }
 
-int sym_alignment(const struct symbol *sym)
+INTERNAL int sym_alignment(const struct symbol *sym)
 {
     int align = type_alignment(sym->type);
     if (is_array(sym->type) && align < 16) {
@@ -146,6 +150,7 @@ int sym_alignment(const struct symbol *sym)
     return align;
 }
 
+#if !NDEBUG
 void dump_classification(struct param_class pc, Type type)
 {
     int i;
@@ -166,3 +171,4 @@ void dump_classification(struct param_class pc, Type type)
         }
     }
 }
+#endif

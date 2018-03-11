@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "symtab.h"
 #include "typetree.h"
 #include <lacc/context.h>
@@ -7,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct namespace
+INTERNAL struct namespace
     ns_ident = {"identifiers"},
     ns_label = {"labels"},
     ns_tag = {"tags"};
@@ -71,7 +75,7 @@ static Type get_string_type(size_t len)
 }
 
 /* Save memcpy reference for backend. */
-const struct symbol *decl_memcpy = NULL;
+INTERNAL const struct symbol *decl_memcpy = NULL;
 
 /*
  * Keep track of all function declarations globally, in order to coerce
@@ -144,7 +148,7 @@ static unsigned current_scope_hash_cap(struct namespace *ns)
     return cap;
 }
 
-void push_scope(struct namespace *ns)
+INTERNAL void push_scope(struct namespace *ns)
 {
     static struct scope empty;
     struct scope *scope;
@@ -164,7 +168,7 @@ void push_scope(struct namespace *ns)
     }
 }
 
-void pop_scope(struct namespace *ns)
+INTERNAL void pop_scope(struct namespace *ns)
 {
     int i;
     struct symbol *sym;
@@ -209,14 +213,14 @@ void pop_scope(struct namespace *ns)
     }
 }
 
-unsigned current_scope_depth(struct namespace *ns)
+INTERNAL unsigned current_scope_depth(struct namespace *ns)
 {
     unsigned depth = array_len(&ns->scope);
     assert(depth);
     return depth - 1;
 }
 
-struct symbol *sym_lookup(struct namespace *ns, String name)
+INTERNAL struct symbol *sym_lookup(struct namespace *ns, String name)
 {
     int i;
     struct scope *scope;
@@ -236,7 +240,7 @@ struct symbol *sym_lookup(struct namespace *ns, String name)
     return NULL;
 }
 
-const char *sym_name(const struct symbol *sym)
+INTERNAL const char *sym_name(const struct symbol *sym)
 {
     static char name[128];
     const char *raw;
@@ -369,7 +373,7 @@ static struct symbol *sym_redeclare(
     return sym;
 }
 
-void sym_make_visible(struct namespace *ns, struct symbol *sym)
+INTERNAL void sym_make_visible(struct namespace *ns, struct symbol *sym)
 {
     unsigned cap;
     struct scope *scope;
@@ -398,7 +402,7 @@ void sym_make_visible(struct namespace *ns, struct symbol *sym)
  * Scoped static variable are given unique names in order to not collide
  * with other external declarations.
  */
-struct symbol *sym_add(
+INTERNAL struct symbol *sym_add(
     struct namespace *ns,
     String name,
     Type type,
@@ -473,7 +477,7 @@ struct symbol *sym_add(
     return sym;
 }
 
-struct symbol *sym_create_temporary(Type type)
+INTERNAL struct symbol *sym_create_temporary(Type type)
 {
     static int n;
     struct symbol *sym;
@@ -487,7 +491,7 @@ struct symbol *sym_create_temporary(Type type)
     return sym;
 }
 
-struct symbol *sym_create_unnamed(Type type)
+INTERNAL struct symbol *sym_create_unnamed(Type type)
 {
     static int n;
     struct symbol *sym;
@@ -506,7 +510,7 @@ struct symbol *sym_create_unnamed(Type type)
     return sym;
 }
 
-struct symbol *sym_create_label(void)
+INTERNAL struct symbol *sym_create_label(void)
 {
     static int n;
     struct symbol *sym;
@@ -520,7 +524,7 @@ struct symbol *sym_create_label(void)
     return sym;
 }
 
-struct symbol *sym_create_constant(Type type, union value val)
+INTERNAL struct symbol *sym_create_constant(Type type, union value val)
 {
     static int n;
     struct symbol *sym;
@@ -541,7 +545,7 @@ struct symbol *sym_create_constant(Type type, union value val)
  * table from previously called str_register. The symbol now exists as
  * if declared static char .LC[] = "...".
  */
-struct symbol *sym_create_string(String str)
+INTERNAL struct symbol *sym_create_string(String str)
 {
     static int n;
     struct symbol *sym;
@@ -557,18 +561,18 @@ struct symbol *sym_create_string(String str)
     return sym;
 }
 
-void sym_discard(struct symbol *sym)
+INTERNAL void sym_discard(struct symbol *sym)
 {
     array_push_back(&temporaries, sym);
 }
 
-int is_temporary(const struct symbol *sym)
+INTERNAL int is_temporary(const struct symbol *sym)
 {
     const char *raw = str_raw(sym->name);
     return strcmp(PREFIX_TEMPORARY, raw) == 0;
 }
 
-const struct symbol *yield_declaration(struct namespace *ns)
+INTERNAL const struct symbol *yield_declaration(struct namespace *ns)
 {
     const struct symbol *sym;
 
@@ -671,7 +675,7 @@ static void print_symbol(FILE *stream, const struct symbol *sym)
     }
 }
 
-void output_symbols(FILE *stream, struct namespace *ns)
+INTERNAL void output_symbols(FILE *stream, struct namespace *ns)
 {
     int i;
     const struct symbol *sym;

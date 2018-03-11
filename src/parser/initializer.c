@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "eval.h"
 #include "expression.h"
 #include "initializer.h"
@@ -750,7 +754,7 @@ static struct block *postprocess_object_initialization(
     return block;
 }
 
-struct block *initializer(
+INTERNAL struct block *initializer(
     struct definition *def,
     struct block *block,
     const struct symbol *sym)

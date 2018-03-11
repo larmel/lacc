@@ -8,7 +8,7 @@
  * corresponding token type. To get a token of a particular type,
  * access basic_token[type].
  */
-extern const struct token basic_token[128];
+EXTERNAL const struct token basic_token[128];
 
 /*
  * Transform preprocessing number to numeric literal, parsing the string
@@ -17,7 +17,7 @@ extern const struct token basic_token[128];
  * This is done as a last step in preprocessing before handing the token
  * over to the parser.
  */
-struct token convert_preprocessing_number(struct token t);
+INTERNAL struct token convert_preprocessing_number(struct token t);
 
 /*
  * Transform preprocessing string by substituting all escape sequences
@@ -26,7 +26,7 @@ struct token convert_preprocessing_number(struct token t);
  * This is done as a last step in preprocessing before handing the token
  * over to the parser.
  */
-struct token convert_preprocessing_string(struct token t);
+INTERNAL struct token convert_preprocessing_string(struct token t);
 
 /*
  * Transform preprocessing character to numeric literal, converting the
@@ -35,7 +35,7 @@ struct token convert_preprocessing_string(struct token t);
  * This is done as a last step in preprocessing before handing the token
  * over to the parser.
  */
-struct token convert_preprocessing_char(struct token t);
+INTERNAL struct token convert_preprocessing_char(struct token t);
 
 /*
  * Parse and return next preprocessing token from given line. Assume
@@ -43,13 +43,13 @@ struct token convert_preprocessing_char(struct token t);
  * set to point to one index past the last character producing the
  * token.
  */
-struct token tokenize(const char *in, const char **endptr);
+INTERNAL struct token tokenize(const char *in, const char **endptr);
 
 /*
  * Free memory used to hold temporary strings during tokenization.
  *
  * Should be called exactly once before exiting.
  */
-void clear_string_buffer(void);
+INTERNAL void clear_string_buffer(void);
 
 #endif

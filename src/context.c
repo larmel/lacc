@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "parser/typetree.h"
 #include "preprocessor/input.h"
 #include <lacc/context.h>
@@ -6,7 +10,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-struct context context = {0};
+INTERNAL struct context context = {0};
 
 /*
  * Custom implementation of printf, handling a restricted set of
@@ -67,7 +71,7 @@ static int vfprintf_cc(FILE *stream, const char *format, va_list ap)
     return n;
 }
 
-void verbose(const char *format, ...)
+INTERNAL void verbose(const char *format, ...)
 {
     if (context.verbose) {
         va_list args;
@@ -78,7 +82,7 @@ void verbose(const char *format, ...)
     }
 }
 
-void warning(const char *format, ...)
+INTERNAL void warning(const char *format, ...)
 {
     va_list args;
     if (!context.suppress_warning) {
@@ -94,7 +98,7 @@ void warning(const char *format, ...)
     }
 }
 
-void error(const char *format, ...)
+INTERNAL void error(const char *format, ...)
 {
     va_list args;
 

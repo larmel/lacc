@@ -7,7 +7,7 @@
  * Output preprocessed input to provided stream, toggled by -E program
  * option.
  */
-void preprocess(FILE *output);
+INTERNAL void preprocess(FILE *output);
 
 /*
  * Preprocess a single line, adding any resulting tokens to the
@@ -16,12 +16,12 @@ void preprocess(FILE *output);
  * The string is destructively tokenized. It should contain no newlines,
  * comments, or line continuations.
  */
-void inject_line(char *line);
+INTERNAL void inject_line(char *line);
 
 /* Initialize data structures used for preprocessing. */
-void init_preprocessing(void);
+INTERNAL void init_preprocessing(void);
 
 /* Free memory used for preprocessing. */
-void clear_preprocessing(void);
+INTERNAL void clear_preprocessing(void);
 
 #endif

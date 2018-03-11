@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 /* Call once on startup, with output handle and source filename. */
-void asm_init(FILE *output, const char *file);
+INTERNAL void asm_init(FILE *output, const char *file);
 
 /*
  * Start processing symbol. If the symbol is static, data will follow.
@@ -14,15 +14,15 @@ void asm_init(FILE *output, const char *file);
  * end of a symbol context is reached when this function is called
  * again, or on flush.
  */
-int asm_symbol(const struct symbol *sym);
+INTERNAL int asm_symbol(const struct symbol *sym);
 
 /* Add instruction to function context. */
-int asm_text(struct instruction instr);
+INTERNAL int asm_text(struct instruction instr);
 
 /* Add data to internal symbol context. */
-int asm_data(struct immediate data);
+INTERNAL int asm_data(struct immediate data);
 
 /* Write any buffered data to output. */
-int asm_flush(void);
+INTERNAL int asm_flush(void);
 
 #endif

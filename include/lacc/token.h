@@ -1,5 +1,8 @@
 #ifndef TOKEN_H
 #define TOKEN_H
+#if !defined(INTERNAL) || !defined(EXTERNAL)
+# error Missing amalgamation macros
+#endif
 
 #include "string.h"
 #include "type.h"
@@ -142,7 +145,7 @@ union value {
     long double ld;
 };
 
-union value convert(union value val, Type from, Type to);
+INTERNAL union value convert(union value val, Type from, Type to);
 
 /*
  * Representation of token; used in preprocessing, and interface to
@@ -165,15 +168,15 @@ struct token {
 };
 
 /* Peek lookahead of 1. */
-struct token peek(void);
+INTERNAL struct token peek(void);
 
 /* Peek lookahead of n. */
-struct token peekn(int n);
+INTERNAL struct token peekn(int n);
 
 /* Consume and return next token. */
-struct token next(void);
+INTERNAL struct token next(void);
 
 /* Consume and return next token, or fail of not of expected type. */
-struct token consume(enum token_type type);
+INTERNAL struct token consume(enum token_type type);
 
 #endif

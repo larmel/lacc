@@ -1,5 +1,8 @@
 #ifndef HASH_H
 #define HASH_H
+#if !defined(INTERNAL) || !defined(EXTERNAL)
+# error Missing amalgamation macros
+#endif
 
 #include "string.h"
 
@@ -41,7 +44,7 @@ struct hash_table {
 };
 
 /* Initialize hash structure. Must be freed by hash_destroy. */
-struct hash_table *hash_init(
+INTERNAL struct hash_table *hash_init(
     struct hash_table *tab,
     unsigned cap,
     String (*key)(void *),
@@ -49,18 +52,18 @@ struct hash_table *hash_init(
     void (*del)(void *));
 
 /* Reset table, clearing all values. Does not deallocate memory. */
-void hash_clear(struct hash_table *tab);
+INTERNAL void hash_clear(struct hash_table *tab);
 
 /* Free resources owned by table. */
-void hash_destroy(struct hash_table *tab);
+INTERNAL void hash_destroy(struct hash_table *tab);
 
 /* Insert element, or return existing with the same key. */
-void *hash_insert(struct hash_table *tab, void *val);
+INTERNAL void *hash_insert(struct hash_table *tab, void *val);
 
 /* Retrieve element matching key, or NULL if not found. */
-void *hash_lookup(struct hash_table *tab, String key);
+INTERNAL void *hash_lookup(struct hash_table *tab, String key);
 
 /* Remove element matching key. */
-void hash_remove(struct hash_table *tab, String key);
+INTERNAL void hash_remove(struct hash_table *tab, String key);
 
 #endif

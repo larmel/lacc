@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "abi.h"
 #include "elf.h"
 #include <lacc/array.h>
@@ -395,7 +399,7 @@ static void elf_add_reloc(struct pending_relocation entry)
     }
 }
 
-void elf_add_reloc_text(
+INTERNAL void elf_add_reloc_text(
     const struct symbol *symbol,
     enum rel_type type,
     int offset,
@@ -486,7 +490,7 @@ static void flush_relocations(void)
  * label symbols. Invoked after each function, before the labels are
  * recycled.
  */
-void elf_flush_text_displacements(void)
+INTERNAL void elf_flush_text_displacements(void)
 {
     int i, *ptr;
     struct pending_displacement entry;
@@ -502,7 +506,7 @@ void elf_flush_text_displacements(void)
     array_empty(&pending_displacement_list);
 }
 
-int elf_text_displacement(const struct symbol *label, int instr_offset)
+INTERNAL int elf_text_displacement(const struct symbol *label, int instr_offset)
 {
     struct pending_displacement entry;
     assert(label->symtype == SYM_LABEL);
@@ -524,7 +528,7 @@ int elf_text_displacement(const struct symbol *label, int instr_offset)
  * special symbol representing the name of the source file, and section
  * names.
  */
-void elf_init(FILE *output, const char *file)
+INTERNAL void elf_init(FILE *output, const char *file)
 {
     static Elf64_Sym default_symbols[] = {
         {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHID_DATA, 0, 0},
@@ -545,7 +549,7 @@ void elf_init(FILE *output, const char *file)
     elf_section_write(SHID_SYMTAB, &default_symbols, sizeof(default_symbols));
 }
 
-int elf_symbol(const struct symbol *sym)
+INTERNAL int elf_symbol(const struct symbol *sym)
 {
     Elf64_Sym entry = {0};
     assert(sym->linkage != LINK_NONE);
@@ -610,7 +614,7 @@ int elf_symbol(const struct symbol *sym)
     return 0;
 }
 
-int elf_text(struct instruction instr)
+INTERNAL int elf_text(struct instruction instr)
 {
     struct code c = encode(instr);
     assert(current_function_entry);
@@ -623,7 +627,7 @@ int elf_text(struct instruction instr)
     return 0;
 }
 
-int elf_data(struct immediate imm)
+INTERNAL int elf_data(struct immediate imm)
 {
     const void *ptr = NULL;
     size_t w = imm.w;
@@ -653,7 +657,7 @@ int elf_data(struct immediate imm)
     return elf_section_write(SHID_DATA, ptr, w);
 }
 
-int elf_flush(void)
+INTERNAL int elf_flush(void)
 {
     int i;
 

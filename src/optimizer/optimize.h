@@ -6,16 +6,16 @@
 #include <lacc/ir.h>
 
 /* Set to non-zero to enable optimization. */
-void push_optimization(int level);
+INTERNAL void push_optimization(int level);
 
 /*
  * Do data flow analysis and perform optimizations on the intermediate
  * representation. Leaves the definition in a semantically equivalent,
  * and hopefully more consise, state.
  */
-void optimize(struct definition *def);
+INTERNAL void optimize(struct definition *def);
 
 /* Disable previously set optimization, cleaning up resources. */
-void pop_optimization(void);
+INTERNAL void pop_optimization(void);
 
 #endif

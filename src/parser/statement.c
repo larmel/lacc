@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "statement.h"
 #include "declaration.h"
 #include "eval.h"
@@ -351,7 +355,7 @@ static struct block *switch_statement(
     return next;
 }
 
-struct block *statement(struct definition *def, struct block *parent)
+INTERNAL struct block *statement(struct definition *def, struct block *parent)
 {
     struct symbol *sym;
     struct token tok;
@@ -491,7 +495,7 @@ struct block *statement(struct definition *def, struct block *parent)
  * Treat statements and declarations equally, allowing declarations in
  * between statements as in modern C. Called compound-statement in K&R.
  */
-struct block *block(struct definition *def, struct block *parent)
+INTERNAL struct block *block(struct definition *def, struct block *parent)
 {
     consume('{');
     push_scope(&ns_ident);

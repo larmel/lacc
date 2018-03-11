@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "declaration.h"
 #include "expression.h"
 #include "parse.h"
@@ -146,7 +150,7 @@ static void deallocate_cfg(void)
     array_clear(&blocks);
 }
 
-struct block *cfg_block_init(struct definition *def)
+INTERNAL struct block *cfg_block_init(struct definition *def)
 {
     struct block *block;
 
@@ -166,14 +170,14 @@ struct block *cfg_block_init(struct definition *def)
     return block;
 }
 
-struct symbol *create_label(struct definition *def)
+INTERNAL struct symbol *create_label(struct definition *def)
 {
     struct symbol *label = sym_create_label();
     array_push_back(&def->labels, label);
     return label;
 }
 
-struct definition *cfg_init(void)
+INTERNAL struct definition *cfg_init(void)
 {
     struct definition *def;
 
@@ -190,14 +194,14 @@ struct definition *cfg_init(void)
     return def;
 }
 
-void cfg_discard(struct definition *def)
+INTERNAL void cfg_discard(struct definition *def)
 {
     def->symbol = NULL;
     cfg_empty(def);
     array_push_back(&prototypes, def);
 }
 
-void cfg_define(struct definition *def, const struct symbol *sym)
+INTERNAL void cfg_define(struct definition *def, const struct symbol *sym)
 {
     assert(sym->symtype == SYM_DEFINITION);
     assert(!def->symbol);
@@ -206,7 +210,7 @@ void cfg_define(struct definition *def, const struct symbol *sym)
     deque_push_back(&definitions, def);
 }
 
-struct definition *parse(void)
+INTERNAL struct definition *parse(void)
 {
     static struct definition *def;
 

@@ -1,3 +1,7 @@
+#if !AMALGAMATION
+# define INTERNAL
+# define EXTERNAL extern
+#endif
 #include "argparse.h"
 
 #include <assert.h>
@@ -86,7 +90,7 @@ static int match_arg(struct option opt, int argc, char *argv[])
  * Unmatched tokens are bubbled up to the last argv position. First
  * token is skipped, as it is assumed to contain program name.
  */
-int parse_args(int optc, struct option *optv, int argc, char *argv[])
+INTERNAL int parse_args(int optc, struct option *optv, int argc, char *argv[])
 {
     char *tmp;
     int i = 1, j, c;

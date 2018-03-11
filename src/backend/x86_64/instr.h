@@ -50,7 +50,7 @@ enum reg {
 
 /*
  */
-int x87_stack_pos(enum reg r);
+INTERNAL int x87_stack_pos(enum reg r);
 
 /* Register and width, which is 1, 2, 4 or 8. */
 struct registr {
@@ -221,6 +221,6 @@ struct code {
 };
 
 /* Convert instruction to binary format. */
-struct code encode(struct instruction instr);
+INTERNAL struct code encode(struct instruction instr);
 
 #endif

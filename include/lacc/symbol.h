@@ -1,5 +1,8 @@
 #ifndef SYMBOL_H
 #define SYMBOL_H
+#if !defined(INTERNAL) || !defined(EXTERNAL)
+# error Missing amalgamation macros
+#endif
 
 #include "string.h"
 #include "token.h"
@@ -92,21 +95,21 @@ struct symbol {
 };
 
 /* Holds the declaration for memcpy, which is needed for codegen. */
-extern const struct symbol *decl_memcpy;
+INTERNAL  const struct symbol *decl_memcpy;
 
 /* Get the full name, including numeric value to disambiguate. */
-const char *sym_name(const struct symbol *sym);
+INTERNAL const char *sym_name(const struct symbol *sym);
 
 /*
  * Determine if given symbol is a temporary value generated during
  * evaluation.
  */
-int is_temporary(const struct symbol *sym);
+INTERNAL int is_temporary(const struct symbol *sym);
 
 /*
  * Create a floating point constant, which can be stored and loaded from
  * memory.
  */
-struct symbol *sym_create_constant(Type type, union value val);
+INTERNAL struct symbol *sym_create_constant(Type type, union value val);
 
 #endif

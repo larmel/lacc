@@ -25,6 +25,6 @@ struct option {
  * return the number of tokens consumed in the process. Reshuffle argv
  * to have non-matching tokens at the end.
  */
-int parse_args(int optc, struct option *optv, int argc, char *argv[]);
+INTERNAL int parse_args(int optc, struct option *optv, int argc, char *argv[]);
 
 #endif

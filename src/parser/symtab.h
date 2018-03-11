@@ -47,32 +47,32 @@ struct namespace {
     int cursor;
 };
 
-extern struct namespace
+EXTERNAL struct namespace
     ns_ident,   /* Identifiers. */
     ns_label,   /* Labels. */
     ns_tag;     /* Tags. */
 
-void push_scope(struct namespace *ns);
-void pop_scope(struct namespace *ns);
+INTERNAL void push_scope(struct namespace *ns);
+INTERNAL void pop_scope(struct namespace *ns);
 
 /*
  * Current depth as translation pushes and pops scopes. Depth 0 is
  * translation unit, 1 is function arguments, and n is local or member
  * variables.
  */
-unsigned current_scope_depth(struct namespace *ns);
+INTERNAL unsigned current_scope_depth(struct namespace *ns);
 
 /*
  * Retrieve a symbol based on identifier name, or NULL of not registered
  * or visible from current scope.
  */
-struct symbol *sym_lookup(struct namespace *ns, String name);
+INTERNAL struct symbol *sym_lookup(struct namespace *ns, String name);
 
 /*
  * Add symbol to current scope, or resolve to or complete existing
  * symbols when they occur repeatedly.
  */
-struct symbol *sym_add(
+INTERNAL struct symbol *sym_add(
     struct namespace *ns,
     String name,
     Type type,
@@ -80,36 +80,36 @@ struct symbol *sym_add(
     enum linkage linkage);
 
 /* Add symbol to current scope of given namespace. */
-void sym_make_visible(struct namespace *ns, struct symbol *sym);
+INTERNAL void sym_make_visible(struct namespace *ns, struct symbol *sym);
 
 /*
  * Create a symbol with the provided type and add it to current scope in
  * identifier namespace. Used to hold temporary values in expression
  * evaluation.
  */
-struct symbol *sym_create_temporary(Type type);
+INTERNAL struct symbol *sym_create_temporary(Type type);
 
 /* Create an unnamed variable, produced by a compound literal. */
-struct symbol *sym_create_unnamed(Type type);
+INTERNAL struct symbol *sym_create_unnamed(Type type);
 
 /* Create a label. */
-struct symbol *sym_create_label(void);
+INTERNAL struct symbol *sym_create_label(void);
 
 /* Create a symbol representing a string constant. */
-struct symbol *sym_create_string(String str);
+INTERNAL struct symbol *sym_create_string(String str);
 
 /*
  * Release memory used for a temporary symbol, allowing it to be reused
  * in a different function.
  */
-void sym_discard(struct symbol *sym);
+INTERNAL void sym_discard(struct symbol *sym);
 
 /*
  * Retrieve next tentative definition or declaration from given scope.
  */
-const struct symbol *yield_declaration(struct namespace *ns);
+INTERNAL const struct symbol *yield_declaration(struct namespace *ns);
 
 /* Verbose output all symbols from symbol table. */
-void output_symbols(FILE *stream, struct namespace *ns);
+INTERNAL void output_symbols(FILE *stream, struct namespace *ns);
 
 #endif
