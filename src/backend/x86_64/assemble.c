@@ -98,11 +98,22 @@ static const char *asm_address(struct address addr)
     int w = 0;
 
     if (addr.sym) {
-        if (addr.disp != 0) {
-            w += sprintf(buf, "%s%s%d",
-                sym_name(addr.sym), (addr.disp > 0) ? "+" : "", addr.disp);
-        } else {
-            w += sprintf(buf, "%s", sym_name(addr.sym));
+        w += sprintf(buf + w, "%s", sym_name(addr.sym));
+        switch (addr.type) {
+        case ADDR_GLOBAL_OFFSET:
+            assert(addr.disp == 0);
+            w += sprintf(buf + w, "@GOTPCREL");
+            break;
+        case ADDR_PLT:
+            assert(addr.disp == 0);
+            w += sprintf(buf + w, "@PLT");
+            break;
+        default:
+            if (addr.disp != 0) {
+                w += sprintf(buf + w, "%s%d",
+                    (addr.disp > 0) ? "+" : "", addr.disp);
+            }
+            break;
         }
     } else if (addr.disp != 0) {
         w += sprintf(buf, "%d", addr.disp);
@@ -125,9 +136,7 @@ static const char *immediate(struct immediate imm, int *size)
 {
     static char buf[MAX_OPERAND_TEXT_LENGTH];
 
-    *size = 8;
-    switch (imm.type) {
-    case IMM_INT:
+    if (imm.type == IMM_INT) {
         *size = imm.w;
         if (imm.w < 8) {
             sprintf(buf, "$%d",
@@ -136,27 +145,16 @@ static const char *immediate(struct immediate imm, int *size)
         } else {
             sprintf(buf, "$%ld", imm.d.qword);
         }
-        break;
-    case IMM_ADDR:
-        assert(imm.d.addr.sym);
-        if (imm.d.addr.sym->symtype == SYM_STRING_VALUE) {
-            if (imm.d.addr.disp != 0) {
-                sprintf(buf, "$%s%s%d",
-                    sym_name(imm.d.addr.sym),
-                    (imm.d.addr.disp > 0) ? "+" : "", imm.d.addr.disp);
-            } else {
-                sprintf(buf, "$%s", sym_name(imm.d.addr.sym));
-            }
-        } else {
-            sprintf(buf, "%s", sym_name(imm.d.addr.sym));
-        }
-        break;
-    case IMM_STRING:
-        assert(0);
-        break;
+
+        return buf;
     }
 
-    return buf;
+    assert(imm.type == IMM_ADDR);
+    assert(imm.d.addr.sym);
+    assert(imm.d.addr.sym->symtype != SYM_STRING_VALUE);
+
+    *size = 8;
+    return asm_address(imm.d.addr);
 }
 
 INTERNAL void asm_init(FILE *output, const char *file)

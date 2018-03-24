@@ -60,12 +60,28 @@ struct registr {
 
 /*
  * Full addressing is disp(base register, offset register, scalar
- * multiplier). Displacement can be relative to symbol, for example
- * foo+3(%rip).
+ * multiplier). Displacement can be relative to symbol.
+ *
+ * foo+3(%rip)
+ *     Address of foo[3].
+ *
+ * global@GOTPCREL(%rip)
+ *     Address of address of global, found in global offset table.
+ *
+ * foo@PLT
+ *     Function address through trampoline in procedure linkage table.
+ *
  */
 struct address {
+    enum {
+        ADDR_NORMAL,
+        ADDR_GLOBAL_OFFSET,
+        ADDR_PLT
+    } type;
+
     const struct symbol *sym;
     int disp;
+
     enum reg base;
     enum reg offset;
     int mult;
@@ -80,7 +96,7 @@ struct memory {
 /*
  * Immediates can be numeric (fit in registers), or references to static
  * string values. Expressions like "hello" + 1 can result in for ex
- * $.LC1+1 in GNU assembly.
+ * .LC1+1 in GNU assembly.
  */
 struct immediate {
     enum {

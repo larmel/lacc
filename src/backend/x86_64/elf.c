@@ -5,6 +5,7 @@
 #include "abi.h"
 #include "elf.h"
 #include <lacc/array.h>
+#include <lacc/context.h>
 
 #include <assert.h>
 
@@ -301,6 +302,26 @@ static int elf_section_align(int shid, int align)
 }
 
 /*
+ * Add string to strtab section, returning its offset into the section
+ * for use in references.
+ */
+static int elf_strtab_add(int shid, const char *str)
+{
+    int pos;
+
+    assert(0 < shid && shid < SHNUM);
+    assert(shdr[shid].sh_type == SHT_STRTAB);
+
+    if (!shdr[shid].sh_size)
+        elf_section_write(shid, NULL, 1);
+
+    pos = shdr[shid].sh_size;
+    elf_section_write(shid, str, strlen(str) + 1);
+
+    return pos;
+}
+
+/*
  * Add entry to .symtab, returning index.
  *
  * All STB_LOCAL must come before STB_GLOBAL. Index of the first non-
@@ -354,38 +375,31 @@ static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
     }
 }
 
-/* Write global symtab entries to section data. */
+/*
+ * Write global symtab entries to section data.
+ *
+ * A special entry for GOT is added in the end, if we are generating
+ * position independent code.
+ */
 static void flush_symtab_globals(void)
 {
     int i;
     struct global var;
+    Elf64_Sym entry = {0};
 
     for (i = 0; i < array_len(&globals); ++i) {
         var = array_get(&globals, i);
         var.sym->stack_offset = elf_symtab_add(var.entry);
     }
 
+    if (context.pic) {
+        entry.st_name = elf_strtab_add(SHID_STRTAB, "_GLOBAL_OFFSET_TABLE_");
+        entry.st_info = STB_GLOBAL << 4 | STT_NOTYPE;
+        entry.st_shndx = SHN_UNDEF;
+        elf_symtab_add(entry);
+    }
+
     array_clear(&globals);
-}
-
-/*
- * Add string to strtab section, returning its offset into the section
- * for use in references.
- */
-static int elf_strtab_add(int shid, const char *str)
-{
-    int pos;
-
-    assert(0 < shid && shid < SHNUM);
-    assert(shdr[shid].sh_type == SHT_STRTAB);
-
-    if (!shdr[shid].sh_size)
-        elf_section_write(shid, NULL, 1);
-
-    pos = shdr[shid].sh_size;
-    elf_section_write(shid, str, strlen(str) + 1);
-
-    return pos;
 }
 
 static void elf_add_reloc(struct pending_relocation entry)
@@ -477,8 +491,14 @@ static void flush_relocations(void)
          * Subtract 4 to account for the size occupied by the relocation
          * slot itself, it takes up 4 bytes in the instruction.
          */
-        if (pending.type == R_X86_64_PC32) {
+        switch (pending.type) {
+        case R_X86_64_PC32:
+        case R_X86_64_PLT32:
+        case R_X86_64_GOTPCREL:
             entry->r_addend -= 4;
+            break;
+        default:
+            break;
         }
     }
 

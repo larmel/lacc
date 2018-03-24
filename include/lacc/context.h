@@ -24,6 +24,7 @@ INTERNAL struct context {
     int errors;
     int verbose;
     int suppress_warning;
+    unsigned int pic : 1;            /* position independent code */
     enum target target;
     enum cstd standard;
 } context;

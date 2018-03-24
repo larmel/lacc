@@ -67,7 +67,7 @@ static void help(const char *arg)
 {
     fprintf(
         stderr,
-        "Usage: %s [-(S|E|c)] [-v] [-I <path>] [-o <file>] <file>\n",
+        "Usage: %s [-(S|E|c)] [-v] [-fPIC] [-I <path>] [-o <file>] <file>\n",
         program);
     exit(1);
 }
@@ -94,6 +94,13 @@ static void flag(const char *arg)
         assert(0);
         break;
     }
+}
+
+static void option(const char *arg)
+{
+    if (!strcmp("-fPIC", arg)) {
+        context.pic = 1;
+    } else assert(0);
 }
 
 static void open_output_handle(const char *file)
@@ -166,6 +173,7 @@ static char *parse_program_arguments(int argc, char *argv[])
         {"-c", &flag},
         {"-v", &flag},
         {"-w", &flag},
+        {"-fPIC", &option},
         {"--help", &help},
         {"-o:", &open_output_handle},
         {"-I:", &add_include_search_path},

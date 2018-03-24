@@ -104,12 +104,18 @@ typedef struct {
  *    unit being relocated (computed using r_offset).
  * S: Represents the value of the symbol whose index resides in the
  *    relocation entry.
+ * L: Procedure linkage table position (PLT).
+ *
+ * GOT: Address of global offset table.
+ * G:   Offset into GOT where symbol is placed.
+ *
  */
 enum rel_type {
     R_X86_64_NONE = 0,
     R_X86_64_64 = 1,                /* word64   S + A. */
-    R_X86_64_PC32 = 2,              /* word32   S + A - P. */
-    R_X86_64_32S = 11               /* word32   S + A. */
+    R_X86_64_PC32 = 2,              /* word32   S + A - P */
+    R_X86_64_PLT32 = 4,             /* word32   L + A - P */
+    R_X86_64_GOTPCREL = 9           /* word32   G + GOT + A - P */
 };
 
 #define ELF64_R_INFO(s, t) ((((long) s) << 32) + (((long) t) & 0xFFFFFFFFL))

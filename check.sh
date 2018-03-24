@@ -12,7 +12,7 @@ if [[ -z "$comp" ]]; then
 	comp="gcc -std=c89 -Wno-psabi"
 	gcc -v 2>&1 >/dev/null | grep "enable-default-pie" > /dev/null
 	if [ "$?" -eq "0" ]; then
-		comp+=" -no-pie"
+		prog+=" -fPIC"
 	fi
 fi
 

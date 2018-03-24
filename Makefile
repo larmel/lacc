@@ -29,18 +29,18 @@ bin/release: $(SOURCES)
 	$(CC) $(CFLAGS) -O3 -D'LACC_STDLIB_PATH="$(INSTALL_LIB_PATH)"' -DAMALGAMATION -DNDEBUG src/lacc.c -o $@
 
 bin/bootstrap: $(patsubst src/%.c,bin/%-bootstrap.o,$(SOURCES))
-	$(CC) $^ -o $@
+	$(CC) -pie $^ -o $@
 
 bin/%-bootstrap.o: src/%.c bin/lacc
 	@mkdir -p $(dir $@)
-	bin/lacc $(LACCFLAGS) -c $< -o $@
+	bin/lacc -fPIC $(LACCFLAGS) -c $< -o $@
 
 bin/selfhost: $(patsubst src/%.c,bin/%-selfhost.o,$(SOURCES))
-	$(CC) $^ -o $@
+	$(CC) -pie $^ -o $@
 
 bin/%-selfhost.o: src/%.c bin/bootstrap
 	@mkdir -p $(dir $@)
-	bin/bootstrap $(LACCFLAGS) -c $< -o $@
+	bin/bootstrap -fPIC $(LACCFLAGS) -c $< -o $@
 
 test-%: bin/%
 	@$(foreach file,$(wildcard test/c11/*.c),\

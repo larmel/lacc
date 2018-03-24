@@ -121,11 +121,18 @@ static void encode_addr(
     int require_offset)
 {
     unsigned int mod;
+    enum rel_type reloc;
     assert(addr.mult == 1 || !addr.mult);
 
     if (addr.sym) {
         c->val[c->len++] = ((reg & 0x7) << 3) | 0x5;
-        elf_add_reloc_text(addr.sym, R_X86_64_PC32, c->len, addr.disp - addend);
+        if (addr.type == ADDR_GLOBAL_OFFSET) {
+            reloc = R_X86_64_GOTPCREL;
+        } else {
+            assert(addr.type == ADDR_NORMAL);
+            reloc = R_X86_64_PC32;
+        }
+        elf_add_reloc_text(addr.sym, reloc, c->len, addr.disp - addend);
         memset(&c->val[c->len], 0, 4);
         c->len += 4;
     } else if (addr.base == SP) {
@@ -213,8 +220,9 @@ static struct code mov(
                 c.len += 4;
             } else {
                 assert(a.imm.type == IMM_ADDR);
+                assert(a.imm.d.addr.type == ADDR_NORMAL);
                 elf_add_reloc_text(
-                    a.imm.d.addr.sym, R_X86_64_32S, c.len, a.imm.d.addr.disp);
+                    a.imm.d.addr.sym, R_X86_64_PC32, c.len, a.imm.d.addr.disp);
                 memset(&c.val[c.len], 0, 4);
                 c.len += 4;
             }
@@ -500,14 +508,23 @@ static struct code encode_add(
 
 static struct code encode_call(enum instr_optype optype, union operand op)
 {
+    enum rel_type reloc;
     struct code c = {{0}};
 
     if (optype == OPT_IMM) {
         assert(op.imm.type == IMM_ADDR);
         assert(op.imm.d.addr.sym);
         c.val[c.len++] = 0xE8;
-        elf_add_reloc_text(
-            op.imm.d.addr.sym, R_X86_64_PC32, c.len, op.imm.d.addr.disp);
+        switch (op.imm.d.addr.type) {
+        case ADDR_PLT:
+            reloc = R_X86_64_PLT32;
+            break;
+        default: assert(0);
+        case ADDR_NORMAL:
+            reloc = R_X86_64_PC32;
+            break;
+        }
+        elf_add_reloc_text(op.imm.d.addr.sym, reloc, c.len, op.imm.d.addr.disp);
         c.len += 4;
     } else {
         assert(optype == OPT_REG);
