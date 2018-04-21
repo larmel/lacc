@@ -533,7 +533,7 @@ static struct token strtoident(const char *in, const char **endptr)
     case '_':
         if (S4('B', 'o', 'o', 'l')) MATCH(BOOL);
         if (S7('A', 'l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF);
-        if (!strncmp(in, "Static_assert", 12)) {
+        if (!strncmp(in, "Static_assert", 13)) {
             ident = basic_token[STATIC_ASSERT];
             ident.d.string = str_init("_Static_assert");
             *endptr = start + ident.d.string.len;
