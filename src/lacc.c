@@ -100,6 +100,8 @@ static void option(const char *arg)
 {
     if (!strcmp("-fPIC", arg)) {
         context.pic = 1;
+    } else if (!strcmp("-fno-PIC", arg)) {
+        context.pic = 0;
     } else assert(0);
 }
 
@@ -174,6 +176,7 @@ static char *parse_program_arguments(int argc, char *argv[])
         {"-v", &flag},
         {"-w", &flag},
         {"-fPIC", &option},
+        {"-fno-PIC", &option},
         {"--help", &help},
         {"-o:", &open_output_handle},
         {"-I:", &add_include_search_path},
@@ -190,7 +193,14 @@ static char *parse_program_arguments(int argc, char *argv[])
     program = argv[0];
     output = stdout;
     context.standard = STD_C89;
+
+    /* OpenBSD defaults to -fPIC unless explicitly turned off.  */
+#ifdef __OpenBSD__
+    context.pic = 1;
+#endif
+
     context.target = TARGET_IR_DOT;
+
     c = parse_args(sizeof(optv)/sizeof(optv[0]), optv, argc, argv);
     if (c == argc - 1) {
         input = argv[c];
@@ -228,7 +238,9 @@ static void add_include_search_paths(void)
 {
     add_include_search_path("/usr/local/include");
     add_include_search_path(LACC_STDLIB_PATH);
+#ifdef __linux__
     add_include_search_path("/usr/include/x86_64-linux-gnu");
+#endif
     add_include_search_path("/usr/include");
 }
 

@@ -837,6 +837,17 @@ INTERNAL void register_builtin_definitions(enum cstd version)
 #ifdef __unix__
     register_macro("__unix__", XSTR(__unix__));
 #endif
+#ifdef __OpenBSD__
+    register_macro("__OpenBSD__", XSTR(__OpenBSD__));
+    if (version == STD_C89) {
+        register_macro("__restrict", "");
+        register_macro("__restrict__", "");
+        register_macro("__ISO_C_VISIBLE", "1990");
+    } else {
+        register_macro("__restrict", "restrict");
+        register_macro("__restrict__", "restrict");
+    }
+#endif
 
     switch (version) {
     case STD_C89:

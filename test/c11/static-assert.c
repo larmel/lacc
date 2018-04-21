@@ -4,6 +4,11 @@
 
 #include <assert.h>
 
+/* NOT actually on OpenBSD! (This is a bug) */
+#ifdef __OpenBSD__
+#define static_assert _Static_assert
+#endif
+
 _Static_assert('a' < 'b', "Alphabet error");
 
 int foo(char a) {

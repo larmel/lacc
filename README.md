@@ -11,8 +11,9 @@ Features
 Install
 -------
 Clone and build from source, and the binary will be placed in `bin/lacc`.
-Default include paths assume GNU standard library headers being available, at `/usr/include/x86_64-linux-gnu`.
-To change to some other libc, for example musl, edit [src/lacc.c](src/lacc.c#L231).
+Default include paths on Linux assume GNU standard library headers being available, at `/usr/include/x86_64-linux-gnu`.
+To change to some other Linux libc, for example musl, edit [src/lacc.c](src/lacc.c#L235).
+\*BSD libc needs no special handling.
 
     git clone https://github.com/larmel/lacc.git
     cd lacc
@@ -45,6 +46,7 @@ A custom argument parser is used, and the definition of each option can be found
     -D X[=] Define macro, optionally with a value. For example -DNDEBUG, or
             -D 'FOO(a)=a*2+1'.
     -fPIC   Generate position-independent code.
+    -fno-PIC Disable position-independent code generation.
     -v      Output verbose diagnostic information. This will dump a lot of
             internal state during compilation, and can be useful for debugging.
     --help  Print help text.
