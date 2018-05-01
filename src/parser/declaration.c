@@ -438,7 +438,7 @@ static void member_declaration_list(Type type)
 
     do {
         decl_base = declaration_specifiers(NULL, NULL);
-        do {
+        while (1) {
             name.len = 0;
             declarator(NULL, NULL, decl_base, &decl_type, &name);
             if (is_struct_or_union(type) && peek().token == ':') {
@@ -463,11 +463,12 @@ static void member_declaration_list(Type type)
             } else {
                 type_add_member(type, name, decl_type);
             }
+
             if (peek().token == ',') {
                 consume(',');
-                continue;
-            }
-        } while (peek().token != ';');
+            } else break;
+        }
+
         consume(';');
     } while (peek().token != '}');
     type_seal(type);
@@ -478,14 +479,15 @@ static void member_declaration_list(Type type)
  * existing symbol; possibly providing a complete definition that will
  * be available for later declarations.
  */
-static Type struct_or_union_declaration(void)
+static Type struct_or_union_declaration(enum token_type t)
 {
     struct symbol *sym = NULL;
     Type type = {0};
     String name;
     enum type kind;
 
-    kind = (next().token == STRUCT) ? T_STRUCT : T_UNION;
+    assert(t == STRUCT || t == UNION);
+    kind = (t == STRUCT) ? T_STRUCT : T_UNION;
     if (peek().token == IDENTIFIER) {
         name = consume(IDENTIFIER).d.string;
         sym = sym_lookup(&ns_tag, name);
@@ -517,6 +519,9 @@ static Type struct_or_union_declaration(void)
         member_declaration_list(type);
         assert(size_of(type));
         consume('}');
+    } else if (!sym) {
+        error("Invalid declaration.");
+        exit(1);
     }
 
     return type;
@@ -566,7 +571,6 @@ static void enum_declaration(void)
     struct token t;
     struct symbol *tag;
 
-    consume(ENUM);
     t = peek();
     if (t.token == IDENTIFIER) {
         next();
@@ -603,110 +607,161 @@ static void enum_declaration(void)
  * returned as token value, unless the provided pointer is NULL, in
  * which case the input is parsed as specifier-qualifier-list.
  *
- * Use a compact bit representation to hold state about declaration 
- * specifiers. Initialize storage class to sentinel value.
+ * Type specifiers must be one of the following permutations:
+ *
+ *     void
+ *     char
+ *     signed char
+ *     unsigned char
+ *     short, signed short, short int, or signed short int
+ *     unsigned short, or unsigned short int
+ *     int, signed, or signed int
+ *     unsigned, or unsigned int
+ *     long, signed long, long int, or signed long int
+ *     unsigned long, or unsigned long int
+ *     long long, signed long long, long long int, or
+ *     signed long long int
+ *     unsigned long long, or unsigned long long int
+ *     float
+ *     double
+ *     long double
+ *     _Bool
+ *     struct specifier
+ *     union specifier
+ *     enum specifier
+ *     typedef name
  */
 INTERNAL Type declaration_specifiers(int *storage_class, int *is_inline)
 {
-    Type type = {-1}, other;
+    Type type = {0};
     const Type *tagged;
     struct token tok;
+    enum {
+        B_NONE,
+        B_VOID,
+        B_BOOL,
+        B_CHAR,
+        B_INT,
+        B_FLOAT,
+        B_DOUBLE,
+        B_ENUM,
+        B_AGGREGATE
+    } base = 0;
+    enum {
+        M_NONE,
+        M_SHORT,
+        M_LONG,
+        M_LONG_LONG
+    } modifier = 0;
+    enum {
+        S_NONE,
+        S_SIGNED,
+        S_UNSIGNED
+    } sign = 0;
+    enum {
+        Q_NONE,
+        Q_CONST = 1,
+        Q_VOLATILE = 2,
+        Q_CONST_VOLATILE = Q_CONST | Q_VOLATILE
+    } qual = 0;
 
-    if (storage_class) {
-        *storage_class = '$';
-    }
-
-    if (is_inline) {
-        *is_inline = 0;
-    }
+    if (storage_class) *storage_class = '$';
+    if (is_inline) *is_inline = 0;
 
     while (1) {
         switch ((tok = peek()).token) {
         case VOID:
+            if (base || modifier || sign) goto done;
             next();
-            type.type = T_VOID;
+            base = B_VOID;
             break;
         case BOOL:
+            if (base || modifier || sign) goto done;
             next();
-            type.type = T_BOOL;
+            base = B_BOOL;
             break;
         case CHAR:
+            if (base || modifier) goto done;
             next();
-            type.type = T_CHAR;
+            base = B_CHAR;
             break;
         case SHORT:
+            if (modifier || (base && base != B_INT)) goto done;
             next();
-            type.type = T_SHORT;
+            modifier = M_SHORT;
             break;
         case INT:
+            if (base) goto done;
             next();
-            if (type.type != T_LONG && type.type != T_SHORT) {
-                type.type = T_INT;
+            base = B_INT;
+            break;
+        case LONG:
+            if ((base && (base != B_INT || base != B_DOUBLE))
+                || (modifier && modifier != M_LONG)) goto done;
+            next();
+            if (modifier == M_LONG) {
+                modifier = M_LONG_LONG;
+            } else {
+                modifier = M_LONG;
             }
             break;
         case SIGNED:
             next();
-            if (type.type == -1) {
-                type.type = T_INT;
-            }
-            if (is_unsigned(type)) {
+            if (sign == S_SIGNED) {
+                error("Duplicate 'signed' specifier.");
+            } else if (sign == S_UNSIGNED) {
                 error("Conflicting 'signed' and 'unsigned' specifiers.");
+            } else {
+                sign = S_SIGNED;
             }
             break;
         case UNSIGNED:
             next();
-            if (type.type == -1) {
-                type.type = T_INT;
-            }
-            if (is_unsigned(type)) {
+            if (sign == S_UNSIGNED) {
                 error("Duplicate 'unsigned' specifier.");
-            }
-            type.is_unsigned = 1;
-            break;
-        case LONG:
-            next();
-            if (type.type == T_DOUBLE) {
-                type.type = T_LDOUBLE;
+            } else if (sign == S_SIGNED) {
+                error("Conflicting 'signed' and 'unsigned' specifiers.");
             } else {
-                type.type = T_LONG;
+                sign = S_UNSIGNED;
             }
             break;
         case FLOAT:
+            if (base || modifier || sign) goto done;
             next();
-            type.type = T_FLOAT;
+            base = B_FLOAT;
             break;
         case DOUBLE:
+            if (base || (modifier && modifier != M_LONG) || sign) goto done;
             next();
-            if (type.type == T_LONG) {
-                type.type = T_LDOUBLE;
-            } else {
-                type.type = T_DOUBLE;
-            }
+            base = B_DOUBLE;
             break;
         case CONST:
             next();
-            type = type_set_const(type);
+            qual |= Q_CONST;
             break;
         case VOLATILE:
             next();
-            type = type_set_volatile(type);
+            qual |= Q_VOLATILE;
             break;
         case IDENTIFIER:
             tagged = get_typedef(tok.d.string);
-            if (tagged) {
-                next();
-                type = type_apply_qualifiers(*tagged, type);
-                break;
-            }
-            goto done;
+            if (!tagged || base || modifier || sign) goto done;
+            next();
+            type = *tagged;
+            base = B_AGGREGATE;
+            break;
         case UNION:
         case STRUCT:
-            other = struct_or_union_declaration();
-            type = type_apply_qualifiers(other, type);
+            if (base || modifier || sign) goto done;
+            next();
+            type = struct_or_union_declaration(tok.token);
+            base = B_AGGREGATE;
             break;
         case ENUM:
+            if (base || modifier || sign) goto done;
+            next();
             enum_declaration();
-            type.type = T_INT;
+            base = B_ENUM;
             break;
         case INLINE:
             next();
@@ -738,9 +793,50 @@ INTERNAL Type declaration_specifiers(int *storage_class, int *is_inline)
     }
 
 done:
-    if (type.type == -1) {
+    switch (base) {
+    case B_AGGREGATE:
+        break;
+    case B_VOID:
+        type.type = T_VOID;
+        break;
+    case B_BOOL:
+        type.type = T_BOOL;
+        break;
+    case B_CHAR:
+        type.type = T_CHAR;
+        type.is_unsigned = sign == S_UNSIGNED;
+        break;
+    case B_ENUM:
+    case B_NONE:
+    case B_INT:
         type.type = T_INT;
+        type.is_unsigned = sign == S_UNSIGNED;
+        switch (modifier) {
+        case M_SHORT:
+            type.type = T_SHORT;
+            break;
+        case M_LONG:
+        case M_LONG_LONG:
+            type.type = T_LONG;
+        default:
+            break;
+        }
+        break;
+    case B_FLOAT:
+        type.type = T_FLOAT;
+        break;
+    case B_DOUBLE:
+        type.type = T_DOUBLE;
+        if (modifier == M_LONG) {
+            type.type = T_LDOUBLE;
+        }
+        break;
     }
+
+    if (qual & Q_CONST)
+        type = type_set_const(type);
+    if (qual & Q_VOLATILE)
+        type = type_set_volatile(type);
 
     return type;
 }
@@ -1042,6 +1138,16 @@ INTERNAL struct block *declaration(
             linkage = LINK_NONE;
         }
         break;
+    }
+
+    switch (peek().token) {
+    case '*':
+    case '(':
+    case IDENTIFIER:
+        break;
+    default:
+        consume(';');
+        return parent;
     }
 
     while (1) {
