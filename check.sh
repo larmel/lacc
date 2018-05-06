@@ -1,14 +1,14 @@
-#!/bin/bash
+#!/bin/sh
 
 prog="$1"
 file="$2"
 comp="$3"
-if [[ -z "$file" || ! -f "$file" ]]; then
+if [ -z "$file" ] || [ ! -f "$file" ]; then
 	echo "Usage: $0 <compiler> <file> [<reference compiler>]";
 	exit 1
 fi
 
-if [[ -z "$comp" ]]; then
+if [ -z "$comp" ]; then
 	comp="gcc -std=c89 -Wno-psabi"
 	gcc -v 2>&1 >/dev/null | grep "enable-default-pie" > /dev/null
 	if [ "$?" -eq "0" ]; then
@@ -18,28 +18,30 @@ fi
 
 $comp $file -o ${file}.out
 if [ "$?" -ne "0" ]; then
-	echo "${file}: $(tput setaf 1)Invalid input file!$(tput sgr 0)";
+	echo "${file}: $(tput setaf 1)Invalid input file!$(tput sgr0)";
 	exit 1
 fi
+
 ./${file}.out > ${file}.ans.txt; answer="$?"
 
-function check {
+check()
+{
 	$prog $1 $file -o ${file}.s
 	if [ "$?" -ne "0" ]; then
-		echo "$(tput setaf 1)Compilation failed!$(tput sgr 0)";
+		echo "$(tput setaf 1)Compilation failed!$(tput sgr0)";
 		return 1
 	fi
-	if [ "$1" == "-E" ]; then
+	if [ "$1" = "-E" ]; then
 		mv ${file}.s ${file}.prep.c
 		$comp -c ${file}.prep.c -o ${file}.o
 		if [ "$?" -ne "0" ]; then
-			echo "$(tput setaf 1)Compilation failed!$(tput sgr 0)";
+			echo "$(tput setaf 1)Compilation failed!$(tput sgr0)";
 			return 1
 		fi
-	elif [ "$1" == "-S" ]; then
+	elif [ "$1" = "-S" ]; then
 		$comp -c ${file}.s -o ${file}.o
 		if [ "$?" -ne "0" ]; then
-			echo "$(tput setaf 1)Assembly failed!$(tput sgr 0)";
+			echo "$(tput setaf 1)Assembly failed!$(tput sgr0)";
 			return 1
 		fi
 	else
@@ -47,7 +49,7 @@ function check {
 	fi
 	$comp ${file}.o -o ${file}.out -lm
 	if [ "$?" -ne "0" ]; then
-		echo "$(tput setaf 1)Linking failed!$(tput sgr 0)";
+		echo "$(tput setaf 1)Linking failed!$(tput sgr0)";
 		return 1
 	fi
 
@@ -56,11 +58,11 @@ function check {
 	difference=`diff ${file}.ans.txt ${file}.txt`
 	diffres="$?"
 
-	if [[ "$result" -eq "$answer" && "$diffres" -eq "0" ]]; then
-		echo "$(tput setaf 2)Ok!$(tput sgr 0)"
+	if [ "$result" -eq "$answer" ] && [ "$diffres" -eq "0" ]; then
+		echo "$(tput setaf 2)Ok!$(tput sgr0)"
 		return 0
 	else
-		echo "$(tput setaf 1)Wrong result!$(tput sgr 0)"
+		echo "$(tput setaf 1)Wrong result!$(tput sgr0)"
 		if [ "$result" -ne "$answer" ]; then
 			echo "Result differ: was ${result}, expected ${answer}." >&2
 		fi

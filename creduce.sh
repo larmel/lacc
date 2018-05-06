@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Interestingness script, to be supplied creduce together with the file
 # being reduced. Should return 0 if case is interesting, non-zero

@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/bin/sh
 
 directory="csmith"
 csmith_options="--no-packed-struct --float"
 csmith_include="$1"
 compiler="$2"
-if [[ -z "$csmith_include" || -z "$compiler" ]]
+if [ -z "$csmith_include" ] || [ -z "$compiler" ]
 then
 	echo "Usage: $0 <csmith include path> <reference compiler>"
 	exit
