@@ -44,11 +44,13 @@ bin/%-selfhost.o: src/%.c bin/bootstrap
 
 test-%: bin/%
 	@$(foreach file,$(wildcard test/c11/*.c),\
-		./check.sh "$< -std=c11" $(file) "$(CC) -std=c11";)
+		./check.sh "$< -std=c11" $(file) "$(CC) -std=c11 -w";)
 	@$(foreach file,$(wildcard test/c99/*.c),\
-		./check.sh "$< -std=c99" $(file) "$(CC) -std=c99";)
+		./check.sh "$< -std=c99" $(file) "$(CC) -std=c99 -w";)
 	@$(foreach file,$(wildcard test/*.c),\
-		./check.sh $< $(file) "$(CC) -std=c89 -w";)
+		./check.sh "$< -std=c89" $(file) "$(CC) -std=c89 -w";)
+	@$(foreach file,$(wildcard test/gnu/*.c),\
+		./check.sh "$< -fPIC" $(file) "gcc -std=c89 -w";)
 
 test: test-lacc
 

@@ -11,10 +11,9 @@ int printf(const char *, ...);
  */
 
 int main(void) {
-	int a = 42; /*     Single line comment. */
+	int a = 42, b; /*     Single line comment. */
 	char *c = BAR(
-		__LINE__
-	)
+		__LINE__)
 
 	printf("max=%d\n", max(max(2, -1), 1));
 	puts(c);
@@ -24,5 +23,6 @@ int main(void) {
 #if (__STDC_VERSION__ >= 199901)
 	puts(__func__);
 #endif
-	return __LINE__ + FOO ( 1 + a *, 2 ) + e;
+	b = __LINE__ + FOO ( 1 + a *, 2 ) + e;
+	return printf("%d\n", b);
 }
