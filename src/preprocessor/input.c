@@ -315,7 +315,8 @@ static size_t read_literal(const char *line, char **buf, int *lines)
 {
     char c;
     char *ptr;
-    const char *end, *esc, q = *line;
+    int count;
+    const char *end, q = *line;
 
     end = line;
     ptr = *buf;
@@ -324,13 +325,15 @@ static size_t read_literal(const char *line, char **buf, int *lines)
 
     while ((c = *end) != '\0') {
         switch (c) {
-        case '\\':
-            if (end[1] == '\n') {
+        case '\n':
+            if (ptr[-1] == '\\') {
                 *lines += 1;
-                end += 2;
+                ptr -= 1;
+                end += 1;
                 continue;
-            } else if (end[1] != '\0') {
-                *ptr++ = *end++;
+            } else {
+                error("Unexpected newline in literal.");
+                exit(1);
             }
             break;
         case '?':
@@ -343,21 +346,23 @@ static size_t read_literal(const char *line, char **buf, int *lines)
                 }
             }
             break;
-        default:
+        case '\'':
+        case '"':
             if (c == q) {
-                esc = ptr - 1;
-                /* Do not break if character is escaped. */
-                while (*esc == '\\') {
-                    esc -= 1;
+                count = 0;
+                while (ptr[-(count + 1)] == '\\') {
+                    count++;
                 }
-                if (((ptr - esc) & 1) != 0) {
+                if (count % 2 == 0) {
                     *ptr++ = *end++;
                     *buf = ptr;
                     return end - line;
-                }    
+                }
             }
+        default:
             break;
         }
+
         *ptr++ = *end++;
     }
 
