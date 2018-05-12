@@ -663,10 +663,8 @@ INTERNAL struct token consume(enum token_type type)
             break;
         }
 
-        if (t.token == NUMBER) {
-            error("Unexpected %s, expected %s.", stringify_token(&t), str);
-            exit(1);
-        }
+        error("Expected %s but got %s.", str, stringify_token(&t));
+        exit(1);
     }
 
     return t;
