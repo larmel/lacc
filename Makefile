@@ -7,7 +7,6 @@ INSTALL_PATH := /usr/local
 SOURCE_LIB_PATH := $(ROOT)/include/stdlib
 INSTALL_LIB_PATH := $(INSTALL_PATH)/lib/lacc/include
 INSTALL_BIN_PATH := $(INSTALL_PATH)/bin
-CSMITH_INCLUDE_PATH ?= /usr/include/csmith
 
 ifeq ($(origin CC), default)
 CC := gcc -Wno-psabi
@@ -63,23 +62,6 @@ uninstall:
 	rm -rf $(INSTALL_LIB_PATH)
 	rm $(INSTALL_BIN_PATH)/lacc
 
-csmith-test: bin/lacc
-	@mkdir -p csmith
-	./csmith.sh "$(CSMITH_INCLUDE_PATH)" "$(CC)"
-
-creduce-prepare-%: csmith/%.c bin/lacc
-	@mkdir -p creduce
-	bin/lacc -std=c99 -I $(CSMITH_INCLUDE_PATH) -w -E $< -o creduce/reduce.c
-	bin/lacc -std=c99 -c -I $(CSMITH_INCLUDE_PATH) $< -o creduce/reduce.o
-	$(CC) creduce/reduce.o -o creduce/reduce -lm
-	$(CC) -std=c99 -I $(CSMITH_INCLUDE_PATH) $< -o creduce/reduce-cc
-	cp creduce.sh creduce/
-	creduce/reduce 1 > creduce/lacc.out && creduce/reduce-cc 1 > creduce/cc.out
-	diff --side-by-side --suppress-common-lines creduce/lacc.out creduce/cc.out | head -n 1
-
-creduce-check: bin/lacc
-	./check.sh "bin/lacc -std=c99" creduce/reduce.c "$(CC) -std=c99"
-
 sqlite-test: bin/lacc
 	./sqlite.sh "bin/lacc -std=c89" "$(CC) -std=c89"
 
@@ -87,4 +69,4 @@ clean:
 	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s
 
-.PHONY: all install uninstall test test-% %-test csmith-% creduce-% clean
+.PHONY: all install uninstall clean test test-% %-test
