@@ -728,16 +728,10 @@ static struct block *postprocess_object_initialization(
             }
             target.field_offset = field.field_offset + field.field_width;
             target.field_width = 0;
-            if (target.field_offset * 8 == bitfield_size) {
+            if (target.field_offset == bitfield_size * 8) {
                 target.field_offset = 0;
                 target.offset += bitfield_size;
             }
-            /*bytes = target.field_offset / 8;
-            if (bytes > 0) {
-                target.field_offset = 0;
-                target.field_width = target.field_width - (bytes * 8);
-                target.offset += bytes;
-            }*/
         } else {
             target.field_offset = 0;
             target.field_width = 0;
