@@ -1,72 +1,117 @@
-ROOT := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-DIRS := ${shell find src -type d -print}
-SOURCES := $(foreach sdir,$(DIRS),$(wildcard $(sdir)/*.c))
+.POSIX:
+.SUFFIXES:
+PREFIX = /usr/local
+BINDIR = $(PREFIX)/bin
+LIBDIR = $(PREFIX)/lib
+SRCDIR = $(CURDIR)$(.CURDIR)
 
-INSTALL_PATH := /usr/local
+CC = cc -Wno-psabi
+CFLAGS = -Wall -pedantic -Wno-missing-braces
 
-SOURCE_LIB_PATH := $(ROOT)/include/stdlib
-INSTALL_LIB_PATH := $(INSTALL_PATH)/lib/lacc/include
-INSTALL_BIN_PATH := $(INSTALL_PATH)/bin
+SOURCES = \
+	src/lacc.c \
+	src/context.c \
+	src/util/argparse.c \
+	src/util/hash.c \
+	src/util/string.c \
+	src/backend/x86_64/instr.c \
+	src/backend/x86_64/elf.c \
+	src/backend/x86_64/abi.c \
+	src/backend/x86_64/assemble.c \
+	src/backend/compile.c \
+	src/backend/graphviz/dot.c \
+	src/optimizer/transform.c \
+	src/optimizer/liveness.c \
+	src/optimizer/optimize.c \
+	src/preprocessor/tokenize.c \
+	src/preprocessor/strtab.c \
+	src/preprocessor/input.c \
+	src/preprocessor/directive.c \
+	src/preprocessor/preprocess.c \
+	src/preprocessor/macro.c \
+	src/parser/typetree.c \
+	src/parser/symtab.c \
+	src/parser/parse.c \
+	src/parser/statement.c \
+	src/parser/initializer.c \
+	src/parser/expression.c \
+	src/parser/declaration.c \
+	src/parser/eval.c
 
-ifeq ($(origin CC), default)
-CC := gcc -Wno-psabi
-ifeq ($(shell gcc -v 2>&1 >/dev/null | grep "enable-default-pie" > /dev/null; echo $$?), 0)
-CC += -no-pie
-endif
-endif
-CFLAGS ?= -Wall -pedantic -std=c89 -I include/ -Wno-missing-braces
-LACCFLAGS := -I include/ -D'LACC_STDLIB_PATH="$(SOURCE_LIB_PATH)"'
-
-all: bin/lacc
+LIBDIR_SOURCE = $(SRCDIR)/include/stdlib
+LIBDIR_TARGET = $(LIBDIR)/lacc/include
+TARGET = bin/selfhost/lacc
 
 bin/lacc: $(SOURCES)
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -g -D'LACC_STDLIB_PATH="$(SOURCE_LIB_PATH)"' $^ -o $@
+	@mkdir -p $(@D)
+	$(CC) -std=c89 -g $(CFLAGS) -Iinclude src/lacc.c -o $@ \
+		-D'LACC_STDLIB_PATH="$(LIBDIR_SOURCE)"' \
+		-DAMALGAMATION
 
-bin/release: $(SOURCES)
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -O3 -D'LACC_STDLIB_PATH="$(INSTALL_LIB_PATH)"' -DAMALGAMATION -DNDEBUG src/lacc.c -o $@
+bin/release/lacc: $(SOURCES)
+	@mkdir -p $(@D)
+	$(CC) -std=c89 -O3 $(CFLAGS) -Iinclude src/lacc.c -o $@ \
+		-D'LACC_STDLIB_PATH="$(LIBDIR_TARGET)"' \
+		-DAMALGAMATION \
+		-DNDEBUG
 
-bin/bootstrap: $(patsubst src/%.c,bin/%-bootstrap.o,$(SOURCES))
-	$(CC) -pie $^ -o $@
+bin/bootstrap/lacc: bin/lacc
+	@mkdir -p $(@D)
+	for file in $(SOURCES) ; do \
+		target=$(@D)/$$(basename $$file .c).o ; \
+		$? -std=c89 -fPIC -Iinclude -c $$file -o $$target \
+			-D'LACC_STDLIB_PATH="$(LIBDIR_SOURCE)"' ; \
+	done
+	$(CC) $(@D)/*.o -o $@
 
-bin/%-bootstrap.o: src/%.c bin/lacc
-	@mkdir -p $(dir $@)
-	bin/lacc -fPIC $(LACCFLAGS) -c $< -o $@
+bin/selfhost/lacc: bin/bootstrap/lacc
+	@mkdir -p $(@D)
+	for file in $(SOURCES) ; do \
+		name=$$(basename $$file .c) ; \
+		target=$(@D)/$${name}.o ; \
+		$? -std=c89 -fPIC -Iinclude -c $$file -o $$target \
+			-D'LACC_STDLIB_PATH="$(LIBDIR_SOURCE)"' ; \
+		diff bin/bootstrap/$${name}.o $$target ; \
+	done
+	$(CC) $(@D)/*.o -o $@
 
-bin/selfhost: $(patsubst src/%.c,bin/%-selfhost.o,$(SOURCES))
-	$(CC) -pie $^ -o $@
+test-c89: $(TARGET)
+	for file in $$(find test/ -maxdepth 1 -type f -iname '*.c') ; do \
+		./check.sh "$? -std=c89" "$$file" "$(CC) -std=c89 -w" ; \
+	done
 
-bin/%-selfhost.o: src/%.c bin/bootstrap
-	@mkdir -p $(dir $@)
-	bin/bootstrap -fPIC $(LACCFLAGS) -c $< -o $@
+test-c99: $(TARGET)
+	for file in $$(find test/c99 -type f -iname '*.c') ; do \
+		./check.sh "$? -std=c99" "$$file" "$(CC) -std=c99 -w" ; \
+	done
 
-test-%: bin/%
-	@$(foreach file,$(wildcard test/c11/*.c),\
-		./check.sh "$< -std=c11" $(file) "$(CC) -std=c11 -w";)
-	@$(foreach file,$(wildcard test/c99/*.c),\
-		./check.sh "$< -std=c99" $(file) "$(CC) -std=c99 -w";)
-	@$(foreach file,$(wildcard test/*.c),\
-		./check.sh "$< -std=c89" $(file) "$(CC) -std=c89 -w";)
-	@$(foreach file,$(wildcard test/gnu/*.c),\
-		./check.sh "$< -fPIC" $(file) "gcc -std=c89 -w";)
+test-c11: $(TARGET)
+	for file in $$(find test/c11 -type f -iname '*.c') ; do \
+		./check.sh "$? -std=c11" "$$file" "$(CC) -std=c11 -w" ; \
+	done
 
-test: test-lacc
+test-gnu: $(TARGET)
+	for file in $$(find test/gnu -type f -iname '*.c') ; do \
+		./check.sh "$?" "$$file" "gcc -w" ; \
+	done
 
-install: bin/release
-	mkdir -p $(INSTALL_LIB_PATH)
-	cp $(SOURCE_LIB_PATH)/*.h $(INSTALL_LIB_PATH)/
-	cp $< $(INSTALL_BIN_PATH)/lacc
+test-sqlite: $(TARGET)
+	./sqlite.sh $? "$(CC)"
+
+test: test-c89 test-c99 test-c11
+
+install: bin/release/lacc
+	mkdir -p $(LIBDIR_TARGET)
+	cp $(LIBDIR_SOURCE)/*.h $(LIBDIR_TARGET)/
+	cp $? $(BINDIR)/lacc
 
 uninstall:
-	rm -rf $(INSTALL_LIB_PATH)
-	rm $(INSTALL_BIN_PATH)/lacc
-
-sqlite-test: bin/lacc
-	./sqlite.sh $< "$(CC)"
+	rm -rf $(LIBDIR_TARGET)
+	rm $(BINDIR)/lacc
 
 clean:
 	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s
 
-.PHONY: all install uninstall clean test test-% %-test
+.PHONY: install uninstall clean test \
+	test-c89 test-c99 test-c11 test-gnu test-sqlite

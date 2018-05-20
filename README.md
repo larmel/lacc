@@ -22,12 +22,11 @@ To change to some other Linux libc, for example musl, edit [src/lacc.c](src/lacc
 Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain definitions that are inherently compiler specific, and are provided specifically
 for lacc under [include/stdlib/](include/stdlib).
 The compiler is looking for these files at a default include path configurable by defining `LACC_STDLIB_PATH`, which by default points to the local source tree.
-Install copies the standard headers to `/usr/local/lib/lacc/include`, and produces an optimized binary with this as the default include path.
+The install target copies the standard headers to `/usr/local/lib/lacc/include`, and produces an optimized binary with this as the default include path.
 
     make install
 
-The binary is placed in `/usr/local/bin`, which enables running `lacc` directly
-from terminal.
+The binary is placed in `/usr/local/bin`, which enables running `lacc` directly from terminal.
 Execute `make uninstall` to remove all the files that were copied.
 
 Usage
@@ -164,21 +163,23 @@ The compile module will simply forward the CFG to [src/backend/graphviz/dot.c](s
 
 Correctness
 -----------
-Testing is done by comparing the runtime output of programs compiled with lacc
-and GCC.
+Testing is done by comparing the runtime output of programs compiled with lacc and the system compiler (cc).
 A collection of small standalone programs used for validation can be found under the [test/](test/) directory.
 Tests are executed using [check.sh](check.sh), which will validate preprocessing, assembly, and ELF outputs.
-Executing all tests in the test suite against `bin/lacc` is done with the following make target.
+
+    $ ./check.sh bin/lacc test/fact.c
+    [-E: Ok!] [-S: Ok!] [-c: Ok!] [-c -O1: Ok!] :: test/fact.c
+
+A complete test of the compiler is done by going through all test cases on a self-hosted version of lacc.
 
     make test
 
-The default binary is produced by GCC, giving `bin/lacc`.
-Self-hosting is achieved by using `bin/lacc` to build `bin/bootstrap`, which in turn is used to build `bin/selfhost`.
-Make targets for running the test suite against the bootstrap and selfhost binaries are available.
+This will first create a binary produced by cc, giving `bin/lacc`.
+Then we use `bin/lacc` to build `bin/bootstrap/lacc`, which in turn is used to build `bin/selfhost/lacc`.
+Between the bootstrap and selfhost stages, the intermediate object files are compared for equality.
+If everything works correctly, these stages should produce identical binaries.
 The compiler is ''good'' when all tests pass on the selfhost binary.
 This should always be green, on every commit.
-
-    make test-selfhost
 
 ### Csmith
 It is hard to come up with a good test suite covering all possible cases.
