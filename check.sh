@@ -10,10 +10,11 @@ fi
 
 if [ -z "$comp" ]; then
 	comp="gcc -std=c89 -Wno-psabi"
-	gcc -v 2>&1 >/dev/null | grep "enable-default-pie" > /dev/null
-	if [ "$?" -eq "0" ]; then
-		prog+=" -fPIC"
-	fi
+fi
+
+$comp -v 2>&1 >/dev/null | grep "enable-default-pie" > /dev/null
+if [ "$?" -eq "0" ]; then
+	prog="${prog} -fPIC"
 fi
 
 $comp $file -o ${file}.out
