@@ -63,7 +63,7 @@ uninstall:
 	rm $(INSTALL_BIN_PATH)/lacc
 
 sqlite-test: bin/lacc
-	./sqlite.sh "bin/lacc -std=c89" "$(CC) -std=c89"
+	./sqlite.sh $< "$(CC)"
 
 clean:
 	rm -rf bin
