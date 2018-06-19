@@ -255,28 +255,30 @@ void print_token_array(const TokenArray *list)
 
 static struct token paste(struct token left, struct token right)
 {
-    struct token res;
     char *buf;
     const char *endptr;
-    String ls, rs;
+    String s1, s2;
 
     assert(left.token != NUMBER);
     assert(right.token != NUMBER);
-    ls = left.d.string;
-    rs = right.d.string;
-    buf = calloc(ls.len + rs.len + 1, sizeof(*buf));
-    buf = strcpy(buf, str_raw(ls));
-    buf = strcat(buf, str_raw(rs));
-    res = tokenize(buf, &endptr);
-    if (endptr != buf + ls.len + rs.len) {
+
+    s1 = left.d.string;
+    s2 = right.d.string;
+
+    buf = calloc(s1.len + s2.len + 1, sizeof(*buf));
+    strncpy(buf, str_raw(s1), s1.len);
+    strncpy(buf + s1.len, str_raw(s2), s2.len);
+
+    right = tokenize(buf, &endptr);
+    if (endptr != buf + s1.len + s2.len) {
         error("Invalid token resulting from pasting '%s' and '%s'.",
-            str_raw(ls), str_raw(rs));
+            str_raw(s1), str_raw(s2));
         exit(1);
     }
 
-    res.leading_whitespace = left.leading_whitespace;
+    right.leading_whitespace = left.leading_whitespace;
     free(buf);
-    return res;
+    return right;
 }
 
 static enum token_type peek_token(const TokenArray *list, int i)

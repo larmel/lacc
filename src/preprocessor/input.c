@@ -123,17 +123,18 @@ static size_t path_dirlen(const char *path)
 static char *create_path(const char *path, size_t dirlen, const char *name)
 {
     static size_t path_buffer_length;
-    size_t len;
+    size_t required, namelen;
 
-    len = dirlen + strlen(name) + 2;
-    if (len > path_buffer_length) {
-        path_buffer_length = len;
+    namelen = strlen(name);
+    required = dirlen + namelen + 2;
+    if (required > path_buffer_length) {
+        path_buffer_length = required;
         path_buffer = realloc(path_buffer, path_buffer_length);
     }
 
     strncpy(path_buffer, path, dirlen);
     path_buffer[dirlen] = '/';
-    strcpy(path_buffer + dirlen + 1, name);
+    strncpy(path_buffer + dirlen + 1, name, namelen + 1);
     return path_buffer;
 }
 
