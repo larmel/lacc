@@ -826,6 +826,7 @@ INTERNAL void register_builtin_definitions(enum cstd version)
     register_macro("__DATE__", get__date__(ts));
     register_macro("__TIME__", get__time__(ts));
     register_macro("__x86_64__", "1");
+    register_macro("__LP64__", "1");
     register_macro("__SIZE_TYPE__", "unsigned long");
     register_macro("__WCHAR_TYPE__", "signed int");
     register_macro("__PTRDIFF_TYPE__", "signed long");
