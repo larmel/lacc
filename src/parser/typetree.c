@@ -200,6 +200,7 @@ static struct member *add_member(Type parent, struct member m)
         assert(!t->is_vararg);
         assert(is_function(parent));
         t->is_vararg = 1;
+        assert(!t->is_incomplete);
         return NULL;
     }
 
@@ -232,6 +233,8 @@ static struct member *add_member(Type parent, struct member m)
         if (t->size < m.offset + size_of(m.type)) {
             t->size = m.offset + size_of(m.type);
         }
+    } else {
+        t->is_incomplete = 0;
     }
 
     return &array_back(&t->members);
@@ -360,6 +363,7 @@ INTERNAL Type type_create_function(Type next)
     type = type_create(T_FUNCTION);
     t = get_typetree_handle(type.ref);
     t->next = next;
+    t->is_incomplete = 1;
     return type;
 }
 
@@ -762,17 +766,22 @@ INTERNAL void type_seal(Type type)
 {
     struct typetree *t;
     size_t align;
-    assert(is_struct_or_union(type));
 
     t = get_typetree_handle(type.ref);
-    align = remove_anonymous_fields(t);
-    if (align == 0) {
-        error("%s has no named members.", is_struct(type) ? "Struct" : "Union");
-        exit(1);
-    }
+    if (t->type == T_FUNCTION) {
+        t->is_incomplete = 0;
+    } else {
+        assert(is_struct_or_union(type));
+        align = remove_anonymous_fields(t);
+        if (align == 0) {
+            error("%s has no named members.",
+                is_struct(type) ? "Struct" : "Union");
+            exit(1);
+        }
 
-    if (t->size % align) {
-        t->size += align - (t->size % align);
+        if (t->size % align) {
+            t->size += align - (t->size % align);
+        }
     }
 }
 
@@ -826,6 +835,7 @@ INTERNAL int is_complete(Type type)
 
     switch (type_of(type)) {
     case T_ARRAY:
+    case T_FUNCTION:
         t = get_typetree_handle(type.ref);
         return !t->is_incomplete;
     default:
@@ -965,6 +975,13 @@ INTERNAL int is_compatible(Type l, Type r)
             return is_compatible(type_next(l), type_next(r));
         }
         return 0;
+    case T_FUNCTION:
+        if (!type_equal(type_next(l), type_next(r))) {
+            return 0;
+        }
+        if (!is_complete(l) || !is_complete(r)) {
+            return 1;
+        }
     default:
         return type_equal(l, r);
     }
@@ -1146,19 +1163,23 @@ INTERNAL int fprinttype(FILE *stream, Type type, const struct symbol *expand)
     case T_FUNCTION:
         t = get_typetree_handle(type.ref);
         n += fputs("(", stream);
-        for (i = 0; i < nmembers(type); ++i) {
-            m = get_member(type, i);
-            if (m->offset) {
-                assert(is_pointer(m->type));
-                fprintf(stream, "static(%lu) ", m->offset);
+        if (is_complete(type) && nmembers(type) == 0) {
+            n += fputs("void", stream);
+        } else {
+            for (i = 0; i < nmembers(type); ++i) {
+                m = get_member(type, i);
+                if (m->offset) {
+                    assert(is_pointer(m->type));
+                    fprintf(stream, "static(%lu) ", m->offset);
+                }
+                n += fprinttype(stream, m->type, NULL);
+                if (i < nmembers(type) - 1) {
+                    n += fputs(", ", stream);
+                }
             }
-            n += fprinttype(stream, m->type, NULL);
-            if (i < nmembers(type) - 1) {
-                n += fputs(", ", stream);
+            if (is_vararg(type)) {
+                n += fputs(", ...", stream);
             }
-        }
-        if (is_vararg(type)) {
-            n += fputs(", ...", stream);
         }
         n += fputs(") -> ", stream);
         n += fprinttype(stream, t->next, NULL);

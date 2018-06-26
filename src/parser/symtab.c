@@ -280,12 +280,16 @@ INTERNAL const char *sym_name(const struct symbol *sym)
  */
 static void sym_apply_type(struct symbol *sym, Type type)
 {
-    if (is_function(sym->type) && is_function(type)) {
-        if (sym->symtype == SYM_DECLARATION
-            && type_equal(type_next(sym->type), type_next(type))
-            && nmembers(sym->type) == nmembers(type))
+    if (is_function(sym->type)
+        && is_function(type)
+        && type_equal(type_next(sym->type), type_next(type)))
+    {
+        if (!is_complete(sym->type)
+            || (is_complete(type) && is_compatible(sym->type, type)))
         {
             sym->type = type;
+        } else if (!is_complete(type)) {
+            return;
         }
     } else if (is_array(sym->type) && is_array(type)) {
         if (type_equal(type_next(sym->type), type_next(type))) {

@@ -90,6 +90,7 @@ static struct block *parameter_list(
                 error("Incomplete type in parameter list.");
                 exit(1);
             }
+            type_seal(*func);
             break;
         } else if (is_array(base)) {
             base = type_create_pointer(type_next(base));
