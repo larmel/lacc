@@ -305,22 +305,15 @@ static struct block *postfix(
         case ARROW:
             consume(ARROW);
             tok = consume(IDENTIFIER);
-            if (is_pointer(root.type)
-                && is_struct_or_union(type_deref(root.type)))
-            {
-                mbr = find_type_member(type_deref(root.type), tok.d.string, NULL);
+            value = eval_deref(def, block, eval(def, block, root));
+            if (is_struct_or_union(value.type)) {
+                mbr = find_type_member(value.type, tok.d.string, NULL);
                 if (!mbr) {
-                    error("Invalid access, no member named '%s'.",
-                        str_raw(tok.d.string));
+                    error("Invalid access, %t has no member named '%s'.",
+                        value.type, str_raw(tok.d.string));
                     exit(1);
                 }
-                /*
-                 * Make it look like a pointer to the member type, then
-                 * perform normal dereferencing.
-                 */
-                value = eval(def, block, root);
-                value.type = type_create_pointer(mbr->type);
-                value = eval_deref(def, block, value);
+                value.type = mbr->type;
                 value.field_width = mbr->field_width;
                 value.field_offset = mbr->field_offset;
                 value.offset += mbr->offset;
