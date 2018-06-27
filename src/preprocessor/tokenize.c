@@ -47,7 +47,7 @@ INTERNAL const struct token basic_token[] = {
             TOK(STAR, "*"),             TOK(PLUS, "+"),
             TOK(COMMA, ","),            TOK(MINUS, "-"),
             TOK(DOT, "."),              TOK(SLASH, "/"),
-/* 0x30 */  TOK(RESTRICT, "restrict"),  TOK(ALIGNOF, "_Alignof"),
+/* 0x30 */  IDN(RESTRICT, "restrict"),  TOK(ALIGNOF, "_Alignof"),
             TOK(BOOL, "_Bool"),         {0},
             {0},                        {0},
             {0},                        {0},
