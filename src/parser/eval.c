@@ -803,16 +803,16 @@ static Type common_compare_type(Type left, Type right)
 {
     if (is_arithmetic(left) && is_arithmetic(right)) {
         return usual_arithmetic_conversion(left, right);
-    } else if (is_pointer(left)
-        && is_pointer(right)
-        && size_of(type_next(left))
-        && size_of(type_next(left)) == size_of(type_next(right)))
+    }
+
+    if (is_pointer(left) && is_pointer(right)
+        && is_compatible_unqualified(type_next(left), type_next(right)))
     {
         return basic_type__unsigned_long;
-    } else {
-        error("Invalid operands in relational expression.");
-        exit(1);
     }
+
+    error("Invalid operands in relational expression: %t and %t", left, right);
+    exit(1);
 }
 
 static struct expression cmp_ge(
