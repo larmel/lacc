@@ -11,6 +11,7 @@
 # include "backend/x86_64/assemble.c"
 # include "backend/compile.c"
 # include "backend/graphviz/dot.c"
+# include "backend/linker.c"
 # include "optimizer/transform.c"
 # include "optimizer/liveness.c"
 # include "optimizer/optimize.c"
@@ -32,6 +33,7 @@
 # define INTERNAL
 # define EXTERNAL extern
 # include "backend/compile.h"
+# include "backend/linker.h"
 # include "optimizer/optimize.h"
 # include "parser/parse.h"
 # include "parser/symtab.h"
@@ -58,7 +60,7 @@
 # define LACC_STDLIB_PATH "/usr/local/lib/lacc/include"
 #endif
 
-static const char *program;
+static const char *output_name, *program;
 static FILE *output;
 static int optimization_level;
 static int dump_symbols, dump_types;
@@ -67,7 +69,7 @@ static void help(const char *arg)
 {
     fprintf(
         stderr,
-        "Usage: %s [-(S|E|c)] [-v] [-fPIC] [-I <path>] [-o <file>] <file>\n",
+        "Usage: %s [-(S|E|c)] [-v] [-fPIC] [-I <path>] [-o <file>] <file ...>\n",
         program);
     exit(1);
 }
@@ -90,6 +92,9 @@ static void flag(const char *arg)
     case 'w':
         context.suppress_warning = 1;
         break;
+    case '-': /* amazing hack */
+        context.target = TARGET_IR_DOT;
+        break;
     default:
         assert(0);
         break;
@@ -107,6 +112,7 @@ static void option(const char *arg)
 
 static void open_output_handle(const char *file)
 {
+    output_name = strdup(file);
     output = fopen(file, "w");
     if (output == NULL) {
         fprintf(stderr, "Could not open output file '%s'.\n", file);
@@ -165,6 +171,32 @@ static void define_macro(const char *arg)
     inject_line(line);
 }
 
+static void add_linker_flag(const char *arg)
+{
+    char buf[1024], *l;
+    int i = 0;
+
+    l = strchr(arg, ',');
+    (void) *l++;
+
+    while (*l != ',' && *l != '\0') {
+        buf[i] = *l++;
+        if (++i > 1023) {
+            error("ld option too long.");
+            exit(1);
+        }
+    }
+    buf[i] = '\0';
+
+    if (i == 0)
+        return;
+
+    linker_option(buf);
+
+    if (*l == ',')
+        add_linker_flag(l);
+}
+
 static char *parse_program_arguments(int argc, char *argv[])
 {
     int c;
@@ -187,7 +219,9 @@ static char *parse_program_arguments(int argc, char *argv[])
         {"-std=", &set_c_std},
         {"-D:", &define_macro},
         {"--dump-symbols", &set_dump_state},
-        {"--dump-types", &set_dump_state}
+        {"--dump-types", &set_dump_state},
+        {"--target-ir-dot", &flag},
+        {"-Wl,", &add_linker_flag}
     };
 
     program = argv[0];
@@ -199,10 +233,14 @@ static char *parse_program_arguments(int argc, char *argv[])
     context.pic = 1;
 #endif
 
-    context.target = TARGET_IR_DOT;
+    context.target = TARGET_x86_64_BIN;
 
     c = parse_args(sizeof(optv)/sizeof(optv[0]), optv, argc, argv);
-    if (c == argc - 1) {
+    if (context.target == TARGET_x86_64_BIN) {
+        init_linker(output, output_name);
+        while (c < argc)
+            linker_option(argv[c++]);
+    } else if (c == argc - 1) {
         input = argv[c];
     } else if (c < argc - 1) {
         help(argv[0]);
@@ -257,7 +295,10 @@ int main(int argc, char *argv[])
     add_include_search_paths();
     set_compile_target(output, path);
 
-    if (context.target == TARGET_NONE) {
+    if (context.target == TARGET_x86_64_BIN) {
+        linker();
+        return context.errors;
+    } else if (context.target == TARGET_NONE) {
         preprocess(output);
     } else {
         push_scope(&ns_ident);

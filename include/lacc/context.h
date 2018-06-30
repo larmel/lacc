@@ -10,6 +10,7 @@ enum target {
     TARGET_NONE,
     TARGET_IR_DOT,
     TARGET_x86_64_ASM,
+    TARGET_x86_64_BIN,
     TARGET_x86_64_ELF
 };
 

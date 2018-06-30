@@ -3132,6 +3132,7 @@ INTERNAL void set_compile_target(FILE *stream, const char *file)
 {
     switch (context.target) {
     case TARGET_NONE:
+    case TARGET_x86_64_BIN:
         break;
     case TARGET_IR_DOT:
         dot_init(stream);
@@ -3164,6 +3165,7 @@ INTERNAL int compile(struct definition *def)
     case TARGET_IR_DOT:
         dotgen(def);
     case TARGET_NONE:
+    case TARGET_x86_64_BIN:
         break;
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_ELF:
