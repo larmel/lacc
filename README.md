@@ -12,7 +12,7 @@ Install
 -------
 Clone and build from source, and the binary will be placed in `bin/lacc`.
 Default include paths on Linux assume GNU standard library headers being available, at `/usr/include/x86_64-linux-gnu`.
-To change to some other Linux libc, for example musl, edit [src/lacc.c](src/lacc.c#L278).
+To change to some other Linux libc, for example musl, edit [src/lacc.c](src/lacc.c#L332).
 \*BSD libc needs no special handling.
 
     git clone https://github.com/larmel/lacc.git
@@ -32,11 +32,12 @@ Execute `make uninstall` to remove all the files that were copied.
 Usage
 -----
 Command line interface is kept similar to GCC and other compilers, using mostly a subset of the same flags and options.
-A custom argument parser is used, and the definition of each option can be found in [src/lacc.c](src/lacc.c#L212).
+A custom argument parser is used, and the definition of each option can be found in [src/lacc.c](src/lacc.c#L256).
 
     -E      Output preprocessed.
     -S      Output GNU style textual x86_64 assembly.
     -c      Output x86_64 ELF object file.
+    -dot    Output intermediate representation in dot format.
     -o      Specify output file name. If not speficied, default to input file
             name with suffix changed to '.s' or '.o' when compiling with -S or
             -c, respectively. Otherwise use stdout.
@@ -48,23 +49,32 @@ A custom argument parser is used, and the definition of each option can be found
             -D 'FOO(a)=a*2+1'.
     -fPIC   Generate position-independent code.
     -fno-PIC Disable position-independent code generation.
-    -v      Output verbose diagnostic information. This will dump a lot of
+    -v      Print verbose diagnostic information. This will dump a lot of
             internal state during compilation, and can be useful for debugging.
     --help  Print help text.
 
-Input is by default read from `stdin`, unless specified as a separate unnamed argument.
-As an example invocation, here is compiling [test/fact.c](test/fact.c) to object code, and then using GCC linker to produce the final executable.
+Input is specified as a separate unnamed argument.
+If no compilation mode is specified, lacc will act as a wrapper for the system linker `/bin/ld`.
+Some common linker flags are supported.
+
+    -Wl,      Specify linker options, separated by commas.
+    -L        Add linker include directory.
+    -l        Add linker library.
+    -shared   Passed to linker as is.
+    -rdynamic Pass -export-dynamic to linker.
+
+As an example invocation, here is compiling [test/fact.c](test/fact.c) to object code, and then using the system linker to produce the final executable.
 
     bin/lacc -c test/fact.c -o fact.o
-    gcc fact.o -o fact
+    bin/lacc fact.o -o fact
 
 The program is part of the test suite, calculating 5! using recursion, and exiting with the answer.
 Running `./fact` followed by `echo $?` should print `120`.
 
 Implementation
 --------------
-The compiler is written in C89, with no external dependencies other than the C standard library.
-There is around 13k lines of code total.
+The compiler is written in C89, counting around 13k lines of code in total.
+There are no external dependencies except for the C standard libary, and some system calls required to invoke the linker.
 
 The implementation is organized into four main parts; preprocessor, parser, optimizer, and backend, each in their own directory under [src/](src/).
 In general, each module (a `.c` file typically paired with an `.h` file defining the public interface) depend mostly on headers in their own subtree.
@@ -85,9 +95,9 @@ Each external variable or function definition is represented by a `struct defini
 The data structures backing the intermediate representation can be found in [include/lacc/ir.h](include/lacc/ir.h).
 
 Visualizing the intermediate representation is a separate output target.
-If neither -S, -c, nor -E are specified, a dot formatted text file is produced.
+If the -dot option is specified, a dot formatted text file is produced as output.
 
-    bin/lacc -I include src/backend/compile.c -o compile.dot
+    bin/lacc -dot -I include src/backend/compile.c -o compile.dot
     dot -Tps compile.dot -o compile.ps
 
 Below is an example from a function found in [src/backend/compile.c](src/backend/compile.c), showing a slice of the complete graph.

@@ -20,6 +20,7 @@ SOURCES = \
 	src/backend/x86_64/assemble.c \
 	src/backend/compile.c \
 	src/backend/graphviz/dot.c \
+	src/backend/linker.c \
 	src/optimizer/transform.c \
 	src/optimizer/liveness.c \
 	src/optimizer/optimize.c \

@@ -3163,6 +3163,7 @@ INTERNAL int compile(struct definition *def)
     case TARGET_IR_DOT:
         dotgen(def);
     case TARGET_PREPROCESS:
+    case TARGET_x86_64_EXE:
         break;
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_OBJ:

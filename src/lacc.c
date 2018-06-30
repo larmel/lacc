@@ -11,6 +11,7 @@
 # include "backend/x86_64/assemble.c"
 # include "backend/compile.c"
 # include "backend/graphviz/dot.c"
+# include "backend/linker.c"
 # include "optimizer/transform.c"
 # include "optimizer/liveness.c"
 # include "optimizer/optimize.c"
@@ -32,6 +33,7 @@
 # define INTERNAL
 # define EXTERNAL extern
 # include "backend/compile.h"
+# include "backend/linker.h"
 # include "optimizer/optimize.h"
 # include "parser/parse.h"
 # include "parser/symtab.h"
@@ -60,7 +62,6 @@
 
 static char *default_output_name;
 static const char *program, *input_name, *output_name;
-static FILE *output;
 static int optimization_level;
 static int dump_symbols, dump_types;
 
@@ -68,7 +69,7 @@ static void help(const char *arg)
 {
     fprintf(
         stderr,
-        "Usage: %s [-(S|E|c)] [-v] [-fPIC] [-I <path>] [-o <file>] <file>\n",
+        "Usage: %s [-(S|E|c)] [-v] [-fPIC] [-I <path>] [-o <file>] <file ...>\n",
         program);
     exit(1);
 }
@@ -103,29 +104,30 @@ static void option(const char *arg)
         context.pic = 1;
     } else if (!strcmp("-fno-PIC", arg)) {
         context.pic = 0;
+    } else if (!strcmp("-dot", arg)) {
+        context.target = TARGET_IR_DOT;
     }
 }
 
-static void open_output_handle(const char *file)
+static void set_output_name(const char *file)
 {
     output_name = file;
-    output = fopen(file, "w");
-    if (output == NULL) {
-        fprintf(stderr, "Could not open output file '%s'.\n", file);
-        exit(1);
-    }
+    add_linker_arg("-o");
+    add_linker_arg(file);
 }
 
 static void add_input_file(const char *file)
 {
     input_name = file;
+    add_linker_arg(file);
 }
 
 /*
- * Write to default file if -o or -S is specified, using input file name with
- * suffix changed to '.o' or '.s', respectively.
+ * Write to default file if -o or -S is specified, using input file name
+ * with suffix changed to '.o' or '.s', respectively. Linker target
+ * defaults to a.out.
  */
-static void open_default_output(const char *input)
+static const char *get_default_output(const char *input)
 {
     char ext;
     const char *dot;
@@ -138,8 +140,10 @@ static void open_default_output(const char *input)
     case TARGET_x86_64_OBJ:
         ext = 'o';
         break;
+    case TARGET_x86_64_EXE:
+        return "a.out";
     default:
-        return;
+        return NULL;
     }
 
     dot = strrchr(input, '.');
@@ -153,7 +157,7 @@ static void open_default_output(const char *input)
     assert(default_output_name[len - 1] == '.');
     default_output_name[len] = ext;
     assert(default_output_name[len + 1] == '\0');
-    open_output_handle(default_output_name);
+    return default_output_name;
 }
 
 static void set_c_std(const char *std)
@@ -176,12 +180,11 @@ static void set_optimization_level(const char *level)
     optimization_level = level[2] - '0';
 }
 
-static void set_dump_state(const char *arg)
+static void long_option(const char *arg)
 {
     if (!strcmp("--dump-symbols", arg)) {
         dump_symbols = 1;
-    } else {
-        assert(!strcmp("--dump-types", arg));
+    } else if (!strcmp("--dump-types", arg)) {
         dump_types = 1;
     }
 }
@@ -207,6 +210,47 @@ static void define_macro(const char *arg)
     inject_line(line);
 }
 
+static void add_linker_flag(const char *arg)
+{
+    char *end;
+
+    if (!strcmp("-rdynamic", arg)) {
+        add_linker_arg("-export-dynamic");
+    } else {
+        assert(!strncmp("-Wl,", arg, 4));
+        end = strchr(arg, ',');
+        do {
+            arg = end + 1;
+            end = strchr(arg, ',');
+            if (end) {
+                *end = '\0';
+            }
+
+            add_linker_arg(arg);
+        } while (end);
+    }
+}
+
+static void add_linker_library(const char *lib)
+{
+    if (lib[-2] == '-') {
+        add_linker_arg(lib - 2);
+    } else {
+        add_linker_arg("-l");
+        add_linker_arg(lib);
+    }
+}
+
+static void add_linker_path(const char *path)
+{
+    if (path[-2] == '-') {
+        add_linker_arg(path - 2);
+    } else {
+        add_linker_arg("-L");
+        add_linker_arg(path);
+    }
+}
+
 static void parse_program_arguments(int argc, char *argv[])
 {
     struct option optv[] = {
@@ -217,8 +261,9 @@ static void parse_program_arguments(int argc, char *argv[])
         {"-w", &flag},
         {"-fPIC", &option},
         {"-fno-PIC", &option},
+        {"-dot", &option},
         {"--help", &help},
-        {"-o:", &open_output_handle},
+        {"-o:", &set_output_name},
         {"-I:", &add_include_search_path},
         {"-O0", &set_optimization_level},
         {"-O1", &set_optimization_level},
@@ -226,16 +271,20 @@ static void parse_program_arguments(int argc, char *argv[])
         {"-O3", &set_optimization_level},
         {"-std=", &set_c_std},
         {"-D:", &define_macro},
-        {"--dump-symbols", &set_dump_state},
-        {"--dump-types", &set_dump_state},
+        {"--dump-symbols", &long_option},
+        {"--dump-types", &long_option},
         {"-pipe", &option},
+        {"-Wl,", &add_linker_flag},
+        {"-rdynamic", &add_linker_flag},
+        {"-shared", &add_linker_arg},
+        {"-l:", &add_linker_library},
+        {"-L:", &add_linker_path},
         {NULL, &add_input_file}
     };
 
     program = argv[0];
-    output = stdout;
     context.standard = STD_C89;
-    context.target = TARGET_IR_DOT;
+    context.target = TARGET_x86_64_EXE;
 
     /* OpenBSD defaults to -fPIC unless explicitly turned off.  */
 #ifdef __OpenBSD__
@@ -243,8 +292,13 @@ static void parse_program_arguments(int argc, char *argv[])
 #endif
 
     parse_args(optv, argc, argv);
-    if (input_name && output == stdout) {
-        open_default_output(input_name);
+    if (!input_name) {
+        help(argv[0]);
+        exit(1);
+    }
+
+    if (!output_name) {
+        output_name = get_default_output(input_name);
     }
 }
 
@@ -282,14 +336,31 @@ static void add_include_search_paths(void)
 
 int main(int argc, char *argv[])
 {
+    int ret;
+    FILE *output;
     struct definition *def;
     const struct symbol *sym;
 
     init_preprocessing();
     parse_program_arguments(argc, argv);
+    if (context.target == TARGET_x86_64_EXE) {
+        ret = invoke_linker();
+        goto end;
+    }
+
     set_input_file(input_name);
     register_builtin_definitions(context.standard);
     add_include_search_paths();
+    if (output_name) {
+        output = fopen(output_name, "w");
+        if (!output) {
+            fprintf(stderr, "Could not open output file '%s'.\n",
+                output_name);
+            exit(1);
+        }
+    } else {
+        output = stdout;
+    }
 
     if (context.target == TARGET_PREPROCESS) {
         preprocess(output);
@@ -327,11 +398,14 @@ int main(int argc, char *argv[])
         pop_scope(&ns_ident);
     }
 
-    clear_preprocessing();
-    if (output != stdout) {
+    ret = context.errors;
+    if (output_name) {
         fclose(output);
         free(default_output_name);
     }
 
-    return context.errors;
+end:
+    clear_linker_args();
+    clear_preprocessing();
+    return ret;
 }

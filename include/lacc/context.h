@@ -10,7 +10,8 @@ enum target {
     TARGET_PREPROCESS,
     TARGET_IR_DOT,
     TARGET_x86_64_ASM,
-    TARGET_x86_64_OBJ
+    TARGET_x86_64_OBJ,
+    TARGET_x86_64_EXE
 };
 
 enum cstd {
