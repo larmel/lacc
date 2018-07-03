@@ -1,6 +1,6 @@
 #!/bin/sh
 
-prog="$1"
+lacc="$1"
 file="$2"
 comp="$3"
 if [ -z "$file" ] || [ ! -f "$file" ]; then
@@ -14,7 +14,7 @@ fi
 
 $comp -v 2>&1 >/dev/null | grep "enable-default-pie" > /dev/null
 if [ "$?" -eq "0" ]; then
-	prog="${prog} -fPIC"
+	lacc="${lacc} -fPIC"
 fi
 
 $comp $file -o ${file}.out
@@ -27,14 +27,14 @@ fi
 
 check()
 {
-	$prog $1 $file -o ${file}.s
+	$lacc $1 $file -o ${file}.s
 	if [ "$?" -ne "0" ]; then
 		echo "$(tput setaf 1)Compilation failed!$(tput sgr0)";
 		return 1
 	fi
 	if [ "$1" = "-E" ]; then
-		mv ${file}.s ${file}.prep.c
-		$comp -c ${file}.prep.c -o ${file}.o
+		mv ${file}.s ${file}.i
+		$lacc -c ${file}.i -o ${file}.o
 		if [ "$?" -ne "0" ]; then
 			echo "$(tput setaf 1)Compilation failed!$(tput sgr0)";
 			return 1
@@ -81,6 +81,6 @@ elf=$(check -c); result="$?"; retval=$((retval + result))
 opt=$(check "-c -O1"); result="$?"; retval=$((retval + result))
 
 echo "[-E: ${prp}] [-S: ${asm}] [-c: ${elf}] [-c -O1: ${opt}] :: ${file}"
-rm -f ${file}.out ${file}.ans.txt ${file}.txt ${file}.s ${file}.prep.c ${file}.o
+rm -f ${file}.out ${file}.ans.txt ${file}.txt ${file}.s ${file}.i ${file}.o
 
 exit $retval
