@@ -58,7 +58,8 @@
 # define LACC_STDLIB_PATH "/usr/local/lib/lacc/include"
 #endif
 
-static const char *program;
+static char *default_output_name;
+static const char *program, *output_name;
 static FILE *output;
 static int optimization_level;
 static int dump_symbols, dump_types;
@@ -107,11 +108,47 @@ static void option(const char *arg)
 
 static void open_output_handle(const char *file)
 {
+    output_name = file;
     output = fopen(file, "w");
     if (output == NULL) {
         fprintf(stderr, "Could not open output file '%s'.\n", file);
         exit(1);
     }
+}
+
+/*
+ * Write to default file if -o or -S is specified, using input file name with
+ * suffix changed to '.o' or '.s', respectively.
+ */
+static void open_default_output(const char *input)
+{
+    char ext;
+    const char *dot;
+    size_t len;
+
+    switch (context.target) {
+    case TARGET_x86_64_ASM:
+        ext = 's';
+        break;
+    case TARGET_x86_64_ELF:
+        ext = 'o';
+        break;
+    default:
+        return;
+    }
+
+    dot = strrchr(input, '.');
+    if (!dot) {
+        dot = input + strlen(input);
+    }
+
+    len = (dot - input) + 1;
+    default_output_name = calloc(len + 2, sizeof(*default_output_name));
+    strncpy(default_output_name, input, len);
+    assert(default_output_name[len - 1] == '.');
+    default_output_name[len] = ext;
+    assert(default_output_name[len + 1] == '\0');
+    open_output_handle(default_output_name);
 }
 
 static void set_c_std(const char *std)
@@ -204,6 +241,9 @@ static char *parse_program_arguments(int argc, char *argv[])
     c = parse_args(sizeof(optv)/sizeof(optv[0]), optv, argc, argv);
     if (c == argc - 1) {
         input = argv[c];
+        if (output == stdout) {
+            open_default_output(input);
+        }
     } else if (c < argc - 1) {
         help(argv[0]);
         exit(1);
@@ -295,6 +335,7 @@ int main(int argc, char *argv[])
     clear_preprocessing();
     if (output != stdout) {
         fclose(output);
+        free(default_output_name);
     }
 
     return context.errors;
