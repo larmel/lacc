@@ -113,10 +113,13 @@ static struct hash_entry *hash_walk(
                  * Delete entry in first slot, moving the next element
                  * in if it exists, or reset to zero.
                  */
-                if (ref->next)
+                if (ref->next) {
+                    pre = ref->next;
                     *ref = *(ref->next);
-                else
+                    hash_free_entry(tab, pre);
+                } else {
                     memset(ref, 0, sizeof(*ref));
+                }
             } else {
                 pre->next = ref->next;
                 hash_free_entry(tab, ref);
@@ -233,6 +236,7 @@ INTERNAL void hash_destroy(struct hash_table *tab)
 
     hash_chain_free(&tab->table[tab->capacity], &hash_del_noop);
     free(tab->table);
+    memset(tab, 0, sizeof(*tab));
 }
 
 INTERNAL void *hash_insert(struct hash_table *tab, void *val)
