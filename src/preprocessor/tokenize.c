@@ -345,7 +345,7 @@ static char convert_char(const char *in, const char **endptr)
 static char *string_buffer;
 static size_t string_buffer_cap;
 
-INTERNAL void clear_string_buffer(void)
+INTERNAL void tokenize_reset(void)
 {
     if (string_buffer) {
         free(string_buffer);

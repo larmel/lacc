@@ -124,17 +124,24 @@ static void *macro_hash_add(void *ref)
     return macro;
 }
 
-INTERNAL void init_macro_table(void)
+INTERNAL void macro_reset(void)
 {
-    hash_init(
-        &macro_hash_table,
-        HASH_TABLE_BUCKETS,
-        macro_hash_key,
-        macro_hash_add,
-        macro_hash_del);
+    static int initialized;
+
+    if (!initialized) {
+        hash_init(
+            &macro_hash_table,
+            HASH_TABLE_BUCKETS,
+            macro_hash_key,
+            macro_hash_add,
+            macro_hash_del);
+        initialized = 1;
+    } else {
+        hash_clear(&macro_hash_table);
+    }
 }
 
-INTERNAL void clear_macro_table(void)
+INTERNAL void macro_finalize(void)
 {
     int i;
     TokenArray list;

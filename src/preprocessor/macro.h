@@ -36,17 +36,20 @@ struct macro {
     TokenArray replacement;
 };
 
-/* Initialize hash table used for macro definitions. */
-INTERNAL void init_macro_table(void);
+/*
+ * Initialize hash table used for macro definitions. Recycle buffers
+ * between input files.
+ */
+INTERNAL void macro_reset(void);
+
+/* Free memory used for macro definitions. */
+INTERNAL void macro_finalize(void);
 
 /*
  * Define macros that are intrinsic to the compiler, or mandated by the
  * standard.
  */
 INTERNAL void register_builtin_definitions(enum cstd version);
-
-/* Free memory used for macro definitions. */
-INTERNAL void clear_macro_table(void);
 
 /* Stringify a list of tokens, returning a new token of type STRING. */
 INTERNAL struct token stringify(const TokenArray *list);

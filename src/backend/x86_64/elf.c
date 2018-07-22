@@ -69,7 +69,7 @@ static char *shname[] = {
     ".text"
 };
 
-static Elf64_Shdr shdr[] = {
+static Elf64_Shdr *shdr, shdr_template[] = {
     {0},                /* First section header must be all-zero. */
     { /* .shstrtab */
         0,              /* sh_name, index into shstrtab. */
@@ -238,7 +238,7 @@ struct pending_displacement {
 static array_of(struct pending_displacement) pending_displacement_list;
 
 /* Write bytes to section. If ptr is NULL, fill with zeros. */
-static int elf_section_write(int shid, const void *data, size_t n)
+static size_t elf_section_write(int shid, const void *data, size_t n)
 {
     /*
      * Section data buffer capacity, in bytes. Buffer is kept in sbuf,
@@ -252,6 +252,7 @@ static int elf_section_write(int shid, const void *data, size_t n)
         shdr[shid].sh_type == SHT_STRTAB ||
         shdr[shid].sh_type == SHT_SYMTAB ||
         shdr[shid].sh_type == SHT_PROGBITS ||
+        shdr[shid].sh_type == SHT_RELA ||
         shdr[shid].sh_type == SHT_NOBITS);
 
     offset = shdr[shid].sh_size;
@@ -399,7 +400,7 @@ static void flush_symtab_globals(void)
         elf_symtab_add(entry);
     }
 
-    array_clear(&globals);
+    array_empty(&globals);
 }
 
 static void elf_add_reloc(struct pending_relocation entry)
@@ -454,18 +455,21 @@ static void flush_relocations(void)
         *entry,
         *data_entry = NULL,
         *text_entry = NULL;
+    size_t size;
     struct pending_relocation pending;
     int i;
 
     if (n_rela_text) {
-        sbuf[SHID_RELA_TEXT].rela = calloc(n_rela_text, sizeof(Elf64_Rela));
-        shdr[SHID_RELA_TEXT].sh_size = n_rela_text * sizeof(Elf64_Rela);
+        size = n_rela_text * sizeof(Elf64_Rela);
+        elf_section_write(SHID_RELA_TEXT, NULL, size);
+        shdr[SHID_RELA_TEXT].sh_size = size;
         text_entry = sbuf[SHID_RELA_TEXT].rela;
     }
 
     if (n_rela_data) {
-        sbuf[SHID_RELA_DATA].rela = calloc(n_rela_data, sizeof(Elf64_Rela));
-        shdr[SHID_RELA_DATA].sh_size = n_rela_data * sizeof(Elf64_Rela);
+        size = n_rela_data * sizeof(Elf64_Rela);
+        elf_section_write(SHID_RELA_DATA, NULL, size);
+        shdr[SHID_RELA_DATA].sh_size = size;
         data_entry = sbuf[SHID_RELA_DATA].rela;
     }
 
@@ -502,7 +506,7 @@ static void flush_relocations(void)
         }
     }
 
-    array_clear(&pending_relocation_list);
+    array_empty(&pending_relocation_list);
 }
 
 /*
@@ -542,7 +546,7 @@ INTERNAL int elf_text_displacement(const struct symbol *label, int instr_offset)
 }
 
 /*
- * Initialize object file output. Called once before any other function.
+ * Initialize object file output. Called once for every input file.
  *
  * Write initial values to .symtab, starting with {0}, followed by a
  * special symbol representing the name of the source file, and section
@@ -556,6 +560,15 @@ INTERNAL void elf_init(FILE *output, const char *file)
     };
 
     Elf64_Sym entry = {0};
+
+    if (!shdr) {
+        shdr = calloc(SHNUM, sizeof(*shdr));
+    }
+
+    memcpy(shdr, shdr_template, sizeof(shdr_template));
+    current_function_entry = NULL;
+    n_rela_data = 0;
+    n_rela_text = 0;
 
     object_file_output = output;
     elf_symtab_add(entry);
@@ -689,7 +702,7 @@ INTERNAL int elf_flush(void)
     /* Write remaining data to section buffers. */
     flush_symtab_globals();
     flush_relocations();
-    array_clear(&pending_displacement_list);
+    array_empty(&pending_displacement_list);
 
     /* Add padding to force proper alignment. */
     elf_section_align(SHID_SHSTRTAB, 0x10);
@@ -710,24 +723,18 @@ INTERNAL int elf_flush(void)
 
     /* Write headers and section data. */
     fwrite(&header, sizeof(header), 1, object_file_output);
-    fwrite(&shdr, sizeof(shdr), 1, object_file_output);
+    fwrite(shdr, SHNUM * sizeof(*shdr), 1, object_file_output);
     for (i = 1; i < SHNUM; ++i) {
-        if (!shdr[i].sh_size)
-            continue;
-
-        switch (shdr[i].sh_type) {
+        if (shdr[i].sh_size) switch (shdr[i].sh_type) {
         case SHT_PROGBITS:
         case SHT_STRTAB:
             fwrite(sbuf[i].data, shdr[i].sh_size, 1, object_file_output);
-            free(sbuf[i].data);
             break;
         case SHT_SYMTAB:
             fwrite(sbuf[i].sym, shdr[i].sh_size, 1, object_file_output);
-            free(sbuf[i].sym);
             break;
         case SHT_RELA:
             fwrite(sbuf[i].rela, shdr[i].sh_size, 1, object_file_output);
-            free(sbuf[i].rela);
             break;
         default:
             assert(shdr[i].sh_type == SHT_NOBITS);
@@ -735,5 +742,20 @@ INTERNAL int elf_flush(void)
         }
     }
 
+    return 0;
+}
+
+INTERNAL int elf_finalize(void)
+{
+    int i;
+
+    array_clear(&globals);
+    array_clear(&pending_relocation_list);
+    array_clear(&pending_displacement_list);
+    for (i = 1; i < SHNUM; ++i) {
+        free(sbuf[i].data);
+    }
+
+    free(shdr);
     return 0;
 }

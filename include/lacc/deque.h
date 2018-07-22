@@ -41,6 +41,12 @@
 #define deque_get(deq, i) \
     array_get(&(deq)->array, (deq)->cursor + i)
 
+#define deque_empty(deq) \
+    do {                                                                       \
+        (deq)->cursor = 0;                                                     \
+        array_empty(&(deq)->array);                                            \
+    } while (0)
+
 #define deque_destroy(deq) \
     do {                                                                       \
         (deq)->cursor = 0;                                                     \

@@ -133,6 +133,9 @@ INTERNAL void elf_flush_text_displacements(void);
 
 INTERNAL int elf_flush(void);
 
+/* Free memory after all objects have been compiled. */
+INTERNAL int elf_finalize(void);
+
 /*
  * Insert relocation entry to symbol at the current position of .text.
  */

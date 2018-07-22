@@ -18,6 +18,7 @@ static int (*enter_context)(const struct symbol *);
 static int (*emit_instruction)(struct instruction);
 static int (*emit_data)(struct immediate);
 static int (*flush_backend)(void);
+static int (*finalize_backend)(void);
 
 /* Current function definition being compiled. */
 static struct definition *definition;
@@ -3143,11 +3144,13 @@ INTERNAL void set_compile_target(FILE *stream, const char *file)
         flush_backend = asm_flush;
         break;
     case TARGET_x86_64_OBJ:
+    case TARGET_x86_64_EXE:
         elf_init(stream, file);
         enter_context = elf_symbol;
         emit_instruction = elf_text;
         emit_data = elf_data;
         flush_backend = elf_flush;
+        finalize_backend = elf_finalize;
         break;
     }
 }
@@ -3163,13 +3166,13 @@ INTERNAL int compile(struct definition *def)
     case TARGET_IR_DOT:
         dotgen(def);
     case TARGET_PREPROCESS:
-    case TARGET_x86_64_EXE:
         break;
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_OBJ:
+    case TARGET_x86_64_EXE:
         if (is_function(def->symbol->type)) {
             compile_function(def);
-            if (context.target == TARGET_x86_64_OBJ) {
+            if (context.target != TARGET_x86_64_ASM) {
                 elf_flush_text_displacements();
             }
         } else {
@@ -3187,6 +3190,7 @@ INTERNAL int declare(const struct symbol *sym)
     switch (context.target) {
     case TARGET_x86_64_ASM:
     case TARGET_x86_64_OBJ:
+    case TARGET_x86_64_EXE:
         return enter_context(sym);
     default:
         return 0;
@@ -3195,8 +3199,16 @@ INTERNAL int declare(const struct symbol *sym)
 
 INTERNAL void flush(void)
 {
-    array_clear(&func_args);
+    array_empty(&func_args);
     if (flush_backend) {
         flush_backend();
+    }
+}
+
+INTERNAL void finalize(void)
+{
+    array_clear(&func_args);
+    if (finalize_backend) {
+        finalize_backend();
     }
 }

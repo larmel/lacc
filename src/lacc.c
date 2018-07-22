@@ -60,10 +60,19 @@
 # define LACC_STDLIB_PATH "/usr/local/lib/lacc/include"
 #endif
 
-static char *default_output_name;
-static const char *program, *input_name, *output_name;
+struct input_file {
+    const char *name;
+    const char *output_name;
+    int is_default_name;
+};
+
+static const char *program, *output_name;
 static int optimization_level;
 static int dump_symbols, dump_types;
+
+static int object_file_count;
+static array_of(struct input_file) input_files;
+static array_of(char *) predefined_macros;
 
 static void help(const char *arg)
 {
@@ -116,48 +125,85 @@ static void set_output_name(const char *file)
     add_linker_arg(file);
 }
 
-static void add_input_file(const char *file)
-{
-    input_name = file;
-    add_linker_arg(file);
-}
-
 /*
- * Write to default file if -o or -S is specified, using input file name
- * with suffix changed to '.o' or '.s', respectively. Linker target
- * defaults to a.out.
+ * Write to default file if -o, -S or -dot is specified, using input
+ * file name with suffix changed to '.o', '.s' or '.dot', respectively.
  */
-static const char *get_default_output(const char *input)
+static char *change_file_suffix(const char *file, enum target target)
 {
-    char ext;
+    char *name, *suffix;
     const char *dot;
     size_t len;
 
-    switch (context.target) {
+    switch (target) {
+    default: assert(0);
+    case TARGET_PREPROCESS:
+        return NULL;
+    case TARGET_IR_DOT:
+        suffix = "dot";
+        break;
     case TARGET_x86_64_ASM:
-        ext = 's';
+        suffix = "s";
         break;
     case TARGET_x86_64_OBJ:
-        ext = 'o';
-        break;
     case TARGET_x86_64_EXE:
-        return "a.out";
-    default:
-        return NULL;
+        suffix = "o";
+        break;
     }
 
-    dot = strrchr(input, '.');
+    dot = strrchr(file, '.');
     if (!dot) {
-        dot = input + strlen(input);
+        dot = file + strlen(file);
     }
 
-    len = (dot - input) + 1;
-    default_output_name = calloc(len + 2, sizeof(*default_output_name));
-    strncpy(default_output_name, input, len);
-    assert(default_output_name[len - 1] == '.');
-    default_output_name[len] = ext;
-    assert(default_output_name[len + 1] == '\0');
-    return default_output_name;
+    len = (dot - file) + 1;
+    name = calloc(len + strlen(suffix) + 1, sizeof(*name));
+    strncpy(name, file, len);
+    assert(name[len - 1] == '.');
+    strcpy(name + len, suffix);
+    return name;
+}
+
+static void add_input_file(const char *name)
+{
+    char *ptr, *obj;
+    struct input_file file = {0};
+
+    ptr = strrchr(name, '.');
+    if (!ptr) {
+        fprintf(stderr, "Unrecognized input file '%s'\n", name);
+        exit(1);
+    }
+
+    object_file_count++;
+    switch (*(ptr + 1)) {
+    case 'c':
+    case 'i':
+        file.name = name;
+        array_push_back(&input_files, file);
+        obj = change_file_suffix(name, TARGET_x86_64_OBJ);
+        add_linker_arg(obj);
+        free(obj);
+        break;
+    default:
+        add_linker_arg(name);
+        break;
+    }
+}
+
+static void clear_input_files(void)
+{
+    int i;
+    struct input_file *file;
+
+    for (i = 0; i < array_len(&input_files); ++i) {
+        file = &array_get(&input_files, i);
+        if (file->is_default_name) {
+            free((void *) file->output_name);
+        }
+    }
+
+    array_clear(&input_files);
 }
 
 static void set_c_std(const char *std)
@@ -191,23 +237,33 @@ static void long_option(const char *arg)
 
 static void define_macro(const char *arg)
 {
-    static char line[1024];
-    char *sep;
+    char *buf, *ptr;
+    size_t len;
 
-    if (strlen(arg) + 20 > sizeof(line)) {
-        fprintf(stderr, "Macro definition exceeds length limit.\n");
-        exit(1);
-    }
-
-    sep = strchr(arg, '=');
-    if (sep) {
-        sprintf(line, "#define %s", arg);
-        *(line + 8 + (sep - arg)) = ' ';
+    len = strlen(arg) + 11;
+    buf = calloc(len, sizeof(*buf));
+    ptr = strchr(arg, '=');
+    if (ptr) {
+        sprintf(buf, "#define %s", arg);
+        *(buf + 8 + (ptr - arg)) = ' ';
     } else {
-        sprintf(line, "#define %s 1", arg);
+        sprintf(buf, "#define %s 1", arg);
     }
 
-    inject_line(line);
+    array_push_back(&predefined_macros, buf);
+}
+
+static void clear_predefined_macros(void)
+{
+    int i;
+    char *buf;
+
+    for (i = 0; i < array_len(&predefined_macros); ++i) {
+        buf = array_get(&predefined_macros, i);
+        free(buf);
+    }
+
+    array_clear(&predefined_macros);
 }
 
 static void add_linker_flag(const char *arg)
@@ -251,8 +307,10 @@ static void add_linker_path(const char *path)
     }
 }
 
-static void parse_program_arguments(int argc, char *argv[])
+static int parse_program_arguments(int argc, char *argv[])
 {
+    int i, input_file_count;
+    struct input_file *file;
     struct option optv[] = {
         {"-S", &flag},
         {"-E", &flag},
@@ -292,13 +350,52 @@ static void parse_program_arguments(int argc, char *argv[])
 #endif
 
     parse_args(optv, argc, argv);
-    if (!input_name) {
-        help(argv[0]);
-        exit(1);
+
+    input_file_count = array_len(&input_files);
+    if (context.target != TARGET_x86_64_EXE
+        && input_file_count != object_file_count)
+    {
+        fprintf(stderr, "%s\n", "Unrecognized input files.");
+        return 1;
     }
 
-    if (!output_name) {
-        output_name = get_default_output(input_name);
+    if (input_file_count == 0) {
+        if (context.target != TARGET_x86_64_EXE || !object_file_count) {
+            fprintf(stderr, "%s\n", "No input files.");
+            return 1;
+        }
+    } else if (input_file_count == 1) {
+        file = &array_get(&input_files, 0);
+        if (output_name && context.target != TARGET_x86_64_EXE) {
+            file->output_name = output_name;
+        } else {
+            file->output_name = change_file_suffix(file->name, context.target);
+            file->is_default_name = 1;
+        }
+    } else {
+        if (output_name && context.target != TARGET_x86_64_EXE) {
+            fprintf(stderr, "%s\n",
+                "Cannot set -o with multiple inputs and -c, -S, -E or -dot.");
+            return 1;
+        }
+        for (i = 0; i < input_file_count; ++i) {
+            file = &array_get(&input_files, i);
+            file->output_name = change_file_suffix(file->name, context.target);
+            file->is_default_name = 1;
+        }
+    }
+
+    return 0;
+}
+
+static void register_argument_definitions(void)
+{
+    int i;
+    char *line;
+
+    for (i = 0; i < array_len(&predefined_macros); ++i) {
+        line = array_get(&predefined_macros, i);
+        inject_line(line);
     }
 }
 
@@ -334,29 +431,22 @@ static void add_include_search_paths(void)
     add_include_search_path("/usr/include");
 }
 
-int main(int argc, char *argv[])
+static int process_file(struct input_file file)
 {
-    int ret;
     FILE *output;
     struct definition *def;
     const struct symbol *sym;
 
-    init_preprocessing();
-    parse_program_arguments(argc, argv);
-    if (context.target == TARGET_x86_64_EXE) {
-        ret = invoke_linker();
-        goto end;
-    }
-
-    set_input_file(input_name);
+    preprocess_reset();
+    set_input_file(file.name);
     register_builtin_definitions(context.standard);
-    add_include_search_paths();
-    if (output_name) {
-        output = fopen(output_name, "w");
+    register_argument_definitions();
+    if (file.output_name) {
+        output = fopen(file.output_name, "w");
         if (!output) {
             fprintf(stderr, "Could not open output file '%s'.\n",
-                output_name);
-            exit(1);
+                file.output_name);
+            return 1;
         }
     } else {
         output = stdout;
@@ -365,7 +455,7 @@ int main(int argc, char *argv[])
     if (context.target == TARGET_PREPROCESS) {
         preprocess(output);
     } else {
-        set_compile_target(output, input_name);
+        set_compile_target(output, file.name);
         push_scope(&ns_ident);
         push_scope(&ns_tag);
         register_builtin_declarations();
@@ -398,14 +488,40 @@ int main(int argc, char *argv[])
         pop_scope(&ns_ident);
     }
 
-    ret = context.errors;
-    if (output_name) {
+    if (output != stdout) {
         fclose(output);
-        free(default_output_name);
+    }
+
+    return context.errors;
+}
+
+int main(int argc, char *argv[])
+{
+    int i, ret;
+    struct input_file file;
+
+    if ((ret = parse_program_arguments(argc, argv)) != 0) {
+        goto end;
+    }
+
+    add_include_search_paths();
+    for (i = 0, ret = 0; i < array_len(&input_files); ++i) {
+        file = array_get(&input_files, i);
+        if ((ret = process_file(file)) != 0) {
+            goto end;
+        }
+    }
+
+    if (context.target == TARGET_x86_64_EXE) {
+        ret = invoke_linker();
     }
 
 end:
+    finalize();
+    parse_finalize();
+    preprocess_finalize();
+    clear_predefined_macros();
+    clear_input_files();
     clear_linker_args();
-    clear_preprocessing();
     return ret;
 }

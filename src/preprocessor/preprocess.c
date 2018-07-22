@@ -28,17 +28,20 @@ static int output_preprocessed;
 /* Line currently being tokenized. */
 static char *line_buffer;
 
-INTERNAL void init_preprocessing()
+INTERNAL void preprocess_reset(void)
 {
-    init_macro_table();
+    line_buffer = NULL;
+    macro_reset();
+    strtab_reset();
+    tokenize_reset();
+    deque_empty(&lookahead);
 }
 
-INTERNAL void clear_preprocessing(void)
+INTERNAL void preprocess_finalize(void)
 {
-    clear_macro_table();
-    clear_input_buffers();
-    clear_string_buffer();
-    clear_string_table();
+    preprocess_reset();
+    input_finalize();
+    macro_finalize();
     deque_destroy(&lookahead);
 }
 

@@ -15,14 +15,21 @@ then
 fi
 
 # Build with lacc
-$lacc -std=c89 -fPIC -c sqlite/shell.c -o bin/shell.o
-valgrind $lacc -std=c89 -fPIC -c -v sqlite/sqlite3.c -o bin/sqlite3.o \
-	-DSQLITE_DEBUG \
-	-DSQLITE_MEMDEBUG \
-	--dump-symbols \
-	--dump-types \
-	> /dev/null
-$comp bin/shell.o bin/sqlite3.o -o bin/sqlite -lm -lpthread -ldl
+valgrind --leak-check=full --show-leak-kinds=all \
+	$lacc -std=c89 -fPIC -v -o bin/sqlite \
+		sqlite/shell.c sqlite/sqlite3.c \
+		-DSQLITE_DEBUG \
+		-DSQLITE_MEMDEBUG \
+		--dump-symbols \
+		--dump-types \
+		-lm -lpthread -ldl \
+		> /dev/null
+
+if [ $? -ne 0 ]
+then
+	echo "$(tput setaf 1)Compilation failed!$(tput sgr0)";
+	exit 1
+fi
 
 # Build with reference compiler
 $comp sqlite/shell.c sqlite/sqlite3.c -o bin/sqlite-cc -lm -lpthread -ldl

@@ -24,4 +24,7 @@ INTERNAL int declare(const struct symbol *sym);
 /* Flush any buffered output, no more input will follow. */
 INTERNAL void flush(void);
 
+/* Free resources after all input objects have been processed. */
+INTERNAL void finalize(void);
+
 #endif

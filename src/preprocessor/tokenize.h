@@ -45,11 +45,7 @@ INTERNAL struct token convert_preprocessing_char(struct token t);
  */
 INTERNAL struct token tokenize(const char *in, const char **endptr);
 
-/*
- * Free memory used to hold temporary strings during tokenization.
- *
- * Should be called exactly once before exiting.
- */
-INTERNAL void clear_string_buffer(void);
+/* Free memory used to hold temporary strings during tokenization. */
+INTERNAL void tokenize_reset(void);
 
 #endif

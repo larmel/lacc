@@ -97,59 +97,6 @@ static void cfg_empty(struct definition *def)
     array_empty(&def->nodes);
 }
 
-static void cfg_clear(struct definition *def)
-{
-    int i;
-    struct symbol *sym;
-
-    for (i = 0; i < array_len(&def->locals); ++i) {
-        sym = array_get(&def->locals, i);
-        if (is_temporary(sym)) {
-            sym_discard(sym);
-        }
-    }
-    for (i = 0; i < array_len(&def->labels); ++i) {
-        sym = array_get(&def->labels, i);
-        sym_discard(sym);
-    }
-    for (i = 0; i < array_len(&def->nodes); ++i) {
-        recycle_block(array_get(&def->nodes, i));
-    }
-
-    array_clear(&def->params);
-    array_clear(&def->locals);
-    array_clear(&def->labels);
-    array_clear(&def->nodes);
-    free(def);
-}
-
-static void deallocate_cfg(void)
-{
-    int i;
-    struct definition *def;
-    struct block *block;
-
-    for (i = 0; i < array_len(&expressions); ++i) {
-        block = array_get(&expressions, i);
-        array_clear(&block->code);
-        free(block);
-    }
-    for (i = 0; i < array_len(&blocks); ++i) {
-        block = array_get(&blocks, i);
-        array_clear(&block->code);
-        free(block);
-    }
-    for (i = 0; i < array_len(&prototypes); ++i) {
-        def = array_get(&prototypes, i);
-        cfg_clear(def);
-    }
-
-    deque_destroy(&definitions);
-    array_clear(&prototypes);
-    array_clear(&expressions);
-    array_clear(&blocks);
-}
-
 INTERNAL struct block *cfg_block_init(struct definition *def)
 {
     struct block *block;
@@ -212,6 +159,8 @@ INTERNAL void cfg_define(struct definition *def, const struct symbol *sym)
 
 INTERNAL struct definition *parse(void)
 {
+    int i;
+    struct block *block;
     static struct definition *def;
 
     /*
@@ -237,12 +186,52 @@ INTERNAL struct definition *parse(void)
      */
     if (!deque_len(&definitions)) {
         assert(peek().token == END);
-        deallocate_cfg();
+        for (i = 0; i < array_len(&expressions); ++i) {
+            block = array_get(&expressions, i);
+            recycle_block(block);
+        }
+        array_empty(&expressions);
         def = NULL;
-        clear_argument_lists();
     } else {
         def = deque_pop_front(&definitions);
     }
 
     return def;
+}
+
+INTERNAL void parse_finalize(void)
+{
+    int i;
+    struct definition *def;
+    struct block *block;
+
+    for (i = 0; i < array_len(&expressions); ++i) {
+        block = array_get(&expressions, i);
+        array_clear(&block->code);
+        free(block);
+    }
+
+    for (i = 0; i < array_len(&prototypes); ++i) {
+        def = array_get(&prototypes, i);
+        cfg_empty(def);
+        array_clear(&def->params);
+        array_clear(&def->locals);
+        array_clear(&def->labels);
+        array_clear(&def->nodes);
+        free(def);
+    }
+
+    for (i = 0; i < array_len(&blocks); ++i) {
+        block = array_get(&blocks, i);
+        array_clear(&block->code);
+        free(block);
+    }
+
+    deque_destroy(&definitions);
+    array_clear(&expressions);
+    array_clear(&prototypes);
+    array_clear(&blocks);
+
+    clear_argument_lists();
+    symtab_finalize();
 }

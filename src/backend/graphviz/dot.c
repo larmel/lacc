@@ -284,7 +284,6 @@ static void dot_print_node(struct block *node)
 
 INTERNAL void dot_init(FILE *output)
 {
-    assert(!stream);
     assert(output);
     stream = output;
 }

@@ -52,7 +52,10 @@ EXTERNAL struct namespace
     ns_label,   /* Labels. */
     ns_tag;     /* Tags. */
 
+/* Push scope to namespace. */
 INTERNAL void push_scope(struct namespace *ns);
+
+/* Internal structures are reset on popping the last scope. */
 INTERNAL void pop_scope(struct namespace *ns);
 
 /*
@@ -111,5 +114,8 @@ INTERNAL const struct symbol *yield_declaration(struct namespace *ns);
 
 /* Verbose output all symbols from symbol table. */
 INTERNAL void output_symbols(FILE *stream, struct namespace *ns);
+
+/* Free memory after all input files are processed. */
+INTERNAL void symtab_finalize(void);
 
 #endif

@@ -19,9 +19,9 @@ INTERNAL void preprocess(FILE *output);
 INTERNAL void inject_line(char *line);
 
 /* Initialize data structures used for preprocessing. */
-INTERNAL void init_preprocessing(void);
+INTERNAL void preprocess_reset(void);
 
 /* Free memory used for preprocessing. */
-INTERNAL void clear_preprocessing(void);
+INTERNAL void preprocess_finalize(void);
 
 #endif

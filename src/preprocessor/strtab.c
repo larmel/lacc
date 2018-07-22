@@ -52,7 +52,7 @@ static String str_hash_key(void *ref)
     return *str;
 }
 
-INTERNAL void clear_string_table(void)
+INTERNAL void strtab_reset(void)
 {
     if (initialized) {
         hash_destroy(&strtab);
@@ -60,6 +60,8 @@ INTERNAL void clear_string_table(void)
     }
 
     free(catbuf);
+    catbuf = NULL;
+    catlen = 0;
 }
 
 INTERNAL String str_register(const char *str, size_t len)

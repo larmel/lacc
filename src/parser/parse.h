@@ -30,4 +30,7 @@ INTERNAL void cfg_discard(struct definition *def);
 /* Create a basic block associated with control flow graph. */
 INTERNAL struct block *cfg_block_init(struct definition *def);
 
+/* Free memory after all input files are processed. */
+INTERNAL void parse_finalize(void);
+
 #endif

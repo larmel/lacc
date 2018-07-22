@@ -103,11 +103,9 @@ static int pop_file(void)
     return EOF;
 }
 
-INTERNAL void clear_input_buffers(void)
+INTERNAL void input_finalize(void)
 {
-    while (pop_file() != EOF)
-        ;
-
+    assert(!array_len(&source_stack));
     array_clear(&source_stack);
     array_clear(&search_path_list);
     free(path_buffer);
@@ -207,9 +205,16 @@ INTERNAL void set_input_file(const char *path)
     const char *sep;
     struct source source = {0};
 
-    rlen = FILE_BUFFER_SIZE;
-    rline = malloc(rlen);
-    rline[0] = '\0';
+    while (pop_file() != EOF)
+        ;
+
+    if (!rline) {
+        rlen = FILE_BUFFER_SIZE;
+        rline = calloc(rlen, sizeof(*rline));
+    } else {
+        assert(rlen > 0);
+        rline[0] = '\0';
+    }
 
     if (path) {
         sep = strrchr(path, '/');

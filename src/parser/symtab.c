@@ -95,6 +95,7 @@ INTERNAL const struct symbol *decl_memcpy = NULL;
  * actual definition.
  */
 static struct hash_table functions;
+static int functions_init;
 
 static String sym_hash_key(void *ref)
 {
@@ -103,17 +104,25 @@ static String sym_hash_key(void *ref)
 
 static struct symbol *sym_lookup_function(String name)
 {
-    static int init;
-
-    if (!init) {
+    if (!functions_init) {
         hash_init(&functions, 1024, &sym_hash_key, NULL, NULL);
-        init = 1;
+        functions_init = 1;
     }
 
     return hash_lookup(&functions, name);
 }
 
-static void sym_clear_buffers(void)
+static void symtab_reset_buffers(void)
+{
+    ns_tag.cursor = 0;
+    ns_ident.cursor = 0;
+    ns_label.cursor = 0;
+    decl_memcpy = NULL;
+    array_clear(&string_types);
+    hash_clear(&functions);
+}
+
+INTERNAL void symtab_finalize(void)
 {
     int i;
     struct symbol *sym;
@@ -125,7 +134,9 @@ static void sym_clear_buffers(void)
 
     array_clear(&temporaries);
     array_clear(&string_types);
-    hash_destroy(&functions);
+    if (functions_init) {
+        hash_destroy(&functions);
+    }
 }
 
 /*
@@ -199,14 +210,8 @@ INTERNAL void pop_scope(struct namespace *ns)
         }
 
         array_clear(&ns->symbol);
-
-        /*
-         * Temporaries should only be freed once, at exit. Check for a
-         * particular namespace that is only popped completely at the
-         * end of the translation unit.
-         */
         if (ns == &ns_ident) {
-            sym_clear_buffers();
+            symtab_reset_buffers();
         }
     } else {
         array_len(&ns->scope) -= 1;
