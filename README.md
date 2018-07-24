@@ -12,7 +12,7 @@ Install
 -------
 Clone and build from source, and the binary will be placed in `bin/lacc`.
 Default include paths on Linux assume GNU standard library headers being available, at `/usr/include/x86_64-linux-gnu`.
-To change to some other Linux libc, for example musl, edit [src/lacc.c](src/lacc.c#L282).
+To change to some other Linux libc, for example musl, edit [src/lacc.c](src/lacc.c#L277).
 \*BSD libc needs no special handling.
 
     git clone https://github.com/larmel/lacc.git
@@ -32,7 +32,7 @@ Execute `make uninstall` to remove all the files that were copied.
 Usage
 -----
 Command line interface is kept similar to GCC and other compilers, using mostly a subset of the same flags and options.
-A custom argument parser is used, and the definition of each option can be found in [src/lacc.c](src/lacc.c#L209).
+A custom argument parser is used, and the definition of each option can be found in [src/lacc.c](src/lacc.c#L212).
 
     -E      Output preprocessed.
     -S      Output GNU style textual x86_64 assembly.

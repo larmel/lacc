@@ -22,9 +22,11 @@ struct option {
 
 /*
  * Parse command line arguments according to option specification, and
- * return the number of tokens consumed in the process. Reshuffle argv
- * to have non-matching tokens at the end.
+ * return the number of tokens consumed in the process.
+ *
+ * Last element of optv must have NULL as rule, and provides a callback
+ * for arguments that do not match anything.
  */
-INTERNAL int parse_args(int optc, struct option *optv, int argc, char *argv[]);
+INTERNAL int parse_args(struct option *optv, int argc, char *argv[]);
 
 #endif

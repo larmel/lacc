@@ -87,20 +87,19 @@ static int match_arg(struct option opt, int argc, char *argv[])
  * an input like -std is first checked as "-std", then flags -s, -t, -d.
  * All characters in the token must match a flag to be accepted.
  *
- * Unmatched tokens are bubbled up to the last argv position. First
- * token is skipped, as it is assumed to contain program name.
+ * First token is skipped, as it is assumed to contain program name.
  */
-INTERNAL int parse_args(int optc, struct option *optv, int argc, char *argv[])
+INTERNAL int parse_args(struct option *optv, int argc, char *argv[])
 {
-    char *tmp;
-    int i = 1, j, c;
+    int i, c;
+    struct option *opt;
 
-    while (i < argc) {
-        c = 0;
+    for (i = 1; i < argc;) {
         if (*(argv[i]) == '-') {
-            for (j = 0; j < optc; ++j) {
-                if (!is_flag(optv[j])) {
-                    c = match_arg(optv[j], argc - i, argv + i);
+            c = 0;
+            for (opt = optv; opt->rule; ++opt) {
+                if (!is_flag(*opt)) {
+                    c = match_arg(*opt, argc - i, argv + i);
                     if (c) {
                         i += c;
                         break;
@@ -108,9 +107,9 @@ INTERNAL int parse_args(int optc, struct option *optv, int argc, char *argv[])
                 }
             }
             if (!c) {
-                for (j = 0; j < optc; ++j) {
-                    if (is_flag(optv[j])) {
-                        c += match_arg(optv[j], argc - i, argv + i);
+                for (opt = optv; opt->rule; ++opt) {
+                    if (is_flag(*opt)) {
+                        c += match_arg(*opt, argc - i, argv + i);
                     }
                 }
                 if (c == strlen(argv[i]) - 1) {
@@ -121,12 +120,10 @@ INTERNAL int parse_args(int optc, struct option *optv, int argc, char *argv[])
                 }
             }
         } else {
-            for (j = i + 1; j < argc; j++) {
-                tmp = argv[j - 1];
-                argv[j - 1] = argv[j];
-                argv[j] = tmp;
-            }
-            argc -= 1;
+            for (opt = optv; opt->rule; ++opt)
+                ;
+            opt->callback(argv[i]);
+            i++;
         }
     }
 

@@ -59,7 +59,7 @@
 #endif
 
 static char *default_output_name;
-static const char *program, *output_name;
+static const char *program, *input_name, *output_name;
 static FILE *output;
 static int optimization_level;
 static int dump_symbols, dump_types;
@@ -114,6 +114,11 @@ static void open_output_handle(const char *file)
         fprintf(stderr, "Could not open output file '%s'.\n", file);
         exit(1);
     }
+}
+
+static void add_input_file(const char *file)
+{
+    input_name = file;
 }
 
 /*
@@ -202,10 +207,8 @@ static void define_macro(const char *arg)
     inject_line(line);
 }
 
-static char *parse_program_arguments(int argc, char *argv[])
+static void parse_program_arguments(int argc, char *argv[])
 {
-    int c;
-    char *input = NULL;
     struct option optv[] = {
         {"-S", &flag},
         {"-E", &flag},
@@ -224,32 +227,24 @@ static char *parse_program_arguments(int argc, char *argv[])
         {"-std=", &set_c_std},
         {"-D:", &define_macro},
         {"--dump-symbols", &set_dump_state},
-        {"--dump-types", &set_dump_state}
+        {"--dump-types", &set_dump_state},
+        {NULL, &add_input_file}
     };
 
     program = argv[0];
     output = stdout;
     context.standard = STD_C89;
+    context.target = TARGET_IR_DOT;
 
     /* OpenBSD defaults to -fPIC unless explicitly turned off.  */
 #ifdef __OpenBSD__
     context.pic = 1;
 #endif
 
-    context.target = TARGET_IR_DOT;
-
-    c = parse_args(sizeof(optv)/sizeof(optv[0]), optv, argc, argv);
-    if (c == argc - 1) {
-        input = argv[c];
-        if (output == stdout) {
-            open_default_output(input);
-        }
-    } else if (c < argc - 1) {
-        help(argv[0]);
-        exit(1);
+    parse_args(optv, argc, argv);
+    if (input_name && output == stdout) {
+        open_default_output(input_name);
     }
-
-    return input;
 }
 
 /*
@@ -286,16 +281,15 @@ static void add_include_search_paths(void)
 
 int main(int argc, char *argv[])
 {
-    char *path;
     struct definition *def;
     const struct symbol *sym;
 
     init_preprocessing();
-    path = parse_program_arguments(argc, argv);
-    set_input_file(path);
+    parse_program_arguments(argc, argv);
+    set_input_file(input_name);
     register_builtin_definitions(context.standard);
     add_include_search_paths();
-    set_compile_target(output, path);
+    set_compile_target(output, input_name);
 
     if (context.target == TARGET_NONE) {
         preprocess(output);
