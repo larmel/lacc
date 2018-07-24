@@ -23,13 +23,14 @@ static int is_flag(struct option opt)
  * consumed. In case of flag option, return number of characters
  * matched. Otherwise, return 0.
  */
-static int match_arg(struct option opt, int argc, char *argv[])
+static int match_arg(struct option opt, int argc, char *argv[], int *ret)
 {
     int i;
     size_t rulelen, arglen;
     char lastchar, flag;
     assert(opt.callback);
 
+    *ret = 0;
     rulelen = strlen(opt.rule);
     arglen = strlen(argv[0]);
     lastchar = opt.rule[rulelen - 1];
@@ -40,13 +41,14 @@ static int match_arg(struct option opt, int argc, char *argv[])
             if (arglen == rulelen) {
                 if (argc < 2) {
                     fprintf(stderr, "Missing argument to %s.\n", opt.rule);
-                    exit(1);
+                    *ret = 1;
+                    return 0;
                 }
-                opt.callback(argv[1]);
+                *ret = opt.callback(argv[1]);
                 return 2;
             } else {
                 assert(arglen > rulelen);
-                opt.callback(argv[0] + rulelen);
+                *ret = opt.callback(argv[0] + rulelen);
                 return 1;
             }
         }
@@ -55,23 +57,24 @@ static int match_arg(struct option opt, int argc, char *argv[])
         if (!strncmp(opt.rule, argv[0], rulelen)) {
             if (arglen == rulelen) {
                 fprintf(stderr, "Missing argument to %s.\n", argv[0]);
-                exit(1);
+                *ret = 1;
+                return 0;
             }
-            opt.callback(argv[0] + rulelen);
+            *ret = opt.callback(argv[0] + rulelen);
             return 1;
         }
         break;
     default:
         if (!is_flag(opt)) {
             if (!strncmp(opt.rule, argv[0], rulelen)) {
-                opt.callback(argv[0]);
+                *ret = opt.callback(argv[0]);
                 return 1;
             }
         } else {
             flag = opt.rule[1];
             for (i = 1; i < strlen(argv[0]); ++i) {
                 if (argv[0][i] == flag) {
-                    opt.callback(opt.rule + 1);
+                    *ret = opt.callback(opt.rule + 1);
                     return 1;
                 }
             }
@@ -91,7 +94,7 @@ static int match_arg(struct option opt, int argc, char *argv[])
  */
 INTERNAL int parse_args(struct option *optv, int argc, char *argv[])
 {
-    int i, c;
+    int i, c, ret;
     struct option *opt;
 
     for (i = 1; i < argc;) {
@@ -99,7 +102,8 @@ INTERNAL int parse_args(struct option *optv, int argc, char *argv[])
             c = 0;
             for (opt = optv; opt->rule; ++opt) {
                 if (!is_flag(*opt)) {
-                    c = match_arg(*opt, argc - i, argv + i);
+                    c = match_arg(*opt, argc - i, argv + i, &ret);
+                    if (ret) return ret;
                     if (c) {
                         i += c;
                         break;
@@ -109,23 +113,25 @@ INTERNAL int parse_args(struct option *optv, int argc, char *argv[])
             if (!c) {
                 for (opt = optv; opt->rule; ++opt) {
                     if (is_flag(*opt)) {
-                        c += match_arg(*opt, argc - i, argv + i);
+                        c += match_arg(*opt, argc - i, argv + i, &ret);
+                        if (ret) return ret;
                     }
                 }
                 if (c == strlen(argv[i]) - 1) {
                     i += 1;
                 } else {
                     fprintf(stderr, "Invalid option %s.\n", argv[i]);
-                    exit(1);
+                    return 1;
                 }
             }
         } else {
             for (opt = optv; opt->rule; ++opt)
                 ;
-            opt->callback(argv[i]);
+            if ((ret = opt->callback(argv[i])) != 0)
+                return ret;
             i++;
         }
     }
 
-    return i;
+    return 0;
 }

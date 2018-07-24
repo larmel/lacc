@@ -195,9 +195,10 @@ INTERNAL void include_system_file(const char *name)
     }
 }
 
-INTERNAL void add_include_search_path(const char *path)
+INTERNAL int add_include_search_path(const char *path)
 {
     array_push_back(&search_path_list, path);
+    return 0;
 }
 
 INTERNAL void set_input_file(const char *path)

@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 /* Add command line argument to be passed to the linker. */
-INTERNAL void add_linker_arg(const char *opt);
+INTERNAL int add_linker_arg(const char *opt);
 
 /* Invoke the system linker. */
 INTERNAL int invoke_linker(void);

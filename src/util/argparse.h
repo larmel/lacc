@@ -17,7 +17,7 @@
  */
 struct option {
     const char *rule;
-    void (*callback)(const char *);
+    int (*callback)(const char *);
 };
 
 /*
@@ -26,6 +26,9 @@ struct option {
  *
  * Last element of optv must have NULL as rule, and provides a callback
  * for arguments that do not match anything.
+ *
+ * Abort if a callback produces a non-zero value, returning that value.
+ * Return 0 if all arguments were processed successfully.
  */
 INTERNAL int parse_args(struct option *optv, int argc, char *argv[]);
 

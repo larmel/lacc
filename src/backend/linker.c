@@ -62,13 +62,14 @@ static void init_linker(void)
     add_option("-L/usr/lib");
 }
 
-INTERNAL void add_linker_arg(const char *opt)
+INTERNAL int add_linker_arg(const char *opt)
 {
     if (!array_len(&ld_args)) {
         init_linker();
     }
 
     add_option(opt);
+    return 0;
 }
 
 INTERNAL int invoke_linker(void)

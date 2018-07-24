@@ -74,16 +74,16 @@ static int object_file_count;
 static array_of(struct input_file) input_files;
 static array_of(char *) predefined_macros;
 
-static void help(const char *arg)
+static int help(const char *arg)
 {
     fprintf(
         stderr,
         "Usage: %s [-(S|E|c)] [-v] [-fPIC] [-I <path>] [-o <file>] <file ...>\n",
         program);
-    exit(1);
+    return 1;
 }
 
-static void flag(const char *arg)
+static int flag(const char *arg)
 {
     switch (*arg) {
     case 'c':
@@ -105,9 +105,11 @@ static void flag(const char *arg)
         assert(0);
         break;
     }
+
+    return 0;
 }
 
-static void option(const char *arg)
+static int option(const char *arg)
 {
     if (!strcmp("-fPIC", arg)) {
         context.pic = 1;
@@ -116,13 +118,15 @@ static void option(const char *arg)
     } else if (!strcmp("-dot", arg)) {
         context.target = TARGET_IR_DOT;
     }
+    return 0;
 }
 
-static void set_output_name(const char *file)
+static int set_output_name(const char *file)
 {
     output_name = file;
     add_linker_arg("-o");
     add_linker_arg(file);
+    return 0;
 }
 
 /*
@@ -164,7 +168,7 @@ static char *change_file_suffix(const char *file, enum target target)
     return name;
 }
 
-static void add_input_file(const char *name)
+static int add_input_file(const char *name)
 {
     char *ptr, *obj;
     struct input_file file = {0};
@@ -172,7 +176,7 @@ static void add_input_file(const char *name)
     ptr = strrchr(name, '.');
     if (!ptr) {
         fprintf(stderr, "Unrecognized input file '%s'\n", name);
-        exit(1);
+        return 1;
     }
 
     object_file_count++;
@@ -189,6 +193,8 @@ static void add_input_file(const char *name)
         add_linker_arg(name);
         break;
     }
+
+    return 0;
 }
 
 static void clear_input_files(void)
@@ -206,7 +212,7 @@ static void clear_input_files(void)
     array_clear(&input_files);
 }
 
-static void set_c_std(const char *std)
+static int set_c_std(const char *std)
 {
     if (!strcmp("c89", std)) {
         context.standard = STD_C89;
@@ -216,26 +222,31 @@ static void set_c_std(const char *std)
         context.standard = STD_C11;
     } else {
         fprintf(stderr, "Unrecognized option %s.\n", std);
-        exit(1);
+        return 1;
     }
+
+    return 0;
 }
 
-static void set_optimization_level(const char *level)
+static int set_optimization_level(const char *level)
 {
     assert(isdigit(level[2]));
     optimization_level = level[2] - '0';
+    return 0;
 }
 
-static void long_option(const char *arg)
+static int long_option(const char *arg)
 {
     if (!strcmp("--dump-symbols", arg)) {
         dump_symbols = 1;
     } else if (!strcmp("--dump-types", arg)) {
         dump_types = 1;
     }
+
+    return 0;
 }
 
-static void define_macro(const char *arg)
+static int define_macro(const char *arg)
 {
     char *buf, *ptr;
     size_t len;
@@ -251,6 +262,7 @@ static void define_macro(const char *arg)
     }
 
     array_push_back(&predefined_macros, buf);
+    return 0;
 }
 
 static void clear_predefined_macros(void)
@@ -266,7 +278,7 @@ static void clear_predefined_macros(void)
     array_clear(&predefined_macros);
 }
 
-static void add_linker_flag(const char *arg)
+static int add_linker_flag(const char *arg)
 {
     char *end;
 
@@ -285,9 +297,11 @@ static void add_linker_flag(const char *arg)
             add_linker_arg(arg);
         } while (end);
     }
+
+    return 0;
 }
 
-static void add_linker_library(const char *lib)
+static int add_linker_library(const char *lib)
 {
     if (lib[-2] == '-') {
         add_linker_arg(lib - 2);
@@ -295,9 +309,11 @@ static void add_linker_library(const char *lib)
         add_linker_arg("-l");
         add_linker_arg(lib);
     }
+
+    return 0;
 }
 
-static void add_linker_path(const char *path)
+static int add_linker_path(const char *path)
 {
     if (path[-2] == '-') {
         add_linker_arg(path - 2);
@@ -305,6 +321,8 @@ static void add_linker_path(const char *path)
         add_linker_arg("-L");
         add_linker_arg(path);
     }
+
+    return 0;
 }
 
 static int parse_program_arguments(int argc, char *argv[])
@@ -349,7 +367,9 @@ static int parse_program_arguments(int argc, char *argv[])
     context.pic = 1;
 #endif
 
-    parse_args(optv, argc, argv);
+    if ((i = parse_args(optv, argc, argv)) != 0) {
+        return i;
+    }
 
     input_file_count = array_len(&input_files);
     if (context.target != TARGET_x86_64_EXE

@@ -16,7 +16,7 @@ INTERNAL void input_finalize(void);
  * Paths specified with -I, append to list of directories to search when
  * resolving includes.
  */
-INTERNAL void add_include_search_path(const char *);
+INTERNAL int add_include_search_path(const char *);
 
 /* Push new include file. */
 INTERNAL void include_file(const char *);
