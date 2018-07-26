@@ -103,7 +103,7 @@ static void option(const char *arg)
         context.pic = 1;
     } else if (!strcmp("-fno-PIC", arg)) {
         context.pic = 0;
-    } else assert(0);
+    }
 }
 
 static void open_output_handle(const char *file)
@@ -228,6 +228,7 @@ static void parse_program_arguments(int argc, char *argv[])
         {"-D:", &define_macro},
         {"--dump-symbols", &set_dump_state},
         {"--dump-types", &set_dump_state},
+        {"-pipe", &option},
         {NULL, &add_input_file}
     };
 
