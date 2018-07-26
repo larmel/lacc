@@ -3131,8 +3131,7 @@ static void compile_function(struct definition *def)
 INTERNAL void set_compile_target(FILE *stream, const char *file)
 {
     switch (context.target) {
-    case TARGET_NONE:
-        break;
+    default: assert(0);
     case TARGET_IR_DOT:
         dot_init(stream);
         break;
@@ -3143,7 +3142,7 @@ INTERNAL void set_compile_target(FILE *stream, const char *file)
         emit_data = asm_data;
         flush_backend = asm_flush;
         break;
-    case TARGET_x86_64_ELF:
+    case TARGET_x86_64_OBJ:
         elf_init(stream, file);
         enter_context = elf_symbol;
         emit_instruction = elf_text;
@@ -3163,13 +3162,13 @@ INTERNAL int compile(struct definition *def)
     switch (context.target) {
     case TARGET_IR_DOT:
         dotgen(def);
-    case TARGET_NONE:
+    case TARGET_PREPROCESS:
         break;
     case TARGET_x86_64_ASM:
-    case TARGET_x86_64_ELF:
+    case TARGET_x86_64_OBJ:
         if (is_function(def->symbol->type)) {
             compile_function(def);
-            if (context.target == TARGET_x86_64_ELF) {
+            if (context.target == TARGET_x86_64_OBJ) {
                 elf_flush_text_displacements();
             }
         } else {
@@ -3186,7 +3185,7 @@ INTERNAL int declare(const struct symbol *sym)
 {
     switch (context.target) {
     case TARGET_x86_64_ASM:
-    case TARGET_x86_64_ELF:
+    case TARGET_x86_64_OBJ:
         return enter_context(sym);
     default:
         return 0;

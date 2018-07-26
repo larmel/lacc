@@ -77,13 +77,13 @@ static void flag(const char *arg)
 {
     switch (*arg) {
     case 'c':
-        context.target = TARGET_x86_64_ELF;
+        context.target = TARGET_x86_64_OBJ;
         break;
     case 'S':
         context.target = TARGET_x86_64_ASM;
         break;
     case 'E':
-        context.target = TARGET_NONE;
+        context.target = TARGET_PREPROCESS;
         break;
     case 'v':
         context.verbose += 1;
@@ -135,7 +135,7 @@ static void open_default_output(const char *input)
     case TARGET_x86_64_ASM:
         ext = 's';
         break;
-    case TARGET_x86_64_ELF:
+    case TARGET_x86_64_OBJ:
         ext = 'o';
         break;
     default:
@@ -289,11 +289,11 @@ int main(int argc, char *argv[])
     set_input_file(input_name);
     register_builtin_definitions(context.standard);
     add_include_search_paths();
-    set_compile_target(output, input_name);
 
-    if (context.target == TARGET_NONE) {
+    if (context.target == TARGET_PREPROCESS) {
         preprocess(output);
     } else {
+        set_compile_target(output, input_name);
         push_scope(&ns_ident);
         push_scope(&ns_tag);
         register_builtin_declarations();
