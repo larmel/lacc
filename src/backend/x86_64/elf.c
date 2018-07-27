@@ -15,15 +15,12 @@
 #define SHID_SHSTRTAB 1
 #define SHID_STRTAB 2
 #define SHID_SYMTAB 3
-#define SHID_RELA_TEXT 4
-#define SHID_RELA_DATA 5
-#define SHID_BSS 6
-#define SHID_DATA 7
-#define SHID_RODATA 8
-#define SHID_TEXT 9
-
-#define SHDR_CHAIN_OFFSET(a, b) \
-    shdr[b].sh_offset = shdr[a].sh_offset + shdr[a].sh_size
+#define SHID_BSS 4
+#define SHID_RODATA 5
+#define SHID_DATA 6
+#define SHID_RELA_DATA 7
+#define SHID_TEXT 8
+#define SHID_RELA_TEXT 9
 
 #define symtab_index_of(s) ((s)->stack_offset)
 #define symtab_lookup(s) (&sbuf[SHID_SYMTAB].sym[(s)->stack_offset])
@@ -61,12 +58,12 @@ static char *shname[] = {
     ".shstrtab",
     ".strtab",
     ".symtab",
-    ".rela.text",
-    ".rela.data",
     ".bss",
-    ".data",
     ".rodata",
-    ".text"
+    ".data",
+    ".rela.data",
+    ".text",
+    ".rela.text"
 };
 
 static Elf64_Shdr *shdr, shdr_template[] = {
@@ -107,48 +104,12 @@ static Elf64_Shdr *shdr, shdr_template[] = {
         4,              /* sh_addralign. */
         sizeof(Elf64_Sym)
     },
-    { /* .rela.text */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_RELA,       /* sh_type. */
-        0x0,
-        0x0,            /* Virtual address. */
-        0x0,            /* Offset in file (TODO). */
-        0,              /* Size of section (TODO). */
-        SHID_SYMTAB,    /* sh_link, symbol table referenced by reloc. */
-        SHID_TEXT,      /* sh_info, section which relocations apply. */
-        8,              /* sh_addralign. */
-        sizeof(Elf64_Rela)
-    },
-    { /* .rela.data */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_RELA,       /* sh_type. */
-        0x0,
-        0x0,            /* Virtual address. */
-        0x0,            /* Offset in file (TODO). */
-        0,              /* Size of section (TODO). */
-        SHID_SYMTAB,    /* sh_link, symbol table referenced by reloc. */
-        SHID_DATA,      /* sh_info, section which relocations apply. */
-        8,              /* sh_addralign. */
-        sizeof(Elf64_Rela)
-    },
     { /* .bss */
         0,              /* sh_name, index into shstrtab. */
         SHT_NOBITS,     /* Section type. */
         SHF_WRITE | SHF_ALLOC,
         0x0,            /* Virtual address. */
-        0x0,            /* Offset in file (TODO). */
-        0,              /* Size of section (TODO). */
-        SHN_UNDEF,      /* sh_link. */
-        0,              /* sh_info. */
-        4,              /* sh_addralign. */
-        0               /* sh_entsize. */
-    },
-    { /* .data */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_PROGBITS,   /* Section type. */
-        SHF_WRITE | SHF_ALLOC,
-        0x0,            /* Virtual address. */
-        0x0,            /* Offset in file (TODO). */
+        0x0,            /* Offset in file. */
         0,              /* Size of section (TODO). */
         SHN_UNDEF,      /* sh_link. */
         0,              /* sh_info. */
@@ -167,6 +128,30 @@ static Elf64_Shdr *shdr, shdr_template[] = {
         16,             /* sh_addralign. */
         0               /* sh_entsize. */
     },
+    { /* .data */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_PROGBITS,   /* Section type. */
+        SHF_WRITE | SHF_ALLOC,
+        0x0,            /* Virtual address. */
+        0x0,            /* Offset in file (TODO). */
+        0,              /* Size of section (TODO). */
+        SHN_UNDEF,      /* sh_link. */
+        0,              /* sh_info. */
+        4,              /* sh_addralign. */
+        0               /* sh_entsize. */
+    },
+    { /* .rela.data */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_RELA,       /* sh_type. */
+        0x0,
+        0x0,            /* Virtual address. */
+        0x0,            /* Offset in file (TODO). */
+        0,              /* Size of section (TODO). */
+        SHID_SYMTAB,    /* sh_link, symbol table referenced by reloc. */
+        SHID_DATA,      /* sh_info, section which relocations apply. */
+        8,              /* sh_addralign. */
+        sizeof(Elf64_Rela)
+    },
     { /* .text */
         0,              /* sh_name, index into shstrtab. */
         SHT_PROGBITS,   /* sh_type. */
@@ -178,6 +163,18 @@ static Elf64_Shdr *shdr, shdr_template[] = {
         0,              /* sh_info. */
         16,             /* sh_addralign. */
         0               /* sh_entsize. */
+    },
+    { /* .rela.text */
+        0,              /* sh_name, index into shstrtab. */
+        SHT_RELA,       /* sh_type. */
+        0x0,
+        0x0,            /* Virtual address. */
+        0x0,            /* Offset in file (TODO). */
+        0,              /* Size of section (TODO). */
+        SHID_SYMTAB,    /* sh_link, symbol table referenced by reloc. */
+        SHID_TEXT,      /* sh_info, section which relocations apply. */
+        8,              /* sh_addralign. */
+        sizeof(Elf64_Rela)
     }
 };
 
@@ -291,15 +288,53 @@ static int elf_section_align(int shid, int align)
 {
     size_t offset;
     assert(0 < shid && shid < SHNUM);
-    assert(
-        shdr[shid].sh_type == SHT_STRTAB ||
-        shdr[shid].sh_type == SHT_PROGBITS ||
-        shdr[shid].sh_type == SHT_NOBITS);
+    assert(shdr[shid].sh_type == SHT_STRTAB
+        || shdr[shid].sh_type == SHT_SYMTAB
+        || shdr[shid].sh_type == SHT_PROGBITS
+        || shdr[shid].sh_type == SHT_RELA
+        || shdr[shid].sh_type == SHT_NOBITS);
+
+    if (shdr[shid].sh_addralign < align) {
+        shdr[shid].sh_addralign = align;
+        assert(align <= 16);
+    }
 
     offset = shdr[shid].sh_size;
-    if (offset % align != 0)
+    if (offset % align != 0) {
         elf_section_write(shid, NULL, align - (offset % align));
+    }
+
     return offset;
+}
+
+/*
+ * Update offset values into the object file for each section.
+ * Insert padding between sections to make offsets respect alignment.
+ */
+static void elf_chain_offsets(void)
+{
+    int i, j;
+    int padding;
+
+    for (j = 1; j < SHNUM && shdr[j].sh_type == SHT_NOBITS; ++j)
+        ;
+
+    assert(j < SHNUM);
+    for (i = j + 1; i < SHNUM; ++i) {
+        if (shdr[i].sh_type == SHT_NOBITS)
+            continue;
+
+        assert(j > 0);
+        assert(shdr[j].sh_type != SHT_NOBITS);
+        shdr[i].sh_offset = shdr[j].sh_offset + shdr[j].sh_size;
+        if (shdr[i].sh_addralign > 1) {
+            padding = shdr[i].sh_offset % shdr[i].sh_addralign;
+            shdr[i].sh_offset += padding;
+            assert(padding < 16);
+        }
+
+        j = i;
+    }
 }
 
 /*
@@ -690,6 +725,48 @@ INTERNAL int elf_data(struct immediate imm)
     return elf_section_write(SHID_DATA, ptr, w);
 }
 
+static void write_data(const void *ptr, size_t size)
+{
+    char padding[16] = {0};
+    size_t b;
+
+    if (!ptr) {
+        assert(size <= sizeof(padding));
+        ptr = padding;
+    }
+
+    b = fwrite(ptr, 1, size, object_file_output);
+    if (b != size) {
+        fprintf(stderr, "Write failed with %lu out of %lu bytes.\n", b, size);
+        exit(1);
+    }
+}
+
+static void write_sections(void)
+{
+    int i, j;
+    size_t written;
+
+    for (i = 1, j = -1; i < SHNUM; ++i) {
+        if (shdr[i].sh_type == SHT_NOBITS)
+            continue;
+
+        if (j != -1) {
+            written = shdr[j].sh_offset + shdr[j].sh_size;
+            assert(written <= shdr[i].sh_offset);
+            if (written < shdr[i].sh_offset) {
+                write_data(NULL, shdr[i].sh_offset - written);
+            }
+        }
+
+        j = i;
+        if (shdr[i].sh_size) {
+            assert(sbuf[i].data);
+            write_data(sbuf[i].data, shdr[i].sh_size);
+        }
+    }
+}
+
 INTERNAL int elf_flush(void)
 {
     int i;
@@ -704,43 +781,13 @@ INTERNAL int elf_flush(void)
     flush_relocations();
     array_empty(&pending_displacement_list);
 
-    /* Add padding to force proper alignment. */
-    elf_section_align(SHID_SHSTRTAB, 0x10);
-    elf_section_align(SHID_STRTAB, 0x10);
-    elf_section_align(SHID_STRTAB, 0x10);
-    elf_section_align(SHID_DATA, 0x10);
-    elf_section_align(SHID_RODATA, 0x10);
-
-    /* Fill in missing offset and size values */
-    SHDR_CHAIN_OFFSET(SHID_SHSTRTAB, SHID_STRTAB);
-    SHDR_CHAIN_OFFSET(SHID_STRTAB, SHID_SYMTAB);
-    SHDR_CHAIN_OFFSET(SHID_SYMTAB, SHID_RELA_TEXT);
-    SHDR_CHAIN_OFFSET(SHID_RELA_TEXT, SHID_RELA_DATA);
-    SHDR_CHAIN_OFFSET(SHID_RELA_DATA, SHID_BSS);
-    SHDR_CHAIN_OFFSET(SHID_RELA_DATA, SHID_DATA);
-    SHDR_CHAIN_OFFSET(SHID_DATA, SHID_RODATA);
-    SHDR_CHAIN_OFFSET(SHID_RODATA, SHID_TEXT);
+    /* Fill in missing offsets in section headers. */
+    elf_chain_offsets();
 
     /* Write headers and section data. */
-    fwrite(&header, sizeof(header), 1, object_file_output);
-    fwrite(shdr, SHNUM * sizeof(*shdr), 1, object_file_output);
-    for (i = 1; i < SHNUM; ++i) {
-        if (shdr[i].sh_size) switch (shdr[i].sh_type) {
-        case SHT_PROGBITS:
-        case SHT_STRTAB:
-            fwrite(sbuf[i].data, shdr[i].sh_size, 1, object_file_output);
-            break;
-        case SHT_SYMTAB:
-            fwrite(sbuf[i].sym, shdr[i].sh_size, 1, object_file_output);
-            break;
-        case SHT_RELA:
-            fwrite(sbuf[i].rela, shdr[i].sh_size, 1, object_file_output);
-            break;
-        default:
-            assert(shdr[i].sh_type == SHT_NOBITS);
-            break;
-        }
-    }
+    write_data(&header, sizeof(header));
+    write_data(shdr, SHNUM * sizeof(*shdr));
+    write_sections();
 
     return 0;
 }
