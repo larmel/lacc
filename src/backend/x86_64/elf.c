@@ -676,6 +676,7 @@ INTERNAL int elf_symbol(const struct symbol *sym)
         assert(sym->linkage == LINK_EXTERN);
         entry.st_shndx = SHN_COMMON;
         entry.st_size = size_of(sym->type);
+        entry.st_value = sym_alignment(sym);
     }
 
     elf_symtab_assoc((struct symbol *) sym, entry);
