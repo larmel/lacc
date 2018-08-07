@@ -16,7 +16,7 @@ fi
 
 # Build with lacc
 valgrind --leak-check=full --show-leak-kinds=all \
-	$lacc -std=c89 -fPIC -v -o bin/sqlite \
+	$lacc -std=c89 -fPIC -g -v -o bin/sqlite \
 		sqlite/shell.c sqlite/sqlite3.c \
 		-DSQLITE_DEBUG \
 		-DSQLITE_MEMDEBUG \

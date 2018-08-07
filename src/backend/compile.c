@@ -6,6 +6,7 @@
 #include "graphviz/dot.h"
 #include "x86_64/abi.h"
 #include "x86_64/assemble.h"
+#include "x86_64/dwarf.h"
 #include "x86_64/elf.h"
 #include "x86_64/instr.h"
 #include <lacc/context.h>

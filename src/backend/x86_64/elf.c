@@ -4,26 +4,11 @@
 #endif
 #include "abi.h"
 #include "elf.h"
+#include "dwarf.h"
 #include <lacc/array.h>
 #include <lacc/context.h>
 
 #include <assert.h>
-
-#define SHNUM 10        /* Number of section headers. */
-
-#define SHID_ZERO 0
-#define SHID_SHSTRTAB 1
-#define SHID_STRTAB 2
-#define SHID_SYMTAB 3
-#define SHID_BSS 4
-#define SHID_RODATA 5
-#define SHID_DATA 6
-#define SHID_RELA_DATA 7
-#define SHID_TEXT 8
-#define SHID_RELA_TEXT 9
-
-#define symtab_index_of(s) ((s)->stack_offset)
-#define symtab_lookup(s) (&sbuf[SHID_SYMTAB].sym[(s)->stack_offset])
 
 static FILE *object_file_output;
 
@@ -49,141 +34,36 @@ static Elf64_Ehdr header = {
     0x0,                /* Program header size. */
     0,                  /* Number of program header entries. */
     sizeof(Elf64_Shdr), /* e_shentsize. */
-    SHNUM,              /* e_shnum, number of section headers. */
-    SHID_SHSTRTAB       /* e_shstrndx, index of shstrtab. */
+    0,                  /* e_shnum, number of section headers. (TODO) */
+    0                   /* e_shstrndx, index of shstrtab. (TODO) */
 };
 
-static char *shname[] = {
-    NULL,
-    ".shstrtab",
-    ".strtab",
-    ".symtab",
-    ".bss",
-    ".rodata",
-    ".data",
-    ".rela.data",
-    ".text",
-    ".rela.text"
-};
+#define SHNUM_MAX 24
 
-static Elf64_Shdr *shdr, shdr_template[] = {
-    {0},                /* First section header must be all-zero. */
-    { /* .shstrtab */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_STRTAB,     /* sh_type. */
-        0,              /* sh_flags. */
-        0x0,            /* sh_addr. */
-        sizeof(Elf64_Ehdr) + SHNUM * sizeof(Elf64_Shdr),
-        0,              /* sh_size (TODO). */
-        SHN_UNDEF,      /* sh_link. */
-        0,              /* sh_info. */
-        1,              /* sh_addralign. */
-        0               /* sh_entsize. */
-    },
-    { /* .strtab */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_STRTAB,     /* sh_type. */
-        0,              /* sh_flags. */
-        0x0,            /* sh_addr. */
-        0,              /* sh_offset (TODO). */
-        0,              /* sh_size (TODO). */
-        SHN_UNDEF,      /* sh_link. */
-        0,              /* sh_info. */
-        1,              /* sh_addralign. */
-        0               /* sh_entsize. */
-    },
-    { /* .symtab */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_SYMTAB,     /* sh_type. */
-        0,              /* sh_flags. */
-        0x0,            /* sh_addr. */
-        0,              /* sh_offset (TODO). */
-        0,              /* sh_size (TODO). */
-        SHID_STRTAB,    /* sh_link, section number of strtab. */
-        0,              /* sh_info, index of first non-local symbol. */
-        4,              /* sh_addralign. */
-        sizeof(Elf64_Sym)
-    },
-    { /* .bss */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_NOBITS,     /* Section type. */
-        SHF_WRITE | SHF_ALLOC,
-        0x0,            /* Virtual address. */
-        0x0,            /* Offset in file. */
-        0,              /* Size of section (TODO). */
-        SHN_UNDEF,      /* sh_link. */
-        0,              /* sh_info. */
-        4,              /* sh_addralign. */
-        0               /* sh_entsize. */
-    },
-    { /* .rodata */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_PROGBITS,   /* sh_type. */
-        SHF_ALLOC,
-        0x0,            /* Virtual address. */
-        0x0,            /* Offset in file (TODO). */
-        0,              /* Size of section (TODO). */
-        SHN_UNDEF,      /* sh_link. */
-        0,              /* sh_info. */
-        16,             /* sh_addralign. */
-        0               /* sh_entsize. */
-    },
-    { /* .data */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_PROGBITS,   /* Section type. */
-        SHF_WRITE | SHF_ALLOC,
-        0x0,            /* Virtual address. */
-        0x0,            /* Offset in file (TODO). */
-        0,              /* Size of section (TODO). */
-        SHN_UNDEF,      /* sh_link. */
-        0,              /* sh_info. */
-        4,              /* sh_addralign. */
-        0               /* sh_entsize. */
-    },
-    { /* .rela.data */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_RELA,       /* sh_type. */
-        0x0,
-        0x0,            /* Virtual address. */
-        0x0,            /* Offset in file (TODO). */
-        0,              /* Size of section (TODO). */
-        SHID_SYMTAB,    /* sh_link, symbol table referenced by reloc. */
-        SHID_DATA,      /* sh_info, section which relocations apply. */
-        8,              /* sh_addralign. */
-        sizeof(Elf64_Rela)
-    },
-    { /* .text */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_PROGBITS,   /* sh_type. */
-        SHF_EXECINSTR | SHF_ALLOC,
-        0x0,            /* Virtual address. */
-        0x0,            /* Offset in file (TODO). */
-        0,              /* Size of section (TODO). */
-        SHN_UNDEF,      /* sh_link. */
-        0,              /* sh_info. */
-        16,             /* sh_addralign. */
-        0               /* sh_entsize. */
-    },
-    { /* .rela.text */
-        0,              /* sh_name, index into shstrtab. */
-        SHT_RELA,       /* sh_type. */
-        0x0,
-        0x0,            /* Virtual address. */
-        0x0,            /* Offset in file (TODO). */
-        0,              /* Size of section (TODO). */
-        SHID_SYMTAB,    /* sh_link, symbol table referenced by reloc. */
-        SHID_TEXT,      /* sh_info, section which relocations apply. */
-        8,              /* sh_addralign. */
-        sizeof(Elf64_Rela)
-    }
-};
+/* Section headers. */
+static Elf64_Shdr shdr[SHNUM_MAX];
+static int shnum;
+
+/* Ids of default sections. */
+static int shid_shstrtab;
+static int shid_strtab;
+static int shid_symtab;
+static int shid_bss;
+static int shid_rodata;
+static int shid_data;
+static int shid_rela_data;
+static int shid_text;
+static int shid_rela_text;
+
+#define symtab_index_of(s) ((s)->stack_offset)
+#define symtab_lookup(s) (&sbuf[shid_symtab].sym[(s)->stack_offset])
 
 /* Data associated with each section. */
 static union {
     unsigned char *data;
     Elf64_Sym *sym;
     Elf64_Rela *rela;
-} sbuf[SHNUM];
+} sbuf[SHNUM_MAX];
 
 /*
  * Pending relocations, waiting for sym->stack_offset to be resolved to
@@ -235,16 +115,16 @@ struct pending_displacement {
 static array_of(struct pending_displacement) pending_displacement_list;
 
 /* Write bytes to section. If ptr is NULL, fill with zeros. */
-static size_t elf_section_write(int shid, const void *data, size_t n)
+INTERNAL size_t elf_section_write(int shid, const void *data, size_t n)
 {
     /*
      * Section data buffer capacity, in bytes. Buffer is kept in sbuf,
      * indexed by section id. 
      */
-    static size_t scap[SHNUM];
+    static size_t scap[SHNUM_MAX];
 
     size_t offset;
-    assert(0 < shid && shid < SHNUM);
+    assert(0 < shid && shid < shnum);
     assert(
         shdr[shid].sh_type == SHT_STRTAB ||
         shdr[shid].sh_type == SHT_SYMTAB ||
@@ -279,6 +159,11 @@ static size_t elf_section_write(int shid, const void *data, size_t n)
     return offset;
 }
 
+INTERNAL void *elf_section_buffer(int shid)
+{
+    return sbuf[shid].data;
+}
+
 /*
  * Align data section to specified number of bytes. Following calls to
  * elf_section_write start at this alignment. Padding is filled with
@@ -287,7 +172,7 @@ static size_t elf_section_write(int shid, const void *data, size_t n)
 static int elf_section_align(int shid, int align)
 {
     size_t offset;
-    assert(0 < shid && shid < SHNUM);
+    assert(0 < shid && shid < shnum);
     assert(shdr[shid].sh_type == SHT_STRTAB
         || shdr[shid].sh_type == SHT_SYMTAB
         || shdr[shid].sh_type == SHT_PROGBITS
@@ -316,11 +201,14 @@ static void elf_chain_offsets(void)
     int i, j;
     int padding;
 
-    for (j = 1; j < SHNUM && shdr[j].sh_type == SHT_NOBITS; ++j)
+    for (j = 1; j < shnum && shdr[j].sh_type == SHT_NOBITS; ++j)
         ;
 
-    assert(j < SHNUM);
-    for (i = j + 1; i < SHNUM; ++i) {
+    assert(j < shnum);
+    assert(shdr[j].sh_type != SHT_NOBITS);
+    shdr[j].sh_offset = sizeof(Elf64_Ehdr) + shnum * sizeof(Elf64_Shdr);
+
+    for (i = j + 1; i < shnum; ++i) {
         if (shdr[i].sh_type == SHT_NOBITS)
             continue;
 
@@ -345,7 +233,7 @@ static int elf_strtab_add(int shid, const char *str)
 {
     int pos;
 
-    assert(0 < shid && shid < SHNUM);
+    assert(0 < shid && shid < shnum);
     assert(shdr[shid].sh_type == SHT_STRTAB);
 
     if (!shdr[shid].sh_size)
@@ -367,17 +255,56 @@ static int elf_symtab_add(Elf64_Sym entry)
 {
     int i;
 
-    i = shdr[SHID_SYMTAB].sh_size / sizeof(Elf64_Sym);
-    elf_section_write(SHID_SYMTAB, &entry, sizeof(Elf64_Sym));
+    i = shdr[shid_symtab].sh_size / sizeof(Elf64_Sym);
+    elf_section_write(shid_symtab, &entry, sizeof(Elf64_Sym));
 
-    if (entry.st_info >> 4 == STB_GLOBAL && !shdr[SHID_SYMTAB].sh_info) {
-        shdr[SHID_SYMTAB].sh_info = i;
+    if (entry.st_info >> 4 == STB_GLOBAL && !shdr[shid_symtab].sh_info) {
+        shdr[shid_symtab].sh_info = i;
     } else {
         assert(i == 0 ||
-            (entry.st_info >> 4) == (sbuf[SHID_SYMTAB].sym[i-1].st_info >> 4));
+            (entry.st_info >> 4) == (sbuf[shid_symtab].sym[i-1].st_info >> 4));
     }
 
     return i;
+}
+
+INTERNAL int elf_section_init(
+    const char *name,
+    int type,
+    int flags,
+    int link,
+    int info,
+    int addralign,
+    int entsize)
+{
+    int shid;
+
+    /* First section header is all-zero. */
+    if (!shnum) {
+        shnum++;
+        memset(shdr, 0, sizeof(Elf64_Shdr));
+    }
+
+    shid = shnum++;
+    assert(shid < SHNUM_MAX);
+
+    memset(shdr + shid, 0, sizeof(Elf64_Shdr));
+    shdr[shid].sh_type = type;
+    shdr[shid].sh_flags = flags;
+    shdr[shid].sh_link = link;
+    shdr[shid].sh_info = info;
+    shdr[shid].sh_addralign = addralign;
+    shdr[shid].sh_entsize = entsize;
+    if (shid_shstrtab) {
+        shdr[shid].sh_name = elf_strtab_add(shid_shstrtab, name);
+    } else {
+        assert(!strcmp(".shstrtab", name));
+        shdr[shid].sh_name = elf_strtab_add(shid, name);
+        header.e_shstrndx = shid;
+    }
+
+    header.e_shnum = shnum;
+    return shid;
 }
 
 /*
@@ -393,7 +320,7 @@ static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
     if (sym->linkage == LINK_INTERN) {
         sym->stack_offset = elf_symtab_add(entry);
         if (is_function(sym->type)) {
-            current_function_entry = &sbuf[SHID_SYMTAB].sym[sym->stack_offset];
+            current_function_entry = &sbuf[shid_symtab].sym[sym->stack_offset];
         }
     } else {
         assert((entry.st_info >> 4) == STB_GLOBAL);
@@ -429,7 +356,7 @@ static void flush_symtab_globals(void)
     }
 
     if (context.pic) {
-        entry.st_name = elf_strtab_add(SHID_STRTAB, "_GLOBAL_OFFSET_TABLE_");
+        entry.st_name = elf_strtab_add(shid_strtab, "_GLOBAL_OFFSET_TABLE_");
         entry.st_info = STB_GLOBAL << 4 | STT_NOTYPE;
         entry.st_shndx = SHN_UNDEF;
         elf_symtab_add(entry);
@@ -441,10 +368,10 @@ static void flush_symtab_globals(void)
 static void elf_add_reloc(struct pending_relocation entry)
 {
     array_push_back(&pending_relocation_list, entry);
-    if (entry.section == SHID_RELA_TEXT) {
+    if (entry.section == shid_rela_text) {
         n_rela_text++;
     } else {
-        assert(entry.section == SHID_RELA_DATA);
+        assert(entry.section == shid_rela_data);
         n_rela_data++;
     }
 }
@@ -458,8 +385,8 @@ INTERNAL void elf_add_reloc_text(
     struct pending_relocation r = {0};
     r.symbol = symbol;
     r.type = type;
-    r.section = SHID_RELA_TEXT;
-    r.offset = shdr[SHID_TEXT].sh_size + offset;
+    r.section = shid_rela_text;
+    r.offset = shdr[shid_text].sh_size + offset;
     r.addend = addend;
     elf_add_reloc(r);
 }
@@ -472,8 +399,8 @@ static void elf_add_reloc_data(
     struct pending_relocation r = {0};
     r.symbol = symbol;
     r.type = type;
-    r.section = SHID_RELA_DATA;
-    r.offset = shdr[SHID_DATA].sh_size;
+    r.section = shid_rela_data;
+    r.offset = shdr[shid_data].sh_size;
     r.addend = addend;
     elf_add_reloc(r);
 }
@@ -496,28 +423,28 @@ static void flush_relocations(void)
 
     if (n_rela_text) {
         size = n_rela_text * sizeof(Elf64_Rela);
-        elf_section_write(SHID_RELA_TEXT, NULL, size);
-        shdr[SHID_RELA_TEXT].sh_size = size;
-        text_entry = sbuf[SHID_RELA_TEXT].rela;
+        elf_section_write(shid_rela_text, NULL, size);
+        shdr[shid_rela_text].sh_size = size;
+        text_entry = sbuf[shid_rela_text].rela;
     }
 
     if (n_rela_data) {
         size = n_rela_data * sizeof(Elf64_Rela);
-        elf_section_write(SHID_RELA_DATA, NULL, size);
-        shdr[SHID_RELA_DATA].sh_size = size;
-        data_entry = sbuf[SHID_RELA_DATA].rela;
+        elf_section_write(shid_rela_data, NULL, size);
+        shdr[shid_rela_data].sh_size = size;
+        data_entry = sbuf[shid_rela_data].rela;
     }
 
     assert(array_len(&pending_relocation_list) == n_rela_text + n_rela_data);
     for (i = 0; i < n_rela_text + n_rela_data; ++i) {
         pending = array_get(&pending_relocation_list, i);
         assert(pending.type != R_X86_64_NONE);
-        if (pending.section == SHID_RELA_DATA) {
+        if (pending.section == shid_rela_data) {
             assert(n_rela_data);
             entry = data_entry++;
         } else {
             assert(n_rela_text);
-            assert(pending.section == SHID_RELA_TEXT);
+            assert(pending.section == shid_rela_text);
             entry = text_entry++;
         }
 
@@ -558,7 +485,7 @@ INTERNAL void elf_flush_text_displacements(void)
         entry = array_get(&pending_displacement_list, i);
         assert(entry.label->stack_offset);
 
-        ptr = (int *) (sbuf[SHID_TEXT].data + entry.text_offset);
+        ptr = (int *) (sbuf[shid_text].data + entry.text_offset);
         *ptr += entry.label->stack_offset - entry.text_offset;
     }
 
@@ -571,11 +498,11 @@ INTERNAL int elf_text_displacement(const struct symbol *label, int instr_offset)
     assert(label->symtype == SYM_LABEL);
 
     if (label->stack_offset) {
-        return label->stack_offset - shdr[SHID_TEXT].sh_size - instr_offset;
+        return label->stack_offset - shdr[shid_text].sh_size - instr_offset;
     }
 
     entry.label = label;
-    entry.text_offset = shdr[SHID_TEXT].sh_size + instr_offset;
+    entry.text_offset = shdr[shid_text].sh_size + instr_offset;
     array_push_back(&pending_displacement_list, entry);
     return 0;
 }
@@ -589,32 +516,61 @@ INTERNAL int elf_text_displacement(const struct symbol *label, int instr_offset)
  */
 INTERNAL void elf_init(FILE *output, const char *file)
 {
-    static Elf64_Sym default_symbols[] = {
-        {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHID_DATA, 0, 0},
-        {0, (STB_LOCAL << 4) | STT_SECTION, 0, SHID_TEXT, 0, 0}
-    };
-
     Elf64_Sym entry = {0};
 
-    if (!shdr) {
-        shdr = calloc(SHNUM, sizeof(*shdr));
-    }
-
-    memcpy(shdr, shdr_template, sizeof(shdr_template));
+    shnum = 0;
     current_function_entry = NULL;
     n_rela_data = 0;
     n_rela_text = 0;
 
+    shid_shstrtab = elf_section_init(
+        ".shstrtab", SHT_STRTAB, 0, SHN_UNDEF, 0, 1, 0);
+
+    shid_strtab = elf_section_init(
+        ".strtab", SHT_STRTAB, 0, SHN_UNDEF, 0, 1, 0);
+
+    shid_symtab = elf_section_init(
+        ".symtab", SHT_SYMTAB, 0, shid_strtab, 0, 4, sizeof(Elf64_Sym));
+
+    shid_bss = elf_section_init(
+        ".bss", SHT_NOBITS, SHF_WRITE | SHF_ALLOC, SHN_UNDEF, 0, 4, 0);
+
+    shid_rodata = elf_section_init(
+        ".rodata", SHT_PROGBITS, SHF_ALLOC, SHN_UNDEF, 0, 16, 0);
+
+    shid_data = elf_section_init(
+        ".data", SHT_PROGBITS, SHF_WRITE | SHF_ALLOC, SHN_UNDEF, 0, 4, 0);
+
+    shid_rela_data = elf_section_init(
+        ".rela.data", SHT_RELA, 0, shid_symtab, shid_data, 8,
+        sizeof(Elf64_Rela));
+
+    shid_text = elf_section_init(
+        ".text", SHT_PROGBITS, SHF_EXECINSTR | SHF_ALLOC, SHN_UNDEF, 0, 16, 0);
+
+    shid_rela_text = elf_section_init(
+        ".rela.text", SHT_RELA, 0, shid_symtab, shid_text, 8,
+        sizeof(Elf64_Rela));
+
+    if (context.debug) {
+        dwarf_init(file);
+    }
+
     object_file_output = output;
     elf_symtab_add(entry);
     if (file) {
-        entry.st_name = elf_strtab_add(SHID_STRTAB, file);
+        entry.st_name = elf_strtab_add(shid_strtab, file);
         entry.st_info = STB_LOCAL << 4 | STT_FILE;
         entry.st_shndx = SHN_ABS;
         elf_symtab_add(entry);
     }
 
-    elf_section_write(SHID_SYMTAB, &default_symbols, sizeof(default_symbols));
+    entry.st_info = (STB_LOCAL << 4) | STT_SECTION;
+    entry.st_shndx = shid_data;
+    elf_symtab_add(entry);
+
+    entry.st_shndx = shid_text;
+    elf_symtab_add(entry);
 }
 
 INTERNAL int elf_symbol(const struct symbol *sym)
@@ -624,35 +580,35 @@ INTERNAL int elf_symbol(const struct symbol *sym)
     assert(!sym->stack_offset);
 
     if (sym->symtype == SYM_LABEL) {
-        ((struct symbol *) sym)->stack_offset = shdr[SHID_TEXT].sh_size;
+        ((struct symbol *) sym)->stack_offset = shdr[shid_text].sh_size;
         return 0;
     }
 
-    entry.st_name = elf_strtab_add(SHID_STRTAB, sym_name(sym));
+    entry.st_name = elf_strtab_add(shid_strtab, sym_name(sym));
     entry.st_info = (sym->linkage == LINK_INTERN)
         ? STB_LOCAL << 4 : STB_GLOBAL << 4;
 
     if (is_function(sym->type)) {
         entry.st_info |= STT_FUNC;
         if (sym->symtype == SYM_DEFINITION) {
-            entry.st_shndx = SHID_TEXT;
-            entry.st_value = shdr[SHID_TEXT].sh_size;
+            entry.st_shndx = shid_text;
+            entry.st_value = shdr[shid_text].sh_size;
         }
         /* st_size is updated while assembling instructions. */
     } else if (sym->symtype == SYM_DEFINITION) {
-        elf_section_align(SHID_DATA, sym_alignment(sym));
-        entry.st_shndx = SHID_DATA;
+        elf_section_align(shid_data, sym_alignment(sym));
+        entry.st_shndx = shid_data;
         entry.st_size = size_of(sym->type);
-        entry.st_value = shdr[SHID_DATA].sh_size;
+        entry.st_value = shdr[shid_data].sh_size;
         entry.st_info |= STT_OBJECT;
     } else if (
         sym->symtype == SYM_STRING_VALUE ||
         sym->symtype == SYM_CONSTANT)
     {
-        elf_section_align(SHID_RODATA, sym_alignment(sym));
-        entry.st_shndx = SHID_RODATA;
+        elf_section_align(shid_rodata, sym_alignment(sym));
+        entry.st_shndx = shid_rodata;
         entry.st_size = size_of(sym->type);
-        entry.st_value = shdr[SHID_RODATA].sh_size;
+        entry.st_value = shdr[shid_rodata].sh_size;
         entry.st_info |= STT_OBJECT;
 
         /*
@@ -660,18 +616,18 @@ INTERNAL int elf_symbol(const struct symbol *sym)
          * write to .rodata immediately.
          */
         if (sym->symtype == SYM_STRING_VALUE) {
-            elf_section_write(SHID_RODATA,
+            elf_section_write(shid_rodata,
                 str_raw(sym->value.string), entry.st_size);
         } else {
-            elf_section_write(SHID_RODATA, &sym->value.constant, entry.st_size);
+            elf_section_write(shid_rodata, &sym->value.constant, entry.st_size);
         }
     } else if (sym->linkage == LINK_INTERN) {
-        elf_section_align(SHID_BSS, sym_alignment(sym));
-        entry.st_shndx = SHID_BSS;
+        elf_section_align(shid_bss, sym_alignment(sym));
+        entry.st_shndx = shid_bss;
         entry.st_size = size_of(sym->type);
-        entry.st_value = shdr[SHID_BSS].sh_size;
+        entry.st_value = shdr[shid_bss].sh_size;
         entry.st_info |= STT_OBJECT;
-        shdr[SHID_BSS].sh_size += entry.st_size;
+        shdr[shid_bss].sh_size += entry.st_size;
     } else if (sym->symtype == SYM_TENTATIVE) {
         assert(sym->linkage == LINK_EXTERN);
         entry.st_shndx = SHN_COMMON;
@@ -689,7 +645,7 @@ INTERNAL int elf_text(struct instruction instr)
     assert(current_function_entry);
 
     if (c.val[0] != 0x90) {
-        elf_section_write(SHID_TEXT, &c.val, c.len);
+        elf_section_write(shid_text, &c.val, c.len);
         current_function_entry->st_size += c.len;
     }
 
@@ -723,7 +679,7 @@ INTERNAL int elf_data(struct immediate imm)
         break;
     }
 
-    return elf_section_write(SHID_DATA, ptr, w);
+    return elf_section_write(shid_data, ptr, w);
 }
 
 static void write_data(const void *ptr, size_t size)
@@ -748,7 +704,7 @@ static void write_sections(void)
     int i, j;
     size_t written;
 
-    for (i = 1, j = -1; i < SHNUM; ++i) {
+    for (i = 1, j = -1; i < shnum; ++i) {
         if (shdr[i].sh_type == SHT_NOBITS)
             continue;
 
@@ -770,11 +726,9 @@ static void write_sections(void)
 
 INTERNAL int elf_flush(void)
 {
-    int i;
-
-    assert(object_file_output);
-    for (i = 1; i < SHNUM; ++i) {
-        shdr[i].sh_name = elf_strtab_add(SHID_SHSTRTAB, shname[i]);
+    /* Finalize debug sections. */
+    if (context.debug) {
+        dwarf_flush();
     }
 
     /* Write remaining data to section buffers. */
@@ -785,11 +739,11 @@ INTERNAL int elf_flush(void)
     /* Fill in missing offsets in section headers. */
     elf_chain_offsets();
 
-    /* Write headers and section data. */
+    /* Write headers and section data to file. */
+    assert(object_file_output);
     write_data(&header, sizeof(header));
-    write_data(shdr, SHNUM * sizeof(*shdr));
+    write_data(shdr, shnum * sizeof(*shdr));
     write_sections();
-
     return 0;
 }
 
@@ -800,10 +754,9 @@ INTERNAL int elf_finalize(void)
     array_clear(&globals);
     array_clear(&pending_relocation_list);
     array_clear(&pending_displacement_list);
-    for (i = 1; i < SHNUM; ++i) {
+    for (i = 1; i < SHNUM_MAX; ++i) {
         free(sbuf[i].data);
     }
 
-    free(shdr);
     return 0;
 }

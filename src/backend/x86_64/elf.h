@@ -153,4 +153,19 @@ INTERNAL void elf_add_reloc_text(
  */
 INTERNAL int elf_text_displacement(const struct symbol *label, int offset);
 
+/* Initialize a new section in the object file. */
+INTERNAL int elf_section_init(const char *name,
+    int type,
+    int flags,
+    int link,
+    int info,
+    int addralign,
+    int entsize);
+
+/* Write data to section, using id given by section_init. */
+INTERNAL size_t elf_section_write(int shid, const void *data, size_t n);
+
+/* Get raw pointer to section buffer. */
+INTERNAL void *elf_section_buffer(int shid);
+
 #endif

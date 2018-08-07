@@ -6,6 +6,7 @@
 # include "util/hash.c"
 # include "util/string.c"
 # include "backend/x86_64/instr.c"
+# include "backend/x86_64/dwarf.c"
 # include "backend/x86_64/elf.c"
 # include "backend/x86_64/abi.c"
 # include "backend/x86_64/assemble.c"
@@ -97,6 +98,9 @@ static int flag(const char *arg)
         break;
     case 'v':
         context.verbose += 1;
+        break;
+    case 'g':
+        context.debug = 1;
         break;
     case 'w':
         context.suppress_warning = 1;
@@ -335,6 +339,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-c", &flag},
         {"-v", &flag},
         {"-w", &flag},
+        {"-g", &flag},
         {"-fPIC", &option},
         {"-fno-PIC", &option},
         {"-dot", &option},

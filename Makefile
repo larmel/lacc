@@ -15,6 +15,7 @@ SOURCES = \
 	src/util/hash.c \
 	src/util/string.c \
 	src/backend/x86_64/instr.c \
+	src/backend/x86_64/dwarf.c \
 	src/backend/x86_64/elf.c \
 	src/backend/x86_64/abi.c \
 	src/backend/x86_64/assemble.c \
