@@ -61,6 +61,18 @@
 # define LACC_STDLIB_PATH "/usr/local/lib/lacc/include"
 #endif
 
+/*
+ * Configurable location of system headers. Default on Linux is GNU
+ * libc. Can be overridden to point to for example musl.
+ *
+ * OpenBSD does not need a special path.
+ */
+#ifndef SYSTEM_STDLIB_PATH
+# ifdef __linux__
+#  define SYSTEM_STDLIB_PATH "/usr/include/x86_64-linux-gnu"
+# endif
+#endif
+
 struct input_file {
     const char *name;
     const char *output_name;
@@ -450,8 +462,8 @@ static void add_include_search_paths(void)
 {
     add_include_search_path("/usr/local/include");
     add_include_search_path(LACC_STDLIB_PATH);
-#ifdef __linux__
-    add_include_search_path("/usr/include/x86_64-linux-gnu");
+#ifdef SYSTEM_STDLIB_PATH
+    add_include_search_path(SYSTEM_STDLIB_PATH);
 #endif
     add_include_search_path("/usr/include");
 }

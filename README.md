@@ -12,15 +12,14 @@ Install
 -------
 Clone and build from source, and the binary will be placed in `bin/lacc`.
 Default include paths on Linux assume GNU standard library headers being available, at `/usr/include/x86_64-linux-gnu`.
-To change to some other Linux libc, for example musl, edit [src/lacc.c](src/lacc.c#L454).
-\*BSD libc needs no special handling.
+A different libc, for example musl, can be used by defining `SYSTEM_STDLIB_PATH` to point to a different path.
+BSD libc needs no special handling.
 
     git clone https://github.com/larmel/lacc.git
     cd lacc
     make
 
-Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain definitions that are inherently compiler specific, and are provided specifically
-for lacc under [include/stdlib/](include/stdlib).
+Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain definitions that are inherently compiler specific, and are provided specifically for lacc under [include/stdlib/](include/stdlib).
 The compiler is looking for these files at a default include path configurable by defining `LACC_STDLIB_PATH`, which by default points to the local source tree.
 The install target copies the standard headers to `/usr/local/lib/lacc/include`, and produces an optimized binary with this as the default include path.
 
@@ -32,7 +31,7 @@ Execute `make uninstall` to remove all the files that were copied.
 Usage
 -----
 Command line interface is kept similar to GCC and other compilers, using mostly a subset of the same flags and options.
-A custom argument parser is used, and the definition of each option can be found in [src/lacc.c](src/lacc.c#L336).
+A custom argument parser is used, and the definition of each option can be found in [src/lacc.c](src/lacc.c#L348).
 
     -E      Output preprocessed.
     -S      Output GNU style textual x86_64 assembly.
