@@ -31,37 +31,35 @@ Execute `make uninstall` to remove all the files that were copied.
 Usage
 -----
 Command line interface is kept similar to GCC and other compilers, using mostly a subset of the same flags and options.
-A custom argument parser is used, and the definition of each option can be found in [src/lacc.c](src/lacc.c#L348).
 
-    -E      Output preprocessed.
-    -S      Output GNU style textual x86_64 assembly.
-    -c      Output x86_64 ELF object file.
-    -dot    Output intermediate representation in dot format.
-    -o      Specify output file name. If not speficied, default to input file
-            name with suffix changed to '.s', '.o' or '.dot' when compiling with
-            -S, -c or -dot, respectively. Otherwise use stdout.
-    -std=   Specify C standard, valid options are c89, c99, and c11.
-    -I      Add directory to search for included files.
-    -w      Disable warnings.
-    -g      Generate debug information (DWARF).
-    -O[1-3] Enable optimization.
-    -D X[=] Define macro, optionally with a value. For example -DNDEBUG, or
-            -D 'FOO(a)=a*2+1'.
-    -fPIC   Generate position-independent code.
-    -fno-PIC Disable position-independent code generation.
-    -v      Print verbose diagnostic information. This will dump a lot of
-            internal state during compilation, and can be useful for debugging.
-    --help  Print help text.
+    -E         Output preprocessed.
+    -S         Output GNU style textual x86_64 assembly.
+    -c         Output x86_64 ELF object file.
+    -dot       Output intermediate representation in dot format.
+    -o         Specify output file name. If not speficied, default to input file
+               name with suffix changed to '.s', '.o' or '.dot' when compiling
+               with -S, -c or -dot, respectively. Otherwise use stdout.
+    -std=      Specify C standard, valid options are c89, c99, and c11.
+    -I         Add directory to search for included files.
+    -w         Disable warnings.
+    -g         Generate debug information (DWARF).
+    -O{0..3}   Set optimization level.
+    -D X[=]    Define macro, optionally with a value. For example -DNDEBUG, or
+               -D 'FOO(a)=a*2+1'.
+    -f[no-]PIC Generate position-independent code.
+    -v         Print verbose diagnostic information. This will dump a lot of
+               internal state during compilation, and can be useful for debugging.
+    --help     Print help text.
 
 Arguments that do not match any option are taken to be input files.
 If no compilation mode is specified, lacc will act as a wrapper for the system linker `/bin/ld`.
 Some common linker flags are supported.
 
-    -Wl,      Specify linker options, separated by commas.
-    -L        Add linker include directory.
-    -l        Add linker library.
-    -shared   Passed to linker as is.
-    -rdynamic Pass -export-dynamic to linker.
+    -Wl,       Specify linker options, separated by commas.
+    -L         Add linker include directory.
+    -l         Add linker library.
+    -shared    Passed to linker as is.
+    -rdynamic  Pass -export-dynamic to linker.
 
 As an example invocation, here is compiling [test/fact.c](test/fact.c) to object code, and then using the system linker to produce the final executable.
 

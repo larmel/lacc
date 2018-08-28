@@ -15,6 +15,55 @@ static int is_flag(struct option opt)
 }
 
 /*
+ * Check if arg matches rule, potentially containing option brackets
+ * like -f[no-]PIC, and sets like -O{0|1|2|3}.
+ */
+static int match_rule(const char *rule, const char *arg)
+{
+    const char *ptr;
+
+    assert(rule);
+    assert(arg);
+
+    while (*rule == *arg && *rule && *arg) {
+        rule++;
+        arg++;
+    }
+
+    switch (*rule) {
+    case '\0':
+        return *arg == '\0';
+    case '[':
+        ptr = ++rule;
+        while (*ptr != ']') {
+            ptr++;
+        }
+        return !strncmp(rule, arg, ptr - rule)
+            ? match_rule(ptr + 1, arg + (ptr - rule))
+            : match_rule(ptr + 1, arg);
+    case '{':
+        do {
+            ptr = ++rule;
+            while (*ptr != '}' && *ptr != '|') {
+                ptr++;
+            }
+            if (!strncmp(rule, arg, ptr - rule)) {
+                arg = arg + (ptr - rule);
+                do {
+                    rule = ptr;
+                    ptr++;
+                } while (*rule != '}');
+                return match_rule(ptr, arg);
+            }
+            rule = ptr;
+        } while (*rule == '|');
+        break;
+    }
+
+    return 0;
+}
+
+/*
  * Check if argv matches given option. Argument vector is offset, and
  * not the same as input to the program. Start reading from index 0 of
  * argv.
@@ -66,7 +115,7 @@ static int match_arg(struct option opt, int argc, char *argv[], int *ret)
         break;
     default:
         if (!is_flag(opt)) {
-            if (!strncmp(opt.rule, argv[0], rulelen)) {
+            if (match_rule(opt.rule, argv[0])) {
                 *ret = opt.callback(argv[0]);
                 return 1;
             }

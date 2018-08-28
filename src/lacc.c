@@ -127,13 +127,22 @@ static int flag(const char *arg)
 
 static int option(const char *arg)
 {
-    if (!strcmp("-fPIC", arg)) {
-        context.pic = 1;
-    } else if (!strcmp("-fno-PIC", arg)) {
-        context.pic = 0;
+    int disable;
+
+    assert(*arg == '-');
+    if (arg[1] == 'f') {
+        arg = arg + 2;
+        disable = strncmp("no-", arg, 3) == 0;
+        if (disable) {
+            arg = arg + 3;
+        }
+        if (!strcmp("PIC", arg)) {
+            context.pic = !disable;
+        } else assert(0);
     } else if (!strcmp("-dot", arg)) {
         context.target = TARGET_IR_DOT;
     }
+
     return 0;
 }
 
@@ -352,16 +361,12 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-v", &flag},
         {"-w", &flag},
         {"-g", &flag},
-        {"-fPIC", &option},
-        {"-fno-PIC", &option},
+        {"-f[no-]PIC", &option},
         {"-dot", &option},
         {"--help", &help},
         {"-o:", &set_output_name},
         {"-I:", &add_include_search_path},
-        {"-O0", &set_optimization_level},
-        {"-O1", &set_optimization_level},
-        {"-O2", &set_optimization_level},
-        {"-O3", &set_optimization_level},
+        {"-O{0|1|2|3}", &set_optimization_level},
         {"-std=", &set_c_std},
         {"-D:", &define_macro},
         {"--dump-symbols", &long_option},
