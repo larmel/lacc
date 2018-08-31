@@ -843,6 +843,7 @@ INTERNAL void register_builtin_definitions(enum cstd version)
 
 #ifdef __linux__
     register_macro("__linux__", XSTR(__linux__));
+    register_macro("__signed__", "signed");
 #endif
 #ifdef __unix__
     register_macro("__unix__", XSTR(__unix__));
