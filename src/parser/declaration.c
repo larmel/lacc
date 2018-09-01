@@ -94,6 +94,8 @@ static struct block *parameter_list(
             break;
         } else if (is_array(base)) {
             base = type_create_pointer(type_next(base));
+        } else if (is_function(base)) {
+            base = type_create_pointer(base);
         }
         param = type_add_member(*func, name, base);
         param->offset = length;

@@ -420,31 +420,33 @@ INTERNAL struct symbol *sym_add(
 {
     static int n;
 
+    unsigned depth;
     struct symbol *sym;
     assert(symtype != SYM_LABEL);
     assert(symtype != SYM_TAG || ns == &ns_tag);
 
     sym = sym_lookup(ns, name);
-    if (!sym && is_function(type)) {
+    depth = current_scope_depth(ns);
+    if (!sym && symtype != SYM_TYPEDEF && is_function(type)) {
         assert(ns == &ns_ident);
         sym = sym_lookup_function(name);
         if (sym) {
             sym_apply_type(sym, type);
             sym_make_visible(ns, sym);
-            if (current_scope_depth(ns) < sym->depth) {
-                sym->depth = current_scope_depth(ns);
+            if (depth < sym->depth) {
+                sym->depth = depth;
             }
             return sym;
         }
     } else if (sym
-        && (!current_scope_depth(ns) || linkage == LINK_EXTERN)
+        && (!depth || linkage == LINK_EXTERN)
         && !sym->depth)
     {
         return sym_redeclare(sym, ns, type, symtype, linkage);
     }
 
     sym = alloc_sym();
-    sym->depth = current_scope_depth(ns);
+    sym->depth = depth;
     sym->name = name;
     sym->type = type;
     sym->symtype = symtype;
@@ -463,7 +465,7 @@ INTERNAL struct symbol *sym_add(
 
     array_push_back(&ns->symbol, sym);
     sym_make_visible(ns, sym);
-    if (is_function(sym->type)) {
+    if (symtype != SYM_TYPEDEF && is_function(sym->type)) {
         hash_insert(&functions, sym);
     }
 
