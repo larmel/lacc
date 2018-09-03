@@ -462,7 +462,6 @@ INTERNAL Type type_patch_declarator(Type head, Type target)
     struct typetree *t;
     Type next;
 
-    assert(is_function(target) || is_array(target));
     if (is_void(head)) {
         next = target;
     } else {
