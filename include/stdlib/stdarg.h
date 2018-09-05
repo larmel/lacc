@@ -20,4 +20,9 @@ typedef __builtin_va_list __gnuc_va_list;
 #define va_arg(list, type) __builtin_va_arg(list, type)
 #define va_end(list)
 
+/* va_copy is introduced with C99. */
+#if __STDC_VERSION__ >= 199901L
+# define va_copy(dst, src) (*(dst) = *(src))
+#endif
+
 #endif
