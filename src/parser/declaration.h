@@ -20,7 +20,10 @@ INTERNAL struct block *declarator(
     Type *type,
     String *name);
 
-INTERNAL Type declaration_specifiers(int *storage_class, int *is_inline);
+INTERNAL Type declaration_specifiers(
+    int *storage_class,
+    int *is_inline,
+    int *is_register);
 
 #define FIRST_type_qualifier \
     CONST: case VOLATILE

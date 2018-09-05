@@ -72,6 +72,7 @@ static struct block *parameter_list(
 {
     String name;
     size_t length;
+    int is_register;
     struct block *block;
     struct member *param;
 
@@ -83,7 +84,7 @@ static struct block *parameter_list(
     while (peek().token != ')') {
         name.len = 0;
         length = 0;
-        base = declaration_specifiers(NULL, NULL);
+        base = declaration_specifiers(NULL, NULL, &is_register);
         block = parameter_declarator(def, block, base, &base, &name, &length);
         if (is_void(base)) {
             if (nmembers(*func)) {
@@ -423,7 +424,7 @@ static void member_declaration_list(Type type)
     Type decl_base, decl_type;
 
     do {
-        decl_base = declaration_specifiers(NULL, NULL);
+        decl_base = declaration_specifiers(NULL, NULL, NULL);
         while (1) {
             name.len = 0;
             declarator(NULL, NULL, decl_base, &decl_type, &name);
@@ -617,7 +618,10 @@ static void enum_declaration(void)
  *     enum specifier
  *     typedef name
  */
-INTERNAL Type declaration_specifiers(int *storage_class, int *is_inline)
+INTERNAL Type declaration_specifiers(
+    int *storage_class,
+    int *is_inline,
+    int *is_register)
 {
     Type type = {0};
     const Type *tagged;
@@ -653,6 +657,7 @@ INTERNAL Type declaration_specifiers(int *storage_class, int *is_inline)
 
     if (storage_class) *storage_class = '$';
     if (is_inline) *is_inline = 0;
+    if (is_register) *is_register = 0;
 
     while (1) {
         switch ((tok = peek()).token) {
@@ -759,8 +764,17 @@ INTERNAL Type declaration_specifiers(int *storage_class, int *is_inline)
                 *is_inline = 1;
             }
             break;
-        case AUTO:
         case REGISTER:
+            next();
+            if (!is_register) {
+                error("Unexpected 'register' specifier.");
+            } else if (*is_register) {
+                error("Multiple 'register' specifiers.");
+            } else {
+                *is_register = 1;
+            }
+            break;
+        case AUTO:
         case STATIC:
         case EXTERN:
         case TYPEDEF:
@@ -1093,7 +1107,7 @@ INTERNAL struct block *declaration(
     enum symtype symtype;
     enum linkage linkage;
     struct definition *decl;
-    int storage_class, is_inline;
+    int storage_class, is_inline, is_register;
 
     if (peek().token == STATIC_ASSERT) {
         static_assertion();
@@ -1101,7 +1115,7 @@ INTERNAL struct block *declaration(
         return parent;
     }
 
-    base = declaration_specifiers(&storage_class, &is_inline);
+    base = declaration_specifiers(&storage_class, &is_inline, &is_register);
     switch (storage_class) {
     case EXTERN:
         symtype = SYM_DECLARATION;
