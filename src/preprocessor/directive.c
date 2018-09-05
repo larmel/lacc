@@ -552,31 +552,53 @@ static struct number preprocess_constant_expression(
     return preprocess_conditional(list, endptr);
 }
 
-static void preprocess_include(const struct token line[])
+/*
+ * Preprocess include directive, which should have any of the following
+ * forms:
+ *
+ *     #include "foo.h"
+ *     #include <foo.h>
+ *     #include FOO
+ *
+ * Macro expansion is performed if neither of the first two forms match.
+ */
+static void preprocess_include(TokenArray *line)
 {
+    int i, len, exp;
     String path;
+    struct token t;
 
-    if (line->token == PREP_STRING) {
-        path = line->d.string;
-        include_file(str_raw(path));
-    } else if (line->token == '<') {
-        line++;
-        path = str_init("");
-        while (line->token != NEWLINE) {
-            if (line->token == '>') {
-                break;
+    assert(!tok_cmp(array_get(line, 0), ident__include));
+    assert(array_back(line).token == NEWLINE);
+
+    array_erase(line, 0);
+    for (exp = 0; exp < 2; ++exp) {
+        len = array_len(line);
+        t = array_get(line, 0);
+        if (t.token == PREP_STRING) {
+            if (len > 2) {
+                error("Stray tokens in include directive.");
+                exit(1);
             }
-
-            path = str_cat(path, line->d.string);
-            line++;
+            path = t.d.string;
+            include_file(str_raw(path));
+            break;
         }
-
-        if (!path.len || line->token != '>') {
+        if (t.token == '<' && array_get(line, len - 2).token == '>') {
+            path = str_init("");
+            for (i = 1; i < len - 2; ++i) {
+                t = array_get(line, i);
+                path = str_cat(path, t.d.string);
+            }
+            include_system_file(str_raw(path));
+            break;
+        }
+        if (!exp) {
+            expand(line);
+        } else {
             error("Invalid include directive.");
             exit(1);
         }
-
-        include_system_file(str_raw(path));
     }
 }
 
@@ -771,7 +793,7 @@ INTERNAL void preprocess_directive(TokenArray *array)
             }
             undef(line->d.string);
         } else if (!tok_cmp(*line, ident__include)) {
-            preprocess_include(line + 1);
+            preprocess_include(array);
         } else if (!tok_cmp(*line, ident__line)) {
             preprocess_line_directive(line + 1);
         } else if (!tok_cmp(*line, ident__error)) {
