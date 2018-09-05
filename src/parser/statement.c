@@ -372,6 +372,7 @@ INTERNAL struct block *statement(struct definition *def, struct block *parent)
         break;
     case DO:
         parent = do_statement(def, parent);
+        consume(';');
         break;
     case WHILE:
         parent = while_statement(def, parent);
