@@ -105,6 +105,9 @@ static int pop_file(void)
 
 INTERNAL void input_finalize(void)
 {
+    while (pop_file() != EOF)
+        ;
+
     assert(!array_len(&source_stack));
     array_clear(&source_stack);
     array_clear(&search_path_list);
