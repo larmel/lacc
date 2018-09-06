@@ -8,6 +8,7 @@
 #include <lacc/context.h>
 
 #include <assert.h>
+#include <stdarg.h>
 
 /* Unit header. Only generate compile units. */
 #define DW_UT_compile 0x01
