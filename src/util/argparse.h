@@ -12,8 +12,9 @@
  *  "-I:"       Option with argument. The next token, or suffix of
  *              this token, is passed as argument to callback. Matches
  *              both -Ifoo and -I foo.
- *  "-std="     Option with argument, but only accepting parameter as
- *              direct suffix. Matches -std=c89, but not -std= c89.
+ *  "-std="     Option with argument which must no be preceeded by any
+ *  "-W<"       whitespace. Matches -std=c89 and -Wall, but not
+ *              -std= c89 or -W all.
  */
 struct option {
     const char *rule;

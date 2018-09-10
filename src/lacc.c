@@ -146,6 +146,12 @@ static int option(const char *arg)
     return 0;
 }
 
+/* Ignore all warning options specified with -W<option> */
+static int warn(const char *arg)
+{
+    return 0;
+}
+
 static int set_output_name(const char *file)
 {
     output_name = file;
@@ -361,6 +367,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-v", &flag},
         {"-w", &flag},
         {"-g", &flag},
+        {"-W<", &warn},
         {"-f[no-]PIC", &option},
         {"-dot", &option},
         {"--help", &help},

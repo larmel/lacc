@@ -102,6 +102,8 @@ static int match_arg(struct option opt, int argc, char *argv[], int *ret)
             }
         }
         break;
+    case '<':
+        rulelen -= 1;
     case '=':
         if (!strncmp(opt.rule, argv[0], rulelen)) {
             if (arglen == rulelen) {
