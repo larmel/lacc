@@ -4,6 +4,7 @@
 #endif
 #include "linker.h"
 #include <lacc/array.h>
+#include <lacc/context.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -12,9 +13,12 @@
 #include <string.h>
 #include <unistd.h>
 
-static array_of(char *) ld_args;
+typedef array_of(char *) ArgArray;
 
-static void add_option(const char *opt)
+static ArgArray ld_args, ld_user_args;
+static int is_shared;
+
+static void add_option(ArgArray *args, const char *opt)
 {
     size_t len;
     char *buf;
@@ -22,7 +26,7 @@ static void add_option(const char *opt)
     len = strlen(opt) + 1;
     buf = calloc(len, sizeof(*buf));
     strncpy(buf, opt, len);
-    array_push_back(&ld_args, buf);
+    array_push_back(args, buf);
 }
 
 INTERNAL void clear_linker_args(void)
@@ -40,37 +44,61 @@ INTERNAL void clear_linker_args(void)
 
 static void init_linker(void)
 {
-    add_option("/usr/bin/ld");
-    add_option("--eh-frame-hdr");
-    add_option("-e");
+    add_option(&ld_args, "/usr/bin/ld");
 #if __OpenBSD__
-    add_option("__start");
-    add_option("-dynamic-linker");
-    add_option("/usr/libexec/ld.so");
-    add_option("/usr/lib/crt0.o");
-    add_option("/usr/lib/crtbegin.o");
-    add_option("/usr/lib/crtend.o");
+    if (!is_shared) {
+        add_option(&ld_args, "-e");
+        add_option(&ld_args, "__start");
+        add_option(&ld_args, "-dynamic-linker");
+        add_option(&ld_args, "/usr/libexec/ld.so");
+    }
+
+    add_option(&ld_args, "/usr/lib/crt0.o");
+    add_option(&ld_args, "/usr/lib/crtbegin.o");
 #else
-    add_option("_start");
-    add_option("-dynamic-linker");
-    add_option("/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2");
-    add_option("/usr/lib/x86_64-linux-gnu/crt1.o");
-    add_option("/usr/lib/x86_64-linux-gnu/crti.o");
-    add_option("/usr/lib/x86_64-linux-gnu/crtn.o");
+    if (!is_shared) {
+        add_option(&ld_args, "-e");
+        add_option(&ld_args, "_start");
+        add_option(&ld_args, "-dynamic-linker");
+        add_option(&ld_args, "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2");
+        if (context.pic) {
+            add_option(&ld_args, "/usr/lib/x86_64-linux-gnu/Scrt1.o");
+        } else {
+            add_option(&ld_args, "/usr/lib/x86_64-linux-gnu/crt1.o");
+        }
+    }
+
+    add_option(&ld_args, "/usr/lib/x86_64-linux-gnu/crti.o");
+    add_option(&ld_args, "-L/usr/lib/x86_64-linux-gnu");
 #endif
-    add_option("-L/usr/local/lib");
-    add_option("-L/usr/lib");
+    add_option(&ld_args, "-L/usr/local/lib");
+    add_option(&ld_args, "-L/usr/lib");
 }
 
 INTERNAL int add_linker_arg(const char *opt)
 {
-    if (!array_len(&ld_args)) {
-        init_linker();
+    if (!strcmp("-shared", opt)) {
+        is_shared = 1;
     }
 
-    add_option(opt);
+    add_option(&ld_user_args, opt);
     return 0;
 }
+
+#ifndef NDEBUG
+static void print_invocation(void)
+{
+    int i;
+    char *arg;
+
+    for (i = 0; i < array_len(&ld_args); ++i) {
+        arg = array_get(&ld_args, i);
+        printf("%s ", arg);
+    }
+
+    printf("\n");
+}
+#endif
 
 INTERNAL int invoke_linker(void)
 {
@@ -78,7 +106,20 @@ INTERNAL int invoke_linker(void)
     int status, ret;
     pid_t pid;
 
-    add_option("-lc");
+    init_linker();
+    array_concat(&ld_args, &ld_user_args);
+
+    add_option(&ld_args, "-lc");
+#if __OpenBSD__
+    add_option(&ld_args, "/usr/lib/crtend.o");
+#else
+    add_option(&ld_args, "/usr/lib/x86_64-linux-gnu/crtn.o");
+#endif
+
+#ifndef NDEBUG
+    print_invocation();
+#endif
+
     array_push_back(&ld_args, (char *) NULL);
     argv = &array_get(&ld_args, 0);
     switch ((pid = fork())) {
@@ -95,5 +136,6 @@ INTERNAL int invoke_linker(void)
         break;
     }
 
+    array_clear(&ld_user_args);
     return ret;
 }

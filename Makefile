@@ -103,10 +103,14 @@ test-asm: $(TARGET)
 		./check.sh "$?" "$$file" "$(CC) -w" ; \
 	done
 
+test-linker: $(TARGET)
+	./linker.sh $?
+
 test-sqlite: $(TARGET)
 	./sqlite.sh $? "$(CC)"
 
 test: test-c89 test-c99 test-c11
+test-all: test test-gnu test-asm test-linker test-sqlite
 
 install: bin/release/lacc
 	mkdir -p $(LIBDIR_TARGET)
@@ -122,4 +126,5 @@ clean:
 	rm -f test/*.out test/*.txt test/*.s
 
 .PHONY: install uninstall clean test \
-	test-c89 test-c99 test-c11 test-gnu test-sqlite
+	test-c89 test-c99 test-c11 test-gnu test-asm \
+	test-sqlite test-linker test-all
