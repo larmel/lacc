@@ -915,7 +915,7 @@ static struct block *parameter_declaration_list(
     return block;
 }
 
-static struct block *declare_vla(
+INTERNAL struct block *declare_vla(
     struct definition *def,
     struct block *block,
     struct symbol *sym)

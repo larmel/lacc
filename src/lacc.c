@@ -455,6 +455,7 @@ static void register_argument_definitions(void)
 static void register_builtin_declarations(void)
 {
     inject_line("void *memcpy(void *dest, const void *src, unsigned long n);");
+    inject_line("void __builtin_alloca(unsigned long);");
     inject_line("void __builtin_va_start(void);");
     inject_line("void __builtin_va_arg(void);");
     inject_line(

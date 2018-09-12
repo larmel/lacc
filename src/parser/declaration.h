@@ -25,6 +25,11 @@ INTERNAL Type declaration_specifiers(
     int *is_inline,
     int *is_register);
 
+INTERNAL struct block *declare_vla(
+    struct definition *def,
+    struct block *block,
+    struct symbol *sym);
+
 #define FIRST_type_qualifier \
     CONST: case VOLATILE
 

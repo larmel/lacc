@@ -401,6 +401,7 @@ INTERNAL Type type_create_vla(Type next, const struct symbol *count)
     Type type;
     struct typetree *t;
 
+    assert(count);
     type = type_create_array(next, 0);
     t = get_typetree_handle(type.ref);
     t->vlen = count;

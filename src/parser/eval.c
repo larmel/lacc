@@ -83,6 +83,7 @@ INTERNAL struct var var_direct(const struct symbol *sym)
 {
     struct var var = {0};
 
+    assert(sym);
     var.type = sym->type;
     var.symbol = sym;
 

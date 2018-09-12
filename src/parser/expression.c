@@ -93,6 +93,40 @@ static struct block *parse__builtin_va_arg(
 }
 
 /*
+ * Implement alloca as a normal VLA.
+ *
+ *     void *ptr = alloca(n + 1);
+ *
+ * is translated to
+ *
+ *     size_t len = n + 1;
+ *     char sym[len];
+ *     void *ptr = (void *) sym;
+ */
+static struct block *parse__builtin_alloca(
+    struct definition *def,
+    struct block *block)
+{
+    struct var t1;
+    struct symbol *sym;
+
+    consume('(');
+    block = assignment_expression(def, block);
+    consume(')');
+
+    t1 = create_var(def, basic_type__unsigned_long);
+    eval_assign(def, block, t1, block->expr);
+
+    sym = sym_create_temporary(type_create_vla(basic_type__char, t1.symbol));
+    array_push_back(&def->locals, sym);
+
+    block = declare_vla(def, block, sym);
+    block->expr = eval_expr(def, block, IR_OP_CAST, var_direct(sym),
+        type_create_pointer(basic_type__void));
+    return block;
+}
+
+/*
  * Special handling for builtin pseudo functions. These are expected to
  * behave as macros, thus should be no problem parsing as function call
  * in primary expression. Constructs like (va_arg)(args, int) will not
@@ -116,6 +150,8 @@ static struct block *primary_expression(
             block = parse__builtin_va_start(def, block);
         } else if (!strcmp("__builtin_va_arg", str_raw(sym->name))) {
             block = parse__builtin_va_arg(def, block);
+        } else if (!strcmp("__builtin_alloca", str_raw(sym->name))) {
+            block = parse__builtin_alloca(def, block);
         } else {
             block->expr = as_expr(var_direct(sym));
         }
