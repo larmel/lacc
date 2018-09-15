@@ -138,11 +138,21 @@ static int option(const char *arg)
         }
         if (!strcmp("PIC", arg)) {
             context.pic = !disable;
+        } else if (!strcmp("fast-math", arg)) {
+            /* Always slow... */
+        } else if (!strcmp("strict-aliasing", arg)) {
+            /* We don't consider aliasing. */
         } else assert(0);
     } else if (!strcmp("-dot", arg)) {
         context.target = TARGET_IR_DOT;
     }
 
+    return 0;
+}
+
+/* Accept anything for -march. */
+static int set_cpu(const char *arg)
+{
     return 0;
 }
 
@@ -369,8 +379,11 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-g", &flag},
         {"-W<", &warn},
         {"-f[no-]PIC", &option},
+        {"-f[no-]fast-math", &option},
+        {"-f[no-]strict-aliasing", &option},
         {"-dot", &option},
         {"--help", &help},
+        {"-march=", &set_cpu},
         {"-o:", &set_output_name},
         {"-I:", &add_include_search_path},
         {"-O{0|1|2|3}", &set_optimization_level},
