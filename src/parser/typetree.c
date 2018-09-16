@@ -168,6 +168,17 @@ INTERNAL void clear_types(FILE *stream)
     array_clear(&types);
 }
 
+INTERNAL int is_type_placeholder(Type type)
+{
+    return type.type == -1;
+}
+
+INTERNAL Type get_type_placeholder(void)
+{
+    Type t = {-1};
+    return t;
+}
+
 static Type remove_qualifiers(Type type)
 {
     if (type.is_pointer) {
@@ -234,7 +245,7 @@ static struct member *add_member(Type parent, struct member m)
             t->size = m.offset + size_of(m.type);
         }
     } else {
-        t->is_incomplete = 0;
+        t->is_incomplete = is_type_placeholder(m.type);
     }
 
     return &array_back(&t->members);

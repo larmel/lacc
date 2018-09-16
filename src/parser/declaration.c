@@ -27,17 +27,6 @@ static const Type *get_typedef(String str)
     return NULL;
 }
 
-static int is_type_placeholder(Type type)
-{
-    return type.type == -1;
-}
-
-static Type get_type_placeholder(void)
-{
-    Type t = {-1};
-    return t;
-}
-
 static struct block *parameter_declarator(
     struct definition *def,
     struct block *block,
@@ -878,37 +867,69 @@ static struct block *parameter_declaration_list(
     Type type)
 {
     int i;
+    struct symbol sym = {0};
     struct member *param;
 
     assert(is_function(type));
     assert(current_scope_depth(&ns_ident) == 1);
+    assert(!def->symbol);
+
+    sym.type = type;
+    def->symbol = &sym;
     while (peek().token != '{') {
         block = declaration(def, block);
     }
 
+    def->symbol = NULL;
     for (i = 0; i < nmembers(type); ++i) {
         param = get_member(type, i);
         if (!param->name.len) {
             error("Missing parameter name at position %d.", i + 1);
             exit(1);
         }
-        if (is_type_placeholder(param->type)) {
+
+        assert(!param->sym);
+        param->sym = sym_lookup(&ns_ident, param->name);
+        if (!param->sym || param->sym->depth != 1) {
+            assert(is_type_placeholder(param->type));
             param->type = basic_type__int;
+            param->sym = sym_add(&ns_ident,
+                param->name,
+                param->type,
+                SYM_DEFINITION,
+                LINK_NONE);
         }
+    }
+
+    type_seal(type);
+    assert(is_complete(type));
+    return block;
+}
+
+/* Add function parameters to scope. */
+static struct block *make_parameters_visible(
+    struct definition *def,
+    struct block *block)
+{
+    int i;
+    struct member *param;
+
+    assert(def->symbol);
+    assert(is_function(def->symbol->type));
+    assert(current_scope_depth(&ns_ident) == 1);
+
+    for (i = 0; i < nmembers(def->symbol->type); ++i) {
+        param = get_member(def->symbol->type, i);
+        if (!param->name.len) {
+            error("Missing parameter at position %d.", i + 1);
+            exit(1);
+        }
+
+        assert(param->sym);
+        assert(param->sym->depth == 1);
+        assert(!is_type_placeholder(param->type));
         assert(!is_array(param->type));
-        if (!param->sym) {
-            param->sym = sym_lookup(&ns_ident, param->name);
-            if (!param->sym || param->sym->depth != 1) {
-                param->sym = sym_add(&ns_ident,
-                    param->name,
-                    param->type,
-                    SYM_DEFINITION,
-                    LINK_NONE);
-            }
-        } else {
-            assert(param->sym->depth == current_scope_depth(&ns_ident));
-            sym_make_visible(&ns_ident, param->sym);
-        }
+        sym_make_visible(&ns_ident, param->sym);
         array_push_back(&def->params, param->sym);
     }
 
@@ -980,6 +1001,12 @@ INTERNAL struct block *init_declarator(
         }
     }
 
+    if (is_function(type) && !is_complete(type) && peek().token != ';') {
+        push_scope(&ns_ident);
+        parent = parameter_declaration_list(def, parent, type);
+        pop_scope(&ns_ident);
+    }
+
     sym = sym_add(&ns_ident, name, type, symtype, linkage);
     switch (current_scope_depth(&ns_ident)) {
     case 0: break;
@@ -1041,7 +1068,7 @@ INTERNAL struct block *init_declarator(
             cfg_define(def, sym);
             push_scope(&ns_label);
             push_scope(&ns_ident);
-            parent = parameter_declaration_list(def, parent, type);
+            parent = make_parameters_visible(def, parent);
             if (context.standard >= STD_C99) {
                 define_builtin__func__(sym->name);
             }

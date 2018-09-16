@@ -35,6 +35,10 @@ INTERNAL Type type_set_restrict(Type type);
 /* Set qualifiers from other on type. */
 INTERNAL Type type_apply_qualifiers(Type type, Type other);
 
+/* Sentinel type used during construction. */
+INTERNAL int is_type_placeholder(Type type);
+INTERNAL Type get_type_placeholder(void);
+
 /*
  * Add member to struct, union or function type, updating size and
  * alignment of members.
