@@ -797,22 +797,26 @@ static void register_macro(const char *key, const char *value)
 
 static char *get__time__(char *ts)
 {
-    static char str[9];
+    static char str[11];
 
     assert(strlen(ts) == 25);
-    memcpy(str, ts + 11, 8);
-    assert(str[8] == '\0');
+    str[0] = '"';
+    memcpy(&str[1], ts + 11, 8);
+    str[9] = '"';
+    assert(str[10] == '\0');
     return str;
 }
 
 static char *get__date__(char *ts)
 {
-    static char str[12];
+    static char str[14];
 
     assert(strlen(ts) == 25);
-    memcpy(str, ts + 4, 7);
-    memcpy(str + 7, ts + 20, 4);
-    assert(str[11] == '\0');
+    str[0] = '"';
+    memcpy(&str[1], ts + 4, 7);
+    memcpy(&str[8], ts + 20, 4);
+    str[12] = '"';
+    assert(str[13] == '\0');
     return str;
 }
 
