@@ -125,9 +125,12 @@ static const char *asm_address(struct address addr)
         if (addr.offset) {
             reg.r = addr.offset;
             w += sprintf(buf + w, ",%s,%d", mnemonic(reg), addr.mult);
-        }
+        } else assert(!addr.mult);
         sprintf(buf + w, ")");
-    }
+    } else if (addr.offset) {
+        reg.r = addr.offset;
+        sprintf(buf + w, "(,%s,%d)", mnemonic(reg), addr.mult);
+    } else assert(!addr.mult);
 
     return buf;
 }

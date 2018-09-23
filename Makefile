@@ -19,6 +19,7 @@ SOURCES = \
 	src/backend/x86_64/elf.c \
 	src/backend/x86_64/abi.c \
 	src/backend/x86_64/assemble.c \
+	src/backend/assembler.c \
 	src/backend/compile.c \
 	src/backend/graphviz/dot.c \
 	src/backend/linker.c \
@@ -95,6 +96,11 @@ test-c11: $(TARGET)
 test-gnu: $(TARGET)
 	for file in $$(find test/gnu -type f -iname '*.c') ; do \
 		./check.sh "$?" "$$file" "gcc -w" ; \
+	done
+
+test-asm: $(TARGET)
+	for file in $$(find test/asm -type f -iname '*.c') ; do \
+		./check.sh "$?" "$$file" "$(CC) -w" ; \
 	done
 
 test-sqlite: $(TARGET)

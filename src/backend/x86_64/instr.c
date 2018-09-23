@@ -40,7 +40,7 @@
 #define REX 0x40
 #define W(arg) (is_64_bit(arg) << 3)
 #define R(arg) (is_64_bit_reg((arg).r) << 2)
-#define X(arg) 0
+#define X(arg) (is_64_bit_reg((arg).offset) << 1)
 #define B(arg) is_64_bit_reg((arg).r)
 
 /*
@@ -120,9 +120,8 @@ static void encode_addr(
     enum rel_type reloc;
     int has_sib, has_displacement;
 
-    assert(addr.mult == 1 || !addr.mult);
-
     if (addr.sym) {
+        assert(addr.mult == 1 || !addr.mult);
         c->val[c->len++] = ((reg & 0x7) << 3) | 0x5;
         if (addr.type == ADDR_GLOBAL_OFFSET) {
             reloc = R_X86_64_GOTPCREL;
@@ -134,29 +133,36 @@ static void encode_addr(
         memset(&c->val[c->len], 0, 4);
         c->len += 4;
     } else {
+        assert(addr.base || !addr.disp);
+
         /* SP is used as sentinel for SIB, and R12 overlaps. */
-        has_sib = addr.offset || reg3(addr.base) == reg3(SP);
+        has_sib = addr.offset || !addr.base || reg3(addr.base) == reg3(SP) || addr.mult > 1;
 
         /* Explicit displacement must be used with BP or R13. */
-        has_displacement = addr.disp || reg3(addr.base) == reg3(BP);
+        has_displacement = !addr.base || addr.disp || reg3(addr.base) == reg3(BP);
 
         /* ModR/M */
         c->val[c->len++] = ((reg & 0x7) << 3) | (has_sib ? 4 : reg3(addr.base));
         if (!in_byte_range(addr.disp)) {
             c->val[c->len - 1] |= 0x80;
-        } else if (has_displacement) {
+        } else if (has_displacement && addr.base) {
             c->val[c->len - 1] |= 0x40;
         }
 
         /* SIB */
         if (has_sib) {
             c->val[c->len] = (addr.offset) ? reg3(addr.offset) : reg3(SP);
-            c->val[c->len] = (c->val[c->len] << 3) | reg3(addr.base);
+            c->val[c->len] = c->val[c->len] << 3;
+            c->val[c->len] |= (
+                addr.mult == 2 ? 1 :
+                addr.mult == 4 ? 2 :
+                addr.mult == 8 ? 3 : 0) << 6;
+            c->val[c->len] |= addr.base ? reg3(addr.base) : 5;
             c->len++;
         }
 
         /* Displacement */
-        if (!in_byte_range(addr.disp)) {
+        if (!in_byte_range(addr.disp) || !addr.base) {
             memcpy(&c->val[c->len], &addr.disp, 4);
             c->len += 4;
         } else if (has_displacement) {
@@ -440,7 +446,7 @@ static struct code encode_add(
     switch (optype) {
     default: assert(0);
     case OPT_REG_REG:
-        if (rrex(a.reg)) {
+        if (rrex(a.reg) || rrex(b.reg)) {
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
         c.val[c.len++] = 0x00 | w(a.reg);
@@ -486,10 +492,14 @@ static struct code encode_add(
         encode_addr(&c, regi(a.reg), b.mem.addr, 0);
         break;
     case OPT_MEM_REG:
+        assert(a.mem.w == b.reg.w);
         if (rrex(b.reg) || mrex(a.mem.addr)) {
             c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
         }
-        c.val[c.len++] = 0x00 | !is_64_bit_reg(b.reg.r) << 1 | w(b.reg);
+        c.val[c.len++] = 0x00;
+        if (!is_64_bit_reg(b.reg.r)) {
+            c.val[c.len - 1] |= 2 | w(b.reg);
+        }
         encode_addr(&c, regi(b.reg), a.mem.addr, 0);
         break;
     }
@@ -656,7 +666,7 @@ static struct code lea(
     assert(optype == OPT_MEM_REG);
     assert(is_64_bit(b.reg));
 
-    c.val[c.len++] = REX | W(b.reg) | R(b.reg);
+    c.val[c.len++] = REX | W(b.reg) | R(b.reg) | X(a.mem.addr);
     c.val[c.len++] = 0x8D;
     encode_addr(&c, regi(b.reg), a.mem.addr, 0);
     return c;

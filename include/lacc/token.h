@@ -109,6 +109,9 @@ enum token_type {
     CLOSE_CURLY = '}',
     NEG = '~',
 
+    /* Non-standard keywords. */
+    ASM = 0x68,
+
     /*
      * The remaining tokens do not correspond to any fixed string, and
      * are placed at arbitrary locations.

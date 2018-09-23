@@ -207,14 +207,14 @@ struct instruction {
     enum opcode opcode;
     enum instr_optype {
         OPT_NONE = 0,
-        OPT_IMM,
-        OPT_REG,
-        OPT_MEM,
-        OPT_REG_REG,
-        OPT_REG_MEM,
-        OPT_MEM_REG,
-        OPT_IMM_REG,
-        OPT_IMM_MEM
+        OPT_IMM = 1,
+        OPT_REG = 2,
+        OPT_MEM = 4,
+        OPT_REG_REG = 8,
+        OPT_REG_MEM = 16,
+        OPT_MEM_REG = 32,
+        OPT_IMM_REG = 64,
+        OPT_IMM_MEM = 128
     } optype;
     union operand {
         struct registr reg;

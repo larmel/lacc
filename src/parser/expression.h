@@ -11,6 +11,10 @@ INTERNAL struct block *assignment_expression(
 	struct definition *def,
 	struct block *block);
 
+INTERNAL struct block *conditional_expression(
+    struct definition *def,
+    struct block *block);
+
 /*
  * Free memory used to hold function arguments.
  *

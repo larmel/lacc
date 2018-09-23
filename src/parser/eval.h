@@ -3,6 +3,9 @@
 
 #include <lacc/ir.h>
 
+/* Add statement to current block. */
+INTERNAL void emit_ir(struct block *block, enum sttype st, ...);
+
 /*
  * Commit expression in block->expr to a new temporary variable, or
  * return the value directly if there is nothing to evaluate.

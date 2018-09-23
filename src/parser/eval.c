@@ -265,7 +265,7 @@ static struct expression create_expr(enum optype op, struct var l, ...)
  * Current block can be NULL when parsing an expression that should not
  * be evaluated, for example argument to sizeof.
  */
-static void emit_ir(struct block *block, enum sttype st, ...)
+INTERNAL void emit_ir(struct block *block, enum sttype st, ...)
 {
     va_list args;
     struct statement stmt = {0};
@@ -282,6 +282,9 @@ static void emit_ir(struct block *block, enum sttype st, ...)
         case IR_PARAM:
         case IR_VA_START:
             stmt.expr = va_arg(args, struct expression);
+            break;
+        case IR_ASM:
+            stmt.asm_index = va_arg(args, int);
             break;
         }
 

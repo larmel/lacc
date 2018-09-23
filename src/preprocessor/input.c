@@ -381,8 +381,7 @@ static size_t read_literal(const char *line, char **buf, int *lines)
 
 /*
  * Read initial part of line, until forming a complete source line ready
- * for tokenization. Store the result in rline, with the following
- * mutations done:
+ * for tokenization. Store the result with the following mutations done:
  *
  *  - Join line continuations.
  *  - Replace comments with a single whitespace character.
@@ -393,20 +392,18 @@ static size_t read_literal(const char *line, char **buf, int *lines)
  * be smaller than this number, by any of the transformations removing
  * characters.
  */
-static size_t read_line(const char *line, size_t len, int *linecount)
+INTERNAL size_t read_line(
+    const char *line,
+    size_t len,
+    char *ptr,
+    int *linecount)
 {
     int lines;
     size_t count;
     const char *end;
-    char *ptr, c;
-
-    if (len >= rlen) {
-        rlen = len + 1;
-        rline = realloc(rline, rlen);
-    }
+    char c;
 
     lines = 0;
-    ptr = rline + 1;
     assert(ptr[-1] == '\0');
     end = line;
     do {
@@ -518,12 +515,17 @@ static char *initial_preprocess_line(struct source *fn)
         added = read_line(
             fn->buffer + fn->processed,
             fn->read - fn->processed,
+            rline + 1,
             &fn->line);
 
         if (!added) {
             if (!fn->processed) {
                 fn->size += FILE_BUFFER_SIZE;
                 fn->buffer = realloc(fn->buffer, fn->size);
+                if (rlen <= fn->size) {
+                    rlen = fn->size + 1;
+                    rline = realloc(rline, rlen);
+                }
             } else {
                 memmove(
                     fn->buffer,

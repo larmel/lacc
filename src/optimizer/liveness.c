@@ -82,8 +82,10 @@ static unsigned long use(const struct expression *expr)
 static unsigned long uses(const struct statement *s)
 {
     struct var t;
-    unsigned long r = use(&s->expr);
+    unsigned long r;
 
+    assert(s->st != IR_ASM);
+    r = use(&s->expr);
     if (s->st == IR_ASSIGN) {
         if (s->t.kind == DEREF && s->t.symbol) {
             t = s->t;
@@ -97,7 +99,14 @@ static unsigned long uses(const struct statement *s)
 
 static unsigned long def(const struct statement *s)
 {
-    return (s->st == IR_ASSIGN) ? set_def_bit(s->t) : 0ul;
+    switch (s->st) {
+    case IR_ASSIGN:
+        return set_def_bit(s->t);
+    case IR_ASM:
+        assert(0);
+    default:
+        return 0ul;
+    }
 }
 
 INTERNAL int live_variable_analysis(struct block *block)

@@ -75,7 +75,7 @@ INTERNAL const struct token basic_token[] = {
             {0},                        {0},
             {0},                        {0},
             {0},                        {0},
-/* 0x68 */  {0},                        {0},
+/* 0x68 */  TOK(ASM, "__asm__"),        {0},
             {0},                        {0},
             {0},                        {0},
             {0},                        {0},
@@ -531,6 +531,7 @@ static struct token strtoident(const char *in, const char **endptr)
 
     switch (*in++) {
     case '_':
+        if (S6('_', 'a', 's', 'm', '_', '_')) MATCH(ASM);
         if (S4('B', 'o', 'o', 'l')) MATCH(BOOL);
         if (S7('A', 'l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF);
         if (!strncmp(in, "Static_assert", 13)) {

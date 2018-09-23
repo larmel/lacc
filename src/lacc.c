@@ -10,6 +10,7 @@
 # include "backend/x86_64/elf.c"
 # include "backend/x86_64/abi.c"
 # include "backend/x86_64/assemble.c"
+# include "backend/assembler.c"
 # include "backend/compile.c"
 # include "backend/graphviz/dot.c"
 # include "backend/linker.c"

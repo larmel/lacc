@@ -44,6 +44,12 @@ INTERNAL String str_init(const char *str);
 INTERNAL int str_cmp(String s1, String s2);
 
 /*
+ * Return pointer to first occurrence of character in string, or NULL
+ * if not found.
+ */
+INTERNAL const char *str_chr(String s, char c);
+
+/*
  * Output string to stream, in safe encoding for textual assembly or as
  * plain C code.
  */

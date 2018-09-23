@@ -76,6 +76,7 @@ static void cfg_empty(struct definition *def)
 {
     int i;
     struct symbol *sym;
+    struct asm_statement *st;
 
     for (i = 0; i < array_len(&def->locals); ++i) {
         sym = array_get(&def->locals, i);
@@ -83,18 +84,28 @@ static void cfg_empty(struct definition *def)
             sym_discard(sym);
         }
     }
+
     for (i = 0; i < array_len(&def->labels); ++i) {
         sym = array_get(&def->labels, i);
         sym_discard(sym);
     }
+
     for (i = 0; i < array_len(&def->nodes); ++i) {
         recycle_block(array_get(&def->nodes, i));
+    }
+
+    for (i = 0; i < array_len(&def->asm_statements); ++i) {
+        st = &array_get(&def->asm_statements, i);
+        array_clear(&st->operands);
+        array_clear(&st->clobbers);
+        array_clear(&st->targets);
     }
 
     array_empty(&def->params);
     array_empty(&def->locals);
     array_empty(&def->labels);
     array_empty(&def->nodes);
+    array_empty(&def->asm_statements);
 }
 
 INTERNAL struct block *cfg_block_init(struct definition *def)
@@ -218,6 +229,7 @@ INTERNAL void parse_finalize(void)
         array_clear(&def->locals);
         array_clear(&def->labels);
         array_clear(&def->nodes);
+        array_clear(&def->asm_statements);
         free(def);
     }
 

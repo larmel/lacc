@@ -355,7 +355,185 @@ static struct block *switch_statement(
     return next;
 }
 
-INTERNAL struct block *statement(struct definition *def, struct block *parent)
+/*
+ * Parse operands to __asm__ expressions.
+ *
+ * Of the form "=r" (*a).
+ *
+ * Produce operands as 'struct var' objects.
+ */
+static struct asm_operand asm_operand(
+    struct definition *def,
+    struct block **block,
+    struct block *writeback)
+{
+    struct token t;
+    struct asm_operand op = {0};
+    struct var var, tmp;
+    int force_register, force_memory;
+    const char *str;
+
+    if (peek().token == '[') {
+        next();
+        t = consume(IDENTIFIER);
+        op.alias = t.d.string;
+        consume(']');
+    }
+
+    t = consume(STRING);
+    op.constraint = t.d.string;
+    str = str_raw(t.d.string);
+
+    consume('(');
+    *block = conditional_expression(def, *block);
+    consume(')');
+
+    var = eval(def, *block, (*block)->expr);
+    if (str[0] == '=' || str[0] == '+') {
+        if (!writeback) {
+            error("Input operand cannot be writeable.");
+            exit(1);
+        }
+        if (!var.lvalue) {
+            error("Output operand must be lvalue.");
+            exit(1);
+        }
+    }
+
+    force_register = strchr(str, 'r') && !strchr(str, 'm');
+    force_memory = !force_register && strchr(str, 'm');
+
+    if (force_register && (var.kind != DIRECT || !is_temporary(var.symbol))) {
+        tmp = create_var(def, var.type);
+        op.variable = tmp;
+        if (!writeback || str[0] == '+') {
+            eval_assign(def, *block, tmp, as_expr(var));
+        }
+        if (writeback) {
+            eval_assign(def, writeback, var, as_expr(tmp));
+        }
+    } else if (force_memory && var.kind == DEREF && !is_temporary(var.symbol)) {
+        var = eval_addr(def, *block, var);
+        tmp = create_var(def, var.type);
+        eval_assign(def, *block, tmp, as_expr(var));
+        op.variable = eval_deref(def, *block, tmp);
+    } else {
+        op.variable = var;
+    }
+
+    return op;
+}
+
+/*
+ * Replicate GCC behavior, allowing 'volatile', 'volatile goto', and
+ * just 'goto'.
+ *
+ * The goto qualifier is required when assembly template contains jumps.
+ */
+static void asm_statement_qualifiers(int *is_volatile, int *is_goto)
+{
+    *is_volatile = 0;
+    *is_goto = 0;
+    if (peek().token == VOLATILE) {
+        next();
+        *is_volatile = 1;
+    }
+    if (peek().token == GOTO) {
+        next();
+        *is_goto = 1;
+    }
+}
+
+/*
+ * Parse __asm__ statement.
+ *
+ * Read input and output operand constraints, and make sure all are
+ * convertet to DIRECT variables if specified to be in register.
+ *
+ * Converted variables that result in temporaries are written back to
+ * the actual location in a separate block.
+ */
+static struct block *asm_statement(
+    struct definition *def,
+    struct block *block)
+{
+    struct token t;
+    struct asm_operand op;
+    struct asm_statement st = {0};
+    struct symbol *sym;
+    struct block *writeback;
+    int is_volatile, is_goto;
+
+    writeback = cfg_block_init(def);
+    asm_statement_qualifiers(&is_volatile, &is_goto);
+    consume('(');
+    t = consume(STRING);
+    st.template = t.d.string;
+
+    consume(':');
+    while (!is_goto && peek().token != ':') {
+        op = asm_operand(def, &block, writeback);
+        array_push_back(&st.operands, op);
+        if (peek().token == ',') {
+            next();
+        } else break;
+    }
+
+    if (peek().token != ':')
+        goto end;
+
+    consume(':');
+    while (peek().token != ':' && peek().token != ')') {
+        op = asm_operand(def, &block, NULL);
+        array_push_back(&st.operands, op);
+        if (peek().token == ',') {
+            next();
+        } else break;
+    }
+
+    if (peek().token != ':')
+        goto end;
+
+    consume(':');
+    while (peek().token == STRING) {
+        t = next();
+        array_push_back(&st.clobbers, t.d.string);
+        if (peek().token == ',') {
+            next();
+        } else break;
+    }
+
+    if (is_goto) {
+        consume(':');
+        while (1) {
+            t = consume(IDENTIFIER);
+            sym = sym_add(
+                &ns_label,
+                t.d.string,
+                basic_type__void,
+                SYM_TENTATIVE,
+                LINK_INTERN);
+            if (!sym->value.label) {
+                sym->value.label = cfg_block_init(def);
+            }
+            array_push_back(&st.targets, sym->value.label);
+            if (peek().token == ',') {
+                next();
+            } else break;
+        }
+    }
+
+end:
+    consume(')');
+    array_push_back(&def->asm_statements, st);
+    emit_ir(block, IR_ASM, array_len(&def->asm_statements) - 1);
+    block->jump[0] = writeback;
+    return writeback;
+}
+
+INTERNAL struct block *statement(
+    struct definition *def,
+    struct block *parent)
 {
     struct symbol *sym;
     struct token tok;
@@ -444,6 +622,11 @@ INTERNAL struct block *statement(struct definition *def, struct block *parent)
             next = statement(def, next);
             parent = next;
         }
+        break;
+    case ASM:
+        next();
+        parent = asm_statement(def, parent);
+        consume(';');
         break;
     case IDENTIFIER:
         if (peekn(2).token == ':') {

@@ -1,6 +1,7 @@
 #ifndef COMPILE_H
 #define COMPILE_H
 
+#include "x86_64/instr.h"
 #include <lacc/ir.h>
 
 #include <stdio.h>
@@ -26,5 +27,10 @@ INTERNAL void flush(void);
 
 /* Free resources after all input objects have been processed. */
 INTERNAL void finalize(void);
+
+INTERNAL enum instr_optype allocation(
+	struct var var,
+	union operand *op,
+	int *w);
 
 #endif

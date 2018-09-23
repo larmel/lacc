@@ -3,6 +3,7 @@
 # define EXTERNAL extern
 #endif
 #include "compile.h"
+#include "assembler.h"
 #include "graphviz/dot.h"
 #include "x86_64/abi.h"
 #include "x86_64/assemble.h"
@@ -300,6 +301,37 @@ static struct immediate constant(long n, int w)
     imm.d.qword = n;
     imm.w = w;
     return imm;
+}
+
+INTERNAL enum instr_optype allocation(struct var var, union operand *op, int *w)
+{
+    enum reg ax;
+    struct var tmp;
+
+    if (is_register_allocated(var)) {
+        if (*w == 0) *w = size_of(var.type);
+        op->reg.r = allocated_register(var);
+        op->reg.w = *w;
+        return OPT_REG;
+    }
+
+    switch (var.kind) {
+    default: assert(0);
+    case DIRECT:
+        if (*w == 0) *w = size_of(var.type);
+        op->mem = location_of(var, *w);
+        break;
+    case DEREF:
+        tmp = var_direct(var.symbol);
+        assert(is_register_allocated(tmp));
+        if (*w == 0) *w = size_of(tmp.type);
+        ax = allocated_register(tmp);
+        op->mem = location(address(
+            displacement_from_offset(var.offset), ax, 0, 0), *w);
+        break;
+    }
+
+    return OPT_MEM;
 }
 
 /*
@@ -1377,27 +1409,102 @@ static int allocate_locals(
     return stack_offset;
 }
 
+INTERNAL enum reg get_clobbered_register(String clobber);
+
+static int allocate_asmblock_registers(struct asm_statement *st)
+{
+    int i, regs;
+    String str;
+    enum reg r;
+    struct symbol *sym;
+    struct asm_operand *op;
+    char clobbered[XMM15 - AX] = {0};
+
+    static String
+        memory = SHORT_STRING_INIT("memory"),
+        cc = SHORT_STRING_INIT("cc");
+
+    regs = 0;
+    for (i = 0; i < array_len(&st->clobbers); ++i) {
+        str = array_get(&st->clobbers, i);
+        if (!str_cmp(memory, str) || !str_cmp(cc, str)) {
+            continue;
+        }
+
+        r = get_clobbered_register(str);
+        if (r < AX || r > R15) {
+            error("Unsupported clobber register.");
+            exit(1);
+        }
+
+        clobbered[r - AX] = 1;
+    }
+
+    for (i = 0; i < array_len(&st->operands); ++i) {
+        op = &array_get(&st->operands, i);
+        assert(op->variable.kind == DIRECT || op->variable.kind == DEREF);
+        sym = (struct symbol *) op->variable.symbol;
+        if (sym->slot || sym->memory) {
+            continue;
+        }
+
+        str = op->constraint;
+        if ((str_chr(str, 'r') && !str_chr(str, 'm'))
+            || op->variable.kind == DEREF)
+        {
+            do {
+                regs++;
+            } while (regs <= TEMP_INT_REGS
+                && clobbered[temp_int_reg[regs - 1] - 1]);
+            if (regs > TEMP_INT_REGS) {
+                error("Insufficient registers to honor __asm__ constraint.");
+                exit(1);
+            }
+            sym->slot = regs;
+        } else if (!str_chr(str, 'r') && str_chr(str, 'm')) {
+            sym->memory = 1;
+        }
+    }
+
+    return regs;
+}
+
 /*
  * Assign a subset of local variables to temporary registers, populating
- * sym->slot.
+ * sym->slot and sym->memory.
+ *
+ * Functions with __asm__ blocks have only their register operands
+ * allocated, and will fail to compile if there are not enough registers
+ * available.
  *
  * Return number of registers allocated.
  */
 static int allocate_registers(struct definition *def)
 {
-    int i, regs;
+    int i, regs, c;
     struct symbol *sym;
+    struct asm_statement *st;
 
     regs = 0;
-    for (i = 0; i < array_len(&def->locals); ++i) {
-        sym = array_get(&def->locals, i);
-        if (is_temporary(sym)
-            && sym->slot == 0
-            && (is_integer(sym->type) || is_pointer(sym->type))
-            && regs < TEMP_INT_REGS)
-        {
-            assert(sym->linkage == LINK_NONE);
-            sym->slot = ++regs;
+    if (array_len(&def->asm_statements)) {
+        for (i = 0; i < array_len(&def->asm_statements); ++i) {
+            st = &array_get(&def->asm_statements, i);
+            c = allocate_asmblock_registers(st);
+            if (c > regs) {
+                regs = c;
+            }
+        }
+    } else {
+        for (i = 0; i < array_len(&def->locals); ++i) {
+            sym = array_get(&def->locals, i);
+            if (is_temporary(sym)
+                && sym->slot == 0
+                && (is_integer(sym->type) || is_pointer(sym->type))
+                && regs < TEMP_INT_REGS)
+            {
+                assert(sym->linkage == LINK_NONE);
+                sym->slot = ++regs;
+            }
         }
     }
 
@@ -2718,6 +2825,11 @@ static void compile_vla_alloc(
     store(SP, var_direct(sym->value.vla_address));
 }
 
+static void compile__asm(struct asm_statement st)
+{
+    assemble_inline(st, emit_instruction);
+}
+
 static void compile_statement(struct statement stmt)
 {
     switch (stmt.st) {
@@ -2738,6 +2850,9 @@ static void compile_statement(struct statement stmt)
         assert(stmt.t.kind == DIRECT);
         assert(stmt.t.symbol);
         compile_vla_alloc(stmt.t.symbol, stmt.expr);
+        break;
+    case IR_ASM:
+        compile__asm(array_get(&definition->asm_statements, stmt.asm_index));
         break;
     }
 

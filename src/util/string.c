@@ -79,3 +79,18 @@ INTERNAL int str_cmp(String s1, String s2)
 
     return memcmp(s1.p.str, s2.p.str, s1.len);
 }
+
+INTERNAL const char *str_chr(String s, char c)
+{
+    int i;
+    const char *str;
+
+    str = str_raw(s);
+    for (i = 0; i < s.len; ++i) {
+        if (str[i] == c) {
+            return str + i;
+        }
+    }
+
+    return NULL;
+}

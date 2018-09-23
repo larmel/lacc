@@ -874,7 +874,7 @@ static struct block *logical_or_expression(
     return block;
 }
 
-static struct block *conditional_expression(
+INTERNAL struct block *conditional_expression(
     struct definition *def,
     struct block *block)
 {

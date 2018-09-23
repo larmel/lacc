@@ -131,8 +131,10 @@ struct statement {
         IR_PARAM,     /* param (expr)        */
         IR_VA_START,  /* va_start(expr)      */
         IR_ASSIGN,    /* t = expr            */
-        IR_VLA_ALLOC  /* vla_alloc t, (expr) */
+        IR_VLA_ALLOC, /* vla_alloc t, (expr) */
+        IR_ASM        /* */
     } st;
+    int asm_index;
     unsigned long out;
     struct var t;
     struct expression expr;
@@ -182,6 +184,35 @@ struct block {
     /* Liveness at the start and end of the block. */
     unsigned long in;
     unsigned long out;
+};
+
+/*
+ * Operand in __asm__ statement.
+ *
+ * Can have aliases instead of numeric reference.
+ *
+ *     [foo] "=r" (a)
+ */
+struct asm_operand {
+    struct var variable;
+    String alias;
+    String constraint;
+};
+
+/*
+ * Inline __asm__ statement, containing a template with raw assembly
+ * instructions, and lists of input/output operands, clobbers, and goto
+ * targets.
+ *
+ * Representation in IR is identical to what is written in the source
+ * code. All translation of inline assembly happens in the backend,
+ * where the template string is parsed and validated.
+ */
+struct asm_statement {
+    String template;
+    array_of(struct asm_operand) operands;
+    array_of(String) clobbers;
+    array_of(struct block *) targets;
 };
 
 /*
@@ -235,6 +266,9 @@ struct definition {
      * everything at the end.
      */
     array_of(struct block *) nodes;
+
+    /* Inline assembly stored more or less as-is from parsing. */
+    array_of(struct asm_statement) asm_statements;
 };
 
 /* Convert variable to no-op IR_OP_CAST expression. */

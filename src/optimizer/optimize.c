@@ -106,6 +106,7 @@ static int enumerate_used_symbols(struct block *block)
 
     for (i = 0, n = 0; i < array_len(&block->code); ++i) {
         s = &array_get(&block->code, i);
+        assert(s->st != IR_ASM);
         switch (s->expr.op) {
         default:
             n += count_symbol((struct symbol *) s->expr.r.symbol);
@@ -253,8 +254,12 @@ INTERNAL void optimize(struct definition *def)
 {
     int syms, n;
 
-    if (!optimization_level || !is_function(def->symbol->type))
+    if (!optimization_level
+        || !is_function(def->symbol->type)
+        || array_len(&def->asm_statements))
+    {
         return;
+    }
 
     array_empty(&blocklist);
     array_empty(&symbols);

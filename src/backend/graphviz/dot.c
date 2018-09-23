@@ -251,6 +251,9 @@ static void dot_print_node(struct block *node)
             dot_print_expr(s.expr);
             fputs(")", stream);
             break;
+        case IR_ASM:
+            fprintf(stream, " | __asm__");
+            break;
         }
     }
 
