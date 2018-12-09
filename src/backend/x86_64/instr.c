@@ -10,6 +10,7 @@
  * Map register enum values to register encoding. Depends on register
  * enumeration values.
  */
+#define reg3(arg) ((arg - 1) & 0x7)
 #define regi(arg) (((arg).r - 1) % 8)
 #define is_64_bit(arg) ((arg).w >> 3)
 #define is_32_bit(arg) (((arg).w >> 2) & 1)
@@ -109,19 +110,16 @@ enum tttn {
  *
  * Addend is to account for additional bytes in the instruction after
  * relocation offset is written.
- *
- * Some instructions, such as lea, require explicit offset to be
- * included. Marked 'mod(A)' in the manual.
  */
 static void encode_addr(
     struct code *c,
     unsigned int reg,
     struct address addr,
-    int addend,
-    int require_offset)
+    int addend)
 {
-    unsigned int mod;
     enum rel_type reloc;
+    int has_sib, has_displacement;
+
     assert(addr.mult == 1 || !addr.mult);
 
     if (addr.sym) {
@@ -135,41 +133,34 @@ static void encode_addr(
         elf_add_reloc_text(addr.sym, reloc, c->len, addr.disp - addend);
         memset(&c->val[c->len], 0, 4);
         c->len += 4;
-    } else if (addr.base == SP) {
-        assert(in_byte_range(addr.disp));
-        assert(addr.offset == 0);
-        mod = (addr.disp == 0 || require_offset) ? 0x00 : 0x40;
-        c->val[c->len++] = mod | (reg << 3) | 0x04; /* ModR/M */
-        c->val[c->len++] = 0x24; /* SIB */
-        if (addr.disp != 0 || require_offset) {
-            c->val[c->len++] = addr.disp;
-        }
     } else {
+        /* SP is used as sentinel for SIB, and R12 overlaps. */
+        has_sib = addr.offset || reg3(addr.base) == reg3(SP);
+
+        /* Explicit displacement must be used with BP or R13. */
+        has_displacement = addr.disp || reg3(addr.base) == reg3(BP);
+
         /* ModR/M */
-        c->val[c->len++] =
-            ((reg & 0x7) << 3) | ((!addr.offset) ? ((addr.base - 1) % 8) : 4);
-        if (in_byte_range(addr.disp)) {
-            if (addr.disp != 0 || require_offset) {
-                c->val[c->len - 1] |= 0x40;
-            }
-        } else {
+        c->val[c->len++] = ((reg & 0x7) << 3) | (has_sib ? 4 : reg3(addr.base));
+        if (!in_byte_range(addr.disp)) {
             c->val[c->len - 1] |= 0x80;
+        } else if (has_displacement) {
+            c->val[c->len - 1] |= 0x40;
         }
 
         /* SIB */
-        if (addr.offset) {
-            assert(!is_64_bit_reg(addr.base));
-            c->val[c->len++] = ((addr.offset - 1) << 3) | (addr.base - 1);
+        if (has_sib) {
+            c->val[c->len] = (addr.offset) ? reg3(addr.offset) : reg3(SP);
+            c->val[c->len] = (c->val[c->len] << 3) | reg3(addr.base);
+            c->len++;
         }
 
         /* Displacement */
-        if (in_byte_range(addr.disp)) {
-            if (addr.disp != 0 || require_offset) {
-                c->val[c->len++] = addr.disp;
-            }
-        } else {
+        if (!in_byte_range(addr.disp)) {
             memcpy(&c->val[c->len], &addr.disp, 4);
             c->len += 4;
+        } else if (has_displacement) {
+            c->val[c->len++] = addr.disp;
         }
     }
 }
@@ -249,14 +240,14 @@ static struct code mov(
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | mrex(b.mem.addr);
         }
         c.val[c.len++] = 0x88 | w(a.reg);
-        encode_addr(&c, regi(a.reg), b.mem.addr, 0, 0);
+        encode_addr(&c, regi(a.reg), b.mem.addr, 0);
         break;
     case OPT_MEM_REG:
         if (rrex(b.reg) || mrex(a.mem.addr)) {
             c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
         }
         c.val[c.len++] = 0x8A + w(b.reg);
-        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0);
         break;
     case OPT_IMM_MEM:
         assert(a.imm.type == IMM_INT);
@@ -270,14 +261,14 @@ static struct code mov(
         }
         c.val[c.len++] = 0xC6 | w(b.mem);
         if (b.mem.w == 1) {
-            encode_addr(&c, 0, b.mem.addr, 1, 0);
+            encode_addr(&c, 0, b.mem.addr, 1);
             c.val[c.len++] = a.imm.d.byte;
         } else if (b.mem.w == 2) {
-            encode_addr(&c, 0, b.mem.addr, 2, 0);
+            encode_addr(&c, 0, b.mem.addr, 2);
             memcpy(&c.val[c.len], &a.imm.d.word, 2);
             c.len += 2;
         } else {
-            encode_addr(&c, 0, b.mem.addr, 4, 0);
+            encode_addr(&c, 0, b.mem.addr, 4);
             memcpy(&c.val[c.len], &a.imm.d.dword, 4);
             c.len += 4;
         }
@@ -320,7 +311,7 @@ static struct code movsx(
             c.val[c.len++] = 0x0F;
             c.val[c.len++] = 0xBE | w(a.mem);
         }
-        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0);
         break;
     }
 
@@ -348,7 +339,7 @@ static struct code movzx(
         }
         c.val[c.len++] = 0x0F;
         c.val[c.len++] = 0xB6 | w(a.mem);
-        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0);
     } else
         assert(0);
 
@@ -384,7 +375,7 @@ static struct code encode_push(enum instr_optype optype, union operand op)
             c.val[c.len++] = REX  | W(op.mem);
         }
         c.val[c.len++] = 0xFF;
-        encode_addr(&c, 0x6, op.mem.addr, 0, 0);
+        encode_addr(&c, 0x6, op.mem.addr, 0);
         break;
     default: assert(0);
     }
@@ -477,11 +468,11 @@ static struct code encode_add(
         }
         c.val[c.len++] = 0x80 | is_byte_imm(a.imm) << 1 | w(b.mem);
         if (is_byte_imm(a.imm)) {
-            encode_addr(&c, 0, b.mem.addr, 1, 0);
+            encode_addr(&c, 0, b.mem.addr, 1);
             c.val[c.len++] = a.imm.d.byte;
         } else {
             assert(is_32bit_imm(a.imm));
-            encode_addr(&c, 0, b.mem.addr, 4, 0);
+            encode_addr(&c, 0, b.mem.addr, 4);
             memcpy(&c.val[c.len], &a.imm.d.dword, 4);
             c.len += 4;
         }
@@ -492,14 +483,14 @@ static struct code encode_add(
             c.val[c.len++] = REX | W(a.reg) | R(a.reg);
         }
         c.val[c.len++] = 0x00 | is_64_bit_reg(a.reg.r) << 1 | w(b.mem);
-        encode_addr(&c, regi(a.reg), b.mem.addr, 0, 0);
+        encode_addr(&c, regi(a.reg), b.mem.addr, 0);
         break;
     case OPT_MEM_REG:
         if (rrex(b.reg) || mrex(a.mem.addr)) {
             c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
         }
         c.val[c.len++] = 0x00 | !is_64_bit_reg(b.reg.r) << 1 | w(b.reg);
-        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0);
         break;
     }
 
@@ -580,11 +571,11 @@ static struct code cmp(
         assert(!mrex(b.mem.addr));
         c.val[c.len++] = 0x80 | is_byte_imm(a.imm) << 1 | w(b.mem);
         if (is_byte_imm(a.imm)) {
-            encode_addr(&c, 0x7, b.mem.addr, 1, 0);
+            encode_addr(&c, 0x7, b.mem.addr, 1);
             c.val[c.len++] = a.imm.d.byte;
         } else {
             assert(is_32bit_imm(a.imm));
-            encode_addr(&c, 0x7, b.mem.addr, 4, 0);
+            encode_addr(&c, 0x7, b.mem.addr, 4);
             memcpy(&c.val[c.len], &a.imm.d.dword, 4);
             c.len += 4;
         }
@@ -594,14 +585,14 @@ static struct code cmp(
             c.val[c.len++] = REX | W(b.reg) | R(b.reg) | mrex(a.mem.addr);
         }
         c.val[c.len++] = 0x3A | w(b.reg);
-        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0);
         break;
     case OPT_REG_MEM:
         if (mrex(b.mem.addr) || rrex(a.reg)) {
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | mrex(b.mem.addr);
         }
         c.val[c.len++] = 0x38 | w(a.reg);
-        encode_addr(&c, regi(a.reg), b.mem.addr, 0, 0);
+        encode_addr(&c, regi(a.reg), b.mem.addr, 0);
         break;
     default: assert(0);
     }
@@ -667,7 +658,7 @@ static struct code lea(
 
     c.val[c.len++] = REX | W(b.reg) | R(b.reg);
     c.val[c.len++] = 0x8D;
-    encode_addr(&c, regi(b.reg), a.mem.addr, 0, 1);
+    encode_addr(&c, regi(b.reg), a.mem.addr, 0);
     return c;
 }
 
@@ -744,7 +735,7 @@ static struct code encode_mul(enum instr_optype optype, union operand op)
             c.val[c.len++] = REX | W(op.mem) | is_64_bit_reg(op.mem.addr.base);
         }
         c.val[c.len++] = 0xF6 | w(op.mem);
-        encode_addr(&c, 0x4, op.mem.addr, 0, 0);
+        encode_addr(&c, 0x4, op.mem.addr, 0);
     }
 
     return c;
@@ -766,7 +757,7 @@ static struct code encode_div(enum instr_optype optype, union operand op)
             c.val[c.len++] = REX | W(op.mem) | is_64_bit_reg(op.mem.addr.base);
         }
         c.val[c.len++] = 0xF6 | w(op.mem);
-        encode_addr(&c, 0x6, op.mem.addr, 0, 0);
+        encode_addr(&c, 0x6, op.mem.addr, 0);
     }
 
     return c;
@@ -784,7 +775,7 @@ static struct code encode_signed_div(enum instr_optype optype, union operand op)
         assert(optype == OPT_MEM);
         c.val[c.len++] = REX | W(op.mem) | is_64_bit_reg(op.mem.addr.base);
         c.val[c.len++] = 0xF6 | w(op.mem);
-        encode_addr(&c, 0x7, op.mem.addr, 0, 0);
+        encode_addr(&c, 0x7, op.mem.addr, 0);
     }
 
     return c;
@@ -893,7 +884,7 @@ static struct code movaps(
     assert(optype == OPT_REG_MEM);
     assert(a.reg.r >= XMM0 && a.reg.r <= XMM7);
 
-    encode_addr(&c, (a.reg.r - XMM0), b.mem.addr, 0, 0);
+    encode_addr(&c, (a.reg.r - XMM0), b.mem.addr, 0);
     return c;
 }
 
@@ -918,7 +909,7 @@ static struct code sse_mov(
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = 0x10;
-        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0);
         break;
     case OPT_REG_MEM:
         if (rrex(a.reg) || mrex(b.mem.addr)) {
@@ -926,7 +917,7 @@ static struct code sse_mov(
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = 0x11;
-        encode_addr(&c, regi(a.reg), b.mem.addr, 0, 0);
+        encode_addr(&c, regi(a.reg), b.mem.addr, 0);
         break;
     default: assert(0);
     }
@@ -983,7 +974,7 @@ static struct code sse_enc(
         }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = opcode2;
-        encode_addr(&c, regi(b.reg), a.mem.addr, 0, 0);
+        encode_addr(&c, regi(b.reg), a.mem.addr, 0);
     } else {
         assert(optype == OPT_REG_REG);
         if (rrex(a.reg) || rrex(b.reg)) {
@@ -1046,15 +1037,15 @@ static struct code x87_encode_transfer(unsigned int op, union operand m)
     switch (m.mem.w) {
     case 4:
         c.val[c.len++] = PREFIX_X87 | 0x01;
-        encode_addr(&c, op, m.mem.addr, 0, 0);
+        encode_addr(&c, op, m.mem.addr, 0);
         break;
     case 8:
         c.val[c.len++] = PREFIX_X87 | 0x05;
-        encode_addr(&c, op, m.mem.addr, 0, 0);
+        encode_addr(&c, op, m.mem.addr, 0);
         break;
     default:
         c.val[c.len++] = PREFIX_X87 | 0x03;
-        encode_addr(&c, op | 0x05, m.mem.addr, 0, 0);
+        encode_addr(&c, op | 0x05, m.mem.addr, 0);
         break;
     }
 
@@ -1083,15 +1074,15 @@ static struct code fild(unsigned int op, union operand m)
     switch (m.mem.w) {
     case 2:
         c.val[c.len++] = PREFIX_X87 | 0x07;
-        encode_addr(&c, op, m.mem.addr, 0, 0);
+        encode_addr(&c, op, m.mem.addr, 0);
         break;
     case 4:
         c.val[c.len++] = PREFIX_X87 | 0x03;
-        encode_addr(&c, op, m.mem.addr, 0, 0);
+        encode_addr(&c, op, m.mem.addr, 0);
         break;
     case 8:
         c.val[c.len++] = PREFIX_X87 | 0x07;
-        encode_addr(&c, op | 0x05, m.mem.addr, 0, 0);
+        encode_addr(&c, op | 0x05, m.mem.addr, 0);
         break;
     }
 
@@ -1113,14 +1104,14 @@ static struct code fistp(union operand op)
 
     if (op.mem.w == 2) {
         c.val[c.len++] = PREFIX_X87 | 0x07;
-        encode_addr(&c, 0x03, op.mem.addr, 0, 0);
+        encode_addr(&c, 0x03, op.mem.addr, 0);
     } else if (op.mem.w == 4) {
         c.val[c.len++] = PREFIX_X87 | 0x03;
-        encode_addr(&c, 0x03, op.mem.addr, 0, 0);
+        encode_addr(&c, 0x03, op.mem.addr, 0);
     } else {
         assert(op.mem.w == 8);
         c.val[c.len++] = PREFIX_X87 | 0x07;
-        encode_addr(&c, 0x07, op.mem.addr, 0, 0);
+        encode_addr(&c, 0x07, op.mem.addr, 0);
     }
 
     return c;
@@ -1131,7 +1122,7 @@ static struct code fnstcw(union operand op)
     struct code c = {0};
 
     c.val[c.len++] = PREFIX_X87 | 0x09;
-    encode_addr(&c, 0x07, op.mem.addr, 0, 0);
+    encode_addr(&c, 0x07, op.mem.addr, 0);
     return c;
 }
 
@@ -1140,7 +1131,7 @@ static struct code fldcw(union operand op)
     struct code c = {0};
 
     c.val[c.len++] = PREFIX_X87 | 0x09;
-    encode_addr(&c, 0x05, op.mem.addr, 0, 0);
+    encode_addr(&c, 0x05, op.mem.addr, 0);
     return c;
 }
 

@@ -1393,7 +1393,6 @@ static int allocate_registers(struct definition *def)
         sym = array_get(&def->locals, i);
         if (is_temporary(sym)
             && sym->slot == 0
-            && is_arithmetic(sym->type)
             && (is_integer(sym->type) || is_pointer(sym->type))
             && regs < TEMP_INT_REGS)
         {
