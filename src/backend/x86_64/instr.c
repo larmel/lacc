@@ -746,14 +746,14 @@ static struct code encode_div(enum instr_optype optype, union operand op)
     struct code c = {{0}};
 
     if (optype == OPT_REG) {
-        if (is_64_bit_reg(op.reg.r) || op.reg.w > 4) {
+        if (rrex(op.reg)) {
             c.val[c.len++] = REX | W(op.reg) | B(op.reg);
         }
         c.val[c.len++] = 0xF6 | w(op.reg);
         c.val[c.len++] = 0xF0 | regi(op.reg);
     } else {
         assert(optype == OPT_MEM);
-        if (op.mem.w > 4) {
+        if (mrex(op.mem.addr)) {
             c.val[c.len++] = REX | W(op.mem) | is_64_bit_reg(op.mem.addr.base);
         }
         c.val[c.len++] = 0xF6 | w(op.mem);
@@ -768,12 +768,16 @@ static struct code encode_signed_div(enum instr_optype optype, union operand op)
     struct code c = {{0}};
 
     if (optype == OPT_REG) {
-        c.val[c.len++] = REX | W(op.reg) | B(op.reg);
+        if (rrex(op.reg)) {
+            c.val[c.len++] = REX | W(op.reg) | B(op.reg);
+        }
         c.val[c.len++] = 0xF6 | w(op.reg);
         c.val[c.len++] = 0xF8 | regi(op.reg);
     } else {
         assert(optype == OPT_MEM);
-        c.val[c.len++] = REX | W(op.mem) | is_64_bit_reg(op.mem.addr.base);
+        if (mrex(op.mem.addr)) {
+            c.val[c.len++] = REX | W(op.mem) | is_64_bit_reg(op.mem.addr.base);
+        }
         c.val[c.len++] = 0xF6 | w(op.mem);
         encode_addr(&c, 0x7, op.mem.addr, 0);
     }
