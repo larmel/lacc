@@ -71,7 +71,7 @@ Running `./fact` followed by `echo $?` should print `120`.
 
 Implementation
 --------------
-The compiler is written in C89, counting around 13k lines of code in total.
+The compiler is written in C89, counting around 19k lines of code in total.
 There are no external dependencies except for the C standard libary, and some system calls required to invoke the linker.
 
 The implementation is organized into four main parts; preprocessor, parser, optimizer, and backend, each in their own directory under [src/](src/).
