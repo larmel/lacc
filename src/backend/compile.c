@@ -1437,7 +1437,7 @@ static void allocate_asmblock_registers(
     enum reg r;
     struct symbol *sym;
     struct asm_operand *op;
-    char clobbered[XMM15 - AX] = {0};
+    char clobbered[XMM15 - AX + 1] = {0};
 
     static String
         memory = SHORT_STRING_INIT("memory"),
@@ -1452,11 +1452,6 @@ static void allocate_asmblock_registers(
         }
 
         r = get_clobbered_register(str);
-        if (r < AX || r > R15) {
-            error("Unsupported clobber register.");
-            exit(1);
-        }
-
         clobbered[r - AX] = 1;
     }
 
