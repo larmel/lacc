@@ -14,7 +14,7 @@ void foo(void) {
 		"add %1, %0 \n\t"
 		: "+r" (d)
 		: "r" (e), "r" (f)
-		: "r13"
+		: "%r13"
 	);
 
 	printf("%d, %d, %d, %d, %d, %d\n", a, b, c, d, e, f);

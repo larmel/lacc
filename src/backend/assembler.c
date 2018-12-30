@@ -210,10 +210,17 @@ INTERNAL enum reg get_clobbered_register(String clobber)
 {
     int w;
     const char *str;
+    size_t len;
     struct registr reg;
 
     str = str_raw(clobber);
-    reg = parse__asm__register(str, clobber.len, &w);
+    len = clobber.len;
+    if (str[0] == '%') {
+        str++;
+        len--;
+    }
+
+    reg = parse__asm__register(str, len, &w);
     return reg.r;
 }
 
