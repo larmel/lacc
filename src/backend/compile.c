@@ -1084,7 +1084,7 @@ static void bitwise_imm_reg(
             imm.d.dword = (int) imm.d.qword;
             emit(opcode, OPT_IMM_REG, imm, target);
         } else {
-            emit(INSTR_MOVAPS, OPT_IMM_REG, imm, reg(R11, 8));
+            emit(INSTR_MOV, OPT_IMM_REG, imm, reg(R11, 8));
             emit(opcode, OPT_REG_REG, reg(R11, 8), target);
         }
     } else {
