@@ -39,15 +39,24 @@ static array_of(struct var) func_args;
 /*
  * Use callee-saved registers %rbx, %r12, %r13, %r14 and %r15 for
  * temporary integer values.
+ *
+ * Use SSE registers not used for parameter passing as temporaries for
+ * floating point values. These need to be saved before each function
+ * call.
  */
 #define TEMP_INT_REGS (sizeof(temp_int_reg) / sizeof(temp_int_reg[0]))
+#define TEMP_SSE_REGS (sizeof(temp_sse_reg) / sizeof(temp_sse_reg[0]))
 
 static enum reg
     temp_int_reg[] = {BX, R12, R13, R14, R15},
+    temp_sse_reg[] = {XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15},
     param_int_reg[] = {DI, SI, DX, CX, R8, R9},
     param_sse_reg[] = {XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7},
     ret_int_reg[] = {AX, DX},
     ret_sse_reg[] = {XMM0, XMM1};
+
+/* Count number of integer/sse registers allocated for temporaries. */
+static int int_regs_alloc, sse_regs_alloc;
 
 /*
  * Keep track of used registers when evaluating expressions, not having
@@ -99,7 +108,7 @@ static void relase_regs(void)
     sse_regs_used = 0;
 }
 
-static void compile_block(struct block *block, Type type, int stack);
+static void compile_block(struct block *block, Type type);
 
 static void emit(enum opcode opcode, enum instr_optype optype, ...)
 {
@@ -188,8 +197,12 @@ static int is_register_allocated(struct var v)
 static enum reg allocated_register(struct var v)
 {
     if (is_register_allocated(v)) {
-        assert(is_integer(v.symbol->type) || is_pointer(v.symbol->type));
-        return temp_int_reg[v.symbol->slot - 1];
+        if (is_integer(v.symbol->type) || is_pointer(v.symbol->type)) {
+            return temp_int_reg[v.symbol->slot - 1];
+        }
+
+        assert(is_float(v.symbol->type) || is_double(v.symbol->type));
+        return temp_sse_reg[v.symbol->slot - 1];
     }
 
     return 0;
@@ -745,7 +758,10 @@ static enum reg load_x87(struct var v)
     }
 
     if (is_real(v.type)) {
-        if (v.kind == DIRECT && !is_global_offset(v.symbol)) {
+        if (v.kind == DIRECT
+            && !is_register_allocated(v)
+            && !is_global_offset(v.symbol))
+        {
             emit(INSTR_FLD, OPT_MEM, location_of(v, size_of(v.type)));
         } else {
             push(v);
@@ -1411,9 +1427,12 @@ static int allocate_locals(
 
 INTERNAL enum reg get_clobbered_register(String clobber);
 
-static int allocate_asmblock_registers(struct asm_statement *st)
+static void allocate_asmblock_registers(
+    struct asm_statement *st,
+    int *int_regs,
+    int *sse_regs)
 {
-    int i, regs;
+    int i;
     String str;
     enum reg r;
     struct symbol *sym;
@@ -1424,7 +1443,8 @@ static int allocate_asmblock_registers(struct asm_statement *st)
         memory = SHORT_STRING_INIT("memory"),
         cc = SHORT_STRING_INIT("cc");
 
-    regs = 0;
+    *int_regs = 0;
+    *sse_regs = 0;
     for (i = 0; i < array_len(&st->clobbers); ++i) {
         str = array_get(&st->clobbers, i);
         if (!str_cmp(memory, str) || !str_cmp(cc, str)) {
@@ -1452,21 +1472,32 @@ static int allocate_asmblock_registers(struct asm_statement *st)
         if ((str_chr(str, 'r') && !str_chr(str, 'm'))
             || op->variable.kind == DEREF)
         {
-            do {
-                regs++;
-            } while (regs <= TEMP_INT_REGS
-                && clobbered[temp_int_reg[regs - 1] - 1]);
-            if (regs > TEMP_INT_REGS) {
-                error("Insufficient registers to honor __asm__ constraint.");
-                exit(1);
+            if (is_integer(op->variable.type) || is_pointer(op->variable.type)) {
+                do {
+                    (*int_regs)++;
+                } while (*int_regs <= TEMP_INT_REGS
+                    && clobbered[temp_int_reg[*int_regs - 1] - 1]);
+                if (*int_regs > TEMP_INT_REGS) {
+                    error("Insufficient registers to honor __asm__ constraint.");
+                    exit(1);
+                }
+                sym->slot = *int_regs;
+            } else {
+                assert(is_float(op->variable.type));
+                do {
+                    (*sse_regs)++;
+                } while (*sse_regs <= TEMP_SSE_REGS
+                    && clobbered[temp_sse_reg[*sse_regs - 1] - 1]);
+                if (*sse_regs > TEMP_SSE_REGS) {
+                    error("Insufficient registers to honor __asm__ constraint.");
+                    exit(1);
+                }
+                sym->slot = *sse_regs;
             }
-            sym->slot = regs;
         } else if (!str_chr(str, 'r') && str_chr(str, 'm')) {
             sym->memory = 1;
         }
     }
-
-    return regs;
 }
 
 /*
@@ -1476,39 +1507,40 @@ static int allocate_asmblock_registers(struct asm_statement *st)
  * Functions with __asm__ blocks have only their register operands
  * allocated, and will fail to compile if there are not enough registers
  * available.
- *
- * Return number of registers allocated.
  */
-static int allocate_registers(struct definition *def)
+static void allocate_registers(struct definition *def)
 {
-    int i, regs, c;
+    int i, ir, sr;
     struct symbol *sym;
     struct asm_statement *st;
 
-    regs = 0;
+    int_regs_alloc = 0;
+    sse_regs_alloc = 0;
     if (array_len(&def->asm_statements)) {
         for (i = 0; i < array_len(&def->asm_statements); ++i) {
             st = &array_get(&def->asm_statements, i);
-            c = allocate_asmblock_registers(st);
-            if (c > regs) {
-                regs = c;
-            }
+            allocate_asmblock_registers(st, &ir, &sr);
+            if (ir > int_regs_alloc) int_regs_alloc = ir;
+            if (sr > sse_regs_alloc) sse_regs_alloc = sr;
         }
     } else {
         for (i = 0; i < array_len(&def->locals); ++i) {
             sym = array_get(&def->locals, i);
-            if (is_temporary(sym)
-                && sym->slot == 0
-                && (is_integer(sym->type) || is_pointer(sym->type))
-                && regs < TEMP_INT_REGS)
-            {
-                assert(sym->linkage == LINK_NONE);
-                sym->slot = ++regs;
+            if (!is_temporary(sym) || sym->slot)
+                continue;
+
+            assert(sym->linkage == LINK_NONE);
+            if (is_integer(sym->type) || is_pointer(sym->type)) {
+                if (int_regs_alloc < TEMP_INT_REGS) {
+                    sym->slot = ++int_regs_alloc;
+                }
+            } else if (is_float(sym->type) || is_double(sym->type)) {
+                if (sse_regs_alloc < TEMP_SSE_REGS) {
+                    sym->slot = ++sse_regs_alloc;
+                }
             }
         }
     }
-
-    return regs;
 }
 
 /*
@@ -1525,9 +1557,6 @@ static int return_address_offset;
 /*
  * Emit code for entering a function.
  *
- * Return number of temporary registers pushed to stack, which must be
- * restored on return.
- *
  * The stack frame contains, in order:
  *
  *  1) Registers allocated for temporaries that are callee saved, being
@@ -1541,9 +1570,9 @@ static int return_address_offset;
  *  6) Variable length arrays (not allocated here).
  *
  */
-static int enter(struct definition *def)
+static void enter(struct definition *def)
 {
-    int i, n, regs,
+    int i, n,
         register_args = 0,  /* Arguments passed in registers. */
         next_integer_reg = 0,
         next_sse_reg = 0,
@@ -1563,8 +1592,8 @@ static int enter(struct definition *def)
     assert(is_function(type));
 
     /* Figure out how many registers are used for temporaries. */
-    regs = allocate_registers(def);
-    reg_offset = regs * 8;
+    allocate_registers(def);
+    reg_offset = int_regs_alloc * 8;
 
     /*
      * Address of return value is passed as first integer argument. If
@@ -1616,8 +1645,11 @@ static int enter(struct definition *def)
     }
 
     stack_offset = allocate_locals(def, reg_offset, stack_offset);
-    for (i = 0; i < regs; ++i)
+
+    /* Store callee-saved registers to be used for local variables. */
+    for (i = 0; i < int_regs_alloc; ++i) {
         emit(INSTR_PUSH, OPT_REG, reg(temp_int_reg[i], 8));
+    }
 
     /*
      * Make invariant to have %rsp aligned to 0x10, which is mandatory
@@ -1684,8 +1716,6 @@ static int enter(struct definition *def)
             param_sse_reg + next_sse_reg);
         count_register_classifications(arg, &next_integer_reg, &next_sse_reg);
     }
-
-    return regs;
 }
 
 /*
@@ -1952,6 +1982,30 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     }
 }
 
+static void store_caller_saved_registers(void)
+{
+    int i;
+
+    for (i = 0; i < sse_regs_alloc; ++i) {
+        emit(INSTR_SUB, OPT_IMM_REG, constant(16, 8), reg(SP, 8));
+        emit(INSTR_MOVSD, OPT_REG_MEM,
+            reg(temp_sse_reg[i], 16),
+            location(address(0, SP, 0, 0), 16));
+    }
+}
+
+static void load_caller_saved_registers(void)
+{
+    int i;
+
+    for (i = sse_regs_alloc - 1; i >= 0; --i) {
+        emit(INSTR_MOVSD, OPT_MEM_REG,
+            location(address(0, SP, 0, 0), 16),
+            reg(temp_sse_reg[i], 16));
+        emit(INSTR_ADD, OPT_IMM_REG, constant(16, 8), reg(SP, 8));
+    }
+}
+
 /*
  * Emit function call, optionally with assignment of the result back to
  * a variable. Return register containing the result, if applicable.
@@ -1969,6 +2023,8 @@ static enum reg compile_call(struct var target, struct var ptr)
     func = type_next(ptr.type);
     ret = type_next(func);
     pc = classify(ret);
+
+    store_caller_saved_registers();
     mem_used = push_function_arguments(func, pc);
     if (pc.eightbyte[0] == PC_MEMORY) {
         assert(!is_void(target.type));
@@ -1988,6 +2044,7 @@ static enum reg compile_call(struct var target, struct var ptr)
         emit(INSTR_ADD, OPT_IMM_REG, constant(mem_used, 8), reg(SP, 8));
     }
 
+    load_caller_saved_registers();
     switch (pc.eightbyte[0]) {
     case PC_X87:
         assert(x87_stack == 0);
@@ -2944,7 +3001,7 @@ static void compile_return(Type func, struct expression expr)
  * object, branchhing to the correct next block. All scalar expressions
  * are allowed.
  */
-static void compile_block(struct block *block, Type type, int regs)
+static void compile_block(struct block *block, Type type)
 {
     int i;
     enum reg ax;
@@ -2971,11 +3028,11 @@ static void compile_block(struct block *block, Type type, int regs)
             relase_regs();
             assert(x87_stack == 0);
         }
-        if (regs) {
+        if (int_regs_alloc) {
             emit(INSTR_LEA, OPT_MEM_REG,
-                location(address(-regs * 8, BP, 0, 0), 8),
+                location(address(-int_regs_alloc * 8, BP, 0, 0), 8),
                 reg(SP, 8));
-            for (i = regs; i > 0; --i) {
+            for (i = int_regs_alloc; i > 0; --i) {
                 emit(INSTR_POP, OPT_REG, reg(temp_int_reg[i - 1], 8));
             }
         }
@@ -2985,7 +3042,7 @@ static void compile_block(struct block *block, Type type, int regs)
         if (block->jump[0]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
         } else {
-            compile_block(block->jump[0], type, regs);
+            compile_block(block->jump[0], type);
         }
     } else {
         assert(block->jump[0]);
@@ -3064,10 +3121,10 @@ static void compile_block(struct block *block, Type type, int regs)
         if (block->jump[1]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
         } else {
-            compile_block(block->jump[1], type, regs);
+            compile_block(block->jump[1], type);
         }
 
-        compile_block(block->jump[0], type, regs);
+        compile_block(block->jump[0], type);
     }
 }
 
@@ -3230,18 +3287,16 @@ static void compile_data(struct definition *def)
 
 static void compile_function(struct definition *def)
 {
-    int regs;
-
     assert(is_function(def->symbol->type));
     enter_context(def->symbol);
     emit(INSTR_PUSH, OPT_REG, reg(BP, 8));
     emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(BP, 8));
 
     /* Make sure parameters and local variables are placed on stack. */
-    regs = enter(def);
+    enter(def);
 
     /* Recursively assemble body. */
-    compile_block(def->body, def->symbol->type, regs);
+    compile_block(def->body, def->symbol->type);
 }
 
 INTERNAL void set_compile_target(FILE *stream, const char *file)

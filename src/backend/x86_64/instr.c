@@ -16,13 +16,15 @@
 #define is_32_bit(arg) (((arg).w >> 2) & 1)
 #define is_16_bit(arg) (((arg).w >> 1) & 1)
 #define is_8_bit(arg) ((arg).w & 1)
-#define is_64_bit_reg(arg) ((arg) >= R8 && (arg) <= R15)
+#define is_64_bit_reg(arg) (((arg) >= R8 && (arg) <= R15) \
+    || ((arg) >= XMM8 && (arg) <= XMM15))
 #define is_sse_reg(arg) ((arg).r >= XMM0 && (arg).r <= XMM8)
 
 /* Determine if register or memory argument requires REX prefix. */
 #define rrex(arg) \
-    ((is_64_bit(arg) && (arg).r < XMM0) || is_64_bit_reg(arg.r) || \
-        (arg.w == 1 && (arg.r == DI || arg.r == SI)))
+    ((is_64_bit(arg) && (arg).r < XMM0) \
+        || is_64_bit_reg(arg.r) \
+        || (arg.w == 1 && (arg.r == DI || arg.r == SI)))
 #define mrex(arg) \
     (!arg.sym && ((is_64_bit_reg(arg.base) || is_64_bit_reg(arg.offset))))
 
@@ -913,6 +915,9 @@ static struct code sse_mov(
     c.val[c.len++] = opcode;
     switch (optype) {
     case OPT_REG_REG:
+        if (rrex(a.reg) || rrex(b.reg)) {
+            c.val[c.len++] = REX | R(a.reg) | B(b.reg);
+        }
         c.val[c.len++] = PREFIX_SSE;
         c.val[c.len++] = 0x11;
         c.val[c.len++] = 0xC0 | (regi(a.reg) << 3) | regi(b.reg);
