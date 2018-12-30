@@ -59,8 +59,10 @@ struct registr {
 };
 
 /*
- * Full addressing is disp(base register, offset register, scalar
- * multiplier). Displacement can be relative to symbol.
+ * Full addressing is displacement(%base, %index, scale), producing the
+ * address %base + (%index * scale) + displacement.
+ *
+ * Displacement can be relative to symbol.
  *
  * foo+3(%rip)
  *     Address of foo[3].
@@ -80,11 +82,11 @@ struct address {
     } type;
 
     const struct symbol *sym;
-    int disp;
+    int displacement;
 
     enum reg base;
-    enum reg offset;
-    int mult;
+    enum reg index;
+    unsigned scale;
 };
 
 /* Memory location; address and width. */

@@ -671,7 +671,8 @@ INTERNAL int elf_data(struct immediate imm)
     case IMM_ADDR:
         assert(imm.d.addr.sym);
         assert(imm.w == 8);
-        elf_add_reloc_data(imm.d.addr.sym, R_X86_64_64, imm.d.addr.disp);
+        elf_add_reloc_data(
+            imm.d.addr.sym, R_X86_64_64, imm.d.addr.displacement);
         break;
     case IMM_STRING:
         assert(w == imm.d.string.len + 1 || w == imm.d.string.len);

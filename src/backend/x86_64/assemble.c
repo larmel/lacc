@@ -101,36 +101,36 @@ static const char *asm_address(struct address addr)
         w += sprintf(buf + w, "%s", sym_name(addr.sym));
         switch (addr.type) {
         case ADDR_GLOBAL_OFFSET:
-            assert(addr.disp == 0);
+            assert(addr.displacement == 0);
             w += sprintf(buf + w, "@GOTPCREL");
             break;
         case ADDR_PLT:
-            assert(addr.disp == 0);
+            assert(addr.displacement == 0);
             w += sprintf(buf + w, "@PLT");
             break;
         default:
-            if (addr.disp != 0) {
+            if (addr.displacement != 0) {
                 w += sprintf(buf + w, "%s%d",
-                    (addr.disp > 0) ? "+" : "", addr.disp);
+                    (addr.displacement > 0) ? "+" : "", addr.displacement);
             }
             break;
         }
-    } else if (addr.disp != 0) {
-        w += sprintf(buf, "%d", addr.disp);
+    } else if (addr.displacement != 0) {
+        w += sprintf(buf, "%d", addr.displacement);
     }
 
     if (addr.base) {
         reg.r = addr.base;
         w += sprintf(buf + w, "(%s", mnemonic(reg));
-        if (addr.offset) {
-            reg.r = addr.offset;
-            w += sprintf(buf + w, ",%s,%d", mnemonic(reg), addr.mult);
-        } else assert(!addr.mult);
+        if (addr.index) {
+            reg.r = addr.index;
+            w += sprintf(buf + w, ",%s,%d", mnemonic(reg), addr.scale);
+        } else assert(!addr.scale);
         sprintf(buf + w, ")");
-    } else if (addr.offset) {
-        reg.r = addr.offset;
-        sprintf(buf + w, "(,%s,%d)", mnemonic(reg), addr.mult);
-    } else assert(!addr.mult);
+    } else if (addr.index) {
+        reg.r = addr.index;
+        sprintf(buf + w, "(,%s,%d)", mnemonic(reg), addr.scale);
+    } else assert(!addr.scale);
 
     return buf;
 }
@@ -417,10 +417,10 @@ INTERNAL int asm_data(struct immediate data)
         break;
     case IMM_ADDR:
         assert(data.d.addr.sym);
-        if (data.d.addr.disp) {
+        if (data.d.addr.displacement) {
             out("\t.quad\t%s%s%d\n", sym_name(data.d.addr.sym),
-                data.d.addr.disp < 0 ? "" : "+",
-                data.d.addr.disp);
+                data.d.addr.displacement < 0 ? "" : "+",
+                data.d.addr.displacement);
         } else
             out("\t.quad\t%s\n", sym_name(data.d.addr.sym));
         break;

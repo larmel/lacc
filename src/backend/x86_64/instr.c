@@ -26,7 +26,7 @@
         || is_64_bit_reg(arg.r) \
         || (arg.w == 1 && (arg.r == DI || arg.r == SI)))
 #define mrex(arg) \
-    (!arg.sym && ((is_64_bit_reg(arg.base) || is_64_bit_reg(arg.offset))))
+    (!arg.sym && ((is_64_bit_reg(arg.base) || is_64_bit_reg(arg.index))))
 
 #define PREFIX_SSE 0x0F
 #define PREFIX_OPERAND_SIZE 0x66
@@ -42,7 +42,7 @@
 #define REX 0x40
 #define W(arg) (is_64_bit(arg) << 3)
 #define R(arg) (is_64_bit_reg((arg).r) << 2)
-#define X(arg) (is_64_bit_reg((arg).offset) << 1)
+#define X(arg) (is_64_bit_reg((arg).index) << 1)
 #define B(arg) is_64_bit_reg((arg).r)
 
 /*
@@ -122,8 +122,14 @@ static void encode_addr(
     enum rel_type reloc;
     int has_sib, has_displacement;
 
+    /* Scale is 2 bits, representing 1, 2, 4 or 8. */
+    assert(addr.scale == 0
+        || addr.scale == 1
+        || addr.scale == 2
+        || addr.scale == 4
+        || addr.scale == 8);
+
     if (addr.sym) {
-        assert(addr.mult == 1 || !addr.mult);
         c->val[c->len++] = ((reg & 0x7) << 3) | 0x5;
         if (addr.type == ADDR_GLOBAL_OFFSET) {
             reloc = R_X86_64_GOTPCREL;
@@ -131,21 +137,23 @@ static void encode_addr(
             assert(addr.type == ADDR_NORMAL);
             reloc = R_X86_64_PC32;
         }
-        elf_add_reloc_text(addr.sym, reloc, c->len, addr.disp - addend);
+        elf_add_reloc_text(addr.sym, reloc, c->len, addr.displacement - addend);
         memset(&c->val[c->len], 0, 4);
         c->len += 4;
     } else {
-        assert(addr.base || !addr.disp);
+        assert(addr.base || !addr.displacement);
 
         /* SP is used as sentinel for SIB, and R12 overlaps. */
-        has_sib = addr.offset || !addr.base || reg3(addr.base) == reg3(SP) || addr.mult > 1;
+        has_sib = addr.index
+            || !addr.base || reg3(addr.base) == reg3(SP) || addr.scale > 1;
 
         /* Explicit displacement must be used with BP or R13. */
-        has_displacement = !addr.base || addr.disp || reg3(addr.base) == reg3(BP);
+        has_displacement = !addr.base
+            || addr.displacement || reg3(addr.base) == reg3(BP);
 
         /* ModR/M */
         c->val[c->len++] = ((reg & 0x7) << 3) | (has_sib ? 4 : reg3(addr.base));
-        if (!in_byte_range(addr.disp)) {
+        if (!in_byte_range(addr.displacement)) {
             c->val[c->len - 1] |= 0x80;
         } else if (has_displacement && addr.base) {
             c->val[c->len - 1] |= 0x40;
@@ -153,22 +161,22 @@ static void encode_addr(
 
         /* SIB */
         if (has_sib) {
-            c->val[c->len] = (addr.offset) ? reg3(addr.offset) : reg3(SP);
+            c->val[c->len] = (addr.index) ? reg3(addr.index) : reg3(SP);
             c->val[c->len] = c->val[c->len] << 3;
             c->val[c->len] |= (
-                addr.mult == 2 ? 1 :
-                addr.mult == 4 ? 2 :
-                addr.mult == 8 ? 3 : 0) << 6;
+                addr.scale == 2 ? 1 :
+                addr.scale == 4 ? 2 :
+                addr.scale == 8 ? 3 : 0) << 6;
             c->val[c->len] |= addr.base ? reg3(addr.base) : 5;
             c->len++;
         }
 
         /* Displacement */
-        if (!in_byte_range(addr.disp) || !addr.base) {
-            memcpy(&c->val[c->len], &addr.disp, 4);
+        if (!in_byte_range(addr.displacement) || !addr.base) {
+            memcpy(&c->val[c->len], &addr.displacement, 4);
             c->len += 4;
         } else if (has_displacement) {
-            c->val[c->len++] = addr.disp;
+            c->val[c->len++] = addr.displacement;
         }
     }
 }
@@ -192,6 +200,7 @@ static struct code mov(
     union operand b)
 {
     struct code c = {0};
+    struct address addr;
 
     switch (optype) {
     case OPT_IMM_REG:
@@ -220,8 +229,9 @@ static struct code mov(
             } else {
                 assert(a.imm.type == IMM_ADDR);
                 assert(a.imm.d.addr.type == ADDR_NORMAL);
+                addr = a.imm.d.addr;
                 elf_add_reloc_text(
-                    a.imm.d.addr.sym, R_X86_64_PC32, c.len, a.imm.d.addr.disp);
+                    addr.sym, R_X86_64_PC32, c.len, addr.displacement);
                 memset(&c.val[c.len], 0, 4);
                 c.len += 4;
             }
@@ -512,6 +522,7 @@ static struct code encode_add(
 static struct code encode_call(enum instr_optype optype, union operand op)
 {
     enum rel_type reloc;
+    struct address addr;
     struct code c = {{0}};
 
     if (optype == OPT_IMM) {
@@ -527,7 +538,8 @@ static struct code encode_call(enum instr_optype optype, union operand op)
             reloc = R_X86_64_PC32;
             break;
         }
-        elf_add_reloc_text(op.imm.d.addr.sym, reloc, c.len, op.imm.d.addr.disp);
+        addr = op.imm.d.addr;
+        elf_add_reloc_text(addr.sym, reloc, c.len, addr.displacement);
         c.len += 4;
     } else {
         assert(optype == OPT_REG);
@@ -630,7 +642,7 @@ static struct code jcc(
      * Existing value will be added to offset. Subtract 4 to account for
      * instruction length, offset is counted after the immediate.
      */
-    disp = elf_text_displacement(addr->sym, c.len) + addr->disp - 4;
+    disp = elf_text_displacement(addr->sym, c.len) + addr->displacement - 4;
     ptr = (int *) (c.val + c.len);
     *ptr = disp;
     c.len += 4;
@@ -646,7 +658,7 @@ static struct code jmp(enum instr_optype optype, union operand op)
     assert(optype == OPT_IMM);
     assert(addr->sym);
 
-    disp = elf_text_displacement(addr->sym, c.len) + addr->disp - 4;
+    disp = elf_text_displacement(addr->sym, c.len) + addr->displacement - 4;
     ptr = (int *) (c.val + c.len);
     *ptr = disp;
     c.len += 4;

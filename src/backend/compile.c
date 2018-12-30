@@ -237,7 +237,7 @@ static struct address address_of(struct var var)
     struct address addr = {0};
     assert(var.kind != DEREF);
 
-    addr.disp = displacement_from_offset(var.offset);
+    addr.displacement = displacement_from_offset(var.offset);
     if (var.kind == IMMEDIATE) {
         assert(is_string(var));
         addr.base = IP;
@@ -249,11 +249,11 @@ static struct address address_of(struct var var)
             assert(!context.pic);
         case LINK_INTERN:
             addr.base = IP;
-            addr.disp = displacement_from_offset(var.offset);
+            addr.displacement = displacement_from_offset(var.offset);
             addr.sym = var.symbol;
             break;
         case LINK_NONE:
-            addr.disp += var.symbol->stack_offset;
+            addr.displacement += var.symbol->stack_offset;
             addr.base = BP;
             break;
         }
@@ -268,13 +268,21 @@ static struct memory location_of(struct var var, int w)
     return location(address_of(var), w);
 }
 
-static struct address address(int disp, enum reg base, enum reg off, int mult)
+static struct address address(
+    int displacement,
+    enum reg base,
+    enum reg index,
+    unsigned scale)
 {
-    struct address addr = {0};
-    addr.disp = disp;
+    struct address addr = {ADDR_NORMAL};
+
+    assert((!index && scale == 0)
+        || (index && (scale == 1 || scale == 2 || scale == 4 || scale == 8)));
+
+    addr.displacement = displacement;
     addr.base = base;
-    addr.offset = off;
-    addr.mult = mult;
+    addr.index = index;
+    addr.scale = scale;
     return addr;
 }
 
@@ -3136,7 +3144,7 @@ static void compile_data_assign(struct var target, struct var val)
                 imm.type = IMM_ADDR;
                 imm.d.addr.base = IP;
                 imm.d.addr.sym = val.symbol;
-                imm.d.addr.disp = displacement_from_offset(val.offset);
+                imm.d.addr.displacement = displacement_from_offset(val.offset);
                 break;
             }
         case T_BOOL:
@@ -3177,7 +3185,7 @@ static void compile_data_assign(struct var target, struct var val)
         imm.type = IMM_ADDR;
         imm.d.addr.base = IP;
         imm.d.addr.sym = val.symbol;
-        imm.d.addr.disp = displacement_from_offset(val.offset);
+        imm.d.addr.displacement = displacement_from_offset(val.offset);
     }
 
     emit_data(imm);

@@ -268,14 +268,14 @@ static int parse_asm_address(
     /* Index and scale. */
     t = asmtok(line, &line);
     if (t.type == ASM_REG) {
-        addr->offset = parse_asm_int_reg(t.str, t.len, &w);
+        addr->index = parse_asm_int_reg(t.str, t.len, &w);
         t = asmtok(line, &line);
         if (t.type != ',') {
             *endptr = line;
             return 1;
         }
 
-        addr->mult = strtol(line, (char **) &line, 10);
+        addr->scale = strtol(line, (char **) &line, 10);
         t = asmtok(line, &line);
     }
 
@@ -298,7 +298,7 @@ static enum instr_optype parse__asm__operand(
     opt = OPT_NONE;
     switch ((t = asmtok(line, &line)).type) {
     case ASM_NUMBER:
-        op->mem.addr.disp = t.val;
+        op->mem.addr.displacement = t.val;
         t = asmtok(line, &line);
         if (t.type != '(') {
             error("Expected '(' after displacement in address operand.");
