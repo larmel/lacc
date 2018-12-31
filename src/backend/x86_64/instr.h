@@ -54,8 +54,8 @@ INTERNAL int x87_stack_pos(enum reg r);
 
 /* Register and width, which is 1, 2, 4 or 8. */
 struct registr {
+    int width;
     enum reg r;
-    int w;
 };
 
 /*
@@ -91,8 +91,8 @@ struct address {
 
 /* Memory location; address and width. */
 struct memory {
+    int width;
     struct address addr;
-    int w;
 };
 
 /*
@@ -101,12 +101,12 @@ struct memory {
  * .LC1+1 in GNU assembly.
  */
 struct immediate {
+    int width;
     enum {
         IMM_INT,    /* 1, 2, 4 or 8 byte signed number. */
         IMM_ADDR,   /* Symbol-relative address, label etc. */
         IMM_STRING  /* string value, only used for initialization. */
     } type;
-    int w;
     union {
         char byte;
         short word;
@@ -219,6 +219,7 @@ struct instruction {
         OPT_IMM_MEM = 128
     } optype;
     union operand {
+        int width;
         struct registr reg;
         struct memory mem;
         struct immediate imm;

@@ -168,7 +168,7 @@ static struct registr reg(enum reg r, int w)
 {
     struct registr v = {0};
     v.r = r;
-    v.w = w;
+    v.width = w;
     return v;
 }
 
@@ -218,7 +218,7 @@ static struct immediate value_of(struct var var, int w)
     assert(is_scalar(var.type));
     assert(w == 1 || w == 2 || w == 4 || w == 8);
 
-    imm.w = w;
+    imm.width = w;
     imm.type = IMM_INT;
     imm.d.qword = var.imm.i;
     return imm;
@@ -228,7 +228,7 @@ static struct memory location(struct address addr, int w)
 {
     struct memory loc = {0};
     loc.addr = addr;
-    loc.w = w;
+    loc.width = w;
     return loc;
 }
 
@@ -237,6 +237,7 @@ static struct address address_of(struct var var)
     struct address addr = {0};
     assert(var.kind != DEREF);
 
+    addr.type = ADDR_NORMAL;
     addr.displacement = displacement_from_offset(var.offset);
     if (var.kind == IMMEDIATE) {
         assert(is_string(var));
@@ -249,7 +250,6 @@ static struct address address_of(struct var var)
             assert(!context.pic);
         case LINK_INTERN:
             addr.base = IP;
-            addr.displacement = displacement_from_offset(var.offset);
             addr.sym = var.symbol;
             break;
         case LINK_NONE:
@@ -299,7 +299,9 @@ static struct address got(const struct symbol *sym)
 
 static struct immediate addr(const struct symbol *sym)
 {
-    struct immediate imm = {IMM_ADDR};
+    struct immediate imm = {0};
+
+    imm.type = IMM_ADDR;
     imm.d.addr.sym = sym;
     if (is_global_offset(sym)) {
         if (is_function(sym->type)) {
@@ -320,7 +322,7 @@ static struct immediate constant(long n, int w)
     assert(w == 1 || w == 2 || w == 4 || w == 8);
     imm.type = IMM_INT;
     imm.d.qword = n;
-    imm.w = w;
+    imm.width = w;
     return imm;
 }
 
@@ -332,7 +334,7 @@ INTERNAL enum instr_optype allocation(struct var var, union operand *op, int *w)
     if (is_register_allocated(var)) {
         if (*w == 0) *w = size_of(var.type);
         op->reg.r = allocated_register(var);
-        op->reg.w = *w;
+        op->reg.width = *w;
         return OPT_REG;
     }
 
@@ -474,20 +476,20 @@ static void emit_load(
                 dest);
             break;
         } else if (is_string(source)) {
-            assert(dest.w == 8);
+            assert(dest.width == 8);
             assert(opcode == INSTR_MOV);
-            emit(INSTR_LEA, OPT_MEM_REG, address_of(source), dest);
+            emit(INSTR_LEA, OPT_MEM_REG, location(address_of(source), 8), dest);
             break;
         } else {
             assert(opcode == INSTR_MOV);
-            emit(opcode, OPT_IMM_REG, value_of(source, dest.w), dest);
+            emit(opcode, OPT_IMM_REG, value_of(source, dest.width), dest);
             break;
         }
     case DIRECT:
         if (is_register_allocated(source)) {
             ax = allocated_register(source);
             if (opcode == INSTR_MOV) {
-                w = dest.w;
+                w = dest.width;
             }
             emit(opcode, OPT_REG_REG, reg(ax, w), dest);
         } else if (is_global_offset(source.symbol)) {
@@ -530,7 +532,7 @@ static void emit_load(
         break;
     case ADDRESS:
         assert(opcode == INSTR_LEA);
-        assert(dest.w == 8);
+        assert(dest.width == 8);
         if (is_global_offset(source.symbol)) {
             ax = dest.r;
             emit(INSTR_MOV, OPT_MEM_REG, location(got(source.symbol), 8), dest);
@@ -584,7 +586,7 @@ static void load_field(struct var v, enum reg r, int w)
     }
 
     emit_load(INSTR_MOV, v, ax);
-    bits = (ax.w * 8) - (v.field_offset + v.field_width);
+    bits = (ax.width * 8) - (v.field_offset + v.field_width);
     if (bits > 0) {
         emit(INSTR_SHL, OPT_IMM_REG, constant(bits, 1), ax);
     }
@@ -597,7 +599,7 @@ static void load_field(struct var v, enum reg r, int w)
             ax);
     }
 
-    if (is_signed(v.type) && w > ax.w) {
+    if (is_signed(v.type) && w > ax.width) {
         emit(INSTR_MOVSX, OPT_REG_REG, reg(r, 4), reg(r, 8));
     }
 }
@@ -1086,9 +1088,9 @@ static void bitwise_imm_reg(
 {
     assert(imm.type == IMM_INT);
     assert(target.r != R11);
-    if (imm.w == 8) {
+    if (imm.width == 8) {
         if (imm.d.qword <= INT_MAX && imm.d.qword >= INT_MIN) {
-            imm.w = 4;
+            imm.width = 4;
             imm.d.dword = (int) imm.d.qword;
             emit(opcode, OPT_IMM_REG, imm, target);
         } else {
@@ -3136,7 +3138,7 @@ static void compile_data_assign(struct var target, struct var val)
     struct immediate imm = {0};
     assert(target.kind == DIRECT);
 
-    imm.w = size_of(target.type);
+    imm.width = size_of(target.type);
     if (val.kind == IMMEDIATE) {
         switch (type_of(target.type)) {
         case T_POINTER:
@@ -3162,7 +3164,7 @@ static void compile_data_assign(struct var target, struct var val)
                     long double val;
                     long arr[2];
                 } cast = {0};
-                imm.w = 8;
+                imm.width = 8;
                 cast.val = val.imm.ld;
                 imm.d.qword = cast.arr[0];
                 emit_data(imm);
@@ -3194,9 +3196,9 @@ static void compile_data_assign(struct var target, struct var val)
 static void zero_fill_data(size_t bytes)
 {
     static struct immediate
-        zero_byte = {IMM_INT, 1},
-        zero_int = {IMM_INT, 4},
-        zero_quad = {IMM_INT, 8};
+        zero_byte = {1, IMM_INT},
+        zero_int = {4, IMM_INT},
+        zero_quad = {8, IMM_INT};
 
     while (bytes >= size_of(basic_type__long)) {
         emit_data(zero_quad);

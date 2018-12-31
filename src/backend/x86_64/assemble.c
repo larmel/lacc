@@ -72,11 +72,11 @@ static const char *mnemonic(struct registr reg)
     int i, j;
 
     if (reg.r == IP) {
-        assert(reg.w == 8);
+        assert(reg.width == 8);
         return "%rip";
     } else if (reg.r < XMM0) {
         i = 4 * (reg.r - 1);
-        j = reg.w - 1;
+        j = reg.width - 1;
 
         if (j == 3) j = 2;
         if (j == 7) j = 3;
@@ -94,9 +94,10 @@ static const char *asm_address(struct address addr)
 {
     static char buf[MAX_OPERAND_TEXT_LENGTH];
 
-    struct registr reg = {0, 8};
+    struct registr reg = {0};
     int w = 0;
 
+    reg.width = 8;
     if (addr.sym) {
         w += sprintf(buf + w, "%s", sym_name(addr.sym));
         switch (addr.type) {
@@ -140,11 +141,11 @@ static const char *immediate(struct immediate imm, int *size)
     static char buf[MAX_OPERAND_TEXT_LENGTH];
 
     if (imm.type == IMM_INT) {
-        *size = imm.w;
-        if (imm.w < 8) {
+        *size = imm.width;
+        if (imm.width < 8) {
             sprintf(buf, "$%d",
-                (imm.w == 1) ? imm.d.byte :
-                (imm.w == 2) ? imm.d.word : imm.d.dword);
+                (imm.width == 1) ? imm.d.byte :
+                (imm.width == 2) ? imm.d.word : imm.d.dword);
         } else {
             sprintf(buf, "$%ld", imm.d.qword);
         }
@@ -255,7 +256,7 @@ INTERNAL int asm_text(struct instruction instr)
     case OPT_REG:
     case OPT_REG_REG:
     case OPT_REG_MEM:
-        ws = instr.source.reg.w;
+        ws = instr.source.width;
         source = mnemonic(instr.source.reg);
         break;
     case OPT_IMM:
@@ -265,7 +266,7 @@ INTERNAL int asm_text(struct instruction instr)
         break;
     case OPT_MEM:
     case OPT_MEM_REG:
-        ws = instr.source.mem.w;
+        ws = instr.source.width;
         source = asm_address(instr.source.mem.addr);
         break;
     default:
@@ -276,12 +277,12 @@ INTERNAL int asm_text(struct instruction instr)
     case OPT_REG_REG:
     case OPT_MEM_REG:
     case OPT_IMM_REG:
-        wd = instr.dest.reg.w;
+        wd = instr.dest.width;
         destin = mnemonic(instr.dest.reg);
         break;
     case OPT_REG_MEM:
     case OPT_IMM_MEM:
-        wd = instr.dest.mem.w;
+        wd = instr.dest.width;
         destin = asm_address(instr.dest.mem.addr);
         break;
     default:
@@ -404,14 +405,14 @@ INTERNAL int asm_data(struct immediate data)
 {
     switch (data.type) {
     case IMM_INT:
-        if (data.w == 1)
+        if (data.width == 1)
             out("\t.byte\t%d\n", data.d.byte);
-        else if (data.w == 2)
+        else if (data.width == 2)
             out("\t.short\t%d\n", data.d.word);
-        else if (data.w == 4)
+        else if (data.width == 4)
             out("\t.int\t%d\n", data.d.dword);
         else {
-            assert(data.w == 8);
+            assert(data.width == 8);
             out("\t.quad\t%ld\n", data.d.qword);
         }
         break;
@@ -425,10 +426,10 @@ INTERNAL int asm_data(struct immediate data)
             out("\t.quad\t%s\n", sym_name(data.d.addr.sym));
         break;
     case IMM_STRING:
-        if (data.w == data.d.string.len) {
+        if (data.width == data.d.string.len) {
             out("\t.ascii\t");
         } else {
-            assert(data.w == data.d.string.len + 1);
+            assert(data.width == data.d.string.len + 1);
             out("\t.string\t");
         }
         fprintstr(asm_output, data.d.string);

@@ -192,17 +192,17 @@ static struct registr parse__asm__register(const char *str, size_t len, int *w)
     if (!strncmp("xmm", str, 3)) {
         d = strtol(str + 3, &endptr, 10);
         if (endptr == str + len && d >= 0 && d <= 15) {
-            reg.w = 16;
+            reg.width = 16;
             reg.r = XMM0 + d;
         } else {
             error("Invalid SSE register.");
             exit(1);
         }
     } else {
-        reg.r = parse_asm_int_reg(str, len, &reg.w);
+        reg.r = parse_asm_int_reg(str, len, &reg.width);
     }
 
-    *w = reg.w;
+    *w = reg.width;
     return reg;
 }
 
@@ -310,7 +310,7 @@ static enum instr_optype parse__asm__operand(
             error("Invalid memory address operand.");
             exit(1);
         }
-        op->mem.w = *w;
+        op->mem.width = *w;
         break;
     case ASM_CONSTANT:
         assert(*t.str == '$');
@@ -320,7 +320,7 @@ static enum instr_optype parse__asm__operand(
         }
         op->imm.type = IMM_INT;
         op->imm.d.qword = l;
-        op->imm.w = *w;
+        op->imm.width = *w;
         opt = OPT_IMM;
         break;
     case ASM_REG:
@@ -340,7 +340,7 @@ static enum instr_optype parse__asm__operand(
         if (*w == 0) {
             *w = 8;
         }
-        op->imm.w = *w;
+        op->imm.width = *w;
         break;
     default:
         error("Invalid assembly operand %s.", line);
@@ -483,19 +483,9 @@ static struct instruction parse__asm__instruction(
                 error("Unknown address size.");
                 exit(1);
             }
-            if (opt1 == OPT_IMM) {
-                instr.source.imm.w = wd;
-            } else {
-                assert(opt1 == OPT_MEM);
-                instr.source.mem.w = wd;
-            }
+            instr.source.width = wd;
         } else if (!wd) {
-            if (opt2 == OPT_IMM) {
-                instr.dest.imm.w = ws;
-            } else {
-                assert(opt2 == OPT_MEM);
-                instr.dest.mem.w = ws;
-            }
+            instr.dest.width = ws;
         }
         instr.optype = combine_opts(tpl, opt1, opt2);
         break;

@@ -655,22 +655,22 @@ INTERNAL int elf_text(struct instruction instr)
 INTERNAL int elf_data(struct immediate imm)
 {
     const void *ptr = NULL;
-    size_t w = imm.w;
+    size_t w = imm.width;
 
     switch (imm.type) {
     case IMM_INT:
-        if (imm.w == 1)
+        if (imm.width == 1)
             ptr = &imm.d.byte;
-        else if (imm.w == 2)
+        else if (imm.width == 2)
             ptr = &imm.d.word;
-        else if (imm.w == 4)
+        else if (imm.width == 4)
             ptr = &imm.d.dword;
         else
             ptr = &imm.d.qword;
         break;
     case IMM_ADDR:
         assert(imm.d.addr.sym);
-        assert(imm.w == 8);
+        assert(imm.width == 8);
         elf_add_reloc_data(
             imm.d.addr.sym, R_X86_64_64, imm.d.addr.displacement);
         break;
