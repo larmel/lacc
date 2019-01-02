@@ -473,11 +473,8 @@ static void emit_load(
             }
             source.kind = DIRECT;
         } else if (is_zero(source.imm, source.type)) {
-            assert(!is_long_double(source.type));
-            emit(is_real(source.type) ? INSTR_PXOR : INSTR_XOR,
-                OPT_REG_REG,
-                dest,
-                dest);
+            assert(is_integer(source.type) || is_pointer(source.type));
+            emit(INSTR_XOR, OPT_REG_REG, dest, dest);
             break;
         } else if (is_string(source)) {
             assert(dest.width == 8);
