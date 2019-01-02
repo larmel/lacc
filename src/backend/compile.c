@@ -455,6 +455,10 @@ static void emit_load(
     size_t w;
 
     w = size_of(source.type);
+    if (opcode == INSTR_MOV) {
+        w = dest.width;
+    }
+
     assert(is_standard_register_width(w));
     switch (source.kind) {
     case IMMEDIATE:
@@ -488,9 +492,6 @@ static void emit_load(
     case DIRECT:
         if (is_register_allocated(source)) {
             ax = allocated_register(source);
-            if (opcode == INSTR_MOV) {
-                w = dest.width;
-            }
             emit(opcode, OPT_REG_REG, reg(ax, w), dest);
         } else if (is_global_offset(source.symbol)) {
             ax = dest.r < XMM0 ? dest.r : R11;
@@ -516,7 +517,7 @@ static void emit_load(
                 emit(INSTR_MOV, OPT_MEM_REG,
                     location(got(source.symbol), 8), reg(ax, 8));
                 emit(INSTR_MOV, OPT_MEM_REG,
-                    location(address(0, ax, 0, 0), w),
+                    location(address(0, ax, 0, 0), 8),
                     reg(ax, 8));
             } else {
                 ax = R11;
@@ -617,32 +618,38 @@ static void load_int(struct var v, enum reg r, int w)
 
     if (is_field(v)) {
         load_field(v, r, w);
-    } else {
-        opcode = INSTR_MOV;
-        if (v.kind == ADDRESS) {
-            opcode = INSTR_LEA;
-            assert(w == 8);
-            assert(size_of(v.type) == w);
-        } else if (v.kind == IMMEDIATE) {
-            opcode = INSTR_MOV;
-        } else if (size_of(v.type) < w) {
-            if (is_unsigned(v.type)) {
-                if (size_of(v.type) < 4) {
-                    opcode = INSTR_MOVZX;
-                } else if (size_of(v.type) == 4 && w == 8) {
-                    /*
-                     * Special case for unsigned extension from 32 to 64
-                     * bit, as there is no instruction 'movzlq'.
-                     */
-                    opcode = INSTR_MOV;
-                    w = 4;
-                }
-            } else if (is_signed(v.type)) {
-                opcode = INSTR_MOVSX;
-            }
-        }
-        emit_load(opcode, v, reg(r, w));
+        return;
     }
+
+    opcode = INSTR_MOV;
+    if (v.kind == ADDRESS) {
+        opcode = INSTR_LEA;
+        assert(w == 8);
+        assert(size_of(v.type) == w);
+    } else if (v.kind == IMMEDIATE) {
+        opcode = INSTR_MOV;
+    } else if (size_of(v.type) < w) {
+        if (is_unsigned(v.type)) {
+            if (size_of(v.type) < 4) {
+                opcode = INSTR_MOVZX;
+            } else if (size_of(v.type) == 4 && w == 8) {
+                /*
+                 * Special case for unsigned extension from 32 to 64
+                 * bit, as there is no instruction 'movzlq'.
+                 */
+                opcode = INSTR_MOV;
+                w = 4;
+            } else assert(0);
+        } else if (is_signed(v.type)) {
+            opcode = INSTR_MOVSX;
+        } else assert(0);
+    } else if (size_of(v.type) > w) {
+        /* Truncate load from larger to smaller type. */
+        assert(size_of(v.type) == 8);
+        v.type = basic_type__int;
+    }
+
+    emit_load(opcode, v, reg(r, w));
 }
 
 /*

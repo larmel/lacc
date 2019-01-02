@@ -202,6 +202,7 @@ static struct code mov(
     struct code c = {0};
     struct address addr;
 
+    assert(a.width == b.width);
     switch (optype) {
     case OPT_IMM_REG:
         /* Alternative encoding (shorter). */
@@ -243,7 +244,6 @@ static struct code mov(
         }
         break;
     case OPT_REG_REG:
-        assert(a.width == b.width);
         if (rrex(a.reg) || rrex(b.reg)) {
             c.val[c.len++] = REX | W(a.reg) | R(a.reg) | B(b.reg);
         }
@@ -270,7 +270,6 @@ static struct code mov(
     case OPT_IMM_MEM:
         assert(a.imm.type == IMM_INT);
         assert(is_32bit_imm(a.imm));
-        assert(a.width == b.width);
         if (b.width == 2) {
             c.val[c.len++] = PREFIX_OPERAND_SIZE;
         }
