@@ -9,7 +9,7 @@
 #include "x86_64/assemble.h"
 #include "x86_64/dwarf.h"
 #include "x86_64/elf.h"
-#include "x86_64/instr.h"
+#include "x86_64/encoding.h"
 #include <lacc/context.h>
 
 #include <assert.h>
@@ -310,6 +310,7 @@ static struct immediate addr(const struct symbol *sym)
 
     imm.type = IMM_ADDR;
     imm.d.addr.sym = sym;
+    imm.width = 8;
     if (is_global_offset(sym)) {
         if (is_function(sym->type)) {
             imm.d.addr.type = ADDR_PLT;
@@ -333,34 +334,31 @@ static struct immediate constant(long n, int w)
     return imm;
 }
 
-INTERNAL enum instr_optype allocation(struct var var, union operand *op, int *w)
+INTERNAL enum instr_optype allocation(struct var var, union operand *op)
 {
     enum reg ax;
     struct var tmp;
 
     if (is_register_allocated(var)) {
-        if (*w == 0) *w = size_of(var.type);
         op->reg.r = allocated_register(var);
-        op->reg.width = *w;
+        op->width = size_of(var.type);
         return OPT_REG;
     }
 
     switch (var.kind) {
     default: assert(0);
     case DIRECT:
-        if (*w == 0) *w = size_of(var.type);
-        op->mem = location_of(var, *w);
+        op->mem.addr = address_of(var);
         break;
     case DEREF:
         tmp = var_direct(var.symbol);
         assert(is_register_allocated(tmp));
-        if (*w == 0) *w = size_of(tmp.type);
         ax = allocated_register(tmp);
-        op->mem = location(address(
-            displacement_from_offset(var.offset), ax, 0, 0), *w);
+        op->mem.addr = address(displacement_from_offset(var.offset), ax, 0, 0);
         break;
     }
 
+    op->width = size_of(var.type);
     return OPT_MEM;
 }
 
@@ -459,7 +457,7 @@ static void emit_load(
 {
     struct var ptr;
     enum reg ax;
-    size_t w;
+    int w;
 
     w = size_of(source.type);
     if (opcode == INSTR_MOV) {
@@ -490,7 +488,7 @@ static void emit_load(
             break;
         } else {
             assert(opcode == INSTR_MOV);
-            emit(opcode, OPT_IMM_REG, value_of(source, dest.width), dest);
+            emit(INSTR_MOV, OPT_IMM_REG, value_of(source, w), dest);
             break;
         }
     case DIRECT:
@@ -1081,15 +1079,9 @@ static void bitwise_imm_reg(
 {
     assert(imm.type == IMM_INT);
     assert(target.r != R11);
-    if (imm.width == 8) {
-        if (imm.d.qword <= INT_MAX && imm.d.qword >= INT_MIN) {
-            imm.width = 4;
-            imm.d.dword = (int) imm.d.qword;
-            emit(opcode, OPT_IMM_REG, imm, target);
-        } else {
-            emit(INSTR_MOV, OPT_IMM_REG, imm, reg(R11, 8));
-            emit(opcode, OPT_REG_REG, reg(R11, 8), target);
-        }
+    if (imm.width == 8 && (imm.d.qword > INT_MAX || imm.d.qword < INT_MIN)) {
+        emit(INSTR_MOV, OPT_IMM_REG, imm, reg(R11, 8));
+        emit(opcode, OPT_REG_REG, reg(R11, 8), target);
     } else {
         emit(opcode, OPT_IMM_REG, imm, target);
     }
@@ -1111,6 +1103,7 @@ static void store_op(
     enum reg ax;
     enum opcode opc;
     struct var field;
+    struct memory mem;
 
     assert(optype == OPT_IMM || optype == OPT_REG);
     if (is_long_double(target.type)) {
@@ -1143,8 +1136,9 @@ static void store_op(
         } else {
             if (target.field_offset) {
                 emit(INSTR_SHL, OPT_IMM_REG,
-                    constant(target.field_offset, w), op.reg);
+                    constant(target.field_offset, 1), op.reg);
             }
+            assert(op.width == w);
             bitwise_imm_reg(INSTR_AND, constant(mask, w), op.reg);
             emit(INSTR_OR, OPT_REG_REG, reg(CX, w), op.reg);
         }
@@ -1156,14 +1150,17 @@ static void store_op(
         if (optype == OPT_IMM) {
             if ((ax = allocated_register(target)) != 0) {
                 emit(opc, OPT_IMM_REG, op.imm, reg(ax, w));
-            } else if (is_global_offset(target.symbol)) {
-                emit(INSTR_MOV, OPT_MEM_REG,
-                    location(got(target.symbol), 8), reg(R11, 8));
-                emit(opc, OPT_IMM_MEM, op.imm,
-                    location(address(
-                        displacement_from_offset(target.offset), R11, 0, 0), w));
             } else {
-                emit(opc, OPT_IMM_MEM, op.imm, location_of(target, w));
+                if (is_global_offset(target.symbol)) {
+                    emit(INSTR_MOV, OPT_MEM_REG,
+                        location(got(target.symbol), 8), reg(R11, 8));
+                    mem = location(address(
+                        displacement_from_offset(target.offset), R11, 0, 0), w);
+                } else {
+                    mem = location_of(target, w);
+                }
+
+                emit(opc, OPT_IMM_MEM, op.imm, mem);
             }
         } else {
             if ((ax = allocated_register(target)) != 0) {
@@ -1188,14 +1185,12 @@ static void store_op(
             assert(is_pointer(target.symbol->type));
             load_int(var_direct(target.symbol), R11, 8);
         }
+        mem = location(address(
+            displacement_from_offset(target.offset), R11, 0, 0), w);
         if (optype == OPT_IMM) {
-            emit(opc, OPT_IMM_MEM, op.imm,
-                location(address(
-                    displacement_from_offset(target.offset), R11, 0, 0), w));
+            emit(opc, OPT_IMM_MEM, op.imm, mem);
         } else {
-            emit(opc, OPT_REG_MEM, op.reg,
-                location(address(
-                    displacement_from_offset(target.offset), R11, 0, 0), w));
+            emit(opc, OPT_REG_MEM, op.reg, mem);
         }
         break;
     }
@@ -1690,7 +1685,7 @@ static void enter(struct definition *def)
             vararg.reg_save_area_offset -= 16;
             emit(INSTR_MOVAP, OPT_REG_MEM,
                 reg(XMM0 + (7 - i), 4),
-                location(address(vararg.reg_save_area_offset, BP, 0, 0), 16));
+                location(address(vararg.reg_save_area_offset, BP, 0, 0), 4));
         }
 
         enter_context(sym);
@@ -2211,6 +2206,10 @@ static int operand_equal(struct var a, struct var b)
         && a.offset == b.offset;
 }
 
+/*
+ * Check if operand can be represented as a 32 bit constant, which is
+ * the largest width allowed for many instructions.
+ */
 static int is_int_constant(struct var v)
 {
     return v.kind == IMMEDIATE
@@ -2407,7 +2406,7 @@ static enum reg compile_neg(
     assert(w == size_of(val.type));
     xmm0 = load_cast(val, val.type);
     xmm1 = load_cast(l, l.type);
-    emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
+    emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
     if (!is_void(target.type)) {
         store(xmm0, target);
     }
@@ -3021,8 +3020,8 @@ static void compile_block(struct block *block, Type type)
                 emit(INSTR_POP, OPT_REG, reg(temp_int_reg[i - 1], 8));
             }
         }
-        emit(INSTR_LEAVE, OPT_NONE, 8);
-        emit(INSTR_RET, OPT_NONE, 8);
+        emit(INSTR_LEAVE, OPT_NONE, 0);
+        emit(INSTR_RET, OPT_NONE, 0);
     } else if (!block->jump[1]) {
         if (block->jump[0]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
@@ -3089,7 +3088,7 @@ static void compile_block(struct block *block, Type type)
                 assert(w == 4 || w == 8);
                 xmm0 = ax;
                 xmm1 = (xmm0 == XMM0) ? XMM1 : XMM0;
-                emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, w), reg(xmm1, w));
+                emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, 8), reg(xmm1, 8));
                 emit(INSTR_UCOMIS, OPT_REG_REG, reg(xmm0, w), reg(xmm1, w));
                 emit(INSTR_Jcc, OPT_IMM, CC_NE, br1);
                 emit(INSTR_Jcc, OPT_IMM, CC_P, br1);

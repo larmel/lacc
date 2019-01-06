@@ -5,7 +5,7 @@
 # include "util/argparse.c"
 # include "util/hash.c"
 # include "util/string.c"
-# include "backend/x86_64/instr.c"
+# include "backend/x86_64/encoding.c"
 # include "backend/x86_64/dwarf.c"
 # include "backend/x86_64/elf.c"
 # include "backend/x86_64/abi.c"

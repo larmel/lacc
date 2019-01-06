@@ -1,7 +1,7 @@
 #ifndef ELF_H
 #define ELF_H
 
-#include "instr.h"
+#include "encoding.h"
 #include <lacc/symbol.h>
 
 #include <stdio.h>

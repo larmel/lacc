@@ -1,5 +1,5 @@
-#ifndef INSTR_H
-#define INSTR_H
+#ifndef ENCODING_H
+#define ENCODING_H
 
 #include "abi.h"
 #include <lacc/symbol.h>
@@ -117,65 +117,70 @@ struct immediate {
     } d;
 };
 
+/*
+ * Opcodes map to first entry in encoding table.
+ */
+enum opcode {
+    INSTR_ADD = 0,
+    INSTR_AND = INSTR_ADD + 2,
+    INSTR_CALL = INSTR_AND + 3,
+    INSTR_CMP = INSTR_CALL + 2,
+    INSTR_Cxy = INSTR_CMP + 3,          /* Sign extend %[e/r]ax to %[e|r]dx:%[e|r]ax. */
+    INSTR_DIV = INSTR_Cxy + 2,
+    INSTR_IDIV = INSTR_DIV + 1,         /* Signed division. */
+    INSTR_Jcc = INSTR_IDIV + 1,         /* Jump on condition (combined with tttn) */
+    INSTR_JMP = INSTR_Jcc + 1,
+    INSTR_LEA = INSTR_JMP + 1,
+    INSTR_LEAVE = INSTR_LEA + 1,
+    INSTR_MOV = INSTR_LEAVE + 1,
+    INSTR_MOV_STR = INSTR_MOV + 5,      /* Move string, optionally with REP prefix. */
+    INSTR_MOVSX = INSTR_MOV_STR + 1,
+    INSTR_MOVZX = INSTR_MOVSX + 2,
+    INSTR_MUL = INSTR_MOVZX + 2,
+    INSTR_NOT = INSTR_MUL + 1,
+    INSTR_OR = INSTR_NOT + 1,
+    INSTR_POP = INSTR_OR + 2,
+    INSTR_PUSH = INSTR_POP + 1,
+    INSTR_RET = INSTR_PUSH + 3,
+    INSTR_SAR = INSTR_RET + 1,
+    INSTR_SETcc = INSTR_SAR + 2,        /* Set flag (combined with tttn). */
+    INSTR_SHL = INSTR_SETcc + 1,
+    INSTR_SHR = INSTR_SHL + 2,
+    INSTR_SUB = INSTR_SHR + 2,
+    INSTR_TEST = INSTR_SUB + 2,
+    INSTR_XOR = INSTR_TEST + 2,
+
+    INSTR_ADDS = INSTR_XOR + 2,         /* Add floating point. */
+    INSTR_CVTSI2S = INSTR_ADDS + 2,     /* Convert int to floating point. */
+    INSTR_CVTS2S = INSTR_CVTSI2S + 2,   /* Convert between float and double. */
+    INSTR_CVTTS2SI = INSTR_CVTS2S + 2,  /* Convert floating point to int with truncation. */
+    INSTR_DIVS = INSTR_CVTTS2SI + 2,
+    INSTR_MULS = INSTR_DIVS + 2,        /* Multiply floating point. */
+    INSTR_SUBS = INSTR_MULS + 2,        /* Subtract floating point. */
+    INSTR_MOVAP = INSTR_SUBS + 2,       /* Move aligned packed floating point. */
+    INSTR_MOVS = INSTR_MOVAP + 1,       /* Move floating point. */
+    INSTR_UCOMIS = INSTR_MOVS + 4,      /* Compare floating point and set EFLAGS. */
+    INSTR_PXOR = INSTR_UCOMIS + 2,      /* Bitwise xor with xmm register. */
+
+    INSTR_FADDP = INSTR_PXOR + 1,       /* Add x87 ST(0) to ST(i) and pop. */
+    INSTR_FDIVRP = INSTR_FADDP + 1,     /* Divide and pop. */
+    INSTR_FILD = INSTR_FDIVRP + 1,      /* Load integer to ST(0). */
+    INSTR_FISTP = INSTR_FILD + 3,       /* Store integer and pop. */
+    INSTR_FLD = INSTR_FISTP + 3,        /* Load x87 real to ST(0). */
+    INSTR_FLDCW = INSTR_FLD + 4,        /* Load x87 FPU control word. */
+    INSTR_FMULP = INSTR_FLDCW + 1,      /* Multiply and pop. */
+    INSTR_FNSTCW = INSTR_FMULP + 1,     /* Store x87 FPU control word. */
+    INSTR_FSTP = INSTR_FNSTCW + 1,      /* Store x87 real from ST(0) to mem and pop. */
+    INSTR_FSUBRP = INSTR_FSTP + 4,      /* Subtract and pop. */
+    INSTR_FUCOMIP = INSTR_FSUBRP + 1,   /* Compare x87 floating point. */
+    INSTR_FXCH = INSTR_FUCOMIP + 1      /* Swap ST(0) with ST(i). */
+};
+
 enum prefix {
     PREFIX_NONE = 0x0,
     PREFIX_REP = 0xF3,
     PREFIX_REPE = 0xF3,
     PREFIX_REPNE = 0xF2
-};
-
-enum opcode {
-    INSTR_ADD,
-    INSTR_ADDS,         /* Add floating point. */
-    INSTR_CVTSI2S,      /* Convert int to floating point. */
-    INSTR_CVTS2S,       /* Convert between float and double. */
-    INSTR_CVTTS2SI,     /* Convert floating point to int with truncation. */
-    INSTR_Cxy,          /* Sign extend %[e/r]ax to %[e|r]dx:%[e|r]ax. */
-    INSTR_SUB,
-    INSTR_SUBS,         /* Subtract floating point. */
-    INSTR_NOT,
-    INSTR_XOR,
-    INSTR_DIV,
-    INSTR_IDIV,         /* Signed division. */
-    INSTR_DIVS,
-    INSTR_AND,
-    INSTR_OR,
-    INSTR_SHL,
-    INSTR_SHR,
-    INSTR_SAR,
-    INSTR_TEST,
-    INSTR_MOV,
-    INSTR_MOVZX,
-    INSTR_MOVSX,
-    INSTR_MOVAP,        /* Move aligned packed floating point. */
-    INSTR_MOVS,         /* Move floating point. */
-    INSTR_MUL,
-    INSTR_MULS,         /* Multiply floating point. */
-    INSTR_SETcc,        /* Set flag (combined with tttn). */
-    INSTR_UCOMIS,       /* Compare floating point and set EFLAGS. */
-    INSTR_CMP,
-    INSTR_LEA,
-    INSTR_PUSH,
-    INSTR_POP,
-    INSTR_PXOR,         /* Bitwise xor with xmm register. */
-    INSTR_JMP,
-    INSTR_Jcc,          /* Jump on condition (combined with tttn) */
-    INSTR_CALL,
-    INSTR_LEAVE,
-    INSTR_RET,
-    INSTR_MOV_STR,      /* Move string, optionally with REP prefix. */
-    INSTR_FLD,          /* Load x87 real to ST(0). */
-    INSTR_FILD,         /* Load integer to ST(0). */
-    INSTR_FISTP,        /* Store integer and pop. */
-    INSTR_FSTP,         /* Store x87 real from ST(0) to mem and pop. */
-    INSTR_FUCOMIP,      /* Compare x87 floating point. */
-    INSTR_FXCH,         /* Swap ST(0) with ST(i). */
-    INSTR_FNSTCW,       /* Store x87 FPU control word. */
-    INSTR_FLDCW,        /* Load x87 FPU control word. */
-    INSTR_FADDP,        /* Add x87 ST(0) to ST(i) and pop. */
-    INSTR_FSUBRP,       /* Subtract and pop. */
-    INSTR_FMULP,        /* Multiply and pop. */
-    INSTR_FDIVRP        /* Divide and pop. */
 };
 
 /*
@@ -227,18 +232,34 @@ struct instruction {
 
 /*
  * According to Intel reference manual, instructions can contain the
- * following fields, for a combined maximum length of 18 bytes:
+ * following fields:
  *
  *  [Legacy Prefixes] [REX] [Opcode] [ModR/M] [SIB] [Displ] [Immediate]
  *   (up to 4 bytes)   (1)    (3)      (1)     (1)    (4)       (4)
  *
+ *
+ * At most 15 bytes can be used for one instruction.
  */
 struct code {
-    unsigned char val[18];
-    int len;
+    unsigned char val[15];
+    signed char len;
 };
 
-/* Convert instruction to binary format. */
+/* Convert abstract instruction to binary. */
 INTERNAL struct code encode(struct instruction instr);
+
+/* Lookup instruction mnemonic for textual assembly. */
+INTERNAL void get_mnemonic(struct instruction instr, char *buf);
+
+/*
+ * Lookup best matching instruction from textual assembly mnemonic and
+ * operands.
+ */
+INTERNAL int mnemonic_match_operands(
+    const char *mnemonic,
+    size_t length,
+    enum instr_optype optype,
+    union operand *source,
+    union operand *dest);
 
 #endif

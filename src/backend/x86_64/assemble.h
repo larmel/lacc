@@ -1,7 +1,7 @@
 #ifndef ASSEMBLE_H
 #define ASSEMBLE_H
 
-#include "instr.h"
+#include "encoding.h"
 
 #include <stdio.h>
 
