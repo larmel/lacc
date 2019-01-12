@@ -153,18 +153,7 @@ enum opcode {
     INSTR_MUL,
     INSTR_MULSD,        /* Multiply scalar double-precision. */
     INSTR_MULSS,        /* Multiply scalar double-precision. */
-    INSTR_SETE,         /* Set equal. */
-    INSTR_SETA,
-    INSTR_SETNA,        /* Set not above. */
-    INSTR_SETG,
-    INSTR_SETNG,        /* Set not greater than. */
-    INSTR_SETP,
-    INSTR_SETNE,
-    INSTR_SETAE,
-    INSTR_SETNAE,       /* Set not above or equal. */
-    INSTR_SETGE,
-    INSTR_SETNGE,       /* Set not greater than or equal. */
-    INSTR_SETNP,        /* Set not parity bit. */
+    INSTR_SETcc,        /* Set flag (combined with tttn). */
     INSTR_UCOMISS,      /* Compare single-precision and set EFLAGS. */
     INSTR_UCOMISD,      /* Compare double-precision and set EFLAGS. */
     INSTR_CMP,
@@ -173,19 +162,7 @@ enum opcode {
     INSTR_POP,
     INSTR_PXOR,         /* Bitwise xor with xmm register. */
     INSTR_JMP,
-    INSTR_JA,
-    INSTR_JNA,          /* Jump if not above. */
-    INSTR_JP,           /* Jump if parity. */
-    INSTR_JG,
-    INSTR_JNG,          /* Jump if not greater than. */
-    INSTR_JE,           /* Jump if equal. */
-    INSTR_JS,           /* Jump if sign bit is set. */
-    INSTR_JAE,
-    INSTR_JNAE,         /* Jump if not above or equal. */
-    INSTR_JGE,
-    INSTR_JNGE,         /* Jump if not greater than or equal. */
-    INSTR_JNE,          /* Jump if not equal. */
-    INSTR_JNS,          /* Jump if not sign. */
+    INSTR_Jcc,          /* Jump on condition (combined with tttn) */
     INSTR_CALL,
     INSTR_LEAVE,
     INSTR_RET,
@@ -204,9 +181,33 @@ enum opcode {
     INSTR_FDIVRP        /* Divide and pop. */
 };
 
+/*
+ * Conditional test/jump codes. A nice reference is
+ * http://unixwiz.net/techtips/x86-jumps.html
+ */
+enum tttn {
+    CC_O = 0x0,
+    CC_NO = 0x1,
+    CC_NAE = 0x2,
+    CC_AE = 0x3,
+    CC_E = 0x4,
+    CC_NE = 0x5,
+    CC_NA = 0x6,
+    CC_A = 0x7,
+    CC_S = 0x8,
+    CC_NS = 0x9,
+    CC_P = 0xA,
+    CC_NP = 0xB,
+    CC_NGE = 0xC,
+    CC_GE = 0xD,
+    CC_NG = 0xE,
+    CC_G = 0xF
+};
+
 /* Instructions with register, memory or immediate operands. */
 struct instruction {
     enum opcode opcode;
+    enum tttn cc;
     enum instr_optype {
         OPT_NONE = 0,
         OPT_IMM = 1,

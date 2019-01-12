@@ -16,6 +16,7 @@
 #define I0(instr)           out("\t%s\n", instr)
 #define I1(instr, a)        out("\t%s\t%s\n", instr, a)
 #define I2(instr, a, b)     out("\t%s\t%s, %s\n", instr, a, b)
+#define C1(instr, cc, a)    out("\t%s%s\t%s\n", instr, tttn_text(cc), a)
 #define U1(instr, w, a)     out("\t%s%c\t%s\n", instr, SUFFIX(w), a)
 #define U2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
 #define X1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87SFX(w), a);
@@ -159,6 +160,29 @@ static const char *immediate(struct immediate imm, int *size)
 
     *size = 8;
     return asm_address(imm.d.addr);
+}
+
+static const char *tttn_text(enum tttn cc)
+{
+    switch (cc) {
+    default: assert(0);
+    case CC_O: return "o";
+    case CC_NO: return "no";
+    case CC_NAE: return "nae";
+    case CC_AE: return "ae";
+    case CC_E: return "e";
+    case CC_NE: return "ne";
+    case CC_NA: return "na";
+    case CC_A: return "a";
+    case CC_S: return "s";
+    case CC_NS: return "ns";
+    case CC_P: return "p";
+    case CC_NP: return "np";
+    case CC_NGE: return "nge";
+    case CC_GE: return "ge";
+    case CC_NG: return "ng";
+    case CC_G: return "g";
+    }
 }
 
 INTERNAL void asm_init(FILE *output, const char *file)
@@ -335,18 +359,7 @@ INTERNAL int asm_text(struct instruction instr)
     case INSTR_MOVSD:    I2("movsd", source, destin); break;
     case INSTR_MULSD:    I2("mulsd", source, destin); break;
     case INSTR_MULSS:    I2("mulss", source, destin); break;
-    case INSTR_SETE:     I1("sete", source); break;
-    case INSTR_SETA:     I1("seta", source); break;
-    case INSTR_SETNA:    I1("setna", source); break;
-    case INSTR_SETG:     I1("setg", source); break;
-    case INSTR_SETNG:    I1("setng", source); break;
-    case INSTR_SETP:     I1("setp", source); break;
-    case INSTR_SETAE:    I1("setae", source); break;
-    case INSTR_SETNAE:   I1("setnae", source); break;
-    case INSTR_SETGE:    I1("setge", source); break;
-    case INSTR_SETNGE:   I1("setnge", source); break;
-    case INSTR_SETNP:    I1("setnp", source); break;
-    case INSTR_SETNE:    I1("setne", source); break;
+    case INSTR_SETcc:    C1("set", instr.cc, source); break;
     case INSTR_TEST:     U2("test", wd, source, destin); break;
     case INSTR_UCOMISS:  I2("ucomiss", source, destin); break;
     case INSTR_UCOMISD:  I2("ucomisd", source, destin); break;
@@ -356,19 +369,7 @@ INTERNAL int asm_text(struct instruction instr)
     case INSTR_POP:      U1("pop", ws, source); break;
     case INSTR_PXOR:     I2("pxor", source, destin); break;
     case INSTR_JMP:      I1("jmp", source); break;
-    case INSTR_JE:       I1("je", source); break;
-    case INSTR_JA:       I1("ja", source); break;
-    case INSTR_JNA:      I1("jna", source); break;
-    case INSTR_JG:       I1("jg", source); break;
-    case INSTR_JNG:      I1("jng", source); break;
-    case INSTR_JS:       I1("js", source); break;
-    case INSTR_JP:       I1("jp", source); break;
-    case INSTR_JAE:      I1("jae", source); break;
-    case INSTR_JNAE:     I1("jnae", source); break;
-    case INSTR_JGE:      I1("jge", source); break;
-    case INSTR_JNGE:     I1("jnge", source); break;
-    case INSTR_JNE:      I1("jne", source); break;
-    case INSTR_JNS:      I1("jns", source); break;
+    case INSTR_Jcc:      C1("j", instr.cc, source); break;
     case INSTR_CALL:
         if (instr.optype == OPT_REG)
             out("\tcall\t*%s\n", source);

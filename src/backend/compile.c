@@ -118,6 +118,10 @@ static void emit(enum opcode opcode, enum instr_optype optype, ...)
     instr.opcode = opcode;
     instr.optype = optype;
     va_start(args, optype);
+    if (opcode == INSTR_Jcc || opcode == INSTR_SETcc) {
+        instr.cc = va_arg(args, enum tttn);
+    }
+
     switch (optype) {
     case OPT_IMM:
         instr.source.imm = va_arg(args, struct immediate);
@@ -793,7 +797,7 @@ static enum reg load_x87(struct var v)
         if (size_of(v.type) == 8) {
             label = create_label(definition);
             emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
-            emit(INSTR_JNS, OPT_IMM, addr(label));
+            emit(INSTR_Jcc, OPT_IMM, CC_NS, addr(label));
             v = x87_unsigned_adjust_constant();
             load_x87(v);
             emit(INSTR_FADDP, OPT_REG, reg(st, 16));
@@ -863,7 +867,7 @@ static enum reg load_float_as_integer(
         } else {
             emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
         }
-        emit(INSTR_JAE, OPT_IMM, addr(convert));
+        emit(INSTR_Jcc, OPT_IMM, CC_AE, addr(convert));
         /* Value is representable as signed long. */
         emit_load(opcode, val, reg(ax, 8));
         emit(INSTR_JMP, OPT_IMM, addr(next));
@@ -922,7 +926,7 @@ static enum reg load_integer_as_float(
                 emit(INSTR_MOV, OPT_REG_REG, reg(ax, 4), reg(ax, 4));
             }
             emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
-            emit(INSTR_JS, OPT_IMM, addr(label));
+            emit(INSTR_Jcc, OPT_IMM, CC_S, addr(label));
             emit(opcode, OPT_REG_REG, reg(ax, 8), reg(xmm, size_of(type)));
             emit(INSTR_JMP, OPT_IMM, addr(next));
             enter_context(label);
@@ -1696,7 +1700,7 @@ static void enter(struct definition *def)
         vararg.overflow_arg_area_offset = mem_offset;
         vararg.reg_save_area_offset = 0;
         emit(INSTR_TEST, OPT_REG_REG, reg(AX, 1), reg(AX, 1));
-        emit(INSTR_JE, OPT_IMM, addr(sym));
+        emit(INSTR_Jcc, OPT_IMM, CC_E, addr(sym));
         for (i = 0; i < MAX_SSE_ARGS; ++i) {
             vararg.reg_save_area_offset -= 16;
             emit(INSTR_MOVAPS, OPT_REG_MEM,
@@ -1866,14 +1870,14 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             load(gp_offset, CX);
             emit(INSTR_CMP, OPT_IMM_REG,
                 constant(MAX_INTEGER_ARGS*8 - 8*num_gp, 4), reg(CX, 4));
-            emit(INSTR_JA, OPT_IMM, addr(stack));
+            emit(INSTR_Jcc, OPT_IMM, CC_A, addr(stack));
         }
         if (num_fp) {
             load(fp_offset, DX);
             emit(INSTR_CMP, OPT_IMM_REG,
                 constant(MAX_INTEGER_ARGS*8 + MAX_SSE_ARGS*16 - 16*num_fp, 4),
                 reg(DX, 4));
-            emit(INSTR_JA, OPT_IMM, addr(stack));
+            emit(INSTR_Jcc, OPT_IMM, CC_A, addr(stack));
         }
 
         /*
@@ -2077,33 +2081,33 @@ static enum reg compile_call(struct var target, struct var ptr)
     }
 }
 
-static enum opcode compile_compare(
+static enum tttn compile_compare(
     enum optype op,
     struct var l,
     struct var r)
 {
     size_t w;
-    enum opcode cmp;
+    enum tttn cc;
     enum reg ax, cx;
     enum reg xmm0, xmm1;
 
     switch (op) {
     default: assert(0);
     case IR_OP_EQ:
-        cmp = INSTR_SETE;
+        cc = CC_E;
         break;
     case IR_OP_NE:
-        cmp = INSTR_SETNE;
+        cc = CC_NE;
         break;
     case IR_OP_GE:
-        cmp = is_unsigned(l.type) || is_real(l.type)
-            ? INSTR_SETAE
-            : INSTR_SETGE;
+        cc = is_unsigned(l.type) || is_real(l.type)
+            ? CC_AE
+            : CC_GE;
         break;
     case IR_OP_GT:
-        cmp = is_unsigned(l.type) || is_real(l.type)
-            ? INSTR_SETA
-            : INSTR_SETG;
+        cc = is_unsigned(l.type) || is_real(l.type)
+            ? CC_A
+            : CC_G;
         break;
     }
 
@@ -2142,18 +2146,18 @@ static enum opcode compile_compare(
                 ax = load_cast(r, r.type);
                 emit(INSTR_CMP, OPT_IMM_REG, value_of(l, w), reg(ax, w));
             }
-            switch (cmp) {
-            case INSTR_SETAE:
-                cmp = INSTR_SETNA;
+            switch (cc) {
+            case CC_AE:
+                cc = CC_NA;
                 break;
-            case INSTR_SETGE:
-                cmp = INSTR_SETNG;
+            case CC_GE:
+                cc = CC_NG;
                 break;
-            case INSTR_SETA:
-                cmp = INSTR_SETNAE;
+            case CC_A:
+                cc = CC_NAE;
                 break;
-            case INSTR_SETG:
-                cmp = INSTR_SETNGE;
+            case CC_G:
+                cc = CC_NGE;
                 break;
             default: break;
             }
@@ -2205,7 +2209,7 @@ static enum opcode compile_compare(
         }
     }
 
-    return cmp;
+    return cc;
 }
 
 /*
@@ -2664,15 +2668,15 @@ static enum reg compile_shr(
  * result is assigned to a variable. In other cases, a jump can be
  * emitted without ever computing the integer 0 or 1 result.
  */
-static enum reg set_compare_value(Type type, enum opcode op)
+static enum reg set_compare_value(Type type, enum tttn cc)
 {
-    emit(op, OPT_REG, reg(AX, 1));
+    emit(INSTR_SETcc, OPT_REG, cc, reg(AX, 1));
     if (is_real(type)) {
-        if (op == INSTR_SETE) {
-            emit(INSTR_SETNP, OPT_REG, reg(CX, 1));
+        if (cc == CC_E) {
+            emit(INSTR_SETcc, OPT_REG, CC_NP, reg(CX, 1));
             emit(INSTR_AND, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
-        } else if (op == INSTR_SETNE) {
-            emit(INSTR_SETP, OPT_REG, reg(CX, 1));
+        } else if (cc == CC_NE) {
+            emit(INSTR_SETcc, OPT_REG, CC_P, reg(CX, 1));
             emit(INSTR_OR, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
         }
         emit(INSTR_AND, OPT_IMM_REG, constant(1, 1), reg(AX, 1));
@@ -2797,7 +2801,7 @@ static enum reg compile_cast(
 static enum reg compile_assign(struct var target, struct expression expr)
 {
     enum reg ax;
-    enum opcode op;
+    enum tttn cc;
 
     switch (expr.op) {
     default: assert(0);
@@ -2851,8 +2855,8 @@ static enum reg compile_assign(struct var target, struct expression expr)
     case IR_OP_NE:
     case IR_OP_GE:
     case IR_OP_GT:
-        op = compile_compare(expr.op, expr.l, expr.r);
-        ax = set_compare_value(expr.l.type, op);
+        cc = compile_compare(expr.op, expr.l, expr.r);
+        ax = set_compare_value(expr.l.type, cc);
         if (!is_void(target.type)) {
             store(ax, target);
         }
@@ -2990,7 +2994,7 @@ static void compile_return(Type func, struct expression expr)
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(return_address_offset, BP, 0, 0), 8), reg(DI, 8));
         emit(INSTR_CMP, OPT_REG_REG, reg(DI, 8), reg(SI, 8));
-        emit(INSTR_JE, OPT_IMM, addr(label));
+        emit(INSTR_Jcc, OPT_IMM, CC_E, addr(label));
         emit(INSTR_MOV, OPT_IMM_REG, constant(w, 8), reg(DX, 8));
         emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
         emit(INSTR_MOV, OPT_MEM_REG,
@@ -3015,8 +3019,9 @@ static void compile_block(struct block *block, Type type)
     int i;
     enum reg ax;
     enum reg xmm0, xmm1;
-    enum opcode cmp;
+    enum tttn cc;
     struct statement st;
+    struct immediate br0, br1;
 
     assert(is_function(type));
     if (block->color == BLACK)
@@ -3057,51 +3062,53 @@ static void compile_block(struct block *block, Type type)
         assert(block->jump[0]);
         assert(block->jump[1]);
         assert(is_scalar(block->expr.type));
+        br0 = addr(block->jump[0]->label);
+        br1 = addr(block->jump[1]->label);
         if (is_comparison(block->expr)) {
-            cmp = compile_compare(block->expr.op, block->expr.l, block->expr.r);
-            switch (cmp) {
+            cc = compile_compare(block->expr.op, block->expr.l, block->expr.r);
+            switch (cc) {
             default: assert(0);
-            case INSTR_SETE:
+            case CC_E:
                 if (is_real(block->expr.l.type)) {
-                    emit(INSTR_JNE, OPT_IMM, addr(block->jump[0]->label));
-                    emit(INSTR_JP, OPT_IMM, addr(block->jump[0]->label));
-                    emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
+                    emit(INSTR_Jcc, OPT_IMM, CC_NE, br0);
+                    emit(INSTR_Jcc, OPT_IMM, CC_P, br0);
+                    emit(INSTR_JMP, OPT_IMM, br1);
                 } else {
-                    emit(INSTR_JNE, OPT_IMM, addr(block->jump[0]->label));
+                    emit(INSTR_Jcc, OPT_IMM, CC_NE, br0);
                 }
                 break;
-            case INSTR_SETNE:
+            case CC_NE:
                 if (is_real(block->expr.l.type)) {
-                    emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
-                    emit(INSTR_JP, OPT_IMM, addr(block->jump[1]->label));
-                    emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
+                    emit(INSTR_Jcc, OPT_IMM, CC_NE, br1);
+                    emit(INSTR_Jcc, OPT_IMM, CC_P, br1);
+                    emit(INSTR_JMP, OPT_IMM, br0);
                 } else {
-                    emit(INSTR_JE, OPT_IMM, addr(block->jump[0]->label));
+                    emit(INSTR_Jcc, OPT_IMM, CC_E, br0);
                 }
                 break;
-            case INSTR_SETG:
-                emit(INSTR_JNG, OPT_IMM, addr(block->jump[0]->label));
+            case CC_G:
+                emit(INSTR_Jcc, OPT_IMM, CC_NG, br0);
                 break;
-            case INSTR_SETNG:
-                emit(INSTR_JG, OPT_IMM, addr(block->jump[0]->label));
+            case CC_NG:
+                emit(INSTR_Jcc, OPT_IMM, CC_G, br0);
                 break;
-            case INSTR_SETA:
-                emit(INSTR_JNA, OPT_IMM, addr(block->jump[0]->label));
+            case CC_A:
+                emit(INSTR_Jcc, OPT_IMM, CC_NA, br0);
                 break;
-            case INSTR_SETNA:
-                emit(INSTR_JA, OPT_IMM, addr(block->jump[0]->label));
+            case CC_NA:
+                emit(INSTR_Jcc, OPT_IMM, CC_A, br0);
                 break;
-            case INSTR_SETGE:
-                emit(INSTR_JNGE, OPT_IMM, addr(block->jump[0]->label));
+            case CC_GE:
+                emit(INSTR_Jcc, OPT_IMM, CC_NGE, br0);
                 break;
-            case INSTR_SETNGE:
-                emit(INSTR_JGE, OPT_IMM, addr(block->jump[0]->label));
+            case CC_NGE:
+                emit(INSTR_Jcc, OPT_IMM, CC_GE, br0);
                 break;
-            case INSTR_SETAE:
-                emit(INSTR_JNAE, OPT_IMM, addr(block->jump[0]->label));
+            case CC_AE:
+                emit(INSTR_Jcc, OPT_IMM, CC_NAE, br0);
                 break;
-            case INSTR_SETNAE:
-                emit(INSTR_JAE, OPT_IMM, addr(block->jump[0]->label));
+            case CC_NAE:
+                emit(INSTR_Jcc, OPT_IMM, CC_AE, br0);
                 break;
             }
         } else {
@@ -3115,20 +3122,20 @@ static void compile_block(struct block *block, Type type)
                 } else {
                     emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm0, 8), reg(xmm1, 8));
                 }
-                emit(INSTR_JNE, OPT_IMM, addr(block->jump[1]->label));
-                emit(INSTR_JP, OPT_IMM, addr(block->jump[1]->label));
-                emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
+                emit(INSTR_Jcc, OPT_IMM, CC_NE, br1);
+                emit(INSTR_Jcc, OPT_IMM, CC_P, br1);
+                emit(INSTR_JMP, OPT_IMM, br0);
             } else {
                 i = size_of(block->expr.type);
                 assert(i == 1 || i == 2 || i == 4 || i == 8);
                 emit(INSTR_CMP, OPT_IMM_REG, constant(0, i), reg(ax, i));
-                emit(INSTR_JE, OPT_IMM, addr(block->jump[0]->label));
+                emit(INSTR_Jcc, OPT_IMM, CC_E, br0);
             }
         }
 
         relase_regs();
         if (block->jump[1]->color == BLACK) {
-            emit(INSTR_JMP, OPT_IMM, addr(block->jump[1]->label));
+            emit(INSTR_JMP, OPT_IMM, br1);
         } else {
             compile_block(block->jump[1], type);
         }

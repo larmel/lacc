@@ -85,27 +85,6 @@
 #define ST(reg) (x87_stack_pos(reg.r))
 
 /*
- * Conditional test/jump codes. A nice reference is
- * http://unixwiz.net/techtips/x86-jumps.html
- */
-enum tttn {
-    TEST_NAE = 0x2,
-    TEST_AE = 0x3,
-    TEST_E = 0x4,
-    TEST_NE = 0x5,
-    TEST_NA = 0x6,
-    TEST_A = 0x7,
-    TEST_S = 0x8,
-    TEST_NS = 0x9,
-    TEST_P = 0xA,
-    TEST_NP = 0xB,
-    TEST_NGE = 0xC,
-    TEST_GE = 0xD,
-    TEST_NG = 0xE,
-    TEST_G = 0xF
-};
-
-/*
  * Encode address using ModR/M, SIB and Displacement bytes. Based on
  * Table 2.2 and Table 2.3 in reference manual. Symbol references are
  * encoded as %rip- relative addresses, section 2.2.1.6.
@@ -1277,56 +1256,10 @@ INTERNAL struct code encode(struct instruction instr)
         return ret();
     case INSTR_JMP:
         return jmp(instr.optype, instr.source);
-    case INSTR_JA:
-        return jcc(instr.optype, TEST_A, instr.source);
-    case INSTR_JNA:
-        return jcc(instr.optype, TEST_NA, instr.source);
-    case INSTR_JP:
-        return jcc(instr.optype, TEST_P, instr.source);
-    case INSTR_JG:
-        return jcc(instr.optype, TEST_G, instr.source);
-    case INSTR_JNG:
-        return jcc(instr.optype, TEST_NG, instr.source);
-    case INSTR_JE:
-        return jcc(instr.optype, TEST_E, instr.source);
-    case INSTR_JS:
-        return jcc(instr.optype, TEST_S, instr.source);
-    case INSTR_JAE:
-        return jcc(instr.optype, TEST_AE, instr.source);
-    case INSTR_JNAE:
-        return jcc(instr.optype, TEST_NAE, instr.source);
-    case INSTR_JGE:
-        return jcc(instr.optype, TEST_GE, instr.source);
-    case INSTR_JNGE:
-        return jcc(instr.optype, TEST_NGE, instr.source);
-    case INSTR_JNE:
-        return jcc(instr.optype, TEST_NE, instr.source);
-    case INSTR_JNS:
-        return jcc(instr.optype, TEST_NS, instr.source);
-    case INSTR_SETE:
-        return setcc(instr.optype, TEST_E, instr.source);
-    case INSTR_SETA:
-        return setcc(instr.optype, TEST_A, instr.source);
-    case INSTR_SETNA:
-        return setcc(instr.optype, TEST_NA, instr.source);
-    case INSTR_SETG:
-        return setcc(instr.optype, TEST_G, instr.source);
-    case INSTR_SETNG:
-        return setcc(instr.optype, TEST_NG, instr.source);
-    case INSTR_SETP:
-        return setcc(instr.optype, TEST_P, instr.source);
-    case INSTR_SETNE:
-        return setcc(instr.optype, TEST_NE, instr.source);
-    case INSTR_SETAE:
-        return setcc(instr.optype, TEST_AE, instr.source);
-    case INSTR_SETNAE:
-        return setcc(instr.optype, TEST_NAE, instr.source);
-    case INSTR_SETGE:
-        return setcc(instr.optype, TEST_GE, instr.source);
-    case INSTR_SETNGE:
-        return setcc(instr.optype, TEST_NGE, instr.source);
-    case INSTR_SETNP:
-        return setcc(instr.optype, TEST_NP, instr.source);
+    case INSTR_Jcc:
+        return jcc(instr.optype, instr.cc, instr.source);
+    case INSTR_SETcc:
+        return setcc(instr.optype, instr.cc, instr.source);
     case INSTR_TEST:
         return encode_test(instr.optype, instr.source, instr.dest);
     case INSTR_FLD:
