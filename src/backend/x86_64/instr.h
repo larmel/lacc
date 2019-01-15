@@ -119,25 +119,19 @@ struct immediate {
 
 enum opcode {
     INSTR_ADD,
-    INSTR_ADDSD,        /* Add scalar double-precision. */
-    INSTR_ADDSS,        /* Add scalar single-precision. */
-    INSTR_CVTSI2SS,     /* Convert int to float. */
-    INSTR_CVTSI2SD,     /* Convert int to double. */
-    INSTR_CVTSS2SD,     /* Convert float to double. */
-    INSTR_CVTSD2SS,     /* Convert double to float. */
-    INSTR_CVTTSD2SI,    /* Convert double to int. */
-    INSTR_CVTTSS2SI,    /* Convert float to int. */
+    INSTR_ADDS,         /* Add floating point. */
+    INSTR_CVTSI2S,      /* Convert int to floating point. */
+    INSTR_CVTS2S,       /* Convert between float and double. */
+    INSTR_CVTTS2SI,     /* Convert floating point to int with truncation. */
     INSTR_CDQ,          /* Sign extend %eax to %edx:%eax. */
     INSTR_CQO,          /* Sign extend %rax to %rdx:%rax. */
     INSTR_SUB,
-    INSTR_SUBSD,        /* Subtract scalar double-precision. */
-    INSTR_SUBSS,        /* Subtract scalar single-precision. */
+    INSTR_SUBS,         /* Subtract floating point. */
     INSTR_NOT,
     INSTR_XOR,
     INSTR_DIV,
     INSTR_IDIV,         /* Signed division. */
-    INSTR_DIVSD,
-    INSTR_DIVSS,
+    INSTR_DIVS,
     INSTR_AND,
     INSTR_OR,
     INSTR_SHL,
@@ -147,15 +141,12 @@ enum opcode {
     INSTR_MOV,
     INSTR_MOVZX,
     INSTR_MOVSX,
-    INSTR_MOVAPS,
-    INSTR_MOVSD,        /* Move double. */
-    INSTR_MOVSS,        /* Move float. */
+    INSTR_MOVAP,        /* Move aligned packed floating point. */
+    INSTR_MOVS,         /* Move floating point. */
     INSTR_MUL,
-    INSTR_MULSD,        /* Multiply scalar double-precision. */
-    INSTR_MULSS,        /* Multiply scalar double-precision. */
+    INSTR_MULS,         /* Multiply floating point. */
     INSTR_SETcc,        /* Set flag (combined with tttn). */
-    INSTR_UCOMISS,      /* Compare single-precision and set EFLAGS. */
-    INSTR_UCOMISD,      /* Compare double-precision and set EFLAGS. */
+    INSTR_UCOMIS,       /* Compare floating point and set EFLAGS. */
     INSTR_CMP,
     INSTR_LEA,
     INSTR_PUSH,

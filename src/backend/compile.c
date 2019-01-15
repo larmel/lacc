@@ -557,18 +557,15 @@ static void emit_load(
  */
 static void load_sse(struct var val, enum reg r, int w)
 {
-    enum opcode opcode;
-
     assert(is_real(val.type));
     assert(w == 4 || w == 8);
     assert(r >= XMM0 && r <= XMM7);
 
-    opcode =
-        (size_of(val.type) == 4 && w == 8) ? INSTR_CVTSS2SD :
-        (size_of(val.type) == 8 && w == 4) ? INSTR_CVTSD2SS :
-        (w == 4) ? INSTR_MOVSS : INSTR_MOVSD;
-
-    emit_load(opcode, val, reg(r, w));
+    if (size_of(val.type) != w) {
+        emit_load(INSTR_CVTS2S, val, reg(r, w));
+    } else {
+        emit_load(INSTR_MOVS, val, reg(r, w));
+    }
 }
 
 /* Load field value to register, either 4 or 8 bytes. */
@@ -827,58 +824,49 @@ static enum reg load_float_as_integer(
     struct var val,
     Type type)
 {
-    enum opcode opcode;
     enum reg ax, cx, xmm0, xmm1;
     struct symbol *convert, *next;
     union value limit;
-    int width;
+    int ws, wd;
 
     assert(is_real(val.type));
     assert(is_integer(type));
 
+    wd = size_of(type);
     ax = get_int_reg();
-    width = size_of(type);
-    opcode = is_float(val.type) ? INSTR_CVTTSS2SI : INSTR_CVTTSD2SI;
     if (is_signed(type)) {
-        width = (width < 4) ? 4 : width;
-        assert(width == 4 || width == 8);
-        emit_load(opcode, val, reg(ax, width));
-    } else if (width < 4) {
-        emit_load(opcode, val, reg(ax, 4));
-    } else if (width < 8) {
-        emit_load(opcode, val, reg(ax, 8));
+        wd = (wd < 4) ? 4 : wd;
+        assert(wd == 4 || wd == 8);
+        emit_load(INSTR_CVTTS2SI, val, reg(ax, wd));
+    } else if (wd < 4) { /* <= 4?? */
+        emit_load(INSTR_CVTTS2SI, val, reg(ax, 4));
+    } else if (wd < 8) {
+        emit_load(INSTR_CVTTS2SI, val, reg(ax, 8));
     } else {
         cx = get_int_reg();
         xmm0 = get_sse_reg();
         xmm1 = get_sse_reg();
-        width = size_of(val.type);
+        ws = size_of(val.type);
+        assert(ws == 4 || ws == 8);
         convert = create_label(definition);
         next = create_label(definition);
-        load_sse(val, xmm0, width);
+        load_sse(val, xmm0, ws);
         if (is_float(val.type)) {
             limit.f = (float) LONG_MAX;
-            load_sse(var_numeric(basic_type__float, limit), xmm1, width);
+            load_sse(var_numeric(basic_type__float, limit), xmm1, ws);
         } else {
             limit.d = (double) LONG_MAX;
-            load_sse(var_numeric(basic_type__double, limit), xmm1, width);
+            load_sse(var_numeric(basic_type__double, limit), xmm1, ws);
         }
-        if (is_float(val.type)) {
-            emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
-        } else {
-            emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
-        }
+        emit(INSTR_UCOMIS, OPT_REG_REG, reg(xmm1, ws), reg(xmm0, ws));
         emit(INSTR_Jcc, OPT_IMM, CC_AE, addr(convert));
         /* Value is representable as signed long. */
-        emit_load(opcode, val, reg(ax, 8));
+        emit_load(INSTR_CVTTS2SI, val, reg(ax, 8));
         emit(INSTR_JMP, OPT_IMM, addr(next));
         enter_context(convert);
         /* Trickery to convert value not within signed long. */
-        if (is_float(val.type)) {
-            emit(INSTR_SUBSS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
-        } else {
-            emit(INSTR_SUBSD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
-        }
-        emit(opcode, OPT_REG_REG, reg(xmm0, width), reg(ax, 8));
+        emit(INSTR_SUBS, OPT_REG_REG, reg(xmm1, ws), reg(xmm0, ws));
+        emit(INSTR_CVTTS2SI, OPT_REG_REG, reg(xmm0, ws), reg(ax, 8));
         emit(INSTR_MOV, OPT_IMM_REG, constant(LONG_MAX + 1ul, 8), reg(cx, 8));
         emit(INSTR_XOR, OPT_REG_REG, reg(cx, 8), reg(ax, 8));
         enter_context(next);
@@ -887,32 +875,30 @@ static enum reg load_float_as_integer(
     return ax;
 }
 
-static enum reg load_integer_as_float(
-    struct var val,
-    Type type)
+static enum reg load_integer_as_float(struct var val, Type type)
 {
     struct symbol *label, *next;
     enum reg xmm, ax, cx;
-    enum opcode opcode;
+    int w;
 
     assert(is_integer(val.type));
-    assert(is_real(type));
+    assert(is_float(type) || is_double(type));
 
+    w = size_of(type);
     xmm = get_sse_reg();
-    opcode = (size_of(type) == 8) ? INSTR_CVTSI2SD : INSTR_CVTSI2SS;
     if (is_signed(val.type)) {
         if (size_of(val.type) < 4 || is_field(val)) {
             ax = get_int_reg();
             load_int(val, ax, 4);
-            emit(opcode, OPT_REG_REG, reg(ax, 4), reg(xmm, size_of(type)));
+            emit(INSTR_CVTSI2S, OPT_REG_REG, reg(ax, 4), reg(xmm, w));
         } else {
-            emit_load(opcode, val, reg(xmm, size_of(type)));
+            emit_load(INSTR_CVTSI2S, val, reg(xmm, w));
         }
     } else {
         ax = get_int_reg();
         if (size_of(val.type) < 4) {
             load_int(val, ax, 4);
-            emit(opcode, OPT_REG_REG, reg(ax, 4), reg(xmm, size_of(type)));
+            emit(INSTR_CVTSI2S, OPT_REG_REG, reg(ax, 4), reg(xmm, w));
         } else {
             cx = get_int_reg();
             load_int(val, ax, 8);
@@ -927,7 +913,7 @@ static enum reg load_integer_as_float(
             }
             emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
             emit(INSTR_Jcc, OPT_IMM, CC_S, addr(label));
-            emit(opcode, OPT_REG_REG, reg(ax, 8), reg(xmm, size_of(type)));
+            emit(INSTR_CVTSI2S, OPT_REG_REG, reg(ax, 8), reg(xmm, w));
             emit(INSTR_JMP, OPT_IMM, addr(next));
             enter_context(label);
             /*
@@ -937,12 +923,8 @@ static enum reg load_integer_as_float(
             emit(INSTR_SHR, OPT_IMM_REG, constant(1, 1), reg(cx, 8));
             emit(INSTR_AND, OPT_IMM_REG, constant(1, 4), reg(ax, 4));
             emit(INSTR_OR, OPT_REG_REG, reg(cx, 8), reg(ax, 8));
-            emit(opcode, OPT_REG_REG, reg(ax, 8), reg(xmm, size_of(type)));
-            if (is_float(type)) {
-                emit(INSTR_ADDSS, OPT_REG_REG, reg(xmm, 4), reg(xmm, 4));
-            } else {
-                emit(INSTR_ADDSD, OPT_REG_REG, reg(xmm, 8), reg(xmm, 8));
-            }
+            emit(INSTR_CVTSI2S, OPT_REG_REG, reg(ax, 8), reg(xmm, w));
+            emit(INSTR_ADDS, OPT_REG_REG, reg(xmm, w), reg(xmm, w));
             enter_context(next);
         }
     }
@@ -963,8 +945,8 @@ static enum reg load_float_from_long_double(
     xmm = get_sse_reg();
     load_x87(val);
     emit(INSTR_FSTP, OPT_MEM, location(address(-8, SP, 0, 0), w));
-    emit(is_float(type) ? INSTR_MOVSS : INSTR_MOVSD, OPT_MEM_REG,
-       location(address(-8, SP, 0, 0), w), reg(xmm, w));
+    emit(INSTR_MOVS, OPT_MEM_REG,
+        location(address(-8, SP, 0, 0), w), reg(xmm, w));
 
     assert(x87_stack == 1);
     x87_stack = 0;
@@ -1137,7 +1119,7 @@ static void store_op(
     w = size_of(target.type);
     opc = INSTR_MOV;
     if (is_real(target.type)) {
-        opc = is_float(target.type) ? INSTR_MOVSS : INSTR_MOVSD;
+        opc = INSTR_MOVS;
         assert(optype == OPT_REG);
     } else if (is_field(target)) {
         assert(target.field_width > 0 && target.field_width < 64);
@@ -1703,9 +1685,9 @@ static void enter(struct definition *def)
         emit(INSTR_Jcc, OPT_IMM, CC_E, addr(sym));
         for (i = 0; i < MAX_SSE_ARGS; ++i) {
             vararg.reg_save_area_offset -= 16;
-            emit(INSTR_MOVAPS, OPT_REG_MEM,
-                reg(XMM0 + (7 - i), 8),
-                location(address(vararg.reg_save_area_offset, BP, 0, 0), 8));
+            emit(INSTR_MOVAP, OPT_REG_MEM,
+                reg(XMM0 + (7 - i), 4),
+                location(address(vararg.reg_save_area_offset, BP, 0, 0), 16));
         }
 
         enter_context(sym);
@@ -1912,7 +1894,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
             case PC_SSE:
                 i = sse_regs_loaded++;
                 slice.type = basic_type__double;
-                emit(INSTR_MOVSD, OPT_MEM_REG,
+                emit(INSTR_MOVS, OPT_MEM_REG,
                     location(address(i*16, SI, DX, 1), 8), reg(XMM0, 8));
                 store(XMM0, slice);
                 break;
@@ -2001,9 +1983,9 @@ static void store_caller_saved_registers(void)
 
     for (i = 0; i < sse_regs_alloc; ++i) {
         emit(INSTR_SUB, OPT_IMM_REG, constant(16, 8), reg(SP, 8));
-        emit(INSTR_MOVSD, OPT_REG_MEM,
-            reg(temp_sse_reg[i], 16),
-            location(address(0, SP, 0, 0), 16));
+        emit(INSTR_MOVS, OPT_REG_MEM,
+            reg(temp_sse_reg[i], 8),
+            location(address(0, SP, 0, 0), 8));
     }
 }
 
@@ -2012,9 +1994,9 @@ static void load_caller_saved_registers(void)
     int i;
 
     for (i = sse_regs_alloc - 1; i >= 0; --i) {
-        emit(INSTR_MOVSD, OPT_MEM_REG,
-            location(address(0, SP, 0, 0), 16),
-            reg(temp_sse_reg[i], 16));
+        emit(INSTR_MOVS, OPT_MEM_REG,
+            location(address(0, SP, 0, 0), 8),
+            reg(temp_sse_reg[i], 8));
         emit(INSTR_ADD, OPT_IMM_REG, constant(16, 8), reg(SP, 8));
     }
 }
@@ -2111,15 +2093,11 @@ static enum tttn compile_compare(
         break;
     }
 
+    w = size_of(l.type);
     if (is_real(l.type)) {
         xmm0 = load_cast(l, l.type);
         xmm1 = load_cast(r, r.type);
-        if (is_float(l.type)) {
-            emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm1, 4), reg(xmm0, 4));
-        } else if (is_double(l.type)) {
-            emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
-        } else {
-            assert(is_long_double(l.type));
+        if (is_long_double(l.type)) {
             if (op == IR_OP_GE || op == IR_OP_GT) {
                 emit(INSTR_FXCH, OPT_REG, reg(xmm0, 16));
             }
@@ -2127,9 +2105,11 @@ static enum tttn compile_compare(
             emit(INSTR_FSTP, OPT_REG, reg(xmm1, 16));
             assert(x87_stack == 2);
             x87_stack = 0;
+        } else {
+            assert(is_float(l.type) || is_double(l.type));
+            emit(INSTR_UCOMIS, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
         }
     } else {
-        w = size_of(l.type);
         assert(w == size_of(r.type));
         if (is_constant(l) && w < 8) {
             if (r.kind == DIRECT
@@ -2244,7 +2224,6 @@ static enum reg compile_add(
     struct var r)
 {
     size_t w;
-    enum opcode opc;
     enum reg ax, cx;
 
     w = size_of(type);
@@ -2257,8 +2236,7 @@ static enum reg compile_add(
     } else if (is_real(type)) {
         ax = load_cast(l, type);
         cx = load_cast(r, type);
-        opc = is_float(type) ? INSTR_ADDSS : INSTR_ADDSD;
-        emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        emit(INSTR_ADDS, OPT_REG_REG, reg(cx, w), reg(ax, w));
     } else {
         if (!is_void(target.type)
             && target.kind == DIRECT
@@ -2371,9 +2349,7 @@ static enum reg compile_sub(
     } else {
         ax = load_cast(l, type);
         cx = load_cast(r, type);
-        opc = is_float(type) ? INSTR_SUBSS
-            : is_double(type) ? INSTR_SUBSD
-            : INSTR_SUB;
+        opc = (is_float(type) || is_double(type)) ? INSTR_SUBS : INSTR_SUB;
         emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
         if (!is_void(target.type)) {
             store(ax, target);
@@ -2443,7 +2419,6 @@ static enum reg compile_mul(
     struct var r)
 {
     size_t w;
-    enum opcode opc;
     enum reg ax, cx;
 
     w = size_of(type);
@@ -2458,8 +2433,7 @@ static enum reg compile_mul(
                 store_x87(target);
             }
         } else {
-            opc = is_float(type) ? INSTR_MULSS : INSTR_MULSD;
-            emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+            emit(INSTR_MULS, OPT_REG_REG, reg(cx, w), reg(ax, w));
             if (!is_void(target.type)) {
                 store(ax, target);
             }
@@ -2506,8 +2480,7 @@ static enum reg compile_div(
                 store_x87(target);
             }
         } else {
-            opc = is_float(type) ? INSTR_DIVSS : INSTR_DIVSD;
-            emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+            emit(INSTR_DIVS, OPT_REG_REG, reg(cx, w), reg(ax, w));
             if (!is_void(target.type)) {
                 store(ax, target);
             }
@@ -3016,7 +2989,7 @@ static void compile_return(Type func, struct expression expr)
  */
 static void compile_block(struct block *block, Type type)
 {
-    int i;
+    int i, w;
     enum reg ax;
     enum reg xmm0, xmm1;
     enum tttn cc;
@@ -3113,22 +3086,19 @@ static void compile_block(struct block *block, Type type)
             }
         } else {
             ax = compile_expression(block->expr);
+            w = size_of(block->expr.type);
             if (is_real(block->expr.type)) {
+                assert(w == 4 || w == 8);
                 xmm0 = ax;
                 xmm1 = (xmm0 == XMM0) ? XMM1 : XMM0;
-                emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, 8), reg(xmm1, 8));
-                if (is_float(block->expr.type)) {
-                    emit(INSTR_UCOMISS, OPT_REG_REG, reg(xmm0, 4), reg(xmm1, 4));
-                } else {
-                    emit(INSTR_UCOMISD, OPT_REG_REG, reg(xmm0, 8), reg(xmm1, 8));
-                }
+                emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, w), reg(xmm1, w));
+                emit(INSTR_UCOMIS, OPT_REG_REG, reg(xmm0, w), reg(xmm1, w));
                 emit(INSTR_Jcc, OPT_IMM, CC_NE, br1);
                 emit(INSTR_Jcc, OPT_IMM, CC_P, br1);
                 emit(INSTR_JMP, OPT_IMM, br0);
             } else {
-                i = size_of(block->expr.type);
-                assert(i == 1 || i == 2 || i == 4 || i == 8);
-                emit(INSTR_CMP, OPT_IMM_REG, constant(0, i), reg(ax, i));
+                assert(w == 1 || w == 2 || w == 4 || w == 8);
+                emit(INSTR_CMP, OPT_IMM_REG, constant(0, w), reg(ax, w));
                 emit(INSTR_Jcc, OPT_IMM, CC_E, br0);
             }
         }

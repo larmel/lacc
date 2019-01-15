@@ -881,7 +881,7 @@ static struct code encode_shift(
     return c;
 }
 
-static struct code movaps(
+static struct code movap(
     enum instr_optype optype,
     union operand a,
     union operand b)
@@ -889,20 +889,21 @@ static struct code movaps(
     struct code c = {{PREFIX_SSE, 0x29}, 2};
     assert(optype == OPT_REG_MEM);
     assert(a.reg.r >= XMM0 && a.reg.r <= XMM7);
+    assert(a.width == 4); /* Use 4 or 8 to determine movap[s/d] */
+    assert(b.width == 16);
 
-    encode_addr(&c, (a.reg.r - XMM0), b.mem.addr, 0);
+    encode_addr(&c, regi(a.reg), b.mem.addr, 0);
     return c;
 }
 
 static struct code sse_mov(
     enum instr_optype optype,
-    unsigned char opcode,
     union operand a,
     union operand b)
 {
     struct code c = {{0}};
 
-    c.val[c.len++] = opcode;
+    c.val[c.len++] = a.width == 4 ? 0xF3 : 0xF2;
     switch (optype) {
     case OPT_REG_REG:
         if (rrex(a.reg) || rrex(b.reg)) {
@@ -934,29 +935,18 @@ static struct code sse_mov(
     return c;
 }
 
-static struct code ucomiss(
+static struct code ucomis(
     enum instr_optype optype,
     union operand a,
     union operand b)
 {
     struct code c = {{0}};
     assert(optype == OPT_REG_REG);
+    assert(a.width == b.width);
 
-    c.val[c.len++] = PREFIX_SSE;
-    c.val[c.len++] = 0x2E;
-    c.val[c.len++] = 0xC0 | (regi(b.reg) << 3) | regi(a.reg);
-    return c;
-}
-
-static struct code ucomisd(
-    enum instr_optype optype,
-    union operand a,
-    union operand b)
-{
-    struct code c = {{0}};
-    assert(optype == OPT_REG_REG);
-
-    c.val[c.len++] = 0x66;
+    if (a.width == 8) {
+        c.val[c.len++] = 0x66;
+    }
     c.val[c.len++] = PREFIX_SSE;
     c.val[c.len++] = 0x2E;
     c.val[c.len++] = 0xC0 | (regi(b.reg) << 3) | regi(a.reg);
@@ -965,15 +955,19 @@ static struct code ucomisd(
 
 static struct code sse_enc(
     enum instr_optype optype,
-    unsigned char opcode1,
-    unsigned char opcode2,
+    unsigned char opc,
     union operand a,
     union operand b,
     int is_int_load)
 {
     struct code c = {0};
 
-    c.val[c.len++] = opcode1;
+    if (is_int_load) {
+        c.val[c.len++] = b.width == 4 ? 0xF3 : 0xF2;
+    } else {
+        c.val[c.len++] = a.width == 4 ? 0xF3 : 0xF2;
+    }
+
     if (optype == OPT_MEM_REG) {
         if (rrex(b.reg) || mrex(a.mem.addr) || (is_int_load && a.width == 8)) {
             c.val[c.len++] = REX | W(a.mem) | R(b.reg) | mrex(a.mem.addr);
@@ -982,7 +976,7 @@ static struct code sse_enc(
             }
         }
         c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = opcode2;
+        c.val[c.len++] = opc;
         encode_addr(&c, regi(b.reg), a.mem.addr, 0);
     } else {
         assert(optype == OPT_REG_REG);
@@ -990,7 +984,7 @@ static struct code sse_enc(
             c.val[c.len++] = REX | W(a.reg) | W(b.reg) | B(a.reg);
         }
         c.val[c.len++] = PREFIX_SSE;
-        c.val[c.len++] = opcode2;
+        c.val[c.len++] = opc;
         c.val[c.len++] = 0xC0 | (regi(b.reg) << 3) | regi(a.reg);
     }
 
@@ -1165,22 +1159,14 @@ INTERNAL struct code encode(struct instruction instr)
     default: assert(0);
     case INSTR_ADD:
         return encode_add(instr.optype, instr.source, instr.dest);
-    case INSTR_ADDSD:
-        return sse_enc(instr.optype, 0xF2, 0x58, instr.source, instr.dest, 0);
-    case INSTR_ADDSS:
-        return sse_enc(instr.optype, 0xF3, 0x58, instr.source, instr.dest, 0);
-    case INSTR_CVTSI2SS:
-        return sse_enc(instr.optype, 0xF3, 0x2A, instr.source, instr.dest, 1);
-    case INSTR_CVTSI2SD:
-        return sse_enc(instr.optype, 0xF2, 0x2A, instr.source, instr.dest, 1);
-    case INSTR_CVTSS2SD:
-        return sse_enc(instr.optype, 0xF3, 0x5A, instr.source, instr.dest, 0);
-    case INSTR_CVTSD2SS:
-        return sse_enc(instr.optype, 0xF2, 0x5A, instr.source, instr.dest, 0);
-    case INSTR_CVTTSD2SI:
-        return sse_enc(instr.optype, 0xF2, 0x2C, instr.source, instr.dest, 0);
-    case INSTR_CVTTSS2SI:
-        return sse_enc(instr.optype, 0xF3, 0x2C, instr.source, instr.dest, 0);
+    case INSTR_ADDS:
+        return sse_enc(instr.optype, 0x58, instr.source, instr.dest, 0);
+    case INSTR_CVTSI2S:
+        return sse_enc(instr.optype, 0x2A, instr.source, instr.dest, 1);
+    case INSTR_CVTS2S:
+        return sse_enc(instr.optype, 0x5A, instr.source, instr.dest, 0);
+    case INSTR_CVTTS2SI:
+        return sse_enc(instr.optype, 0x2C, instr.source, instr.dest, 0);
     case INSTR_CDQ:
         return cdq();
     case INSTR_CQO:
@@ -1189,18 +1175,14 @@ INTERNAL struct code encode(struct instruction instr)
         return encode_not(instr.optype, instr.source);
     case INSTR_MUL:
         return encode_mul(instr.optype, instr.source);
-    case INSTR_MULSD:
-        return sse_enc(instr.optype, 0xF2, 0x59, instr.source, instr.dest, 0);
-    case INSTR_MULSS:
-        return sse_enc(instr.optype, 0xF3, 0x59, instr.source, instr.dest, 0);
+    case INSTR_MULS:
+        return sse_enc(instr.optype, 0x59, instr.source, instr.dest, 0);
     case INSTR_XOR:
         return encode_bitwise(instr.optype, instr.source, instr.dest, 0x30);
     case INSTR_DIV:
         return encode_div(instr.optype, instr.source);
-    case INSTR_DIVSD:
-        return sse_enc(instr.optype, 0xF2, 0x5E, instr.source, instr.dest, 0);
-    case INSTR_DIVSS:
-        return sse_enc(instr.optype, 0xF3, 0x5E, instr.source, instr.dest, 0);
+    case INSTR_DIVS:
+        return sse_enc(instr.optype, 0x5E, instr.source, instr.dest, 0);
     case INSTR_AND:
         return encode_bitwise(instr.optype, instr.source, instr.dest, 0x20);
     case INSTR_OR:
@@ -1223,12 +1205,10 @@ INTERNAL struct code encode(struct instruction instr)
         return movsx(instr.optype, instr.source, instr.dest);
     case INSTR_MOVZX:
         return movzx(instr.optype, instr.source, instr.dest);
-    case INSTR_MOVAPS:
-        return movaps(instr.optype, instr.source, instr.dest);
-    case INSTR_MOVSD:
-        return sse_mov(instr.optype, 0xF2, instr.source, instr.dest);
-    case INSTR_MOVSS:
-        return sse_mov(instr.optype, 0xF3, instr.source, instr.dest);
+    case INSTR_MOVAP:
+        return movap(instr.optype, instr.source, instr.dest);
+    case INSTR_MOVS:
+        return sse_mov(instr.optype, instr.source, instr.dest);
     case INSTR_PUSH:
         return encode_push(instr.optype, instr.source);
     case INSTR_POP:
@@ -1237,14 +1217,10 @@ INTERNAL struct code encode(struct instruction instr)
         return pxor(instr.optype, instr.source, instr.dest);
     case INSTR_SUB:
         return encode_sub(instr.optype, instr.source, instr.dest);
-    case INSTR_SUBSD:
-        return sse_enc(instr.optype, 0xF2, 0x5C, instr.source, instr.dest, 0);
-    case INSTR_SUBSS:
-        return sse_enc(instr.optype, 0xF3, 0x5C, instr.source, instr.dest, 0);
-    case INSTR_UCOMISS:
-        return ucomiss(instr.optype, instr.source, instr.dest);
-    case INSTR_UCOMISD:
-        return ucomisd(instr.optype, instr.source, instr.dest);
+    case INSTR_SUBS:
+        return sse_enc(instr.optype, 0x5C, instr.source, instr.dest, 0);
+    case INSTR_UCOMIS:
+        return ucomis(instr.optype, instr.source, instr.dest);
     case INSTR_LEA:
         return lea(instr.optype, instr.source, instr.dest);
     case INSTR_LEAVE:

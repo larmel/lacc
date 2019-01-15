@@ -10,6 +10,7 @@
 #include <stdarg.h>
 
 #define SUFFIX(w) ((w) == 1 ? 'b' : (w) == 2 ? 'w' : (w) == 4 ? 'l' : 'q')
+#define SSESFX(w) ((w) == 4 ? 's' : 'd')
 #define X87SFX(w) ((w) == 4 ? 's' : (w) == 8 ? 'l' : 't')
 #define X87IFX(w) ((w) == 2 ? 's' : (w) == 4 ? 'l' : 'q')
 
@@ -21,6 +22,7 @@
 #define U2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
 #define X1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87SFX(w), a);
 #define Y1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87IFX(w), a);
+#define SSE2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SSESFX(w), a, b)
 
 #define MAX_OPERAND_TEXT_LENGTH 256
 
@@ -315,22 +317,37 @@ INTERNAL int asm_text(struct instruction instr)
 
     switch (instr.opcode) {
     case INSTR_ADD:      U2("add", wd, source, destin); break;
-    case INSTR_ADDSD:    I2("addsd", source, destin); break;
-    case INSTR_ADDSS:    I2("addss", source, destin); break;
-    case INSTR_CVTSS2SD: I2("cvtss2sd", source, destin); break;
-    case INSTR_CVTSD2SS: I2("cvtsd2ss", source, destin); break;
-    case INSTR_CVTSI2SS: U2("cvtsi2ss", ws, source, destin); break;
-    case INSTR_CVTSI2SD: U2("cvtsi2sd", ws, source, destin); break;
-    case INSTR_CVTTSD2SI:U2("cvttsd2si", wd, source, destin); break;
-    case INSTR_CVTTSS2SI:U2("cvttss2si", wd, source, destin); break;
+    case INSTR_ADDS:     SSE2("adds", wd, source, destin); break;
+    case INSTR_CVTS2S:
+        if (ws == 4 && wd == 8) {
+            I2("cvtss2sd", source, destin);
+        } else {
+            assert(ws == 8 && wd == 4);
+            I2("cvtsd2ss", source, destin);
+        }
+        break;
+    case INSTR_CVTSI2S: 
+        if (wd == 4) {
+            U2("cvtsi2ss", ws, source, destin);
+        } else {
+            assert(wd == 8);
+            U2("cvtsi2sd", ws, source, destin);
+        }
+        break;
+    case INSTR_CVTTS2SI:
+        if (ws == 4) {
+            U2("cvttss2si", wd, source, destin);
+        } else {
+            assert(ws == 8);
+            U2("cvttsd2si", wd, source, destin);
+        }
+        break;
     case INSTR_CDQ:      I0("cdq"); break;
     case INSTR_CQO:      I0("cqo"); break;
     case INSTR_DIV:      U1("div", ws, source); break;
-    case INSTR_DIVSD:    I2("divsd", source, destin); break;
-    case INSTR_DIVSS:    I2("divss", source, destin); break;
+    case INSTR_DIVS:     SSE2("divs", wd, source, destin); break;
     case INSTR_SUB:      U2("sub", wd, source, destin); break;
-    case INSTR_SUBSD:    I2("subsd", source, destin); break;
-    case INSTR_SUBSS:    I2("subss", source, destin); break;
+    case INSTR_SUBS:     SSE2("subs", wd, source, destin); break;
     case INSTR_NOT:      U1("not", ws, source); break;
     case INSTR_MUL:      U1("mul", ws, source); break;
     case INSTR_XOR:      U2("xor", wd, source, destin); break;
@@ -352,17 +369,12 @@ INTERNAL int asm_text(struct instruction instr)
         U2((ws == 1) ? "movsb" : (ws == 2) ? "movsw" : "movsl",
             wd, source, destin);
         break;
-    case INSTR_MOVAPS:
-        I2("movaps", source, destin);
-        break;
-    case INSTR_MOVSS:    I2("movss", source, destin); break;
-    case INSTR_MOVSD:    I2("movsd", source, destin); break;
-    case INSTR_MULSD:    I2("mulsd", source, destin); break;
-    case INSTR_MULSS:    I2("mulss", source, destin); break;
+    case INSTR_MOVAP:    SSE2("movap", ws, source, destin); break;
+    case INSTR_MOVS:     SSE2("movs", wd, source, destin); break;
+    case INSTR_MULS:     SSE2("muls", wd, source, destin); break;
     case INSTR_SETcc:    C1("set", instr.cc, source); break;
     case INSTR_TEST:     U2("test", wd, source, destin); break;
-    case INSTR_UCOMISS:  I2("ucomiss", source, destin); break;
-    case INSTR_UCOMISD:  I2("ucomisd", source, destin); break;
+    case INSTR_UCOMIS:   SSE2("ucomis", wd, source, destin); break;
     case INSTR_CMP:      U2("cmp", wd, source, destin); break;
     case INSTR_LEA:      U2("lea", wd, source, destin); break;
     case INSTR_PUSH:     U1("push", ws, source); break;

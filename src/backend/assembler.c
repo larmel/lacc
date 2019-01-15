@@ -371,8 +371,7 @@ static struct instr_template {
     {"add", INSTR_ADD, GENERAL, 2, OPT3},
     {"lea", INSTR_LEA, GENERAL, 2, OPT_MEM_REG},
     {"jmp", INSTR_JMP, GENERAL, 1, OPT_IMM},
-    {"movss", INSTR_MOVSS, SSE, 2, OPT_REG_REG | OPT_REG_MEM | OPT_MEM_REG},
-    {"movsd", INSTR_MOVSD, SSE, 2, OPT_REG_REG | OPT_REG_MEM | OPT_MEM_REG},
+    {"movs", INSTR_MOVS, SSE, 2, OPT_REG_REG | OPT_REG_MEM | OPT_MEM_REG},
     {"fld", INSTR_FLD, X87, 1, OPT_MEM},
     {"fistp", INSTR_FISTP, X87, 1, OPT_MEM},
     {"fild", INSTR_FILD, X87, 1, OPT_MEM},
@@ -405,6 +404,8 @@ static const struct instr_template *find_instruction(
                 case 'q': *ws = *wd = 8; break;
                 default: continue;
             } else if (tpl->kind == SSE) switch (t.str[ilen]) {
+                case 's': *ws = *wd = 4; break;
+                case 'd': *ws = *wd = 8; break;
                 default: continue;
             } else if (tpl->kind == X87) switch (t.str[ilen]) {
                 case 's': *ws = *wd = 4; break;
