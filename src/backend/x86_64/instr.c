@@ -664,9 +664,18 @@ static struct code lea(
     return c;
 }
 
-static struct code rep_movsq(void)
+static struct code movs(enum prefix prefix, int width)
 {
-    struct code c = {{0xF3, REX + 8, 0xA5}, 3};
+    struct code c = {{0}};
+    assert(prefix == PREFIX_REP);
+    assert(width == 8);
+
+    c.val[c.len++] = prefix;
+    if (width == 8) {
+        c.val[c.len++] = REX + 8;
+    }
+
+    c.val[c.len++] = 0xA5;
     return c;
 }
 
@@ -1225,9 +1234,8 @@ INTERNAL struct code encode(struct instruction instr)
         return lea(instr.optype, instr.source, instr.dest);
     case INSTR_LEAVE:
         return leave();
-    case INSTR_REP_MOVSQ:
-        assert(instr.optype == OPT_NONE);
-        return rep_movsq();
+    case INSTR_MOV_STR:
+        return movs(instr.prefix, instr.source.width);
     case INSTR_RET:
         return ret();
     case INSTR_JMP:

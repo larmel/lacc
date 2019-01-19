@@ -120,6 +120,8 @@ static void emit(enum opcode opcode, enum instr_optype optype, ...)
     va_start(args, optype);
     if (opcode == INSTR_Jcc || opcode == INSTR_SETcc) {
         instr.cc = va_arg(args, enum tttn);
+    } else if (opcode == INSTR_MOV_STR) {
+        instr.prefix = va_arg(args, enum prefix);
     }
 
     switch (optype) {
@@ -153,6 +155,7 @@ static void emit(enum opcode opcode, enum instr_optype optype, ...)
         instr.dest.mem = va_arg(args, struct memory);
         break;
     case OPT_NONE:
+        instr.source.width = va_arg(args, int);
         break;
     }
 
@@ -753,7 +756,7 @@ static void push(struct var v)
         emit(INSTR_MOV, OPT_IMM_REG, constant(eb, 4), reg(CX, 4));
         emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(DI, 8));
         load_address(v, SI);
-        emit(INSTR_REP_MOVSQ, OPT_NONE);
+        emit(INSTR_MOV_STR, OPT_NONE, PREFIX_REP, 8);
     }
 }
 
@@ -2490,10 +2493,10 @@ static enum reg compile_div(
         assert(ax == AX);
         if (is_signed(l.type)) {
             if (size_of(l.type) == 8) {
-                emit(INSTR_CQO, OPT_NONE);
+                emit(INSTR_CQO, OPT_NONE, 8);
             } else {
                 assert(size_of(l.type) == 4);
-                emit(INSTR_CDQ, OPT_NONE);
+                emit(INSTR_CDQ, OPT_NONE, 4);
             }
         } else {
             emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
@@ -2532,10 +2535,10 @@ static enum reg compile_mod(
     assert(ax == AX);
     if (is_signed(l.type)) {
         if (size_of(l.type) == 8) {
-            emit(INSTR_CQO, OPT_NONE);
+            emit(INSTR_CQO, OPT_NONE, 8);
         } else {
             assert(size_of(l.type) == 4);
-            emit(INSTR_CDQ, OPT_NONE);
+            emit(INSTR_CDQ, OPT_NONE, 4);
         }
     } else {
         emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
@@ -3023,8 +3026,8 @@ static void compile_block(struct block *block, Type type)
                 emit(INSTR_POP, OPT_REG, reg(temp_int_reg[i - 1], 8));
             }
         }
-        emit(INSTR_LEAVE, OPT_NONE);
-        emit(INSTR_RET, OPT_NONE);
+        emit(INSTR_LEAVE, OPT_NONE, 8);
+        emit(INSTR_RET, OPT_NONE, 8);
     } else if (!block->jump[1]) {
         if (block->jump[0]->color == BLACK) {
             emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));

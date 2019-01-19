@@ -117,6 +117,13 @@ struct immediate {
     } d;
 };
 
+enum prefix {
+    PREFIX_NONE = 0x0,
+    PREFIX_REP = 0xF3,
+    PREFIX_REPE = 0xF3,
+    PREFIX_REPNE = 0xF2
+};
+
 enum opcode {
     INSTR_ADD,
     INSTR_ADDS,         /* Add floating point. */
@@ -157,7 +164,7 @@ enum opcode {
     INSTR_CALL,
     INSTR_LEAVE,
     INSTR_RET,
-    INSTR_REP_MOVSQ,
+    INSTR_MOV_STR,      /* Move string, optionally with REP prefix. */
     INSTR_FLD,          /* Load x87 real to ST(0). */
     INSTR_FILD,         /* Load integer to ST(0). */
     INSTR_FISTP,        /* Store integer and pop. */
@@ -199,6 +206,7 @@ enum tttn {
 struct instruction {
     enum opcode opcode;
     enum tttn cc;
+    enum prefix prefix;
     enum instr_optype {
         OPT_NONE = 0,
         OPT_IMM = 1,

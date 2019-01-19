@@ -345,6 +345,12 @@ INTERNAL int asm_text(struct instruction instr)
     }
 
     out("\t");
+    switch (instr.prefix) {
+    case PREFIX_REP: out("rep "); break;
+    case PREFIX_REPNE: out("repne "); break;
+    default: break;
+    }
+
     switch (instr.opcode) {
     case INSTR_ADD:      U2("add", wd, source, destin); break;
     case INSTR_ADDS:     SSE2("adds", wd, source, destin); break;
@@ -420,7 +426,7 @@ INTERNAL int asm_text(struct instruction instr)
         break;
     case INSTR_LEAVE:    I0("leave"); break;
     case INSTR_RET:      I0("ret"); break;
-    case INSTR_REP_MOVSQ:I0("rep movsq"); break;
+    case INSTR_MOV_STR:  out("movs%c\n", SUFFIX(instr.source.width)); break;
     case INSTR_FLD:      X1("fld", ws, source); break;
     case INSTR_FILD:     Y1("fild", ws, source); break;
     case INSTR_FSTP:
