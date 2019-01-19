@@ -130,8 +130,7 @@ enum opcode {
     INSTR_CVTSI2S,      /* Convert int to floating point. */
     INSTR_CVTS2S,       /* Convert between float and double. */
     INSTR_CVTTS2SI,     /* Convert floating point to int with truncation. */
-    INSTR_CDQ,          /* Sign extend %eax to %edx:%eax. */
-    INSTR_CQO,          /* Sign extend %rax to %rdx:%rax. */
+    INSTR_Cxy,          /* Sign extend %[e/r]ax to %[e|r]dx:%[e|r]ax. */
     INSTR_SUB,
     INSTR_SUBS,         /* Subtract floating point. */
     INSTR_NOT,

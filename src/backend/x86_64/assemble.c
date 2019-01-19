@@ -378,8 +378,13 @@ INTERNAL int asm_text(struct instruction instr)
             U2("cvttsd2si", wd, source, destin);
         }
         break;
-    case INSTR_CDQ:      I0("cdq"); break;
-    case INSTR_CQO:      I0("cqo"); break;
+    case INSTR_Cxy:
+        if (instr.source.width == 8) I0("cqo");
+        else {
+            assert(instr.source.width == 4);
+            I0("cdq");
+        }
+        break;
     case INSTR_DIV:      U1("div", ws, source); break;
     case INSTR_DIVS:     SSE2("divs", wd, source, destin); break;
     case INSTR_SUB:      U2("sub", wd, source, destin); break;

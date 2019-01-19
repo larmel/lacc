@@ -1000,15 +1000,15 @@ static struct code sse_enc(
     return c;
 }
 
-static struct code cdq(void)
+static struct code cxy(int width)
 {
-    struct code c = {{0x99}, 1};
-    return c;
-}
+    struct code c = {{0}};
 
-static struct code cqo(void)
-{
-    struct code c = {{REX | 0x08, 0x99}, 2};
+    if (width == 8) {
+        c.val[c.len++] = REX | 0x08;
+    } else assert(width == 4);
+
+    c.val[c.len++] = 0x99;
     return c;
 }
 
@@ -1176,10 +1176,8 @@ INTERNAL struct code encode(struct instruction instr)
         return sse_enc(instr.optype, 0x5A, instr.source, instr.dest, 0);
     case INSTR_CVTTS2SI:
         return sse_enc(instr.optype, 0x2C, instr.source, instr.dest, 0);
-    case INSTR_CDQ:
-        return cdq();
-    case INSTR_CQO:
-        return cqo();
+    case INSTR_Cxy:
+        return cxy(instr.source.width);
     case INSTR_NOT:
         return encode_not(instr.optype, instr.source);
     case INSTR_MUL:

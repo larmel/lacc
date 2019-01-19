@@ -2467,7 +2467,7 @@ static enum reg compile_div(
     struct var l,
     struct var r)
 {
-    size_t w;
+    int w;
     enum opcode opc;
     enum reg ax, cx;
 
@@ -2492,12 +2492,9 @@ static enum reg compile_div(
         ax = load_cast(l, l.type);
         assert(ax == AX);
         if (is_signed(l.type)) {
-            if (size_of(l.type) == 8) {
-                emit(INSTR_CQO, OPT_NONE, 8);
-            } else {
-                assert(size_of(l.type) == 4);
-                emit(INSTR_CDQ, OPT_NONE, 4);
-            }
+            w = size_of(l.type);
+            assert(w == 8 || w == 4);
+            emit(INSTR_Cxy, OPT_NONE, w);
         } else {
             emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
         }
@@ -2529,17 +2526,15 @@ static enum reg compile_mod(
 {
     enum opcode opc;
     enum reg ax;
+    int w;
     assert(!is_real(type));
 
     ax = load_cast(l, l.type);
     assert(ax == AX);
     if (is_signed(l.type)) {
-        if (size_of(l.type) == 8) {
-            emit(INSTR_CQO, OPT_NONE, 8);
-        } else {
-            assert(size_of(l.type) == 4);
-            emit(INSTR_CDQ, OPT_NONE, 4);
-        }
+        w = size_of(l.type);
+        assert(w == 8 || w == 4);
+        emit(INSTR_Cxy, OPT_NONE, w);
     } else {
         emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
     }
