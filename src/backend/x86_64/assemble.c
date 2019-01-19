@@ -14,21 +14,55 @@
 #define X87SFX(w) ((w) == 4 ? 's' : (w) == 8 ? 'l' : 't')
 #define X87IFX(w) ((w) == 2 ? 's' : (w) == 4 ? 'l' : 'q')
 
-#define I0(instr)           out("\t%s\n", instr)
-#define I1(instr, a)        out("\t%s\t%s\n", instr, a)
-#define I2(instr, a, b)     out("\t%s\t%s, %s\n", instr, a, b)
-#define C1(instr, cc, a)    out("\t%s%s\t%s\n", instr, tttn_text(cc), a)
-#define U1(instr, w, a)     out("\t%s%c\t%s\n", instr, SUFFIX(w), a)
-#define U2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
-#define X1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87SFX(w), a);
-#define Y1(instr, w, a)     out("\t%s%c\t%s\n", instr, X87IFX(w), a);
-#define SSE2(instr, w, a, b)  out("\t%s%c\t%s, %s\n", instr, SSESFX(w), a, b)
+#define I0(instr)           out("%s\n", instr)
+#define I1(instr, a)        out("%s\t%s\n", instr, a)
+#define I2(instr, a, b)     out("%s\t%s, %s\n", instr, a, b)
+#define C1(instr, cc, a)    out("%s%s\t%s\n", instr, tttn_text(cc), a)
+#define U1(instr, w, a)     out("%s%c\t%s\n", instr, SUFFIX(w), a)
+#define U2(instr, w, a, b)  out("%s%c\t%s, %s\n", instr, SUFFIX(w), a, b)
+#define X1(instr, w, a)     out("%s%c\t%s\n", instr, X87SFX(w), a);
+#define Y1(instr, w, a)     out("%s%c\t%s\n", instr, X87IFX(w), a);
+#define SSE2(instr, w, a, b)  out("%s%c\t%s, %s\n", instr, SSESFX(w), a, b)
 
 #define MAX_OPERAND_TEXT_LENGTH 256
 
+static const struct symbol *current_symbol;
+
 static FILE *asm_output;
 
-static const struct symbol *current_symbol;
+static void out(const char *s, ...)
+{
+    va_list args;
+
+    va_start(args, s);
+    vfprintf(asm_output, s, args);
+    va_end(args);
+}
+
+static enum section {
+    SECTION_NONE,
+    SECTION_TEXT,
+    SECTION_DATA,
+    SECTION_RODATA
+} current_section = SECTION_NONE;
+
+static void set_section(enum section section)
+{
+    if (section != current_section) switch (section) {
+    case SECTION_TEXT:
+        out("\t.text\n");
+        break;
+    case SECTION_DATA:
+        out("\t.data\n");
+        break;
+    case SECTION_RODATA:
+        out("\t.section\t.rodata\n");
+        break;
+    default: break;
+    }
+
+    current_section = section;
+}
 
 static const char *reg_name[] = {
     "%al",   "%ax",   "%eax",  "%rax",
@@ -60,15 +94,6 @@ static const char *x87_name[] = {
     "%st(0)", "%st(1)", "%st(2)", "%st(3)",
     "%st(4)", "%st(5)", "%st(6)", "%st(7)"
 };
-
-static void out(const char *s, ...)
-{
-    va_list args;
-
-    va_start(args, s);
-    vfprintf(asm_output, s, args);
-    va_end(args);
-}
 
 static const char *mnemonic(struct registr reg)
 {
@@ -197,6 +222,9 @@ INTERNAL void asm_init(FILE *output, const char *file)
 
 INTERNAL int asm_symbol(const struct symbol *sym)
 {
+    const char *name;
+    size_t size;
+
     /*
      * Labels stay in the same function context, otherwise flush to
      * write any end of function metadata.
@@ -206,45 +234,46 @@ INTERNAL int asm_symbol(const struct symbol *sym)
         current_symbol = sym;
     }
 
+    name = sym_name(sym);
+    size = size_of(sym->type);
     switch (sym->symtype) {
     case SYM_TENTATIVE:
         assert(is_object(sym->type));
         if (sym->linkage == LINK_INTERN)
-            out("\t.local %s\n", sym_name(sym));
-        out("\t.comm %s,%d,%d\n",
-            sym_name(sym), size_of(sym->type), type_alignment(sym->type));
+            out("\t.local\t%s\n", name);
+        out("\t.comm\t%s,%lu,%lu\n", name, size, type_alignment(sym->type));
         break;
     case SYM_DEFINITION:
         if (is_function(sym->type)) {
-            I0(".text");
+            set_section(SECTION_TEXT);
             if (sym->linkage == LINK_EXTERN)
-                I1(".globl", sym_name(sym));
-            I2(".type", sym_name(sym), "@function");
-            out("%s:\n", sym_name(sym));
+                out("\t.globl\t%s\n", name);
+            out("\t.type\t%s, @function\n", name);
+            out("%s:\n", name);
         } else {
-            I0(".data");
+            set_section(SECTION_DATA);
             if (sym->linkage == LINK_EXTERN)
-                I1(".globl", sym_name(sym));
+                out("\t.globl\t%s\n", name);
             out("\t.align\t%d\n", sym_alignment(sym));
-            out("\t.type\t%s, @object\n", sym_name(sym));
-            out("\t.size\t%s, %d\n", sym_name(sym), size_of(sym->type));
-            out("%s:\n", sym_name(sym));
+            out("\t.type\t%s, @object\n", name);
+            out("\t.size\t%s, %lu\n", name, size);
+            out("%s:\n", name);
         }
         break;
     case SYM_STRING_VALUE:
-        I0(".data");
+        set_section(SECTION_DATA);
         out("\t.align\t%d\n", sym_alignment(sym));
-        out("\t.type\t%s, @object\n", sym_name(sym));
-        out("\t.size\t%s, %d\n", sym_name(sym), size_of(sym->type));
-        out("%s:\n", sym_name(sym));
+        out("\t.type\t%s, @object\n", name);
+        out("\t.size\t%s, %lu\n", name, size);
+        out("%s:\n", name);
         out("\t.string\t");
         fprintstr(asm_output, sym->value.string);
         out("\n");
         break;
     case SYM_CONSTANT:
-        I0(".section\t.rodata");
+        set_section(SECTION_RODATA);
         out("\t.align\t%d\n", sym_alignment(sym));
-        out("%s:\n", sym_name(sym));
+        out("%s:\n", name);
         if (is_float(sym->type)) {
             out("\t.long\t%lu\n", sym->value.constant.u & 0xFFFFFFFFu);
         } else if (is_double(sym->type)) {
@@ -261,7 +290,7 @@ INTERNAL int asm_symbol(const struct symbol *sym)
         }
         break;
     case SYM_LABEL:
-        out("%s:\n", sym_name(sym));
+        out("%s:\n", name);
         break;
     default:
         break;
@@ -315,6 +344,7 @@ INTERNAL int asm_text(struct instruction instr)
         break;
     }
 
+    out("\t");
     switch (instr.opcode) {
     case INSTR_ADD:      U2("add", wd, source, destin); break;
     case INSTR_ADDS:     SSE2("adds", wd, source, destin); break;
@@ -454,12 +484,17 @@ INTERNAL int asm_data(struct immediate data)
 
 INTERNAL int asm_flush(void)
 {
-    if (current_symbol) {
-        if (is_function(current_symbol->type) &&
-                current_symbol->symtype == SYM_DEFINITION)
-            out("\t.size\t%s, .-%s\n",
-                sym_name(current_symbol), sym_name(current_symbol));
-        current_symbol = NULL;
+    const char *name;
+
+    if (current_symbol
+        && is_function(current_symbol->type)
+        && current_symbol->symtype == SYM_DEFINITION)
+    {
+        name = sym_name(current_symbol);
+        out("\t.size\t%s, .-%s\n", name, name);
     }
+
+    current_symbol = NULL;
+    current_section = SECTION_NONE;
     return 0;
 }
