@@ -398,6 +398,11 @@ static struct asm_operand asm_operand(
             error("Output operand must be lvalue.");
             exit(1);
         }
+    } else if (writeback) {
+        error("Output operand constraint must begin with '=' or '+'.");
+        exit(1);
+    } else {
+        var = rvalue(def, *block, var);
     }
 
     force_register = strchr(str, 'r') && !strchr(str, 'm');

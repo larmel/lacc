@@ -1083,7 +1083,7 @@ static struct expression eval_va_arg(struct var var, Type type)
  * taking the address of an array, which would give 'pointer to array
  * of T'.
  */
-static struct var rvalue(
+INTERNAL struct var rvalue(
     struct definition *def,
     struct block *block,
     struct var var)

@@ -6,6 +6,12 @@
 /* Add statement to current block. */
 INTERNAL void emit_ir(struct block *block, enum sttype st, ...);
 
+/* Convert function, array, or field to rvalue. */
+INTERNAL struct var rvalue(
+    struct definition *def,
+    struct block *block,
+    struct var var);
+
 /*
  * Commit expression in block->expr to a new temporary variable, or
  * return the value directly if there is nothing to evaluate.

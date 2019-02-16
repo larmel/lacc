@@ -88,11 +88,25 @@ void test5(void) {
 	assert(a == 3);
 }
 
+void test6(void) {
+	static unsigned char data[4] = { "\xFF\xFF\xFF\xFF" };
+
+	unsigned int a = 0;
+	__asm__ volatile (
+		"mov (%1), %0 \n"
+		: "=r" (a)
+		: "r" (data)
+	);
+
+	assert(a == 0xffffffff);
+}
+
 int main(void) {
 	test1(42);
 	test2(42);
 	test3();
 	test4();
 	test5();
+	test6();
 	return 0;
 }
