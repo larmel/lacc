@@ -631,7 +631,7 @@ static struct macro preprocess_define(
                 line++;
                 break;
             }
-            if (line->token != IDENTIFIER) {
+            if (!line->is_expandable) {
                 error("Invalid macro parameter, expected identifer.");
                 exit(1);
             }
@@ -649,7 +649,7 @@ static struct macro preprocess_define(
     while (line->token != NEWLINE) {
         assert(line->token != END);
         param.d.val.i = -1;
-        if (line->token == IDENTIFIER && macro.type == FUNCTION_LIKE) {
+        if (line->is_expandable && macro.type == FUNCTION_LIKE) {
             for (i = 0; i < macro.params; ++i) {
                 if (!tok_cmp(*line, array_get(&params, i))) {
                     param.d.val.i = i;
