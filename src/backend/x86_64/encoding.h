@@ -151,15 +151,15 @@ enum opcode {
     INSTR_XOR = INSTR_TEST + 2,
 
     INSTR_ADDS = INSTR_XOR + 2,         /* Add floating point. */
-    INSTR_CVTSI2S = INSTR_ADDS + 2,     /* Convert int to floating point. */
+    INSTR_CVTSI2S = INSTR_ADDS + 6,     /* Convert int to floating point. */
     INSTR_CVTS2S = INSTR_CVTSI2S + 2,   /* Convert between float and double. */
     INSTR_CVTTS2SI = INSTR_CVTS2S + 2,  /* Convert floating point to int with truncation. */
     INSTR_DIVS = INSTR_CVTTS2SI + 2,
     INSTR_MULS = INSTR_DIVS + 2,        /* Multiply floating point. */
-    INSTR_SUBS = INSTR_MULS + 2,        /* Subtract floating point. */
+    INSTR_SUBS = INSTR_MULS + 3,        /* Subtract floating point. */
     INSTR_MOVAP = INSTR_SUBS + 2,       /* Move aligned packed floating point. */
-    INSTR_MOVS = INSTR_MOVAP + 1,       /* Move floating point. */
-    INSTR_UCOMIS = INSTR_MOVS + 4,      /* Compare floating point and set EFLAGS. */
+    INSTR_MOVS = INSTR_MOVAP + 2,       /* Move floating point. */
+    INSTR_UCOMIS = INSTR_MOVS + 6,      /* Compare floating point and set EFLAGS. */
     INSTR_PXOR = INSTR_UCOMIS + 2,      /* Bitwise xor with xmm register. */
 
     INSTR_FADDP = INSTR_PXOR + 1,       /* Add x87 ST(0) to ST(i) and pop. */

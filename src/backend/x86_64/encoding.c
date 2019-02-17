@@ -208,6 +208,14 @@ static struct encoding {
     {INSTR_ADDS, {"addss"}, {0xF3}, {0x0F, 0x58}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
     {INSTR_ADDS, {"addsd"}, {0xF2}, {0x0F, 0x58}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{8}, {8}}, 1},
 
+    {0, {"andnps"}, {0}, {0x0F, 0x55}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
+
+    {0, {"andps"}, {0}, {0x0F, 0x54}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
+
+    {0, {"cvtps2dq"}, {0x66}, {0x0F, 0x5B}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
+
+    {0, {"cvtdq2ps"}, {0}, {0x0F, 0x5B}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
+
     {INSTR_CVTSI2S, {"cvtsi2ss"}, {0xF3}, {0x0F, 0x2A}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4 | 8}, {4}}, 1},
     {INSTR_CVTSI2S, {"cvtsi2sd"}, {0xF2}, {0x0F, 0x2A}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4 | 8}, {8}}, 1},
 
@@ -223,15 +231,21 @@ static struct encoding {
     {INSTR_MULS, {"mulss"}, {0xF3}, {0x0F, 0x59}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
     {INSTR_MULS, {"mulsd"}, {0xF2}, {0x0F, 0x59}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{8}, {8}}, 1},
 
+    {0, {"orps"}, {0}, {0x0F, 0x56}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
+
     {INSTR_SUBS, {"subss"}, {0xF3}, {0x0F, 0x5C}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
     {INSTR_SUBS, {"subsd"}, {0xF2}, {0x0F, 0x5C}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{8}, {8}}, 1},
 
+    {INSTR_MOVAP, {"movaps"}, {0}, {0x0F, 0x28}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
     {INSTR_MOVAP, {"movaps"}, {0}, {0x0F, 0x29}, OPX_NONE, 0x00, OPT_REG_MEM, {{4}, {4}}},
 
     {INSTR_MOVS, {"movss"}, {0xF3}, {0x0F, 0x10}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
     {INSTR_MOVS, {"movss"}, {0xF3}, {0x0F, 0x11}, OPX_NONE, 0x00, OPT_REG_MEM, {{4}, {4}}},
     {INSTR_MOVS, {"movsd"}, {0xF2}, {0x0F, 0x10}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{8}, {8}}, 1},
     {INSTR_MOVS, {"movsd"}, {0xF2}, {0x0F, 0x11}, OPX_NONE, 0x00, OPT_REG_MEM, {{8}, {8}}},
+
+    {0, {"movups"}, {0}, {0x0F, 0x10}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
+    {0, {"movups"}, {0}, {0x0F, 0x11}, OPX_NONE, 0x00, OPT_REG_MEM, {{4}, {4}}},
 
     {INSTR_UCOMIS, {"ucomiss"}, {0}, {0x0F, 0x2E}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{4}, {4}}, 1},
     {INSTR_UCOMIS, {"ucomisd"}, {0x66}, {0x0F, 0x2E}, OPX_NONE, 0x00, OPT_REG_REG | OPT_MEM_REG, {{8}, {8}}, 1},
@@ -795,8 +809,8 @@ static int match_instruction_encoding(
     int i;
     union operand op;
 
-    if (instr->opcode != enc->opc
-        || instr->optype != (enc->optype & instr->optype))
+    assert(instr->opcode == enc->opc || enc->opc == 0);
+    if (instr->optype != (enc->optype & instr->optype))
         return 0;
 
     switch (instr->optype) {
@@ -837,7 +851,7 @@ static struct encoding find_encoding(struct instruction instr)
     int i;
 
     i = instr.opcode;
-    assert(encodings[i].opc == instr.opcode);
+    assert(encodings[i].opc == 0 || encodings[i].opc == instr.opcode);
     assert(instr.opcode == 0 || encodings[i - 1].opc != instr.opcode);
 
     do {
@@ -969,7 +983,7 @@ INTERNAL int mnemonic_match_operands(
         if (match_instruction_encoding(&instr, enc)) {
             source->width = ws;
             dest->width = wd;
-            return enc->opc;
+            return enc->opc ? enc->opc : i;
         }
     }
 
