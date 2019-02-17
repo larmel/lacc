@@ -370,7 +370,7 @@ static struct asm_operand asm_operand(
     struct token t;
     struct asm_operand op = {0};
     struct var var, tmp;
-    int force_register, force_memory;
+    int force_register;
     const char *str;
 
     if (peek().token == '[') {
@@ -406,7 +406,6 @@ static struct asm_operand asm_operand(
     }
 
     force_register = strchr(str, 'r') && !strchr(str, 'm');
-    force_memory = !force_register && strchr(str, 'm');
 
     if (force_register && (var.kind != DIRECT || !is_temporary(var.symbol))) {
         tmp = create_var(def, var.type);
@@ -417,7 +416,7 @@ static struct asm_operand asm_operand(
         if (writeback) {
             eval_assign(def, writeback, var, as_expr(tmp));
         }
-    } else if (force_memory && var.kind == DEREF && !is_temporary(var.symbol)) {
+    } else if (var.kind == DEREF && !is_temporary(var.symbol)) {
         var = eval_addr(def, *block, var);
         tmp = create_var(def, var.type);
         eval_assign(def, *block, tmp, as_expr(var));
