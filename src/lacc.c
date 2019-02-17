@@ -151,6 +151,12 @@ static int option(const char *arg)
     return 0;
 }
 
+/* Support -fvisibility, with no effect. */
+static int set_visibility(const char *arg)
+{
+    return 0;
+}
+
 /* Accept anything for -march. */
 static int set_cpu(const char *arg)
 {
@@ -382,6 +388,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-f[no-]PIC", &option},
         {"-f[no-]fast-math", &option},
         {"-f[no-]strict-aliasing", &option},
+        {"-fvisibility=", &set_visibility},
         {"-dot", &option},
         {"--help", &help},
         {"-march=", &set_cpu},
