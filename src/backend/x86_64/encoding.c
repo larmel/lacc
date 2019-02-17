@@ -133,7 +133,7 @@ static struct encoding {
     {INSTR_AND, {"and"}, {0}, {0x80}, OPX_SW, 0x20, OPT_IMM_REG | OPT_IMM_MEM, {0}, 0, 1},
 
     {INSTR_CALL, {"call"}, {0}, {0xE8}, OPX_NONE, 0x00, OPT_IMM, {8}},
-    {INSTR_CALL, {"call"}, {0}, {0xFF}, OPX_NONE, 0x10, OPT_REG | OPT_MEM, {8}},
+    {INSTR_CALL, {"call", 1}, {0}, {0xFF}, OPX_NONE, 0x10, OPT_REG | OPT_MEM, {8}},
 
     {INSTR_CMP, {"cmp"}, {0}, {0x38}, OPX_DW, 0x00, OPT_REG_REG | OPT_REG_MEM | OPT_MEM_REG},
     {INSTR_CMP, {"cmp"}, {0}, {0x3C}, OPX_W, 0x00, OPT_IMM_REG, {{1 | 2 | 4}, {1 | 2 | 4, IMPL_AX}}},

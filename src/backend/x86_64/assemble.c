@@ -274,6 +274,10 @@ INTERNAL int asm_text(struct instruction instr)
     out("%s", buf);
     switch (instr.optype) {
     case OPT_REG:
+        if (instr.opcode == INSTR_CALL) {
+            out("\t*%s", regname(instr.source.reg));
+            break;
+        }
     case OPT_REG_REG:
     case OPT_REG_MEM:
         out("\t%s", regname(instr.source.reg));

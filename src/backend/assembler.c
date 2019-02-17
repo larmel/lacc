@@ -80,6 +80,16 @@ static struct asm_token asmtok(const char *line, const char **endptr)
             ptr++;
         }
         break;
+    case '*':
+        if (ptr[1] == '%' && ptr[2] == '%') {
+            t.type = ASM_REG;
+            ptr += 3;
+            line = ptr;
+            while (isalnum(*ptr)) {
+                ptr++;
+            }
+        } else goto fail;
+        break;
     case '%':
         if (ptr[1] == '%') {
             t.type = ASM_REG;
@@ -130,9 +140,9 @@ static struct asm_token asmtok(const char *line, const char **endptr)
                 error("Invalid label reference.");
                 exit(1);
             }
-        } else assert(0);
+        } else goto fail;
         break;
-    default:
+    default: fail:
         error("Unexpected token %s.", line);
         exit(1);
         break;
