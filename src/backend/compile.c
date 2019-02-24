@@ -1438,6 +1438,28 @@ static int allocate_locals(
 
 INTERNAL enum reg get_clobbered_register(String clobber);
 
+static int explicit_reg_constraint(String constraint, enum reg *reg)
+{
+    const char *raw;
+
+    raw = str_raw(constraint);
+    if (*raw == '=' || *raw == '+') {
+        raw++;
+    }
+
+    switch (*raw) {
+    case 'a': *reg = AX; break;
+    case 'b': *reg = BX; break;
+    case 'c': *reg = CX; break;
+    case 'd': *reg = DX; break;
+    case 'D': *reg = DI; break;
+    case 'S': *reg = SI; break;
+    default: return 0;
+    }
+
+    return 1;
+}
+
 static void allocate_asmblock_registers(
     struct asm_statement *st,
     int *int_regs,
@@ -1466,15 +1488,24 @@ static void allocate_asmblock_registers(
         clobbered[r - AX] = 1;
     }
 
+    /* Do not allocate BX if used in constraint. */
+    assert(temp_int_reg[0] == BX);
+    for (i = 0; i < array_len(&st->operands); ++i) {
+        op = &array_get(&st->operands, i);
+        if (explicit_reg_constraint(op->constraint, &r) && r == BX) {
+            *int_regs = 1;
+        }
+    }
+
     for (i = 0; i < array_len(&st->operands); ++i) {
         op = &array_get(&st->operands, i);
         assert(op->variable.kind == DIRECT || op->variable.kind == DEREF);
         sym = (struct symbol *) op->variable.symbol;
-        if (sym->slot || sym->memory) {
+        str = op->constraint;
+        if (sym->slot || sym->memory || explicit_reg_constraint(str, &r)) {
             continue;
         }
 
-        str = op->constraint;
         if ((str_chr(str, 'r') && !str_chr(str, 'm'))
             || op->variable.kind == DEREF)
         {
@@ -2867,7 +2898,31 @@ static void compile_vla_alloc(
 
 static void compile__asm(struct asm_statement st)
 {
+    int i;
+    enum reg r;
+    struct asm_operand op;
+
+    /* Put all variables in register according to constraint. */
+    for (i = 0; i < array_len(&st.operands); ++i) {
+        op = array_get(&st.operands, i);
+        if (!str_chr(op.constraint, '=')
+            && explicit_reg_constraint(op.constraint, &r))
+        {
+            load(op.variable, r);
+        }
+    }
+
     assemble_inline(st, emit_instruction);
+
+    /* Store variables from register constraint. */
+    for (i = 0; i < array_len(&st.operands); ++i) {
+        op = array_get(&st.operands, i);
+        if ((str_chr(op.constraint, '=') || str_chr(op.constraint, '+'))
+            && explicit_reg_constraint(op.constraint, &r))
+        {
+            store(r, op.variable);
+        }
+    }
 }
 
 static void compile_statement(struct statement stmt)
