@@ -46,20 +46,19 @@ done
 # Run test case with both compilers, and print first diff line. This
 # reveals which variable is the first to create a mismatched checksum.
 #
-# Manual cleanup of reduce.c is required before running creduce. Remove
+# Manual cleanup of test.c is required before running creduce. Remove
 # checksum calculation of other variables, and fix lines that produce
 # warnings.
 #
-# ./check.sh "lacc -std=c99" creduce/reduce.c "gcc -std=c99" 2> foo.out
+# ./check.sh "lacc -std=c99" creduce/test.c "gcc -std=c99" 2> foo.out
 #
-# Modify creduce/creduce.sh to contain the new values for expected
+# Modify creduce/interesting.sh to contain the new values for expected
 # and actual checksum, provided as input script to creduce.
 
 mkdir -p creduce
-lacc -std=c99 -I "$include" -w -E "$filename" -o creduce/reduce.c
-lacc -std=c99 -I "$include" -w -c "$filename" -o creduce/reduce.o
-gcc creduce/reduce.o -o creduce/reduce -lm
-gcc -std=c99 -I "$include" "$filename" -o creduce/reduce-cc
-cp creduce.sh creduce/
-creduce/reduce 1 > creduce/lacc.out && creduce/reduce-cc 1 > creduce/cc.out
+lacc -std=c99 -I "$include" -w -E "$filename" -o creduce/test.c
+lacc -std=c99 -I "$include" -w "$filename" -o creduce/test -lm
+gcc -std=c99 -I "$include" "$filename" -o creduce/test-cc
+cp interesting.sh creduce
+creduce/test 1 > creduce/lacc.out && creduce/test-cc 1 > creduce/cc.out
 diff --side-by-side --suppress-common-lines creduce/lacc.out creduce/cc.out | head -n 1
