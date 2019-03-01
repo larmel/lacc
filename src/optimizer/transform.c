@@ -43,6 +43,7 @@ static int can_merge(
         && type_equal(s1.t.type, s2.t.type)
         && s1.t.kind == DIRECT
         && s1.t.symbol->linkage == LINK_NONE
+        && !is_field(s1.t)
         && !is_live_after(s1.t.symbol, &s2);
 }
 
