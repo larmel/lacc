@@ -27,7 +27,10 @@ struct {
 	int d;
 } s1 = { {1, [0] = 3, 2, 3, 4, [3] = 7}, 42 };
 
+char s2[] = {[1] = 2, [42] = 3, [6] = 2};
+
 int main(void) {
+	int i;
 	char
 		foo[] = {'1', '8', [9] = '5', '-'},
 		bar[] = {[42] = 1};
@@ -37,6 +40,15 @@ int main(void) {
 
 	printf("s1[0]: {[%d, %d, %d, %d], %d}\n",
 		s1.c[0], s1.c[1], s1.c[2], s1.c[3], s1.d);
+
+	printf("sizeof(s2) = %lu, [", sizeof(s2));
+	for (i = 0; i < sizeof(s2); ++i) {
+		printf("%d", s2[i]);
+		if (i > 0) {
+			printf(", ");
+		}
+	}
+	printf("]\n");
 
 	return p1(a) + p1(b) + p1(c) + p1(d);
 }

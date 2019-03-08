@@ -333,12 +333,12 @@ static struct block *initialize_array(
 {
     int is_designator;
     Type type, elem;
-    size_t initial, width, count, i;
+    size_t initial, width, count, i, c;
 
     assert(is_array(target.type));
     assert(target.kind == DIRECT);
 
-    i = 0;
+    i = c = 0;
     count = type_array_len(target.type);
     type = target.type;
     elem = type_next(type);
@@ -367,8 +367,9 @@ static struct block *initialize_array(
             target.offset = initial + (i * width);
             block = initialize_member(def, block, values, target);
 next:       i += 1;
+            c = i > c ? i : c;
             if (has_next_array_element(state, &is_designator)) {
-                if (!is_designator && count && i >= count)
+                if (!is_designator && count && c >= count)
                     break;
                 consume(',');
             } else break;
@@ -378,7 +379,7 @@ next:       i += 1;
     if (!size_of(type)) {
         assert(is_array(target.symbol->type));
         assert(!size_of(target.symbol->type));
-        set_array_length(target.symbol->type, i);
+        set_array_length(target.symbol->type, c);
     }
 
     return block;
