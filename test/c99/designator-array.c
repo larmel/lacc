@@ -22,6 +22,11 @@ void p2(char a[], int n) {
 	printf("}\n");
 }
 
+struct {
+	char c[4];
+	int d;
+} s1 = { {1, [0] = 3, 2, 3, 4, [3] = 7}, 42 };
+
 int main(void) {
 	char
 		foo[] = {'1', '8', [9] = '5', '-'},
@@ -29,6 +34,9 @@ int main(void) {
 
 	p2(foo, sizeof(foo) - 1);
 	p2(bar, sizeof(bar) - 1);
+
+	printf("s1[0]: {[%d, %d, %d, %d], %d}\n",
+		s1.c[0], s1.c[1], s1.c[2], s1.c[3], s1.d);
 
 	return p1(a) + p1(b) + p1(c) + p1(d);
 }

@@ -17,6 +17,11 @@ struct {
 	int k;
 } obj = {1, 2, 3,};
 
+struct {
+	long a[4];
+	long b;
+} s6[] = { 1, 2, 3, -1L, 5, 6, };
+
 void verify(void) {
 	int i, j;
 	for (i = 0; i < 2; ++i)
@@ -31,6 +36,10 @@ void verify(void) {
 	printf("pc = {{%d, %d, %d, %d}}\n", pc.e[0], pc.e[1], pc.e[2], pc.e[3]);
 	printf("obj = {{%d, %d, %d, %d}, %d}, size = %lu\n",
 		obj.v[0], obj.v[1], obj.v[2], obj.v[3], obj.k, sizeof(obj));
+	for (i = 0; i < 2; ++i) {
+		printf("s6[%d]: {{%ld, %ld, %ld, %ld}, %ld}\n", i,
+			s6[i].a[0], s6[i].a[0], s6[i].a[0], s6[i].a[0], s6[i].b);
+	}
 }
 
 int arr[] = {1, 2, 3, 4, 5};

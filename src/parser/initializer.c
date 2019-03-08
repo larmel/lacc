@@ -259,9 +259,13 @@ static struct block *initialize_struct_or_union(
     return block;
 }
 
-static int next_array_element(enum current_object_state state)
+static int has_next_array_element(
+    enum current_object_state state,
+    int *is_designator)
 {
     struct token t = peek();
+
+    *is_designator = 0;
     if (t.token == ',') {
         t = peekn(2);
         switch (t.token) {
@@ -272,8 +276,8 @@ static int next_array_element(enum current_object_state state)
             if (state != CURRENT) {
                 break;
             }
+            *is_designator = 1;
         default:
-            next();
             return 1;
         }
     }
@@ -327,13 +331,15 @@ static struct block *initialize_array(
     struct var target,
     enum current_object_state state)
 {
+    int is_designator;
     Type type, elem;
-    size_t initial, width, i;
+    size_t initial, width, count, i;
 
     assert(is_array(target.type));
     assert(target.kind == DIRECT);
 
     i = 0;
+    count = type_array_len(target.type);
     type = target.type;
     elem = type_next(type);
     width = size_of(elem);
@@ -354,14 +360,19 @@ static struct block *initialize_array(
         }
     } else {
         target.type = elem;
-        do {
+        while (1) {
             if (try_parse_index(&i) && peek().token == '=') {
                 next();
             }
             target.offset = initial + (i * width);
             block = initialize_member(def, block, values, target);
 next:       i += 1;
-        } while (next_array_element(state));
+            if (has_next_array_element(state, &is_designator)) {
+                if (!is_designator && count && i >= count)
+                    break;
+                consume(',');
+            } else break;
+        }
     }
 
     if (!size_of(type)) {
