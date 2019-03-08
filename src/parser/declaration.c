@@ -830,26 +830,41 @@ done:
     return type;
 }
 
-/* Define __func__ as static const char __func__[] = sym->name; */
+/* Define __func__ as static const char __func__[] = sym->name;
+ *
+ * Just add the symbol directly as a special string value. No
+ * explicit assignment reflected in the IR.
+ */
 static void define_builtin__func__(String name)
 {
     Type type;
     struct symbol *sym;
-    assert(current_scope_depth(&ns_ident) == 1);
-    assert(context.standard >= STD_C99);
 
-    /*
-     * Just add the symbol directly as a special string value. No
-     * explicit assignment reflected in the IR.
-     */
-    type = type_create_array(basic_type__char, (size_t) name.len + 1);
-    sym = sym_add(
-        &ns_ident,
-        str_init("__func__"),
-        type,
-        SYM_STRING_VALUE,
-        LINK_INTERN);
-    sym->value.string = name;
+    static String func = SHORT_STRING_INIT("__func__");
+
+    assert(current_scope_depth(&ns_ident) == 1);
+    if (context.standard >= STD_C99) {
+        type = type_create_array(basic_type__char, (size_t) name.len + 1);
+        sym = sym_add(&ns_ident, func, type, SYM_STRING_VALUE, LINK_INTERN);
+        sym->value.string = name;
+    }
+}
+
+static void ensure_main_returns_zero(
+    struct symbol *sym,
+    struct block *block)
+{
+    static String name = SHORT_STRING_INIT("main");
+
+    assert(is_function(sym->type));
+    assert(!sym->n);
+    if (context.standard < STD_C99 || str_cmp(name, sym->name))
+        return;
+
+    if (!block->has_return_value) {
+        block->expr = as_expr(var_int(0));
+        block->has_return_value = 1;
+    }
 }
 
 /*
@@ -1069,10 +1084,9 @@ INTERNAL struct block *init_declarator(
             push_scope(&ns_label);
             push_scope(&ns_ident);
             parent = make_parameters_visible(def, parent);
-            if (context.standard >= STD_C99) {
-                define_builtin__func__(sym->name);
-            }
+            define_builtin__func__(sym->name);
             parent = block(def, parent);
+            ensure_main_returns_zero(sym, parent);
             pop_scope(&ns_label);
             pop_scope(&ns_ident);
             return parent;
