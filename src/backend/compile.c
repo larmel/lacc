@@ -2072,7 +2072,6 @@ static enum reg compile_call(struct var target, struct var ptr)
         assert(!ptr.offset);
         emit(INSTR_CALL, OPT_IMM, addr(ptr.symbol));
     } else {
-        assert(ptr.kind != IMMEDIATE);
         load(ptr, R11);
         emit(INSTR_CALL, OPT_REG, reg(R11, 8));
     }
