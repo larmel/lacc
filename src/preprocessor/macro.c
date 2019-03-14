@@ -470,20 +470,6 @@ static TokenArray expand_macro(
     return list;
 }
 
-static const struct token *skip(const struct token *list, enum token_type token)
-{
-    String a, b;
-    if (list->token != token) {
-        a = basic_token[token].d.string;
-        b = list->d.string;
-        error("Expected '%s', but got '%s'.", str_raw(a), str_raw(b));
-        exit(1);
-    }
-
-    list++;
-    return list;
-}
-
 /*
  * Read tokens forming next macro argument. Missing arguments are
  * represented by an empty list.
@@ -539,16 +525,42 @@ static TokenArray *read_args(
     TokenArray *args = NULL;
 
     if (def->type == FUNCTION_LIKE) {
-        list = skip(list, '(');
-        if (def->params) {
-            args = malloc(def->params * sizeof(*args));
-            for (i = 0; i < def->params - 1; ++i) {
-                args[i] = read_arg(scope, 0, list, &list);
-                list = skip(list, ',');
-            }
-            args[i] = read_arg(scope, def->is_vararg, list, &list);
+        if (list->token != '(') {
+            error("Expected '(' to begin macro argument list.");
+            exit(1);
         }
-        list = skip(list, ')');
+
+        list += 1;
+        if (def->params) {
+            args = calloc(def->params, sizeof(*args));
+            for (i = 0; i < def->params - def->is_vararg; ++i) {
+                args[i] = read_arg(scope, 0, list, &list);
+                if (list->token != ',') {
+                    if (i == def->params - 1)
+                        break;
+                    if (def->is_vararg && i == def->params - 2) {
+                        i = -1;
+                        break;
+                    } else {
+                        error("Expected ',' between macro parameters.");
+                        exit(1);
+                    }
+                } else list += 1;
+            }
+
+            /* Last parameter can be optional for vararg macros. */
+            if (def->is_vararg && i != -1) {
+                assert(i == def->params - 1);
+                args[i] = read_arg(scope, 1, list, &list);
+            }
+        }
+
+        if (list->token != ')') {
+            error("Expected ')' to close macro argument list.");
+            exit(1);
+        }
+
+        list += 1;
     }
 
     *endptr = list;
@@ -579,13 +591,11 @@ static int expand_line(ExpandStack *scope, TokenArray *list)
         }
 
         /* Only expand if next token is '(' */
-        if (def->type == FUNCTION_LIKE) {
-            if (i == array_len(list) - 1) {
-                continue;
-            }
-            if (array_get(list, i + 1).token != '(') {
-                continue;
-            }
+        if (def->type == FUNCTION_LIKE
+            && (i == array_len(list) - 1
+                || array_get(list, i + 1).token != '('))
+        {
+            continue;
         }
 
         args = read_args(scope, def, list->data + i + 1, &endptr);

@@ -12,6 +12,11 @@ int test(int x, int y) {
 	return report(x>y, "x is %d but y is %d", x, y);
 }
 
+#define call(func, ...) func(__VA_ARGS__)
+
+static int empty(void) { return 42; }
+
 int main(void) {
-	return test(4, 5) + test(3, 0);
+	int a = call(empty);
+	return test(a, 5) + call(test, 3, 0) + call(empty);
 }
