@@ -608,7 +608,7 @@ static struct expression add(
             l.offset += r.imm.i * size;
             expr = as_expr(l);
         } else if (is_constant(l) && r.kind == IMMEDIATE) {
-            l.imm.i += r.imm.i;
+            l.imm.i += r.imm.i * size;
             expr = as_expr(l);
         } else if (r.kind != IMMEDIATE || r.imm.i) {
             type = l.type;
@@ -680,7 +680,7 @@ static struct expression sub(
             l.offset -= r.imm.i * size;
             expr = as_expr(l);
         } else if (is_constant(l) && r.kind == IMMEDIATE) {
-            l.imm.i -= r.imm.i;
+            l.imm.i -= r.imm.i * size;
             expr = as_expr(l);
         } else if (is_immediate_false(as_expr(r))) {
             expr = as_expr(l);
