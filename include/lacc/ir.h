@@ -22,12 +22,17 @@ struct var {
          * l-value or r-value reference to symbol, which must have some
          * storage location. Offset evaluate to *(&symbol + offset).
          * Offset in bytes, not pointer arithmetic.
+         *
+         * Also represent character in string literal. Direct references
+         * to string literals produce DIRECT vars of array type.
          */
         DIRECT,
         /*
          * r-value address of symbol. Evaluate to (&symbol + offset),
          * always of pointer type. Offset in bytes, not pointer
          * arithmetic.
+         *
+         * Also represent offset string literal, like .LC1+3.
          */
         ADDRESS,
         /*
@@ -35,14 +40,13 @@ struct var {
          * must have pointer type. If symbol is NULL, the dereferenced
          * pointer is an immediate value. Offset in bytes, not pointer
          * arithmetic.
+         *
+         * Not valid if symbol is string literal.
          */
         DEREF,
         /*
          * r-value immediate, with the type specified. Symbol is NULL,
-         * or be of type SYM_CONSTANT (from enum), or SYM_STRING_VALUE.
-         * String immediates can either have type array of char, or
-         * pointer to char. They can also have offsets, representing
-         * constants such as .LC1+3.
+         * or is of type SYM_CONSTANT (from enum).
          */
         IMMEDIATE
     } kind;
@@ -71,8 +75,6 @@ struct var {
 };
 
 #define is_field(v) ((v).field_width != 0)
-#define is_constant(v) \
-    ((v).kind == IMMEDIATE || ((v).kind == DEREF && !(v).symbol))
 
 /*
  * Represent an intermediate expression with up to two operands.
@@ -274,12 +276,9 @@ struct definition {
 /* Convert variable to no-op IR_OP_CAST expression. */
 INTERNAL struct expression as_expr(struct var var);
 
-/* Return 1 for string values, 0 otherwise. */
-INTERNAL int is_string(struct var val);
-
 /*
- * A direct reference to given symbol, with two exceptions:
- * SYM_CONSTANT and SYM_STRING_VALUE reduce to IMMEDIATE values.
+ * A direct reference to given symbol, with one exception; SYM_CONSTANT
+ * reduce to an IMMEDIATE value.
  */
 INTERNAL struct var var_direct(const struct symbol *sym);
 

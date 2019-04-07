@@ -1,10 +1,14 @@
+int printf(const char *, ...);
+
 char *name;
 
-int main() {
+int main(void) {
 	char text[] = "ab";
+
+	printf("%s\n", text);
 	name = text;
 
 	*name = '4';
-
-	return name[0];
+	printf("%s\n", name);
+	return 0;
 }

@@ -49,7 +49,7 @@ static unsigned long set_use_bit(struct var var)
         break;
     case IMMEDIATE:
         if (var.symbol) {
-            assert(var.symbol->symtype == SYM_STRING_VALUE
+            assert(var.symbol->symtype == SYM_LITERAL
                 || var.symbol->symtype == SYM_CONSTANT);
             assert(var.symbol->index);
             return 1ul << (var.symbol->index - 1);

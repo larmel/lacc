@@ -845,7 +845,7 @@ static void define_builtin__func__(String name)
     assert(current_scope_depth(&ns_ident) == 1);
     if (context.standard >= STD_C99) {
         type = type_create_array(basic_type__char, (size_t) name.len + 1);
-        sym = sym_add(&ns_ident, func, type, SYM_STRING_VALUE, LINK_INTERN);
+        sym = sym_add(&ns_ident, func, type, SYM_LITERAL, LINK_INTERN);
         sym->value.string = name;
     }
 }

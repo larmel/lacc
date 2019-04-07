@@ -33,27 +33,41 @@ static struct block *get_initializer_block(int i)
     return !block[i] ? (block[i] = cfg_block_init(NULL)) : block[i];
 }
 
+static int is_loadtime_constant(struct expression expr)
+{
+    if (!is_identity(expr))
+        return 0;
+
+    switch (expr.l.kind) {
+    case IMMEDIATE:
+        return 1;
+    case DIRECT:
+        if (!is_array(expr.type) && !is_function(expr.type))
+            return 0;
+    case ADDRESS:
+        return expr.l.symbol->linkage != LINK_NONE;
+    default:
+        return 0;
+    }
+}
+
 static struct block *read_initializer_element(
     struct definition *def,
     struct block *block,
     struct var target)
 {
     size_t ops;
-    struct var value;
     const struct block *top;
 
     ops = array_len(&block->code);
     top = block;
     block = assignment_expression(def, block);
-    value = block->expr.l;
 
     if (target.symbol->linkage != LINK_NONE) {
         if (block != top
             || array_len(&block->code) - ops > 0
             || !is_identity(block->expr)
-            || (!is_constant(value) && value.kind != ADDRESS
-                && !(value.kind == DIRECT
-                    && (is_function(value.type) || is_array(value.type)))))
+            || !is_loadtime_constant(block->expr))
         {
             error("Initializer must be computable at load time.");
             exit(1);
@@ -351,7 +365,11 @@ static struct block *initialize_array(
      */
     if (is_char(elem) && peek().token != '[') {
         block = read_initializer_element(def, block, target);
-        if (is_identity(block->expr) && is_string(block->expr.l)) {
+        if (is_identity(block->expr)
+            && is_array(block->expr.type)
+            && block->expr.l.kind == DIRECT
+            && block->expr.l.symbol->symtype == SYM_LITERAL)
+        {
             target = eval_assign(def, values, target, block->expr);
         } else {
             target.type = elem;

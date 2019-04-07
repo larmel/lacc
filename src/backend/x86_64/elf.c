@@ -601,10 +601,7 @@ INTERNAL int elf_symbol(const struct symbol *sym)
         entry.st_size = size_of(sym->type);
         entry.st_value = shdr[shid_data].sh_size;
         entry.st_info |= STT_OBJECT;
-    } else if (
-        sym->symtype == SYM_STRING_VALUE ||
-        sym->symtype == SYM_CONSTANT)
-    {
+    } else if (sym->symtype == SYM_LITERAL || sym->symtype == SYM_CONSTANT) {
         elf_section_align(shid_rodata, sym_alignment(sym));
         entry.st_shndx = shid_rodata;
         entry.st_size = size_of(sym->type);
@@ -615,7 +612,7 @@ INTERNAL int elf_symbol(const struct symbol *sym)
          * Strings and constant symbols carry their actual string value;
          * write to .rodata immediately.
          */
-        if (sym->symtype == SYM_STRING_VALUE) {
+        if (sym->symtype == SYM_LITERAL) {
             elf_section_write(shid_rodata,
                 str_raw(sym->value.string), entry.st_size);
         } else {

@@ -15,45 +15,67 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
-static int is_zero_value(union value value, Type type)
+static int immediate_bool_value(union value value, Type type)
 {
     assert(is_scalar(type));
     switch (type_of(type)) {
     case T_FLOAT:
-        return value.f == 0.0f;
+        return value.f != 0.0f;
     case T_DOUBLE:
-        return value.d == 0.0;
+        return value.d != 0.0;
     case T_LDOUBLE:
-        return value.ld == 0.0L;
+        return value.ld != 0.0L;
     default:
-        return value.u == 0l;
+        return value.u != 0l;
     }
 }
 
-INTERNAL int is_immediate_true(struct expression expr)
+static int extract_literal_char(struct var v)
 {
-    return is_identity(expr)
-        && expr.l.kind == IMMEDIATE
-        && !is_zero_value(expr.l.imm, expr.type);
+    const char *raw;
+    String str;
+
+    assert(v.kind == DIRECT);
+    assert(v.symbol->symtype == SYM_LITERAL);
+
+    str = v.symbol->value.string;
+    raw = str_raw(str);
+    if (v.offset < 0 || v.offset >= str.len) {
+        error("Access outside bounds of string literal.");
+        exit(1);
+    }
+
+    return raw[v.offset];
 }
 
-INTERNAL int is_immediate_false(struct expression expr)
+INTERNAL int immediate_bool(struct expression expr)
 {
-    return is_identity(expr)
-        && expr.l.kind == IMMEDIATE
-        && is_zero_value(expr.l.imm, expr.type);
+    assert(is_scalar(expr.type));
+    if (!is_identity(expr))
+        return -1;
+
+    switch (expr.l.kind) {
+    case IMMEDIATE:
+        return immediate_bool_value(expr.l.imm, expr.type);
+    case DIRECT:
+        if (expr.l.symbol->symtype == SYM_LITERAL)
+            return extract_literal_char(expr.l) != 0;
+        break;
+    case ADDRESS:
+        if (expr.l.symbol->symtype == SYM_LITERAL
+            || is_function(expr.l.symbol->type))
+            return 1;
+    default:
+        break;
+    }
+
+    return -1;
 }
 
 static int is_nullptr(struct var val)
 {
     return (is_integer(val.type) || is_pointer(val.type))
-        && is_immediate_false(as_expr(val));
-}
-
-INTERNAL int is_string(struct var val)
-{
-    return val.kind == IMMEDIATE && val.symbol
-        && val.symbol->symtype == SYM_STRING_VALUE;
+        && immediate_bool(as_expr(val)) == 0;
 }
 
 INTERNAL struct var var_void(void)
@@ -91,9 +113,6 @@ INTERNAL struct var var_direct(const struct symbol *sym)
     case SYM_CONSTANT:
         var.kind = IMMEDIATE;
         var.imm = sym->value.constant;
-        break;
-    case SYM_STRING_VALUE:
-        var.kind = IMMEDIATE;
         break;
     default:
         assert(sym->symtype != SYM_LABEL);
@@ -383,7 +402,7 @@ INTERNAL union value convert(union value val, Type type, Type to)
               : val.ld;
         break;
     case T_BOOL:
-        val.u = !is_zero_value(val, type);
+        val.u = immediate_bool_value(val, type);
         break;
     case T_CHAR:
         if (is_signed(to)) {
@@ -444,23 +463,22 @@ static struct expression cast(struct var var, Type type)
 {
     struct expression expr;
 
-    if (is_void(type)) {
+    if (is_void(type))
         return as_expr(var_void());
-    } else if (!is_scalar(var.type) || !is_scalar(type)) {
-        error(
-            "Invalid type parameters to cast expression, "
-            "cannot convert from %t to %t.",
-            var.type, type);
+
+    if (!is_scalar(var.type) || !is_scalar(type)) {
+        error("Cannot cast %t to %t.", var.type, type);
+        exit(1);
+    }
+
+    if (is_pointer(var.type) && (is_float(type) || is_double(type))) {
+        error("Cannot cast pointer to %t", type);
         exit(1);
     }
 
     if (var.kind == IMMEDIATE) {
-        if (var.symbol && var.symbol->symtype == SYM_STRING_VALUE) {
-            var.type = type;
-        } else {
-            assert(!var.offset);
-            var = var_numeric(type, convert(var.imm, var.type, type));
-        }
+        assert(!var.offset);
+        var = var_numeric(type, convert(var.imm, var.type, type));
         expr = as_expr(var);
     } else if (size_of(var.type) == size_of(type)
         && (is_pointer(var.type) || is_pointer(type)))
@@ -587,6 +605,12 @@ static struct expression add(
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l = eval_arithmetic_immediate(type, l, +, r);
             expr = cast(l, type);
+        } else if (l.kind == ADDRESS && r.kind == IMMEDIATE) {
+            l.offset += r.imm.i;
+            expr = as_expr(l);
+        } else if (l.kind == IMMEDIATE && r.kind == ADDRESS) {
+            r.offset += l.imm.i;
+            expr = as_expr(r);
         } else {
             expr = create_expr(IR_OP_ADD, l, r);
         }
@@ -604,10 +628,10 @@ static struct expression add(
         } else if (!size) {
             error("Pointer arithmetic on incomplete type %t.", l.type);
             exit(1);
-        } else if ((is_string(l) || l.kind == ADDRESS) && r.kind == IMMEDIATE) {
+        } else if (l.kind == ADDRESS && r.kind == IMMEDIATE) {
             l.offset += r.imm.i * size;
             expr = as_expr(l);
-        } else if (is_constant(l) && r.kind == IMMEDIATE) {
+        } else if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l.imm.i += r.imm.i * size;
             expr = as_expr(l);
         } else if (r.kind != IMMEDIATE || r.imm.i) {
@@ -659,6 +683,9 @@ static struct expression sub(
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l = eval_arithmetic_immediate(type, l, -, r);
             expr = cast(l, type);
+        } else if (l.kind == ADDRESS && r.kind == IMMEDIATE) {
+            l.offset -= r.imm.i;
+            expr = as_expr(l);
         } else {
             expr = create_expr(IR_OP_SUB, l, r);
         }
@@ -676,13 +703,13 @@ static struct expression sub(
         } else if (!size) {
             error("Pointer arithmetic on incomplete type.");
             exit(1);
-        } else if ((is_string(l) || l.kind == ADDRESS) && r.kind == IMMEDIATE) {
+        } else if (l.kind == ADDRESS && r.kind == IMMEDIATE) {
             l.offset -= r.imm.i * size;
             expr = as_expr(l);
-        } else if (is_constant(l) && r.kind == IMMEDIATE) {
+        } else if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
             l.imm.i -= r.imm.i * size;
             expr = as_expr(l);
-        } else if (is_immediate_false(as_expr(r))) {
+        } else if (is_nullptr(r)) {
             expr = as_expr(l);
         } else {
             if (size > 1) {
@@ -1082,6 +1109,9 @@ static struct expression eval_va_arg(struct var var, Type type)
  * Array of T is converted (decay) into pointer to T. Not the same as
  * taking the address of an array, which would give 'pointer to array
  * of T'.
+ *
+ * Fields of unsigned type are promoted to signed int if the signed
+ * type can represent all values of the unsigned type.
  */
 INTERNAL struct var rvalue(
     struct definition *def,
@@ -1101,37 +1131,34 @@ INTERNAL struct var rvalue(
                 var.kind = DIRECT;
                 var.type = type_create_pointer(type_next(var.type));
             }
-        } else if (var.kind == IMMEDIATE) {
-            assert(var.symbol);
-            assert(var.symbol->symtype == SYM_STRING_VALUE);
-            /*
-             * Immediate references to strings retain the same
-             * representation, only changing type from array to
-             * pointer.
-             */
-            var.type = type_create_pointer(type_next(var.type));
         } else {
-            /*
-             * References to arrays decay into pointer to the first
-             * element. Change type before doing regular address
-             * evaluation, this way backend does not need to handle
-             * address of array in any special way. The memory location
-             * represented by var can also be seen as the first element.
-             */
             var.type = type_next(var.type);
             var = eval_addr(def, block, var);
         }
     } else if (is_field(var) && is_unsigned(var.type)) {
-        /*
-         * Fields of unsigned type are promoted to signed int if the
-         * signed type can represent all values of the unsigned type.
-         */
         if (var.field_width < size_of(basic_type__int) * 8) {
             var = eval(def, block, cast(var, basic_type__int));
         }
     }
 
     return var;
+}
+
+INTERNAL struct block *as_scalar(
+    struct definition *def,
+    struct block *block,
+    const char *entity)
+{
+    if (!is_scalar(block->expr.type) && is_identity(block->expr)) {
+        block->expr = as_expr(rvalue(def, block, block->expr.l));
+    }
+
+    if (!is_scalar(block->expr.type)) {
+        error("%s must be scalar, was %t", entity, block->expr.type);
+        exit(1);
+    }
+
+    return block;
 }
 
 INTERNAL struct expression eval_expr(
@@ -1225,7 +1252,7 @@ INTERNAL struct var eval_addr(
 
     switch (var.kind) {
     case IMMEDIATE:
-        if (!var.symbol || var.symbol->symtype != SYM_STRING_VALUE) {
+        if (!var.symbol || var.symbol->symtype != SYM_LITERAL) {
             error("Cannot take address of immediate of type '%t'.", var.type);
             exit(1);
         }
@@ -1339,7 +1366,7 @@ INTERNAL struct var eval_deref(
         var.kind = DEREF;
         var.type = type_deref(var.type);
         var.lvalue = 1;
-        assert(!var.symbol || var.symbol->symtype == SYM_STRING_VALUE);
+        assert(!var.symbol || var.symbol->symtype == SYM_LITERAL);
         return var;
     }
 
@@ -1376,7 +1403,7 @@ static struct var eval_assign_string_literal(
 
     assert(is_identity(expr));
     assert(is_array(target.type));
-    assert(expr.l.symbol->symtype == SYM_STRING_VALUE);
+    assert(expr.l.symbol->symtype == SYM_LITERAL);
     if (!is_char(type_next(target.type))) {
         error("Assigning string literal to non-char array.");
         exit(1);
@@ -1704,6 +1731,7 @@ static struct block *eval_logical_expression(
     struct block *right_top,
     struct block *right)
 {
+    int b;
     struct var res;
     struct block
         *t = cfg_block_init(def),
@@ -1718,11 +1746,13 @@ static struct block *eval_logical_expression(
         left->jump[1] = t;
     }
 
-    if (is_immediate_true(right->expr)) {
+    b = immediate_bool(right->expr);
+    if (b == 1) {
         right->jump[0] = t;
-    } else if (is_immediate_false(right->expr)) {
+    } else if (b == 0) {
         right->jump[0] = f;
     } else {
+        assert(b == -1);
         right->jump[0] = f;
         right->jump[1] = t;
     }
@@ -1799,20 +1829,19 @@ INTERNAL struct block *eval_logical_or(
     struct block *right_top,
     struct block *right)
 {
-    int res;
+    int res, b;
     struct var value;
 
-    if (!is_scalar(left->expr.type) || !is_scalar(right->expr.type)) {
-        error("Operands to logical or must be of scalar type.");
-        exit(1);
-    }
+    left = as_scalar(def, left, "Left operand of logical or");
+    right = as_scalar(def, right, "Right operand of logical or");
 
+    b = immediate_bool(left->expr);
     if (is_logical_immediate(left, right_top, right)) {
-        res = is_immediate_true(left->expr) || is_immediate_true(right->expr);
+        res = b == 1 || immediate_bool(right->expr) == 1;
         left->expr = as_expr(var_int(res));
-    } else if (is_immediate_true(left->expr)) {
+    } else if (b == 1) {
         left->expr = as_expr(var_int(1));
-    } else if (is_immediate_false(left->expr)) {
+    } else if (b == 0) {
         left->jump[0] = right_top;
         left = right;
         if (!is_comparison(left->expr)) {
@@ -1832,20 +1861,19 @@ INTERNAL struct block *eval_logical_and(
     struct block *right_top,
     struct block *right)
 {
-    int res;
+    int res, b;
     struct var value;
 
-    if (!is_scalar(left->expr.type) || !is_scalar(right->expr.type)) {
-        error("Operands to logical and must be of scalar type.");
-        exit(1);
-    }
+    left = as_scalar(def, left, "Left operand of logical and");
+    right = as_scalar(def, right, "Right operand of logical and");
 
+    b = immediate_bool(left->expr);
     if (is_logical_immediate(left, right_top, right)) {
-        res = is_immediate_true(left->expr) && is_immediate_true(right->expr);
+        res = b == 1 && immediate_bool(right->expr) == 1;
         left->expr = as_expr(var_int(res));
-    } else if (is_immediate_false(left->expr)) {
+    } else if (b == 0) {
         left->expr = as_expr(var_int(0));
-    } else if (is_immediate_true(left->expr)) {
+    } else if (b == 1) {
         left->jump[0] = right_top;
         left = right;
         if (!is_comparison(left->expr)) {

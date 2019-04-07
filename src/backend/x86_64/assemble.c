@@ -167,7 +167,7 @@ static const char *immediate(struct immediate imm)
 
     assert(imm.type == IMM_ADDR);
     assert(imm.d.addr.sym);
-    assert(imm.d.addr.sym->symtype != SYM_STRING_VALUE);
+    assert(imm.d.addr.sym->symtype != SYM_LITERAL);
 
     return asm_address(imm.d.addr);
 }
@@ -220,8 +220,8 @@ INTERNAL int asm_symbol(const struct symbol *sym)
             out("%s:\n", name);
         }
         break;
-    case SYM_STRING_VALUE:
-        set_section(SECTION_DATA);
+    case SYM_LITERAL:
+        set_section(SECTION_RODATA);
         out("\t.align\t%d\n", sym_alignment(sym));
         out("\t.type\t%s, @object\n", name);
         out("\t.size\t%s, %lu\n", name, size);

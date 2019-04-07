@@ -64,28 +64,34 @@ static const char *escape(const struct symbol *sym)
 static char *vartostr(const struct var var)
 {
     int n = 0;
+    const char *name = var.symbol ? sym_name(var.symbol) : NULL;
     char *buffer = get_buffer();
+
+    if (var.symbol && var.symbol->symtype == SYM_LITERAL) {
+        if (var.kind == DIRECT) {
+            n = sprintf(buffer, "\\\"%s\\\"",
+                str_raw(var.symbol->value.string));
+        } else {
+            assert(var.kind == ADDRESS);
+            if (var.offset) {
+                n = sprintf(buffer, "$%s+%lu", name, var.offset);
+            } else {
+                n = sprintf(buffer, "$%s", name);
+            }
+        }
+    }
 
     switch (var.kind) {
     case IMMEDIATE:
         switch (type_of(var.type)) {
         default: assert(0);
         case T_POINTER:
-            if (var.symbol) {
-                assert(var.symbol->symtype == SYM_STRING_VALUE);
-                if (var.offset) {
-                    n = sprintf(buffer, "$%s+%lu",
-                        sym_name(var.symbol), var.offset);
-                } else {
-                    n = sprintf(buffer, "$%s", sym_name(var.symbol));
-                }
-                break;
-            }
+        case T_LONG:
         case T_BOOL:
         case T_CHAR:
         case T_SHORT:
         case T_INT:
-        case T_LONG:
+            assert(!var.symbol);
             if (is_unsigned(var.type)) {
                 n = sprintf(buffer, "%lu", var.imm.u);
             } else {
@@ -101,35 +107,27 @@ static char *vartostr(const struct var var)
         case T_LDOUBLE:
             n = sprintf(buffer, "%LfL", var.imm.ld);
             break;
-        case T_ARRAY:
-            assert(var.symbol && var.symbol->symtype == SYM_STRING_VALUE);
-            n = sprintf(buffer, "\\\"%s\\\"",
-                str_raw(var.symbol->value.string));
-            break;
         }
         break;
     case DIRECT:
         if (var.offset) {
-            n = sprintf(buffer, "*(&%s + %lu)",
-                sym_name(var.symbol), var.offset);
+            n = sprintf(buffer, "*(&%s + %lu)", name, var.offset);
         } else {
-            n = sprintf(buffer, "%s", sym_name(var.symbol));
+            n = sprintf(buffer, "%s", name);
         }
         break;
     case ADDRESS:
         if (var.offset) {
-            n = sprintf(buffer, "(&%s + %lu)",
-                sym_name(var.symbol), var.offset);
+            n = sprintf(buffer, "(&%s + %lu)", name, var.offset);
         } else {
-            n = sprintf(buffer, "&%s", sym_name(var.symbol));
+            n = sprintf(buffer, "&%s", name);
         }
         break;
     case DEREF:
         if (var.offset) {
-            n = sprintf(buffer, "*(%s + %lu)",
-                sym_name(var.symbol), var.offset);
+            n = sprintf(buffer, "*(%s + %lu)", name, var.offset);
         } else {
-            n = sprintf(buffer, "*%s", sym_name(var.symbol));
+            n = sprintf(buffer, "*%s", name);
         }
         break;
     }

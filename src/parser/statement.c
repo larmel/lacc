@@ -74,6 +74,7 @@ static struct block *if_statement(
     struct definition *def,
     struct block *parent)
 {
+    int b;
     struct block
         *right = cfg_block_init(def), *left,
         *next  = cfg_block_init(def);
@@ -81,18 +82,16 @@ static struct block *if_statement(
     consume(IF);
     consume('(');
     parent = expression(def, parent);
-    if (!is_scalar(parent->expr.type)) {
-        error("If expression must have scalar type, was %t.",
-            parent->expr.type);
-        exit(1);
-    }
-
+    parent = as_scalar(def, parent, "If expression");
     consume(')');
-    if (is_immediate_true(parent->expr)) {
+
+    b = immediate_bool(parent->expr);
+    if (b == 1) {
         parent->jump[0] = right;
-    } else if (is_immediate_false(parent->expr)) {
+    } else if (b == 0) {
         parent->jump[0] = next;
     } else {
+        assert(b == -1);
         parent->jump[0] = next;
         parent->jump[1] = right;
     }
@@ -102,7 +101,7 @@ static struct block *if_statement(
     if (peek().token == ELSE) {
         consume(ELSE);
         left = cfg_block_init(def);
-        if (!is_immediate_true(parent->expr)) {
+        if (b != 1) {
             /*
              * This block will be an orphan if the branch is immediate
              * taken true branch. Still need to evaluate the expression
@@ -121,6 +120,7 @@ static struct block *do_statement(
     struct definition *def,
     struct block *parent)
 {
+    int b;
     struct block
         *top = cfg_block_init(def),
         *body,
@@ -142,18 +142,16 @@ static struct block *do_statement(
     consume(WHILE);
     consume('(');
     tail = expression(def, cond);
-    if (!is_scalar(tail->expr.type)) {
-        error("While expression must have scalar type, was %t.",
-            tail->expr.type);
-        exit(1);
-    }
-
+    tail = as_scalar(def, tail, "While expression");
     consume(')');
-    if (is_immediate_true(tail->expr)) {
+
+    b = immediate_bool(tail->expr);
+    if (b == 1) {
         tail->jump[0] = top;
-    } else if (is_immediate_false(tail->expr)) {
+    } else if (b == 0) {
         tail->jump[0] = next;
     } else {
+        assert(b == -1);
         tail->jump[0] = next;
         tail->jump[1] = top;
     }
@@ -167,6 +165,7 @@ static struct block *while_statement(
     struct definition *def,
     struct block *parent)
 {
+    int b;
     struct block
         *top = cfg_block_init(def),
         *cond,
@@ -184,18 +183,16 @@ static struct block *while_statement(
     consume(WHILE);
     consume('(');
     cond = expression(def, top);
-    if (!is_scalar(cond->expr.type)) {
-        error("While expression must have scalar type, was %t.",
-            cond->expr.type);
-        exit(1);
-    }
-
+    cond = as_scalar(def, cond, "While expression");
     consume(')');
-    if (is_immediate_true(cond->expr)) {
+
+    b = immediate_bool(cond->expr);
+    if (b == 1) {
         cond->jump[0] = body;
-    } else if (is_immediate_false(cond->expr)) {
+    } else if (b == 0) {
         cond->jump[0] = next;
     } else {
+        assert(b == -1);
         cond->jump[0] = next;
         cond->jump[1] = body;
     }
@@ -212,7 +209,7 @@ static struct block *for_statement(
     struct definition *def,
     struct block *parent)
 {
-    int declared;
+    int declared, b;
     struct token tok;
     const struct symbol *sym;
     struct block
@@ -253,17 +250,14 @@ static struct block *for_statement(
     if (peek().token != ';') {
         parent->jump[0] = top;
         top = expression(def, top);
-        if (!is_scalar(top->expr.type)) {
-            error("Controlling expression must have scalar type, was %t.",
-                top->expr.type);
-            exit(1);
-        }
-
-        if (is_immediate_true(top->expr)) {
+        top = as_scalar(def, top, "Controlling expression");
+        b = immediate_bool(top->expr);
+        if (b == 1) {
             top->jump[0] = body;
-        } else if (is_immediate_false(top->expr)) {
+        } else if (b == 0) {
             top->jump[0] = next;
         } else {
+            assert(b == -1);
             top->jump[0] = next;
             top->jump[1] = body;
         }

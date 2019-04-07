@@ -220,7 +220,6 @@ static struct immediate value_of(struct var var, int w)
     struct immediate imm = {0};
 
     assert(var.kind == IMMEDIATE);
-    assert(!is_string(var));
     assert(!var.offset);
     assert(is_scalar(var.type));
     assert(w == 1 || w == 2 || w == 4 || w == 8);
@@ -242,28 +241,21 @@ static struct memory location(struct address addr, int w)
 static struct address address_of(struct var var)
 {
     struct address addr = {0};
-    assert(var.kind != DEREF);
+    assert(var.kind == DIRECT || var.kind == ADDRESS);
 
     addr.type = ADDR_NORMAL;
     addr.displacement = displacement_from_offset(var.offset);
-    if (var.kind == IMMEDIATE) {
-        assert(is_string(var));
+    switch (var.symbol->linkage) {
+    case LINK_EXTERN:
+        assert(!context.pic);
+    case LINK_INTERN:
         addr.base = IP;
         addr.sym = var.symbol;
-    } else {
-        assert(var.kind == DIRECT || var.kind == ADDRESS);
-        switch (var.symbol->linkage) {
-        case LINK_EXTERN:
-            assert(!context.pic);
-        case LINK_INTERN:
-            addr.base = IP;
-            addr.sym = var.symbol;
-            break;
-        case LINK_NONE:
-            addr.displacement += var.symbol->stack_offset;
-            addr.base = BP;
-            break;
-        }
+        break;
+    case LINK_NONE:
+        addr.displacement += var.symbol->stack_offset;
+        addr.base = BP;
+        break;
     }
 
     return addr;
@@ -494,11 +486,6 @@ static void emit_load(
             assert(is_integer(source.type) || is_pointer(source.type));
             emit(INSTR_XOR, OPT_REG_REG, dest, dest);
             break;
-        } else if (is_string(source)) {
-            assert(dest.width == 8);
-            assert(opcode == INSTR_MOV);
-            emit(INSTR_LEA, OPT_MEM_REG, location(address_of(source), 8), dest);
-            break;
         } else {
             assert(opcode == INSTR_MOV);
             emit(INSTR_MOV, OPT_IMM_REG, value_of(source, w), dest);
@@ -520,31 +507,26 @@ static void emit_load(
         break;
     case DEREF:
         ptr = var_direct(source.symbol);
-        if (is_string(ptr)) {
-            ptr.offset = source.offset;
-            emit(opcode, OPT_MEM_REG, location_of(ptr, w), dest);
+        assert(is_pointer(ptr.type));
+        if (is_register_allocated(ptr)) {
+            ax = allocated_register(ptr);
+        } else if (is_global_offset(source.symbol)) {
+            ax = dest.r < XMM0 ? dest.r : R11;
+            emit(INSTR_MOV, OPT_MEM_REG,
+                location(got(source.symbol), 8), reg(ax, 8));
+            emit(INSTR_MOV, OPT_MEM_REG,
+                location(address(0, ax, 0, 0), 8),
+                reg(ax, 8));
         } else {
-            assert(is_pointer(ptr.type));
-            if (is_register_allocated(ptr)) {
-                ax = allocated_register(ptr);
-            } else if (is_global_offset(source.symbol)) {
-                ax = dest.r < XMM0 ? dest.r : R11;
-                emit(INSTR_MOV, OPT_MEM_REG,
-                    location(got(source.symbol), 8), reg(ax, 8));
-                emit(INSTR_MOV, OPT_MEM_REG,
-                    location(address(0, ax, 0, 0), 8),
-                    reg(ax, 8));
-            } else {
-                ax = R11;
-                emit(INSTR_MOV, OPT_MEM_REG, location_of(ptr, 8), reg(ax, 8));
-            }
-            emit(opcode,
-                OPT_MEM_REG,
-                location(
-                    address(
-                        displacement_from_offset(source.offset), ax, 0, 0), w),
-                dest);
+            ax = R11;
+            emit(INSTR_MOV, OPT_MEM_REG, location_of(ptr, 8), reg(ax, 8));
         }
+        emit(opcode,
+            OPT_MEM_REG,
+            location(
+                address(
+                    displacement_from_offset(source.offset), ax, 0, 0), w),
+            dest);
         break;
     case ADDRESS:
         assert(opcode == INSTR_LEA);
@@ -2152,7 +2134,7 @@ static enum tttn compile_compare(
         }
     } else {
         assert(w == size_of(r.type));
-        if (is_constant(l) && w < 8) {
+        if (l.kind == IMMEDIATE && w < 8) {
             if (r.kind == DIRECT
                 && !is_global_offset(r.symbol)
                 && !is_field(r))
@@ -2182,7 +2164,7 @@ static enum tttn compile_compare(
                 break;
             default: break;
             }
-        } else if (is_constant(r) && w < 8) {
+        } else if (r.kind == IMMEDIATE && w < 8) {
             if (l.kind == DIRECT
                 && !is_global_offset(l.symbol)
                 && !is_field(l))
@@ -2598,10 +2580,10 @@ static enum reg compile_bitwise(
 
     w = size_of(l.type);
     assert(size_of(r.type) == w);
-    if (is_constant(r) && w < 8) {
+    if (r.kind == IMMEDIATE && w < 8) {
         ax = load(l, AX);
         emit(opcode, OPT_IMM_REG, value_of(r, w), reg(ax, w));
-    } else if (is_constant(l) && w < 8) {
+    } else if (l.kind == IMMEDIATE && w < 8) {
         ax = load(r, AX);
         emit(opcode, OPT_IMM_REG, value_of(l, w), reg(ax, w));
     } else {
@@ -2700,7 +2682,8 @@ static void store_copy_object(struct var var, struct var target)
 {
     if (is_array(var.type)) {
         assert(target.kind == DIRECT);
-        assert(is_string(var));
+        assert(var.symbol);
+        assert(var.symbol->symtype == SYM_LITERAL);
         assert(type_equal(target.type, var.type));
         emit(INSTR_LEA, OPT_MEM_REG, location_of(var, 8), reg(SI, 8));
     } else {
@@ -3171,55 +3154,39 @@ static void compile_data_assign(struct var target, struct var val)
     assert(target.kind == DIRECT);
 
     imm.width = size_of(target.type);
-    if (val.kind == IMMEDIATE) {
-        switch (type_of(target.type)) {
-        case T_POINTER:
-            if (is_string(val)) {
-                imm.type = IMM_ADDR;
-                imm.d.addr.base = IP;
-                imm.d.addr.sym = val.symbol;
-                imm.d.addr.displacement = displacement_from_offset(val.offset);
-                break;
-            }
-        case T_BOOL:
-        case T_CHAR:
-        case T_SHORT:
-        case T_INT:
-        case T_LONG:
-        case T_FLOAT:
-        case T_DOUBLE:
-        case T_LDOUBLE:
-            assert(type_equal(target.type, val.type));
-            imm.type = IMM_INT;
-            if (is_long_double(val.type)) {
-                union {
-                    long double val;
-                    long arr[2];
-                } cast = {0};
-                imm.width = 8;
-                cast.val = val.imm.ld;
-                imm.d.qword = cast.arr[0];
-                emit_data(imm);
-                imm.d.qword = cast.arr[1] & 0xFFFF;
-            } else {
-                imm.d.qword = val.imm.i;
-            }
-            break;
-        case T_ARRAY:
-            if (is_string(val)) {
-                imm.type = IMM_STRING;
-                imm.d.string = val.symbol->value.string;
-                break;
-            }
-        default: assert(0);
+    switch (val.kind) {
+    case IMMEDIATE:
+        assert(!is_array(target.type));
+        assert(type_equal(target.type, val.type));
+        assert(!val.symbol);
+        imm.type = IMM_INT;
+        if (is_long_double(val.type)) {
+            union {
+                long double val;
+                long arr[2];
+            } cast = {0};
+            imm.width = 8;
+            cast.val = val.imm.ld;
+            imm.d.qword = cast.arr[0];
+            emit_data(imm);
+            imm.d.qword = cast.arr[1] & 0xFFFF;
+        } else {
+            imm.d.qword = val.imm.i;
         }
-    } else {
+        break;
+    case DIRECT:
+        assert(val.symbol->symtype == SYM_LITERAL);
+        imm.type = IMM_STRING;
+        imm.d.string = val.symbol->value.string;
+        break;
+    default:
         assert(val.kind == ADDRESS);
         assert(val.symbol->linkage != LINK_NONE);
         imm.type = IMM_ADDR;
         imm.d.addr.base = IP;
         imm.d.addr.sym = val.symbol;
         imm.d.addr.displacement = displacement_from_offset(val.offset);
+        break;
     }
 
     emit_data(imm);

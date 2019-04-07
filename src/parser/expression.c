@@ -168,7 +168,7 @@ static struct block *primary_expression(
         sym = sym_create_string(tok.d.string);
         block->expr = as_expr(var_direct(sym));
         assert(is_identity(block->expr));
-        assert(block->expr.l.kind == IMMEDIATE);
+        assert(block->expr.l.kind == DIRECT);
         break;
     default:
         error("Unexpected '%s', not a valid primary expression.",
@@ -844,14 +844,14 @@ static struct block *logical_and_expression(
     struct definition *def,
     struct block *block)
 {
-    struct block *right;
+    struct block *top, *right;
 
     block = inclusive_or_expression(def, block);
     if (peek().token == LOGICAL_AND) {
-        consume(LOGICAL_AND);
-        right = cfg_block_init(def);
-        block = eval_logical_and(
-            def, block, right, logical_and_expression(def, right));
+        next();
+        top = cfg_block_init(def);
+        right = logical_and_expression(def, top);
+        block = eval_logical_and(def, block, top, right);
     }
 
     return block;
@@ -861,14 +861,14 @@ static struct block *logical_or_expression(
     struct definition *def,
     struct block *block)
 {
-    struct block *right;
+    struct block *top, *right;
 
     block = logical_and_expression(def, block);
     if (peek().token == LOGICAL_OR) {
-        consume(LOGICAL_OR);
-        right = cfg_block_init(def);
-        block = eval_logical_or(
-            def, block, right, logical_or_expression(def, right));
+        next();
+        top = cfg_block_init(def);
+        right = logical_or_expression(def, top);
+        block = eval_logical_or(def, block, top, right);
     }
 
     return block;
@@ -878,6 +878,7 @@ INTERNAL struct block *conditional_expression(
     struct definition *def,
     struct block *block)
 {
+    int b;
     struct var temp;
     struct block *left, *right;
     Type type;
@@ -887,20 +888,17 @@ INTERNAL struct block *conditional_expression(
         return block;
     }
 
-    if (!is_scalar(block->expr.type)) {
-        error("Conditional must be of scalar type.");
-        exit(1);
-    }
-
+    block = as_scalar(def, block, "Conditional");
     next();
     if (is_immediate(block->expr)) {
-        if (is_immediate_true(block->expr)) {
+        b = immediate_bool(block->expr);
+        if (b == 1) {
             left = block = expression(def, block);
             consume(':');
             right = cfg_block_init(def);
             right = conditional_expression(def, right);
         } else {
-            assert(is_immediate_false(block->expr));
+            assert(b == 0);
             left = cfg_block_init(def);
             left = expression(def, left);
             consume(':');

@@ -374,7 +374,7 @@ static struct symbol *sym_redeclare(
         }
         break;
     case SYM_LABEL:
-    case SYM_STRING_VALUE:
+    case SYM_LITERAL:
         assert(0);
         break;
     }
@@ -564,7 +564,7 @@ INTERNAL struct symbol *sym_create_string(String str)
     sym = alloc_sym();
     sym->type = get_string_type(str.len + 1);
     sym->value.string = str;
-    sym->symtype = SYM_STRING_VALUE;
+    sym->symtype = SYM_LITERAL;
     sym->linkage = LINK_INTERN;
     sym->name = str_init(PREFIX_STRING);
     sym->n = ++n;
@@ -592,7 +592,7 @@ INTERNAL const struct symbol *yield_declaration(struct namespace *ns)
         ns->cursor++;
         switch (sym->symtype) {
         case SYM_TENTATIVE:
-        case SYM_STRING_VALUE:
+        case SYM_LITERAL:
             break;
         case SYM_CONSTANT:
             if (is_real(sym->type)) {
@@ -648,7 +648,7 @@ static void print_symbol(FILE *stream, const struct symbol *sym)
     case SYM_CONSTANT:
         fprintf(stream, "number ");
         break;
-    case SYM_STRING_VALUE:
+    case SYM_LITERAL:
         fprintf(stream, "string ");
         break;
     case SYM_LABEL:

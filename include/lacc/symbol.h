@@ -17,7 +17,7 @@ enum symtype {
     SYM_TENTATIVE,
     SYM_DECLARATION,
     SYM_TYPEDEF,
-    SYM_STRING_VALUE,
+    SYM_LITERAL,
     SYM_CONSTANT,
     SYM_LABEL,
     SYM_TAG
@@ -75,7 +75,7 @@ struct symbol {
 
         /*
          * String literals are also handled as symbols, having type []
-         * const char. Denoted by symtype SYM_STRING_VALUE. Free string
+         * const char. Denoted by symtype SYM_LITERAL. Free string
          * constants are always named '.LC', disambiguated with n.
          */
         String string;

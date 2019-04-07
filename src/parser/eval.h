@@ -13,6 +13,17 @@ INTERNAL struct var rvalue(
     struct var var);
 
 /*
+ * Convert expression to scalar value, changing type of string constants
+ * to pointer from array.
+ *
+ * Other non-scalar values causes a compilation error.
+ */
+INTERNAL struct block *as_scalar(
+    struct definition *def,
+    struct block *block,
+    const char *entity);
+
+/*
  * Commit expression in block->expr to a new temporary variable, or
  * return the value directly if there is nothing to evaluate.
  */
@@ -147,16 +158,12 @@ INTERNAL void eval__builtin_va_start(
     struct expression arg);
 
 /*
- * Return 1 iff expression evaluates to an immediate non-zero value.
+ * Return 0 or 1 if expression evaluates to an immediate non-zero value,
+ * otherwise -1 if result is not known at compile time.
+ *
  * Type must be scalar.
  */
-INTERNAL int is_immediate_true(struct expression expr);
-
-/*
- * Return 1 iff expression evaluates to an immediate zero value.
- * Type must be scalar.
- */
-INTERNAL int is_immediate_false(struct expression expr);
+INTERNAL int immediate_bool(struct expression expr);
 
 /* Create temporary variable. */
 INTERNAL struct var create_var(struct definition *def, Type type);
