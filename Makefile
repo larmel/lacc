@@ -62,7 +62,7 @@ bin/bootstrap/lacc: bin/lacc
 	@mkdir -p $(@D)
 	for file in $(SOURCES) ; do \
 		target=$(@D)/$$(basename $$file .c).o ; \
-		$? -std=c89 -fPIC -Iinclude -c $$file -o $$target \
+		$? -std=c89 -Iinclude -c $$file -o $$target \
 			-D'LACC_STDLIB_PATH="$(LIBDIR_SOURCE)"' ; \
 	done
 	$(CC) $(@D)/*.o -o $@
@@ -72,7 +72,7 @@ bin/selfhost/lacc: bin/bootstrap/lacc
 	for file in $(SOURCES) ; do \
 		name=$$(basename $$file .c) ; \
 		target=$(@D)/$${name}.o ; \
-		$? -std=c89 -fPIC -Iinclude -c $$file -o $$target \
+		$? -std=c89 -Iinclude -c $$file -o $$target \
 			-D'LACC_STDLIB_PATH="$(LIBDIR_SOURCE)"' ; \
 		diff bin/bootstrap/$${name}.o $$target ; \
 	done

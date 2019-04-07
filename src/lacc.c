@@ -411,11 +411,7 @@ static int parse_program_arguments(int argc, char *argv[])
     program = argv[0];
     context.standard = STD_C99;
     context.target = TARGET_x86_64_EXE;
-
-    /* OpenBSD defaults to -fPIC unless explicitly turned off.  */
-#ifdef __OpenBSD__
     context.pic = 1;
-#endif
 
     if ((i = parse_args(optv, argc, argv)) != 0) {
         return i;

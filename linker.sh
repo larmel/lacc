@@ -41,7 +41,7 @@ check()
 }
 
 # Default should be a.out in current directory
-$lacc foo.c bar.c
+$lacc -fno-PIC foo.c bar.c
 a=$(check "a.out"); result="$?"; retval=$((retval + result))
 
 # Compile with position independent code
