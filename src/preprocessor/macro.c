@@ -874,6 +874,8 @@ INTERNAL void register_builtin_definitions(enum cstd version)
     }
 #endif
 
+    register_macro("__asm", "__asm__");
+
     switch (version) {
     case STD_C89:
         break;
