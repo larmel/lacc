@@ -54,7 +54,7 @@ static int is_loadtime_constant(struct expression expr)
 static struct block *read_initializer_element(
     struct definition *def,
     struct block *block,
-    struct var target)
+    const struct symbol *sym)
 {
     size_t ops;
     const struct block *top;
@@ -63,7 +63,7 @@ static struct block *read_initializer_element(
     top = block;
     block = assignment_expression(def, block);
 
-    if (target.symbol->linkage != LINK_NONE) {
+    if (sym->linkage != LINK_NONE) {
         if (block != top
             || array_len(&block->code) - ops > 0
             || !is_identity(block->expr)
@@ -364,7 +364,7 @@ static struct block *initialize_array(
      * constant, or an integer like "Hello"[2].
      */
     if (is_char(elem) && peek().token != '[') {
-        block = read_initializer_element(def, block, target);
+        block = read_initializer_element(def, block, target.symbol);
         if (is_identity(block->expr)
             && is_array(block->expr.type)
             && block->expr.l.kind == DIRECT
@@ -437,10 +437,10 @@ static struct block *initialize_member(
     } else {
         if (peek().token == '{') {
             next();
-            block = read_initializer_element(def, block, target);
+            block = read_initializer_element(def, block, target.symbol);
             consume('}');
         } else {
-            block = read_initializer_element(def, block, target);
+            block = read_initializer_element(def, block, target.symbol);
         }
         eval_assign(def, values, target, block->expr);
     }
@@ -472,7 +472,7 @@ static struct block *initialize_object(
     } else if (is_array(target.type)) {
         block = initialize_array(def, block, values, target, MEMBER);
     } else {
-        block = read_initializer_element(def, block, target);
+        block = read_initializer_element(def, block, target.symbol);
         eval_assign(def, values, target, block->expr);
     }
 
@@ -792,7 +792,7 @@ INTERNAL struct block *initializer(
         array_concat(&block->code, &values->code);
         array_empty(&values->code);
     } else {
-        block = read_initializer_element(def, block, target);
+        block = read_initializer_element(def, block, target.symbol);
         eval_assign(def, block, target, block->expr);
     }
 
