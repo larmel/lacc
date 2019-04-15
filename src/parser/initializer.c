@@ -222,8 +222,9 @@ static struct block *initialize_struct(
 
     m = nmembers(type);
     i = 0;
+
     do {
-        if (peek().token == '.') {
+        if (!block->has_init_value && peek().token == '.') {
             next();
             name = consume(IDENTIFIER).d.string;
             member = get_named_member(type, name, &i);
@@ -254,6 +255,15 @@ static struct block *initialize_struct(
     return block;
 }
 
+/*
+ * Read initializer for struct or union. Make sure to read first element
+ * if possible, to catch assignments of aggregate values initializing
+ * the whole object at once.
+ *
+ *     struct A { char c; } foo = { 'a' };
+ *     struct { struct A a; } bar = { foo };
+ *
+ */
 static struct block *initialize_struct_or_union(
     struct definition *def,
     struct block *block,
@@ -264,7 +274,23 @@ static struct block *initialize_struct_or_union(
     assert(is_struct_or_union(target.type));
     assert(nmembers(target.type) > 0);
 
-    if (is_union(target.type)) {
+    if (!block->has_init_value) switch (peek().token) {
+    case '.':
+    case '{':
+    case '[':
+        break;
+    default:
+        block = read_initializer_element(def, block, target.symbol);
+        block->has_init_value = 1;
+        break;
+    }
+
+    if (block->has_init_value
+        && is_compatible_unqualified(target.type, block->expr.type))
+    {
+        eval_assign(def, values, target, block->expr);
+        block->has_init_value = 0;
+    } else if (is_union(target.type)) {
         block = initialize_union(def, block, values, target, state);
     } else {
         block = initialize_struct(def, block, values, target, state);
@@ -363,19 +389,26 @@ static struct block *initialize_array(
      * Need to read expression to determine if element is a string
      * constant, or an integer like "Hello"[2].
      */
-    if (is_char(elem) && peek().token != '[') {
+    if (!block->has_init_value) switch (peek().token) {
+    case '.':
+    case '{':
+    case '[':
+        break;
+    default:
         block = read_initializer_element(def, block, target.symbol);
-        if (is_identity(block->expr)
-            && is_array(block->expr.type)
-            && block->expr.l.kind == DIRECT
-            && block->expr.l.symbol->symtype == SYM_LITERAL)
-        {
-            target = eval_assign(def, values, target, block->expr);
-        } else {
-            target.type = elem;
-            eval_assign(def, values, target, block->expr);
-            goto next;
-        }
+        block->has_init_value = 1;
+    }
+
+    /* Assign string literal to initialize the whole array. */
+    if (block->has_init_value
+        && is_char(elem)
+        && is_identity(block->expr)
+        && is_array(block->expr.type)
+        && block->expr.l.kind == DIRECT
+        && block->expr.l.symbol->symtype == SYM_LITERAL)
+    {
+        target = eval_assign(def, values, target, block->expr);
+        block->has_init_value = 0;
     } else {
         target.type = elem;
         while (1) {
@@ -384,7 +417,7 @@ static struct block *initialize_array(
             }
             target.offset = initial + (i * width);
             block = initialize_member(def, block, values, target);
-next:       i += 1;
+            i += 1;
             c = i > c ? i : c;
             if (has_next_array_element(state, &is_designator)) {
                 if (!is_designator && count && c >= count)
@@ -410,8 +443,9 @@ static struct block *initialize_member(
     struct var target)
 {
     assert(target.kind == DIRECT);
+
     if (is_struct_or_union(target.type)) {
-        if (peek().token == '{') {
+        if (!block->has_init_value && peek().token == '{') {
             next();
             block = initialize_struct_or_union(def, block, values, target, CURRENT);
             if (peek().token == ',')
@@ -425,7 +459,7 @@ static struct block *initialize_member(
             error("Invalid initialization of flexible array member.");
             exit(1);
         }
-        if (peek().token == '{') {
+        if (!block->has_init_value && peek().token == '{') {
             next();
             block = initialize_array(def, block, values, target, CURRENT);
             if (peek().token == ',')
@@ -435,14 +469,17 @@ static struct block *initialize_member(
             block = initialize_array(def, block, values, target, DESIGNATOR);
         }
     } else {
-        if (peek().token == '{') {
-            next();
-            block = read_initializer_element(def, block, target.symbol);
-            consume('}');
-        } else {
-            block = read_initializer_element(def, block, target.symbol);
+        if (!block->has_init_value) {
+            if (peek().token == '{') {
+                next();
+                block = read_initializer_element(def, block, target.symbol);
+                consume('}');
+            } else {
+                block = read_initializer_element(def, block, target.symbol);
+            }
         }
         eval_assign(def, values, target, block->expr);
+        block->has_init_value = 0;
     }
 
     return block;
@@ -455,6 +492,7 @@ static struct block *initialize_object(
     struct var target)
 {
     assert(target.kind == DIRECT);
+    assert(!block->has_init_value);
 
     if (peek().token == '{') {
         next();
@@ -499,6 +537,7 @@ static void zero_initialize(
     struct var var;
 
     assert(target.kind == DIRECT);
+    assert(!values->has_init_value);
     size = size_of(target.type);
     switch (type_of(target.type)) {
     case T_STRUCT:
@@ -796,5 +835,6 @@ INTERNAL struct block *initializer(
         eval_assign(def, block, target, block->expr);
     }
 
+    assert(!block->has_init_value);
     return block;
 }
