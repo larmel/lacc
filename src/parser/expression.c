@@ -888,7 +888,7 @@ INTERNAL struct block *conditional_expression(
         return block;
     }
 
-    block = as_scalar(def, block, "Conditional");
+    block = scalar(def, block, "Conditional");
     next();
     if (is_immediate(block->expr)) {
         b = immediate_bool(block->expr);

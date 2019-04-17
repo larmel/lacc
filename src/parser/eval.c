@@ -1144,11 +1144,20 @@ INTERNAL struct var rvalue(
     return var;
 }
 
-INTERNAL struct block *as_scalar(
+/*
+ * Ensure expression has scalar type.
+ *
+ * Expression is used directly in branching statements, which do not
+ * support va_arg directly in backend. Avoid this by evaluating to a
+ * new variable.
+ */
+INTERNAL struct block *scalar(
     struct definition *def,
     struct block *block,
     const char *entity)
 {
+    struct var tmp;
+
     if (!is_scalar(block->expr.type) && is_identity(block->expr)) {
         block->expr = as_expr(rvalue(def, block, block->expr.l));
     }
@@ -1156,6 +1165,12 @@ INTERNAL struct block *as_scalar(
     if (!is_scalar(block->expr.type)) {
         error("%s must be scalar, was %t", entity, block->expr.type);
         exit(1);
+    }
+
+    if (block->expr.op == IR_OP_VA_ARG) {
+        tmp = create_var(def, block->expr.type);
+        tmp = eval_assign(def, block, tmp, block->expr);
+        block->expr = as_expr(tmp);
     }
 
     return block;
@@ -1832,8 +1847,8 @@ INTERNAL struct block *eval_logical_or(
     int res, b;
     struct var value;
 
-    left = as_scalar(def, left, "Left operand of logical or");
-    right = as_scalar(def, right, "Right operand of logical or");
+    left = scalar(def, left, "Left operand of logical or");
+    right = scalar(def, right, "Right operand of logical or");
 
     b = immediate_bool(left->expr);
     if (is_logical_immediate(left, right_top, right)) {
@@ -1864,8 +1879,8 @@ INTERNAL struct block *eval_logical_and(
     int res, b;
     struct var value;
 
-    left = as_scalar(def, left, "Left operand of logical and");
-    right = as_scalar(def, right, "Right operand of logical and");
+    left = scalar(def, left, "Left operand of logical and");
+    right = scalar(def, right, "Right operand of logical and");
 
     b = immediate_bool(left->expr);
     if (is_logical_immediate(left, right_top, right)) {

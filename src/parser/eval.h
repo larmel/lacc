@@ -18,7 +18,7 @@ INTERNAL struct var rvalue(
  *
  * Other non-scalar values causes a compilation error.
  */
-INTERNAL struct block *as_scalar(
+INTERNAL struct block *scalar(
     struct definition *def,
     struct block *block,
     const char *entity);

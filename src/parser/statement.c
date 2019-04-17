@@ -82,7 +82,7 @@ static struct block *if_statement(
     consume(IF);
     consume('(');
     parent = expression(def, parent);
-    parent = as_scalar(def, parent, "If expression");
+    parent = scalar(def, parent, "If expression");
     consume(')');
 
     b = immediate_bool(parent->expr);
@@ -142,7 +142,7 @@ static struct block *do_statement(
     consume(WHILE);
     consume('(');
     tail = expression(def, cond);
-    tail = as_scalar(def, tail, "While expression");
+    tail = scalar(def, tail, "While expression");
     consume(')');
 
     b = immediate_bool(tail->expr);
@@ -183,7 +183,7 @@ static struct block *while_statement(
     consume(WHILE);
     consume('(');
     cond = expression(def, top);
-    cond = as_scalar(def, cond, "While expression");
+    cond = scalar(def, cond, "While expression");
     consume(')');
 
     b = immediate_bool(cond->expr);
@@ -250,7 +250,7 @@ static struct block *for_statement(
     if (peek().token != ';') {
         parent->jump[0] = top;
         top = expression(def, top);
-        top = as_scalar(def, top, "Controlling expression");
+        top = scalar(def, top, "Controlling expression");
         b = immediate_bool(top->expr);
         if (b == 1) {
             top->jump[0] = body;
