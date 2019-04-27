@@ -51,17 +51,29 @@ static int is_loadtime_constant(struct expression expr)
     }
 }
 
+/*
+ * Read assignment expression into block->expr.
+ *
+ * Since initializer assignments can be reordered, we need to evaluate
+ * call expressions into a temporary variable.
+ */
 static struct block *read_initializer_element(
     struct definition *def,
     struct block *block,
     const struct symbol *sym)
 {
     size_t ops;
+    struct var tmp;
     const struct block *top;
 
+    assert(!block->has_init_value);
     ops = array_len(&block->code);
     top = block;
     block = assignment_expression(def, block);
+    if (is_void(block->expr.type)) {
+        error("Cannot initialize with void value.");
+        exit(1);
+    }
 
     if (sym->linkage != LINK_NONE) {
         if (block != top
@@ -72,8 +84,13 @@ static struct block *read_initializer_element(
             error("Initializer must be computable at load time.");
             exit(1);
         }
+    } else if (block->expr.op == IR_OP_CALL) {
+        tmp = create_var(def, block->expr.type);
+        eval_assign(def, block, tmp, block->expr);
+        block->expr = as_expr(tmp);
     }
 
+    block->has_init_value = 1;
     return block;
 }
 
@@ -281,7 +298,6 @@ static struct block *initialize_struct_or_union(
         break;
     default:
         block = read_initializer_element(def, block, target.symbol);
-        block->has_init_value = 1;
         break;
     }
 
@@ -396,7 +412,7 @@ static struct block *initialize_array(
         break;
     default:
         block = read_initializer_element(def, block, target.symbol);
-        block->has_init_value = 1;
+        break;
     }
 
     /* Assign string literal to initialize the whole array. */
@@ -434,6 +450,29 @@ static struct block *initialize_array(
     }
 
     return block;
+}
+
+/*
+ * Add assignment operation to initializer values block.
+ *
+ * Assignment evaluation can generate a cast statement, which needs to
+ * be added to the normal block.
+ */
+static void assign_initializer_element(
+    struct definition *def,
+    struct block *block,
+    struct block *values,
+    struct var target)
+{
+    struct statement st;
+    assert(target.kind == DIRECT);
+    assert(block->has_init_value);
+
+    eval_assign(def, block, target, block->expr);
+    st = array_pop_back(&block->code);
+    assert(st.st == IR_ASSIGN);
+    array_push_back(&values->code, st);
+    block->has_init_value = 0;
 }
 
 static struct block *initialize_member(
@@ -478,8 +517,8 @@ static struct block *initialize_member(
                 block = read_initializer_element(def, block, target.symbol);
             }
         }
-        eval_assign(def, values, target, block->expr);
-        block->has_init_value = 0;
+
+        assign_initializer_element(def, block, values, target);
     }
 
     return block;
@@ -511,7 +550,7 @@ static struct block *initialize_object(
         block = initialize_array(def, block, values, target, MEMBER);
     } else {
         block = read_initializer_element(def, block, target.symbol);
-        eval_assign(def, values, target, block->expr);
+        assign_initializer_element(def, block, values, target);
     }
 
     return block;
@@ -784,6 +823,7 @@ static struct block *postprocess_object_initialization(
         }
 
         assert(st.st == IR_ASSIGN);
+        assert(st.expr.op != IR_OP_CALL);
         assert(field.offset >= 0);
         assert(target.offset <= field.offset);
 
@@ -822,10 +862,11 @@ INTERNAL struct block *initializer(
     struct block *block,
     const struct symbol *sym)
 {
-    struct block *values = get_initializer_block(0);
+    struct block *values;
     struct var target = var_direct(sym);
 
     if (peek().token == '{' || is_array(sym->type)) {
+        values = get_initializer_block(0);
         block = initialize_object(def, block, values, target);
         values = postprocess_object_initialization(def, values, target);
         array_concat(&block->code, &values->code);
@@ -833,6 +874,7 @@ INTERNAL struct block *initializer(
     } else {
         block = read_initializer_element(def, block, target.symbol);
         eval_assign(def, block, target, block->expr);
+        block->has_init_value = 0;
     }
 
     assert(!block->has_init_value);
