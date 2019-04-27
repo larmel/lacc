@@ -1,4 +1,8 @@
+#ifdef __OpenBSD__
+#include <stdlib.h>
+#else
 #include <alloca.h>
+#endif
 #include <string.h>
 #include <stdio.h>
 
