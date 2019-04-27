@@ -16,6 +16,7 @@ static int foo(int n, ...) {
 	printf("%d\n", va_arg(args, int));
 	va_end(args);
 	va_end(copy);
+	return 0;
 }
 
 int main(void) {
