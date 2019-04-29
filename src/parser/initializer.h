@@ -21,4 +21,7 @@ INTERNAL struct block *initializer(
     struct block *block,
     const struct symbol *sym);
 
+/* Free memory used for internal structures. */
+INTERNAL void initializer_finalize(void);
+
 #endif

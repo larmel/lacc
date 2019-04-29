@@ -4,6 +4,7 @@
 #endif
 #include "declaration.h"
 #include "expression.h"
+#include "initializer.h"
 #include "parse.h"
 #include "symtab.h"
 #include <lacc/deque.h>
@@ -244,6 +245,7 @@ INTERNAL void parse_finalize(void)
     array_clear(&prototypes);
     array_clear(&blocks);
 
+    initializer_finalize();
     clear_argument_lists();
     symtab_finalize();
 }

@@ -12,26 +12,51 @@
 
 #include <assert.h>
 
+/*
+ * Introduce separate blocks to hold list of assignment operations for
+ * each initializer. This is appended at the end after all expressions
+ * inside initializers are evaluated.
+ *
+ * Padding initialization is handled only after the whole initializer is
+ * read, as postprocessing of the statements in these blocks.
+ *
+ * Since initializers can be nested with compound literals, we need
+ * arbitrary many blocks. Re-use for memory efficiency.
+ */
+static array_of(struct block *) inititializer_blocks;
+
+static struct block *get_initializer_block(void)
+{
+    struct block *block;
+
+    if (array_len(&inititializer_blocks)) {
+        block = array_pop_back(&inititializer_blocks);
+    } else {
+        block = cfg_block_init(NULL);
+    }
+
+    return block;
+}
+
+static void release_initializer_block(struct block *block)
+{
+    assert(!block->label);
+    assert(!block->has_init_value);
+
+    array_empty(&block->code);
+    array_push_back(&inititializer_blocks, block);
+}
+
+INTERNAL void initializer_finalize(void)
+{
+    array_clear(&inititializer_blocks);
+}
+
 static struct block *initialize_member(
     struct definition *def,
     struct block *block,
     struct block *values,
     struct var target);
-
-/*
- * Evaluate sequence of IR_ASSIGN statements in a separate block. This
- * is appended at the end after all expressions inside initializers are
- * evaluated.
- *
- * Padding initialization is handled only after the whole initializer is
- * read, as postprocessing of the statements in this block.
- */
-static struct block *get_initializer_block(int i)
-{
-    static struct block *block[3];
-
-    return !block[i] ? (block[i] = cfg_block_init(NULL)) : block[i];
-}
 
 static int is_loadtime_constant(struct expression expr)
 {
@@ -184,7 +209,7 @@ static struct block *initialize_union(
     done = 0;
     filled = target.offset;
     type = target.type;
-    init = get_initializer_block(2);
+    init = get_initializer_block();
     assert(is_union(type));
     assert(nmembers(type) > 0);
 
@@ -207,6 +232,7 @@ static struct block *initialize_union(
     } while (next_element(state));
 
     array_concat(&values->code, &init->code);
+    release_initializer_block(init);
     return block;
 }
 
@@ -811,7 +837,7 @@ static struct block *postprocess_object_initialization(
 
     assert(target.offset == 0);
     sort_and_trim(values);
-    block = get_initializer_block(1);
+    block = get_initializer_block();
     total_size = size_of(target.type);
     bitfield_size = 0;
 
@@ -850,7 +876,7 @@ static struct block *postprocess_object_initialization(
     }
 
     initialize_trailing_padding(def, block, target, total_size, bitfield_size);
-    array_empty(&values->code);
+    release_initializer_block(values);
 #ifndef NDEBUG
     validate_initializer_block(block);
 #endif
@@ -866,11 +892,11 @@ INTERNAL struct block *initializer(
     struct var target = var_direct(sym);
 
     if (peek().token == '{' || is_array(sym->type)) {
-        values = get_initializer_block(0);
+        values = get_initializer_block();
         block = initialize_object(def, block, values, target);
         values = postprocess_object_initialization(def, values, target);
         array_concat(&block->code, &values->code);
-        array_empty(&values->code);
+        release_initializer_block(values);
     } else {
         block = read_initializer_element(def, block, target.symbol);
         eval_assign(def, block, target, block->expr);
