@@ -318,11 +318,17 @@ static struct block *direct_declarator(
         *name = t.d.string;
         break;
     case '(':
-        next();
-        block = declarator(def, block, head, &head, name);
-        consume(')');
-        if (!is_void(head)) {
-            length = NULL;
+        t = peekn(2);
+        if ((t.token == IDENTIFIER && !get_typedef(t.d.string))
+            || t.token == '('
+            || t.token == '*')
+        {
+            next();
+            block = declarator(def, block, head, &head, name);
+            consume(')');
+            if (!is_void(head)) {
+                length = NULL;
+            }
         }
         break;
     default:
