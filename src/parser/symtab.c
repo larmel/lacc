@@ -236,7 +236,6 @@ INTERNAL struct symbol *sym_lookup(struct namespace *ns, String name)
         if (scope->state == SCOPE_INITIALIZED) {
             sym = hash_lookup(&scope->table, name);
             if (sym) {
-                sym->referenced = 1;
                 return sym;
             }
         }

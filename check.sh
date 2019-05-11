@@ -68,8 +68,8 @@ check()
 			echo "Result differ: was ${result}, expected ${answer}." >&2
 		fi
 		if [ "$diffres" -ne "0" ]; then
-			echo "Output differ:"  >&2
-			echo "$difference"  >&2
+			echo "Output differ:" >&2
+			echo "$difference" >&2
 		fi
 		return 1
 	fi
@@ -79,8 +79,17 @@ prp=$(check -E); result="$?"; retval=$((retval + result))
 asm=$(check -S); result="$?"; retval=$((retval + result))
 elf=$(check -c); result="$?"; retval=$((retval + result))
 opt=$(check "-c -O1"); result="$?"; retval=$((retval + result))
-
 echo "[-E: ${prp}] [-S: ${asm}] [-c: ${elf}] [-c -O1: ${opt}] :: ${file}"
-rm -f ${file}.out ${file}.ans.txt ${file}.txt ${file}.s ${file}.i ${file}.o
 
+if [ $retval -eq 0 ] && [ -f "${file}.sh" ]
+then
+	./${file}.sh "$lacc" "$file"
+	retval=$?
+	if [ $retval -ne 0 ]
+	then
+		echo "$(tput setaf 1)Failed validation script!$(tput sgr0)"
+	fi
+fi
+
+rm -f ${file}.out ${file}.ans.txt ${file}.txt ${file}.s ${file}.i ${file}.o
 exit $retval

@@ -42,7 +42,9 @@ struct symbol {
     unsigned int linkage : 8;
     unsigned int referenced : 1; /* Mark symbol as used. */
     unsigned int memory : 1;     /* Disable register allocation. */
-    unsigned int slot : 6;       /* Register allocation slot. */
+    unsigned int inlined : 1;    /* Inline function. */
+    unsigned int : 1;
+    unsigned int slot : 4;       /* Register allocation slot. */
     unsigned int index : 8;      /* Enumeration used in optimization. */
 
     /*

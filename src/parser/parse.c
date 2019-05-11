@@ -44,6 +44,15 @@ static deque_of(struct definition *) definitions;
 static array_of(struct definition *) prototypes;
 
 /*
+ * Functions declared inline must be treated as if they were actually
+ * inlined. There should be no symbol generated for inline functions if
+ * they are never called. Therefore keep all inline definitions in a
+ * separate list, and postpone compilation of these until the end of the
+ * translation unit.
+ */
+static array_of(struct definition *) inline_definitions;
+
+/*
  * A list of blocks kept for housekeeping when parsing declarations
  * that do not have a full definition object associated. For example,
  * the following constant expression would be evaluated by a dummy
@@ -169,6 +178,26 @@ INTERNAL void cfg_define(struct definition *def, const struct symbol *sym)
     deque_push_back(&definitions, def);
 }
 
+static struct definition *pop_inline_function(void)
+{
+    int i;
+    struct definition *def;
+
+    for (i = 0; i < array_len(&inline_definitions); ++i) {
+        def = array_get(&inline_definitions, i);
+        assert(is_function(def->symbol->type));
+        assert(def->symbol->inlined);
+        if (def->symbol->referenced) {
+            array_erase(&inline_definitions, i);
+            return def;
+        }
+    }
+
+    /* If no function is referenced, none can be. */
+    array_empty(&inline_definitions);
+    return NULL;
+}
+
 INTERNAL struct definition *parse(void)
 {
     int i;
@@ -183,29 +212,42 @@ INTERNAL struct definition *parse(void)
         cfg_discard(def);
     }
 
-    /*
-     * Parse a declaration, which can include definitions that will fill
-     * up the buffer. Tentative declarations will only affect the symbol
-     * table.
-     */
-    while (!deque_len(&definitions) && peek().token != END) {
-        declaration(NULL, NULL);
+    while (1) {
+        /*
+         * Parse a declaration, which can include definitions that will
+         * fill up the buffer. Tentative declarations will only affect
+         * the symbol table.
+         */
+        while (!deque_len(&definitions) && peek().token != END) {
+            declaration(NULL, NULL);
+        }
+
+        def = NULL;
+        if (!deque_len(&definitions)) {
+            break; /* no more input */
+        } else {
+            def = deque_pop_front(&definitions);
+            if (def->symbol->inlined) {
+                array_push_back(&inline_definitions, def);
+            } else {
+                return def;
+            }
+        }
     }
 
-    /*
-     * The next definition is taken from queue. Free memory in case we
-     * reach end of input.
-     */
-    if (!deque_len(&definitions)) {
-        assert(peek().token == END);
+    assert(peek().token == END);
+    assert(!deque_len(&definitions));
+    if (array_len(&inline_definitions)) {
+        def = pop_inline_function();
+    }
+
+    if (!def) {
         for (i = 0; i < array_len(&expressions); ++i) {
             block = array_get(&expressions, i);
             recycle_block(block);
         }
+
         array_empty(&expressions);
-        def = NULL;
-    } else {
-        def = deque_pop_front(&definitions);
     }
 
     return def;
@@ -243,6 +285,7 @@ INTERNAL void parse_finalize(void)
     deque_destroy(&definitions);
     array_clear(&expressions);
     array_clear(&prototypes);
+    array_clear(&inline_definitions);
     array_clear(&blocks);
 
     initializer_finalize();

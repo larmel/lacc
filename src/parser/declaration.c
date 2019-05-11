@@ -979,7 +979,7 @@ INTERNAL struct block *declare_vla(
  * Cover external declarations, functions, and local declarations
  * (with optional initialization code) inside functions.
  */
-INTERNAL struct block *init_declarator(
+static struct block *init_declarator(
     struct definition *def,
     struct block *parent,
     Type base,
@@ -1154,6 +1154,7 @@ INTERNAL struct block *declaration(
     enum symtype symtype;
     enum linkage linkage;
     struct definition *decl;
+    struct symbol *sym;
     int storage_class, is_inline, is_register;
 
     if (peek().token == STATIC_ASSERT) {
@@ -1204,6 +1205,11 @@ INTERNAL struct block *declaration(
             if (!decl->symbol) {
                 cfg_discard(decl);
             } else if (is_function(decl->symbol->type)) {
+                if (is_inline) {
+                    sym = (struct symbol *) decl->symbol;
+                    sym->inlined = 1;
+                    sym->referenced = storage_class == EXTERN;
+                }
                 return parent;
             }
         } else {

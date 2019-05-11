@@ -247,7 +247,7 @@ static struct address address_of(struct var var)
     addr.displacement = displacement_from_offset(var.offset);
     switch (var.symbol->linkage) {
     case LINK_EXTERN:
-        assert(!context.pic);
+        assert(!context.pic || var.kind == ADDRESS);
     case LINK_INTERN:
         addr.base = IP;
         addr.sym = var.symbol;
@@ -258,6 +258,7 @@ static struct address address_of(struct var var)
         break;
     }
 
+    ((struct symbol *) var.symbol)->referenced = 1;
     return addr;
 }
 
@@ -293,6 +294,7 @@ static struct address got(const struct symbol *sym)
     addr.type = ADDR_GLOBAL_OFFSET;
     addr.base = IP;
     addr.sym = sym;
+    ((struct symbol *) sym)->referenced = 1;
     return addr;
 }
 
@@ -313,6 +315,7 @@ static struct immediate addr(const struct symbol *sym)
         imm.d.addr.base = IP;
     }
 
+    ((struct symbol *) sym)->referenced = 1;
     return imm;
 }
 
@@ -3183,9 +3186,7 @@ static void compile_data_assign(struct var target, struct var val)
         assert(val.kind == ADDRESS);
         assert(val.symbol->linkage != LINK_NONE);
         imm.type = IMM_ADDR;
-        imm.d.addr.base = IP;
-        imm.d.addr.sym = val.symbol;
-        imm.d.addr.displacement = displacement_from_offset(val.offset);
+        imm.d.addr = address_of(val);
         break;
     }
 
