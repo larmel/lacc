@@ -590,24 +590,17 @@ INTERNAL const struct symbol *yield_declaration(struct namespace *ns)
         sym = array_get(&ns->symbol, ns->cursor);
         ns->cursor++;
         switch (sym->symtype) {
-        case SYM_TENTATIVE:
         case SYM_LITERAL:
-            break;
         case SYM_CONSTANT:
-            if (is_real(sym->type)) {
-                break;
-            }
-            continue;
         case SYM_DECLARATION:
-            if (sym->linkage == LINK_EXTERN
-                && (sym->referenced || sym == decl_memcpy))
-            {
-                break;
-            }
+            if (sym->referenced)
+                return sym;
+            break;
+        case SYM_TENTATIVE:
+            return sym;
         default:
-            continue;
+            break;
         }
-        return sym;
     }
 
     return NULL;
