@@ -84,12 +84,6 @@ static int
     n_rela_text;
 
 /*
- * Keep track of function being assembled, updating st_size after each
- * instruction.
- */
-static Elf64_Sym *current_function_entry;
-
-/*
  * List of pending global symbols, not yet added to .symtab. All globals
  * have to come after LOCAL symbols, according to spec. Also, ld will
  * segfault(!) otherwise.
@@ -308,6 +302,37 @@ INTERNAL int elf_section_init(
 }
 
 /*
+ * Keep track of current function being emitted, for adjusting size of
+ * symbol entry.
+ *
+ * Since we have separate lists for local and global symbols, keep an
+ * extra flag telling which array to look up.
+ */
+static struct {
+    enum {
+        CURRENT_FUNC_NONE,
+        CURRENT_FUNC_STATIC,
+        CURRENT_FUNC_GLOBAL
+    } type;
+    int index;
+} current_function;
+
+static void increment_function_size(size_t bytes)
+{
+    Elf64_Sym *entry;
+    assert(current_function.type != CURRENT_FUNC_NONE);
+
+    if (current_function.type == CURRENT_FUNC_STATIC) {
+        entry = &sbuf[shid_symtab].sym[current_function.index];
+    } else {
+        assert(current_function.type == CURRENT_FUNC_GLOBAL);
+        entry = &array_get(&globals, current_function.index).entry;
+    }
+
+    entry->st_size += bytes;
+}
+
+/*
  * Associate symbol with symtab entry. Internal symbols are added to
  * table right away, but global symbols have to be buffered and flushed
  * at the end. (Mis-)use member for storing index into ELF symbol table.
@@ -320,7 +345,8 @@ static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
     if (sym->linkage == LINK_INTERN) {
         sym->stack_offset = elf_symtab_add(entry);
         if (is_function(sym->type)) {
-            current_function_entry = &sbuf[shid_symtab].sym[sym->stack_offset];
+            current_function.type = CURRENT_FUNC_STATIC;
+            current_function.index = sym->stack_offset;
         }
     } else {
         assert((entry.st_info >> 4) == STB_GLOBAL);
@@ -328,12 +354,8 @@ static void elf_symtab_assoc(struct symbol *sym, Elf64_Sym entry)
         var.entry = entry;
         array_push_back(&globals, var);
         if (is_function(sym->type)) {
-            /*
-             * This seems a bit shady, assumes the array address is kept
-             * stable. Same with LINK_INTERN case...
-             */
-            current_function_entry
-                = &array_get(&globals, array_len(&globals) - 1).entry;
+            current_function.type = CURRENT_FUNC_GLOBAL;
+            current_function.index = array_len(&globals) - 1;
         }
     }
 }
@@ -519,7 +541,7 @@ INTERNAL void elf_init(FILE *output, const char *file)
     Elf64_Sym entry = {0};
 
     shnum = 0;
-    current_function_entry = NULL;
+    memset(&current_function, 0, sizeof(current_function));
     n_rela_data = 0;
     n_rela_text = 0;
 
@@ -639,11 +661,10 @@ INTERNAL int elf_symbol(const struct symbol *sym)
 INTERNAL int elf_text(struct instruction instr)
 {
     struct code c = encode(instr);
-    assert(current_function_entry);
 
     if (c.val[0] != 0x90) {
         elf_section_write(shid_text, &c.val, c.len);
-        current_function_entry->st_size += c.len;
+        increment_function_size(c.len);
     }
 
     return 0;
