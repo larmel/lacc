@@ -212,19 +212,17 @@ INTERNAL int dwarf_flush(void)
     char *buffer;
     size_t length;
 
-    unsigned int padding = 0xffffffffu;
-    unsigned long unit_length = 0;
+    unsigned int unit_length = 0;
     unsigned short version = 4;
-    unsigned long debug_abbrev_offset = 0;
+    unsigned int debug_abbrev_offset = 0;
     unsigned short address_size = 8;
 
     di = elf_section_init(".debug_info", SHT_PROGBITS, 0, SHN_UNDEF, 0, 8, 0);
     da = elf_section_init(".debug_abbrev", SHT_PROGBITS, 0, SHN_UNDEF, 0, 8, 0);
 
-    elf_section_write(di, &padding, 4);
-    elf_section_write(di, &unit_length, 8);
+    elf_section_write(di, &unit_length, 4);
     elf_section_write(di, &version, 2);
-    elf_section_write(di, &debug_abbrev_offset, 8);
+    elf_section_write(di, &debug_abbrev_offset, 4);
     elf_section_write(di, &address_size, 1);
 
     /* Write all entries with children recursively. */
@@ -232,13 +230,15 @@ INTERNAL int dwarf_flush(void)
 
     /* End with zero byte. */
     length = elf_section_write(di, NULL, 1);
+    assert(length < 0xfffffff0);
 
     /*
      * Length of .debug_data contribution for this compilation unit,
-     * not including itself or padding
+     * not including itself. We use 32-bit format, so the length must
+     * fit in an integer.
      */
-    length = length - 12;
+    unit_length = length - 4;
     buffer = elf_section_buffer(di);
-    memcpy(buffer + 4, &length, 8);
+    memcpy(buffer, &unit_length, 4);
     return 0;
 }
