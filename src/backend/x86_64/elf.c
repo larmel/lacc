@@ -45,15 +45,19 @@ static Elf64_Shdr shdr[SHNUM_MAX];
 static int shnum;
 
 /* Ids of default sections. */
-static int shid_shstrtab;
-static int shid_strtab;
-static int shid_symtab;
-static int shid_bss;
-static int shid_rodata;
-static int shid_data;
-static int shid_rela_data;
-static int shid_text;
-static int shid_rela_text;
+static int
+    shid_shstrtab,
+    shid_strtab,
+    shid_symtab,
+    shid_bss,
+    shid_rodata,
+    shid_data,
+    shid_text;
+
+/* Relocation sections exposed for writing entries. */
+INTERNAL int
+    shid_rela_data,
+    shid_rela_text;
 
 #define symtab_index_of(s) ((s)->stack_offset)
 #define symtab_lookup(s) (&sbuf[shid_symtab].sym[(s)->stack_offset])
@@ -77,11 +81,9 @@ struct pending_relocation {
     int addend;                 /* offset into symbol ? */
 };
 
-static array_of(struct pending_relocation) pending_relocation_list;
-
-static int
-    n_rela_data,
-    n_rela_text;
+/* Store list of relocations for sections of type rela. */
+static array_of(struct pending_relocation)
+    pending_relocations[SHNUM_MAX];
 
 /*
  * List of pending global symbols, not yet added to .symtab. All globals
@@ -387,44 +389,25 @@ static void flush_symtab_globals(void)
     array_empty(&globals);
 }
 
-static void elf_add_reloc(struct pending_relocation entry)
-{
-    array_push_back(&pending_relocation_list, entry);
-    if (entry.section == shid_rela_text) {
-        n_rela_text++;
-    } else {
-        assert(entry.section == shid_rela_data);
-        n_rela_data++;
-    }
-}
-
-INTERNAL void elf_add_reloc_text(
+INTERNAL void elf_add_relocation(
+    int shid,
     const struct symbol *symbol,
     enum rel_type type,
     int offset,
     int addend)
 {
-    struct pending_relocation r = {0};
-    r.symbol = symbol;
-    r.type = type;
-    r.section = shid_rela_text;
-    r.offset = shdr[shid_text].sh_size + offset;
-    r.addend = addend;
-    elf_add_reloc(r);
-}
+    struct pending_relocation entry = {0};
+    int target;
 
-static void elf_add_reloc_data(
-    const struct symbol *symbol,
-    enum rel_type type,
-    int addend)
-{
-    struct pending_relocation r = {0};
-    r.symbol = symbol;
-    r.type = type;
-    r.section = shid_rela_data;
-    r.offset = shdr[shid_data].sh_size;
-    r.addend = addend;
-    elf_add_reloc(r);
+    assert(shid > 0 && shid < SHNUM_MAX);
+    assert(shdr[shid].sh_type == SHT_RELA);
+
+    target = shdr[shid].sh_info;
+    entry.symbol = symbol;
+    entry.type = type;
+    entry.offset = shdr[target].sh_size + offset;
+    entry.addend = addend;
+    array_push_back(&pending_relocations[shid], entry);
 }
 
 /*
@@ -435,62 +418,46 @@ static void elf_add_reloc_data(
  */
 static void flush_relocations(void)
 {
-    Elf64_Rela
-        *entry,
-        *data_entry = NULL,
-        *text_entry = NULL;
-    size_t size;
+    Elf64_Rela *entry;
     struct pending_relocation pending;
-    int i;
+    size_t size;
+    int i, j, len, index;
 
-    if (n_rela_text) {
-        size = n_rela_text * sizeof(Elf64_Rela);
-        elf_section_write(shid_rela_text, NULL, size);
-        shdr[shid_rela_text].sh_size = size;
-        text_entry = sbuf[shid_rela_text].rela;
-    }
-
-    if (n_rela_data) {
-        size = n_rela_data * sizeof(Elf64_Rela);
-        elf_section_write(shid_rela_data, NULL, size);
-        shdr[shid_rela_data].sh_size = size;
-        data_entry = sbuf[shid_rela_data].rela;
-    }
-
-    assert(array_len(&pending_relocation_list) == n_rela_text + n_rela_data);
-    for (i = 0; i < n_rela_text + n_rela_data; ++i) {
-        pending = array_get(&pending_relocation_list, i);
-        assert(pending.type != R_X86_64_NONE);
-        if (pending.section == shid_rela_data) {
-            assert(n_rela_data);
-            entry = data_entry++;
-        } else {
-            assert(n_rela_text);
-            assert(pending.section == shid_rela_text);
-            entry = text_entry++;
+    for (i = 0; i < SHNUM_MAX; ++i) {
+        len = array_len(&pending_relocations[i]);
+        if (!len) {
+            assert(!pending_relocations[i].data);
+            continue;
         }
 
-        entry->r_offset = pending.offset;
-        entry->r_addend = pending.addend;
-        entry->r_info =
-            ELF64_R_INFO(symtab_index_of(pending.symbol), pending.type);
+        size = len * sizeof(Elf64_Rela);
+        elf_section_write(i, NULL, size);
+        shdr[i].sh_size = size;
 
-        /*
-         * Subtract 4 to account for the size occupied by the relocation
-         * slot itself, it takes up 4 bytes in the instruction.
-         */
-        switch (pending.type) {
-        case R_X86_64_PC32:
-        case R_X86_64_PLT32:
-        case R_X86_64_GOTPCREL:
-            entry->r_addend -= 4;
-            break;
-        default:
-            break;
+        entry = sbuf[i].rela;
+        for (j = 0; j < len; ++j) {
+            pending = array_get(&pending_relocations[i], j);
+            assert(pending.type != R_X86_64_NONE);
+
+            index = symtab_index_of(pending.symbol);
+            entry[j].r_offset = pending.offset;
+            entry[j].r_addend = pending.addend;
+            entry[j].r_info = ELF64_R_INFO(index, pending.type);
+
+            /* Account for relocation itself. */
+            switch (pending.type) {
+            case R_X86_64_PC32:
+            case R_X86_64_PLT32:
+            case R_X86_64_GOTPCREL:
+                entry[j].r_addend -= 4;
+                break;
+            default:
+                break;
+            }
         }
-    }
 
-    array_empty(&pending_relocation_list);
+        array_clear(&pending_relocations[i]);
+    }
 }
 
 /*
@@ -542,8 +509,6 @@ INTERNAL void elf_init(FILE *output, const char *file)
 
     shnum = 0;
     memset(&current_function, 0, sizeof(current_function));
-    n_rela_data = 0;
-    n_rela_text = 0;
 
     shid_shstrtab = elf_section_init(
         ".shstrtab", SHT_STRTAB, 0, SHN_UNDEF, 0, 1, 0);
@@ -689,8 +654,8 @@ INTERNAL int elf_data(struct immediate imm)
     case IMM_ADDR:
         assert(imm.d.addr.sym);
         assert(imm.width == 8);
-        elf_add_reloc_data(
-            imm.d.addr.sym, R_X86_64_64, imm.d.addr.displacement);
+        elf_add_relocation(shid_rela_data,
+            imm.d.addr.sym, R_X86_64_64, 0, imm.d.addr.displacement);
         break;
     case IMM_STRING:
         assert(w == imm.d.string.len + 1 || w == imm.d.string.len);
@@ -771,7 +736,6 @@ INTERNAL int elf_finalize(void)
     int i;
 
     array_clear(&globals);
-    array_clear(&pending_relocation_list);
     array_clear(&pending_displacement_list);
     for (i = 1; i < SHNUM_MAX; ++i) {
         free(sbuf[i].data);

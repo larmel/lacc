@@ -120,6 +120,11 @@ enum rel_type {
 
 #define ELF64_R_INFO(s, t) ((((long) s) << 32) + (((long) t) & 0xFFFFFFFFL))
 
+/* Relocation section ids, used for calls to elf_add_relocation. */
+EXTERNAL int
+    shid_rela_data,
+    shid_rela_text;
+
 INTERNAL void elf_init(FILE *output, const char *file);
 
 INTERNAL int elf_symbol(const struct symbol *sym);
@@ -137,9 +142,12 @@ INTERNAL int elf_flush(void);
 INTERNAL int elf_finalize(void);
 
 /*
- * Insert relocation entry to symbol at the current position of .text.
+ * Insert relocation entry to symbol.
+ *
+ * Input section id must correspond to a section of type SHT_RELA.
  */
-INTERNAL void elf_add_reloc_text(
+INTERNAL void elf_add_relocation(
+    int shid,
     const struct symbol *symbol,
     enum rel_type type,
     int offset,

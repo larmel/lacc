@@ -372,7 +372,8 @@ static int encode_address(
             reloc = R_X86_64_PC32;
         }
 
-        elf_add_reloc_text(addr.sym, reloc, c->len, addr.displacement - addend);
+        elf_add_relocation(shid_rela_text,
+            addr.sym, reloc, c->len, addr.displacement - addend);
         memset(&c->val[c->len], 0, 4);
         c->len += 4;
         return 5;
@@ -526,7 +527,8 @@ static int encode_immediate(
         } else {
             assert(addr.type == ADDR_NORMAL || addr.type == ADDR_PLT);
             reloc = addr.type == ADDR_NORMAL ? R_X86_64_PC32 : R_X86_64_PLT32;
-            elf_add_reloc_text(addr.sym, reloc, c->len, addr.displacement);
+            elf_add_relocation(shid_rela_text,
+                addr.sym, reloc, c->len, addr.displacement);
         }
         c->len += 4;
         break;
