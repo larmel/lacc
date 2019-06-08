@@ -180,11 +180,15 @@ static int set_output_name(const char *file)
 /*
  * Write to default file if -o, -S or -dot is specified, using input
  * file name with suffix changed to '.o', '.s' or '.dot', respectively.
+ *
+ * We also need to strip any path information, so that lacc can write
+ * its output to the current working directory. This matches what gcc
+ * and clang do.
  */
 static char *change_file_suffix(const char *file, enum target target)
 {
     char *name, *suffix;
-    const char *dot;
+    const char *slash, *dot;
     size_t len;
 
     switch (target) {
@@ -201,6 +205,11 @@ static char *change_file_suffix(const char *file, enum target target)
     case TARGET_x86_64_EXE:
         suffix = "o";
         break;
+    }
+
+    slash = strrchr(file, '/');
+    if (slash) {
+        file = slash + 1;
     }
 
     dot = strrchr(file, '.');
