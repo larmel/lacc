@@ -50,6 +50,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <libgen.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -180,10 +181,14 @@ static int set_output_name(const char *file)
 /*
  * Write to default file if -o, -S or -dot is specified, using input
  * file name with suffix changed to '.o', '.s' or '.dot', respectively.
+ *
+ * We also need to strip any path information, so that lacc can write
+ * its output to the current working directory. This matches what gcc
+ * and clang do.
  */
 static char *change_file_suffix(const char *file, enum target target)
 {
-    char *name, *suffix;
+    char *basefile, *name, *suffix;
     const char *dot;
     size_t len;
 
@@ -203,14 +208,15 @@ static char *change_file_suffix(const char *file, enum target target)
         break;
     }
 
-    dot = strrchr(file, '.');
+    basefile = basename(file);
+    dot = strrchr(basefile, '.');
     if (!dot) {
-        dot = file + strlen(file);
+        dot = basefile + strlen(basefile);
     }
 
-    len = (dot - file) + 1;
+    len = (dot - basefile) + 1;
     name = calloc(len + strlen(suffix) + 1, sizeof(*name));
-    strncpy(name, file, len);
+    strncpy(name, basefile, len);
     assert(name[len - 1] == '.');
     strcpy(name + len, suffix);
     return name;
