@@ -246,14 +246,22 @@ static int elf_strtab_add(int shid, const char *str)
  *
  * All STB_LOCAL must come before STB_GLOBAL. Index of the first non-
  * local symbol is stored in section header field.
+ *
+ * The first item in symtab should be all-zero, so handle that here.
  */
 static int elf_symtab_add(Elf64_Sym entry)
 {
     int i;
+    assert(shid_symtab > 0);
+    assert(shid_symtab < shnum);
 
     i = shdr[shid_symtab].sh_size / sizeof(Elf64_Sym);
-    elf_section_write(shid_symtab, &entry, sizeof(Elf64_Sym));
+    if (!i) {
+        elf_section_write(shid_symtab, NULL, sizeof(Elf64_Sym));
+        i += 1;
+    }
 
+    elf_section_write(shid_symtab, &entry, sizeof(Elf64_Sym));
     if (entry.st_info >> 4 == STB_GLOBAL && !shdr[shid_symtab].sh_info) {
         shdr[shid_symtab].sh_info = i;
     } else {
@@ -264,6 +272,11 @@ static int elf_symtab_add(Elf64_Sym entry)
     return i;
 }
 
+/*
+ * Create ELF section, returning id of new section.
+ *
+ * Ensures that first section is all zero.
+ */
 INTERNAL int elf_section_init(
     const char *name,
     int type,
@@ -273,9 +286,9 @@ INTERNAL int elf_section_init(
     int addralign,
     int entsize)
 {
+    Elf64_Sym section = {0};
     int shid;
 
-    /* First section header is all-zero. */
     if (!shnum) {
         shnum++;
         memset(shdr, 0, sizeof(Elf64_Shdr));
@@ -297,6 +310,12 @@ INTERNAL int elf_section_init(
         assert(!strcmp(".shstrtab", name));
         shdr[shid].sh_name = elf_strtab_add(shid, name);
         header.e_shstrndx = shid;
+    }
+
+    if (shid_symtab && shid_symtab < shnum) {
+        section.st_info = (STB_LOCAL << 4) | STT_SECTION;
+        section.st_shndx = shid;
+        elf_symtab_add(section);
     }
 
     header.e_shnum = shnum;
@@ -509,6 +528,7 @@ INTERNAL void elf_init(FILE *output, const char *file)
 
     shnum = 0;
     memset(&current_function, 0, sizeof(current_function));
+    object_file_output = output;
 
     shid_shstrtab = elf_section_init(
         ".shstrtab", SHT_STRTAB, 0, SHN_UNDEF, 0, 1, 0);
@@ -518,6 +538,13 @@ INTERNAL void elf_init(FILE *output, const char *file)
 
     shid_symtab = elf_section_init(
         ".symtab", SHT_SYMTAB, 0, shid_strtab, 0, 4, sizeof(Elf64_Sym));
+
+    if (file) {
+        entry.st_name = elf_strtab_add(shid_strtab, file);
+        entry.st_info = STB_LOCAL << 4 | STT_FILE;
+        entry.st_shndx = SHN_ABS;
+        elf_symtab_add(entry);
+    }
 
     shid_bss = elf_section_init(
         ".bss", SHT_NOBITS, SHF_WRITE | SHF_ALLOC, SHN_UNDEF, 0, 4, 0);
@@ -542,22 +569,6 @@ INTERNAL void elf_init(FILE *output, const char *file)
     if (context.debug) {
         dwarf_init(file);
     }
-
-    object_file_output = output;
-    elf_symtab_add(entry);
-    if (file) {
-        entry.st_name = elf_strtab_add(shid_strtab, file);
-        entry.st_info = STB_LOCAL << 4 | STT_FILE;
-        entry.st_shndx = SHN_ABS;
-        elf_symtab_add(entry);
-    }
-
-    entry.st_info = (STB_LOCAL << 4) | STT_SECTION;
-    entry.st_shndx = shid_data;
-    elf_symtab_add(entry);
-
-    entry.st_shndx = shid_text;
-    elf_symtab_add(entry);
 }
 
 INTERNAL int elf_symbol(const struct symbol *sym)
