@@ -409,9 +409,12 @@ static int parse_program_arguments(int argc, char *argv[])
         {"--dump-symbols", &long_option},
         {"--dump-types", &long_option},
         {"-pipe", &option},
+        {"-MD", &option},
+        {"-MP", &option},
         {"-Wl,", &add_linker_flag},
         {"-rdynamic", &add_linker_flag},
         {"-shared", &add_linker_arg},
+        {"-[no]pie", &add_linker_arg},
         {"-l:", &add_linker_library},
         {"-L:", &add_linker_path},
         {NULL, &add_input_file}
