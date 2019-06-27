@@ -16,7 +16,7 @@
 typedef array_of(char *) ArgArray;
 
 static ArgArray ld_args, ld_user_args;
-static int is_pie = 1, is_shared = 1;
+static int is_shared, is_static;
 
 static void add_option(ArgArray *args, const char *opt)
 {
@@ -46,26 +46,14 @@ static void init_linker(void)
 {
     add_option(&ld_args, "/usr/bin/ld");
 #if __OpenBSD__
-    add_option(&ld_args, "-e");
-    add_option(&ld_args, "__start");
-    add_option(&ld_args, "--eh-frame-hdr");
-    if (is_shared) {
-        add_option(&ld_args, "-Bdynamic");
+    if (!is_shared) {
+        add_option(&ld_args, "-e");
+        add_option(&ld_args, "__start");
         add_option(&ld_args, "-dynamic-linker");
         add_option(&ld_args, "/usr/libexec/ld.so");
-        if (is_pie) {
-            add_option(&ld_args, "-pie");
-        } else {
-            add_option(&ld_args, "-nopie");
-        }
-        add_option(&ld_args, "/usr/lib/crt0.o");
-    } else {
-        add_option(&ld_args, "-Bstatic");
-        if (is_pie) {
-            add_option(&ld_args, "-pie");
+        if (is_static) {
             add_option(&ld_args, "/usr/lib/rcrt0.o");
         } else {
-            add_option(&ld_args, "-nopie");
             add_option(&ld_args, "/usr/lib/crt0.o");
         }
     }
@@ -95,20 +83,8 @@ INTERNAL int add_linker_arg(const char *opt)
 {
     if (!strcmp("-shared", opt)) {
         is_shared = 1;
-        return 0;
-    }
-    if (!strcmp("-static", opt)) {
-        is_shared = 0;
-        return 0;
-    }
-
-    if (!strcmp("-pie", opt)) {
-        is_pie = 1;
-        return 0;
-    }
-    if (!strcmp("-nopie", opt)) {
-        is_pie = 0;
-        return 0;
+    } else if (!strcmp("-static", opt)) {
+        is_static = 1;
     }
 
     add_option(&ld_user_args, opt);
