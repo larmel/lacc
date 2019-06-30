@@ -414,6 +414,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-Wl,", &add_linker_flag},
         {"-rdynamic", &add_linker_flag},
         {"-shared", &add_linker_arg},
+        {"-static", &add_linker_arg},
         {"-[no]pie", &add_linker_arg},
         {"-l:", &add_linker_library},
         {"-L:", &add_linker_path},

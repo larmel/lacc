@@ -16,7 +16,7 @@
 typedef array_of(char *) ArgArray;
 
 static ArgArray ld_args, ld_user_args;
-static int is_shared;
+static int is_shared, is_static;
 
 static void add_option(ArgArray *args, const char *opt)
 {
@@ -51,9 +51,13 @@ static void init_linker(void)
         add_option(&ld_args, "__start");
         add_option(&ld_args, "-dynamic-linker");
         add_option(&ld_args, "/usr/libexec/ld.so");
+        if (is_static) {
+            add_option(&ld_args, "/usr/lib/rcrt0.o");
+        } else {
+            add_option(&ld_args, "/usr/lib/crt0.o");
+        }
     }
 
-    add_option(&ld_args, "/usr/lib/crt0.o");
     add_option(&ld_args, "/usr/lib/crtbegin.o");
 #else
     if (!is_shared) {
@@ -79,6 +83,8 @@ INTERNAL int add_linker_arg(const char *opt)
 {
     if (!strcmp("-shared", opt)) {
         is_shared = 1;
+    } else if (!strcmp("-static", opt)) {
+        is_static = 1;
     }
 
     add_option(&ld_user_args, opt);
