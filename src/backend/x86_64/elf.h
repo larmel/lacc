@@ -120,10 +120,20 @@ enum rel_type {
 
 #define ELF64_R_INFO(s, t) ((((long) s) << 32) + (((long) t) & 0xFFFFFFFFL))
 
-/* Relocation section ids, used for calls to elf_add_relocation. */
-EXTERNAL int
-    shid_rela_data,
-    shid_rela_text;
+EXTERNAL struct elf_sections {
+    int shstrtab;
+    int strtab;
+    int symtab;
+    int bss;
+    int rodata;
+    int data;
+    int rela_data;
+    int text;
+    int rela_text;
+    int debug_info;
+    int rela_debug_info;
+    int debug_abbrev;
+} section;
 
 INTERNAL void elf_init(FILE *output, const char *file);
 

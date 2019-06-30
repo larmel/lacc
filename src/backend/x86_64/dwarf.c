@@ -126,34 +126,31 @@ static void dwarf_add_attribute(struct dwarf_die *die, int name, int form, ...)
     array_push_back(&die->attributes, attr);
 }
 
-static void dwarf_write_attribute(
-    const struct dwarf_attr *attr,
-    int shdi,
-    int shda)
+static void dwarf_write_attribute(const struct dwarf_attr *attr)
 {
     size_t size;
 
     if (!attr) {
-        dwarf_write_ULEB128(shda, 0);
-        dwarf_write_ULEB128(shda, 0);
+        dwarf_write_ULEB128(section.debug_abbrev, 0);
+        dwarf_write_ULEB128(section.debug_abbrev, 0);
     } else {
-        dwarf_write_ULEB128(shda, attr->name);
-        dwarf_write_ULEB128(shda, attr->form);
+        dwarf_write_ULEB128(section.debug_abbrev, attr->name);
+        dwarf_write_ULEB128(section.debug_abbrev, attr->form);
 
         switch (attr->form) {
         default: assert(0);
         case DW_FORM_string:
             size = strlen(attr->value.str) + 1;
-            elf_section_write(shdi, attr->value.str, size);
+            elf_section_write(section.debug_info, attr->value.str, size);
             break;
         case DW_FORM_data1:
-            elf_section_write(shdi, &attr->value.num, 1);
+            elf_section_write(section.debug_info, &attr->value.num, 1);
             break;
         }
     }
 }
 
-static void dwarf_write_entry(struct dwarf_die *die, int shdi, int shda)
+static void dwarf_write_entry(struct dwarf_die *die)
 {
     int i;
     struct dwarf_attr *attr;
@@ -161,21 +158,22 @@ static void dwarf_write_entry(struct dwarf_die *die, int shdi, int shda)
     unsigned char children[] = {DW_CHILDREN_no, DW_CHILDREN_yes};
 
     assert(die);
-    dwarf_write_ULEB128(shdi, die->code);
-    dwarf_write_ULEB128(shda, die->code);
-    dwarf_write_ULEB128(shda, die->tag);
-    elf_section_write(shda, &children[array_len(&die->children) != 0], 1);
+    dwarf_write_ULEB128(section.debug_info, die->code);
+    dwarf_write_ULEB128(section.debug_abbrev, die->code);
+    dwarf_write_ULEB128(section.debug_abbrev, die->tag);
+    elf_section_write(section.debug_abbrev,
+        &children[array_len(&die->children) != 0], 1);
 
     for (i = 0; i < array_len(&die->attributes); ++i) {
         attr = &array_get(&die->attributes, i);
-        dwarf_write_attribute(attr, shdi, shda);
+        dwarf_write_attribute(attr);
     }
 
-    dwarf_write_attribute(NULL, shdi, shda);
+    dwarf_write_attribute(NULL);
 
     for (i = 0; i < array_len(&die->children); ++i) {
         child = array_get(&die->children, i);
-        dwarf_write_entry(child, shdi, shda);
+        dwarf_write_entry(child);
     }
 
     array_clear(&die->attributes);
@@ -202,13 +200,18 @@ INTERNAL int dwarf_init(const char *filename)
         break;
     }
 
+    section.debug_info = elf_section_init(
+        ".debug_info", SHT_PROGBITS, 0, SHN_UNDEF, 0, 8, 0);
+
+    section.debug_abbrev = elf_section_init(
+        ".debug_abbrev", SHT_PROGBITS, 0, SHN_UNDEF, 0, 8, 0);
+
     dwarf_root_die = die;
     return 0;
 }
 
 INTERNAL int dwarf_flush(void)
 {
-    int di, da;
     char *buffer;
     size_t length;
 
@@ -217,19 +220,16 @@ INTERNAL int dwarf_flush(void)
     unsigned int debug_abbrev_offset = 0;
     unsigned short address_size = 8;
 
-    di = elf_section_init(".debug_info", SHT_PROGBITS, 0, SHN_UNDEF, 0, 8, 0);
-    da = elf_section_init(".debug_abbrev", SHT_PROGBITS, 0, SHN_UNDEF, 0, 8, 0);
-
-    elf_section_write(di, &unit_length, 4);
-    elf_section_write(di, &version, 2);
-    elf_section_write(di, &debug_abbrev_offset, 4);
-    elf_section_write(di, &address_size, 1);
+    elf_section_write(section.debug_info, &unit_length, 4);
+    elf_section_write(section.debug_info, &version, 2);
+    elf_section_write(section.debug_info, &debug_abbrev_offset, 4);
+    elf_section_write(section.debug_info, &address_size, 1);
 
     /* Write all entries with children recursively. */
-    dwarf_write_entry(dwarf_root_die, di, da);
+    dwarf_write_entry(dwarf_root_die);
 
     /* End with zero byte. */
-    length = elf_section_write(di, NULL, 1);
+    length = elf_section_write(section.debug_info, NULL, 1);
     assert(length < 0xfffffff0);
 
     /*
@@ -238,7 +238,7 @@ INTERNAL int dwarf_flush(void)
      * fit in an integer.
      */
     unit_length = length - 4;
-    buffer = elf_section_buffer(di);
+    buffer = elf_section_buffer(section.debug_info);
     memcpy(buffer, &unit_length, 4);
     return 0;
 }
