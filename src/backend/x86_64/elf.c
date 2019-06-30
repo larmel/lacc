@@ -46,6 +46,8 @@ static int shnum;
 
 INTERNAL struct elf_sections section = {0};
 
+static struct symbol section_symbol[SHNUM_MAX];
+
 #define symtab_index_of(s) ((s)->stack_offset)
 #define symtab_lookup(s) (&sbuf[section.symtab].sym[(s)->stack_offset])
 
@@ -301,11 +303,23 @@ INTERNAL int elf_section_init(
     if (section.symtab) {
         sym.st_info = (STB_LOCAL << 4) | STT_SECTION;
         sym.st_shndx = shid;
-        elf_symtab_add(sym);
+        section_symbol[shid].stack_offset = elf_symtab_add(sym);
     }
 
     header.e_shnum = shnum;
     return shid;
+}
+
+/*
+ * Retrieve index into symbol table for section as a proper symbol,
+ * making it convenient to use like any other when creating relocations.
+ */
+INTERNAL const struct symbol *elf_section_symbol(int shnum)
+{
+    assert(shnum > 0);
+    assert(shnum <= SHNUM_MAX);
+
+    return &section_symbol[shnum];
 }
 
 /*
@@ -511,6 +525,7 @@ INTERNAL void elf_init(FILE *output, const char *file)
 
     shnum = 0;
     memset(&section, 0, sizeof(section));
+    memset(&section_symbol, 0, sizeof(section_symbol));
     memset(&current_function, 0, sizeof(current_function));
     object_file_output = output;
 

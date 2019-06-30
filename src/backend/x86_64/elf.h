@@ -163,6 +163,9 @@ INTERNAL void elf_add_relocation(
     int offset,
     int addend);
 
+/* Symbol representing section. */
+INTERNAL const struct symbol *elf_section_symbol(int shnum);
+
 /*
  * Return offset between label and current position in text segment, if
  * label has already been calculated. For forward references, return 0

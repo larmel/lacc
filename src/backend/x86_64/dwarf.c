@@ -30,9 +30,12 @@
 #define DW_AT_high_pc 0x12
 
 /* Attribute form encoding. */
+#define DW_FORM_addr 0x01
 #define DW_FORM_string 0x08
 #define DW_FORM_data1 0x0b
 #define DW_FORM_data2 0x05
+#define DW_FORM_data4 0x07
+#define DW_FORM_data8 0x07
 
 /* Language names. */
 #define DW_LANG_C89 0x0001
@@ -45,6 +48,7 @@ struct dwarf_attr {
     int form; /* DW_FORM_* */
     union {
         const char *str;
+        const struct symbol *sym;
         long num;
         unsigned long unum;
     } value;
@@ -112,8 +116,14 @@ static void dwarf_add_attribute(struct dwarf_die *die, int name, int form, ...)
 
     va_start(args, form);
     switch (form) {
+    case DW_FORM_addr:
+        attr.value.sym = va_arg(args, const struct symbol *);
+        break;
     case DW_FORM_data1:
         attr.value.num = va_arg(args, int);
+        break;
+    case DW_FORM_data8:
+        attr.value.num = va_arg(args, long);
         break;
     case DW_FORM_string:
         attr.value.str = va_arg(args, const char *);
@@ -139,12 +149,20 @@ static void dwarf_write_attribute(const struct dwarf_attr *attr)
 
         switch (attr->form) {
         default: assert(0);
+        case DW_FORM_addr:
+            elf_add_relocation(section.rela_debug_info,
+                attr->value.sym, R_X86_64_64, 0, 0);
+            elf_section_write(section.debug_info, NULL, 8);
+            break;
         case DW_FORM_string:
             size = strlen(attr->value.str) + 1;
             elf_section_write(section.debug_info, attr->value.str, size);
             break;
         case DW_FORM_data1:
             elf_section_write(section.debug_info, &attr->value.num, 1);
+            break;
+        case DW_FORM_data8:
+            elf_section_write(section.debug_info, &attr->value.num, 8);
             break;
         }
     }
@@ -203,6 +221,10 @@ INTERNAL int dwarf_init(const char *filename)
     section.debug_info = elf_section_init(
         ".debug_info", SHT_PROGBITS, 0, SHN_UNDEF, 0, 8, 0);
 
+    section.rela_debug_info = elf_section_init(
+        ".rela.debug_info", SHT_RELA, 0, section.symtab, section.debug_info, 8,
+        sizeof(Elf64_Rela));
+
     section.debug_abbrev = elf_section_init(
         ".debug_abbrev", SHT_PROGBITS, 0, SHN_UNDEF, 0, 8, 0);
 
@@ -213,23 +235,32 @@ INTERNAL int dwarf_init(const char *filename)
 INTERNAL int dwarf_flush(void)
 {
     char *buffer;
-    size_t length;
+    const struct symbol *sym;
+    size_t length, size;
 
     unsigned int unit_length = 0;
     unsigned short version = 4;
     unsigned int debug_abbrev_offset = 0;
-    unsigned short address_size = 8;
+    unsigned char address_size = 8;
 
     elf_section_write(section.debug_info, &unit_length, 4);
     elf_section_write(section.debug_info, &version, 2);
     elf_section_write(section.debug_info, &debug_abbrev_offset, 4);
     elf_section_write(section.debug_info, &address_size, 1);
 
+    /* Put more metadata on root. */
+    size = elf_section_write(section.text, NULL, 0);
+    if (size) {
+        sym = elf_section_symbol(section.text);
+        dwarf_add_attribute(dwarf_root_die, DW_AT_low_pc, DW_FORM_addr, sym);
+        dwarf_add_attribute(dwarf_root_die, DW_AT_high_pc, DW_FORM_data8, size);
+    }
+
     /* Write all entries with children recursively. */
     dwarf_write_entry(dwarf_root_die);
 
     /* End with zero byte. */
-    length = elf_section_write(section.debug_info, NULL, 1);
+    length = elf_section_write(section.debug_info, NULL, 1) + 1;
     assert(length < 0xfffffff0);
 
     /*
