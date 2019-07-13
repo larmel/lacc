@@ -776,21 +776,15 @@ INTERNAL struct token stringify(const TokenArray *list)
     return str;
 }
 
-static TokenArray parse_string(const char *str)
+static TokenArray parse_macro_replacement(const char *str)
 {
     const char *endptr;
-    struct token param = {PARAM};
     TokenArray arr = get_token_array();
 
     while (*str) {
-        if (*str == '@') {
-            array_push_back(&arr, param);
-            str++;
-        } else {
-            array_push_back(&arr, tokenize(str, &endptr));
-            assert(str != endptr);
-            str = endptr;
-        }
+        array_push_back(&arr, tokenize(str, &endptr));
+        assert(str != endptr);
+        str = endptr;
     }
 
     return arr;
@@ -798,10 +792,11 @@ static TokenArray parse_string(const char *str)
 
 static void register_macro(const char *key, const char *value)
 {
-    struct macro macro = {{{0}}, OBJECT_LIKE};
+    struct macro macro = {0};
 
+    macro.type = OBJECT_LIKE;
     macro.name = str_init(key);
-    macro.replacement = parse_string(value);
+    macro.replacement = parse_macro_replacement(value);
     define(macro);
 }
 
