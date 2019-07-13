@@ -348,6 +348,11 @@ static void array_replace_slice(
  *    [] ## ['foo'], and conversely, ['foo'] ## [], produces ['foo'].
  *    # [] produces an empty string.
  *
+ * Also implement a GNU extension with special treatment of token paste
+ * and comma: ', ## __VA_ARGS__' is expanded as if the paste was not
+ * there if __VA_ARGS__ is non-empty. If it is empty, the whole sequence
+ * is removed.
+ *
  * Return an array which still can contain PARAM tokens that needs
  * further expansion.
  */
@@ -392,7 +397,16 @@ static TokenArray expand_stringify_and_paste(
                 }
             }
             if (s.token == PARAM) {
-                if (array_len(&args[s.d.val.i])) {
+                if (def->is_vararg
+                    && t.token == ','
+                    && s.d.val.i == def->params - 1)
+                {
+                    if (array_len(&args[s.d.val.i])) {
+                        i--;
+                    } else {
+                        (void) array_pop_back(&list);
+                    }
+                } else if (array_len(&args[s.d.val.i])) {
                     t = array_pop_back(&list);
                     d = array_len(&list);
                     array_concat(&list, &args[s.d.val.i]);
