@@ -1,5 +1,16 @@
 #!/bin/sh
 
+if test -t 1
+then
+    colors=$(tput colors)
+    if test -n "$colors" && test $colors -ge 8
+    then
+        reset="$(tput sgr0)"
+        red="$(tput setaf 1)"
+        green="$(tput setaf 2)"
+    fi
+fi
+
 lacc="$1"
 if [ -z "$lacc" ]
 then
@@ -18,13 +29,13 @@ check()
 {
 	if [ $? -ne 0 ]
 	then
-		echo "$(tput setaf 1)Compilation failed!$(tput sgr0)";
+		echo "${red}Compilation failed!${reset}";
 		return 1
 	fi
 
 	if [ ! -f "$1" ]
 	then
-		echo "$(tput setaf 1)Did not create $1!$(tput sgr0)";
+		echo "${red}Did not create $1!${reset}";
 		return 1
 	fi
 
@@ -32,11 +43,11 @@ check()
 
 	if [ "$expected" != "$actual" ]
 	then
-		echo "$(tput setaf 1)Wrong output!$(tput sgr0)";
+		echo "${red}Wrong output!${reset}";
 		return 1
 	fi
 
-	echo "$(tput setaf 2)Ok!$(tput sgr0)"
+	echo "${green}Ok!${reset}"
 	return 0
 }
 

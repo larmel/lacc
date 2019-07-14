@@ -1,5 +1,16 @@
 #!/bin/sh
 
+if test -t 1
+then
+    colors=$(tput colors)
+    if test -n "$colors" && test $colors -ge 8
+    then
+        reset="$(tput sgr0)"
+        red="$(tput setaf 1)"
+        green="$(tput setaf 2)"
+    fi
+fi
+
 lacc="$1"
 file="$2"
 comp="$3"
@@ -19,7 +30,7 @@ fi
 
 $comp $file -o ${file}.out
 if [ "$?" -ne "0" ]; then
-	echo "${file}: $(tput setaf 1)Invalid input file!$(tput sgr0)";
+	echo "${file}: ${red}Invalid input file!${reset}";
 	exit 1
 fi
 
@@ -29,20 +40,20 @@ check()
 {
 	$lacc $1 $file -o ${file}.s
 	if [ "$?" -ne "0" ]; then
-		echo "$(tput setaf 1)Compilation failed!$(tput sgr0)";
+		echo "${red}Compilation failed!${reset}";
 		return 1
 	fi
 	if [ "$1" = "-E" ]; then
 		mv ${file}.s ${file}.i
 		$lacc -c ${file}.i -o ${file}.o
 		if [ "$?" -ne "0" ]; then
-			echo "$(tput setaf 1)Compilation failed!$(tput sgr0)";
+			echo "${red}Compilation failed!${reset}";
 			return 1
 		fi
 	elif [ "$1" = "-S" ]; then
 		$comp -c ${file}.s -o ${file}.o
 		if [ "$?" -ne "0" ]; then
-			echo "$(tput setaf 1)Assembly failed!$(tput sgr0)";
+			echo "${red}Assembly failed!${reset}";
 			return 1
 		fi
 	else
@@ -50,7 +61,7 @@ check()
 	fi
 	$comp ${file}.o -o ${file}.out -lm
 	if [ "$?" -ne "0" ]; then
-		echo "$(tput setaf 1)Linking failed!$(tput sgr0)";
+		echo "${red}Linking failed!${reset}";
 		return 1
 	fi
 
@@ -60,10 +71,10 @@ check()
 	diffres="$?"
 
 	if [ "$result" -eq "$answer" ] && [ "$diffres" -eq "0" ]; then
-		echo "$(tput setaf 2)Ok!$(tput sgr0)"
+		echo "${green}Ok!${reset}"
 		return 0
 	else
-		echo "$(tput setaf 1)Wrong result!$(tput sgr0)"
+		echo "${red}Wrong result!${reset}"
 		if [ "$result" -ne "$answer" ]; then
 			echo "Result differ: was ${result}, expected ${answer}." >&2
 		fi
@@ -87,7 +98,7 @@ then
 	retval=$?
 	if [ $retval -ne 0 ]
 	then
-		echo "$(tput setaf 1)Failed validation script!$(tput sgr0)"
+		echo "${red}Failed validation script!${reset}"
 	fi
 fi
 

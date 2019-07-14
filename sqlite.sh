@@ -1,5 +1,16 @@
 #!/bin/sh
 
+if test -t 1
+then
+    colors=$(tput colors)
+    if test -n "$colors" && test $colors -ge 8
+    then
+        reset="$(tput sgr0)"
+        red="$(tput setaf 1)"
+        green="$(tput setaf 2)"
+    fi
+fi
+
 lacc="$1"
 comp="$2"
 if [ -z "$comp" ]
@@ -27,7 +38,7 @@ valgrind --leak-check=full --show-leak-kinds=all \
 
 if [ $? -ne 0 ]
 then
-	echo "$(tput setaf 1)Compilation failed!$(tput sgr0)";
+	echo "${red}Compilation failed!${reset}";
 	exit 1
 fi
 
@@ -48,9 +59,9 @@ actual=$(echo "$input" | bin/sqlite)
 
 if [ "$expected" != "$actual" ]
 then
-	echo "$(tput setaf 1)Wrong output!$(tput sgr0)";
+	echo "${red}Wrong output!${reset}";
 	exit 1
 fi
 
-echo "$(tput setaf 2)Ok!$(tput sgr0)"
+echo "${green}Ok!${reset}"
 exit 0
