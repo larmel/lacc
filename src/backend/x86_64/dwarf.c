@@ -232,11 +232,23 @@ INTERNAL int dwarf_init(const char *filename)
     return 0;
 }
 
+static void dwarf_add_root_info(struct dwarf_die *die)
+{
+    const struct symbol *sym;
+    size_t size;
+
+    size = elf_section_write(section.text, NULL, 0);
+    if (size) {
+        sym = elf_section_symbol(section.text);
+        dwarf_add_attribute(die, DW_AT_low_pc, DW_FORM_addr, sym);
+        dwarf_add_attribute(die, DW_AT_high_pc, DW_FORM_data8, size);
+    }
+}
+
 INTERNAL int dwarf_flush(void)
 {
     char *buffer;
-    const struct symbol *sym;
-    size_t length, size;
+    size_t length;
 
     unsigned int unit_length = 0;
     unsigned short version = 4;
@@ -249,12 +261,7 @@ INTERNAL int dwarf_flush(void)
     elf_section_write(section.debug_info, &address_size, 1);
 
     /* Put more metadata on root. */
-    size = elf_section_write(section.text, NULL, 0);
-    if (size) {
-        sym = elf_section_symbol(section.text);
-        dwarf_add_attribute(dwarf_root_die, DW_AT_low_pc, DW_FORM_addr, sym);
-        dwarf_add_attribute(dwarf_root_die, DW_AT_high_pc, DW_FORM_data8, size);
-    }
+    dwarf_add_root_info(dwarf_root_die);
 
     /* Write all entries with children recursively. */
     dwarf_write_entry(dwarf_root_die);

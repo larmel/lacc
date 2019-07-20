@@ -118,9 +118,8 @@ INTERNAL size_t elf_section_write(int shid, const void *data, size_t n)
         shdr[shid].sh_type == SHT_NOBITS);
 
     offset = shdr[shid].sh_size;
-    if (shdr[shid].sh_type != SHT_NOBITS) {
+    if (shdr[shid].sh_type != SHT_NOBITS && n > 0) {
         if (offset + n >= scap[shid]) {
-            assert(n > 0);
             if (!scap[shid]) {
                 assert(!offset);
                 assert(!sbuf[shid].data);
