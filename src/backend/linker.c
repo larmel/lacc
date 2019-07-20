@@ -34,6 +34,8 @@ INTERNAL void clear_linker_args(void)
     int i;
     char *ptr;
 
+    array_concat(&ld_args, &ld_user_args);
+    array_clear(&ld_user_args);
     for (i = 0; i < array_len(&ld_args); ++i) {
         ptr = array_get(&ld_args, i);
         free(ptr);
