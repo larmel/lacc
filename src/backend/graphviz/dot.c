@@ -91,7 +91,6 @@ static char *vartostr(const struct var var)
         case T_CHAR:
         case T_SHORT:
         case T_INT:
-            assert(!var.symbol);
             if (is_unsigned(var.type)) {
                 n = sprintf(buffer, "%lu", var.imm.u);
             } else {
