@@ -194,6 +194,11 @@ static struct definition *pop_inline_function(void)
     }
 
     /* If no function is referenced, none can be. */
+    for (i = 0; i < array_len(&inline_definitions); ++i) {
+        def = array_get(&inline_definitions, i);
+        cfg_discard(def);
+    }
+
     array_empty(&inline_definitions);
     return NULL;
 }
@@ -237,10 +242,7 @@ INTERNAL struct definition *parse(void)
 
     assert(peek().token == END);
     assert(!deque_len(&definitions));
-    if (array_len(&inline_definitions)) {
-        def = pop_inline_function();
-    }
-
+    def = pop_inline_function();
     if (!def) {
         for (i = 0; i < array_len(&expressions); ++i) {
             block = array_get(&expressions, i);
