@@ -316,11 +316,13 @@ static struct block *switch_statement(
     consume(SWITCH);
     consume('(');
     parent = expression(def, parent);
-    if (!is_integer(parent->expr.type)) {
-        error("Switch expression must have integer type, was %t.",
-            parent->expr.type);
+    value = eval(def, parent, parent->expr);
+    parent->expr = as_expr(value);
+    if (!is_integer(value.type)) {
+        error("Switch expression must have integer type, was %t.", value.type);
         exit(1);
     }
+
     consume(')');
     last = statement(def, body);
     last->jump[0] = next;
@@ -333,7 +335,6 @@ static struct block *switch_statement(
             prev_cond = cond;
             sc = array_get(&switch_context->cases, i);
             cond = cfg_block_init(def);
-            value = eval(def, parent, parent->expr);
             cond->expr = eval_expr(def, cond, IR_OP_EQ, sc.value, value);
             cond->jump[1] = sc.label;
             prev_cond->jump[0] = cond;
