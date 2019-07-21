@@ -1083,7 +1083,10 @@ static struct block *init_declarator(
     case FIRST(type_qualifier):
     case REGISTER:
     case '{':
-        assert(sym->linkage != LINK_NONE);
+        if (sym->linkage == LINK_NONE) {
+            error("Unexpected linkage for %s.", sym_name(sym));
+            exit(1);
+        }
         if (is_function(sym->type)) {
             sym->symtype = SYM_DEFINITION;
             cfg_define(def, sym);
