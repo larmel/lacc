@@ -79,6 +79,31 @@ static unsigned long use(const struct expression *expr)
     return r;
 }
 
+static int is_or_has_pointer(Type type)
+{
+    int i;
+    struct member *m;
+
+    if (is_pointer(type)) {
+        return 1;
+    }
+
+    if (is_struct_or_union(type)) {
+        for (i = 0; i < nmembers(type); ++i) {
+            m = get_member(type, i);
+            if (is_or_has_pointer(m->type)) {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * Consider special case of sending a pointer into a function. Assume
+ * then that anything can be used.
+ */
 static unsigned long uses(const struct statement *s)
 {
     struct var t;
@@ -86,12 +111,20 @@ static unsigned long uses(const struct statement *s)
 
     assert(s->st != IR_ASM);
     r = use(&s->expr);
-    if (s->st == IR_ASSIGN) {
+    switch (s->st) {
+    case IR_ASSIGN:
         if (s->t.kind == DEREF && s->t.symbol) {
             t = s->t;
             t.kind = DIRECT;
             r |= set_use_bit(t);
         }
+        break;
+    case IR_PARAM:
+        if (is_or_has_pointer(s->expr.type)) {
+            r |= 0xFFFFFFFFFFFFFFFFul;
+        }
+    default:
+        break;
     }
 
     return r;
