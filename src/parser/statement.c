@@ -70,6 +70,15 @@ static void free_switch_context(struct switch_context *ctx)
     free(ctx);
 }
 
+static struct block *expression_statement(
+    struct definition *def,
+    struct block *block)
+{
+    block = expression(def, block);
+    block->expr = eval_expression_statement(def, block, block->expr);
+    return block;
+}
+
 static struct block *if_statement(
     struct definition *def,
     struct block *parent)
@@ -231,7 +240,7 @@ static struct block *for_statement(
     case IDENTIFIER:
         sym = sym_lookup(&ns_ident, tok.d.string);
         if (!sym || sym->symtype != SYM_TYPEDEF) {
-            parent = expression(def, parent);
+            parent = expression_statement(def, parent);
             consume(';');
             break;
         }
@@ -241,7 +250,7 @@ static struct block *for_statement(
         parent = declaration(def, parent);
         break;
     default:
-        parent = expression(def, parent);
+        parent = expression_statement(def, parent);
     case ';':
         consume(';');
         break;
@@ -271,7 +280,7 @@ static struct block *for_statement(
 
     consume(';');
     if (peek().token != ')') {
-        expression(def, increment)->jump[0] = top;
+        expression_statement(def, increment)->jump[0] = top;
         consume(')');
         set_continue_target(old_continue_target, increment);
         body = statement(def, body);
@@ -662,8 +671,7 @@ INTERNAL struct block *statement(
     case '(':
     case INCREMENT:
     case DECREMENT:
-        parent = expression(def, parent);
-        parent->expr = eval_expression_statement(def, parent, parent->expr);
+        parent = expression_statement(def, parent);
         consume(';');
         break;
     default:
