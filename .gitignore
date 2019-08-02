@@ -1,6 +1,7 @@
 bin
 creduce
 csmith
+demo/*/*
 test/*
 !test/*/
 !test/**/*.c
