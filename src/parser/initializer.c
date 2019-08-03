@@ -702,8 +702,12 @@ static void initialize_padding(
             target.offset += size_of(target.type);
             target.field_offset = 0;
             target.field_width = 0;
+            if (target.offset > field.offset) {
+                target.offset = field.offset;
+            }
         }
 
+        assert(field.offset >= target.offset);
         padding = field.offset - target.offset;
         zero_initialize_bytes(def, block, target, padding);
     } else if (target.field_offset < field.field_offset) {
@@ -772,7 +776,7 @@ static void validate_initializer_block(struct block *block)
         assert(target.offset <= st.t.offset);
         field = st.t;
         if (target.offset < field.offset) {
-            assert(field.offset - target.offset == size_of(target.type));
+            assert(field.offset - target.offset <= size_of(target.type));
         } else {
             assert(target.offset == field.offset);
             assert(target.field_offset + target.field_width

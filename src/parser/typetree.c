@@ -254,14 +254,14 @@ static struct member *add_member(Type parent, struct member m)
 static Type backing_type_from_bits(int backing_bits)
 {
     switch (backing_bits) {
+    default: assert(0);
     case 8:
         return basic_type__char;
     case 16:
         return basic_type__short;
     case 32:
         return basic_type__int;
-    default:
-        assert(backing_bits == 64);
+    case 64:
         return basic_type__long;
     }
 }
@@ -324,25 +324,50 @@ static void reset_field_alignment(Type type, Type clear)
 /*
  * Add necessary padding to parent struct such that new member type can
  * be added. Union types need no padding.
+ *
+ * In case a member is added after a bit field, allow overlapping the
+ * field backing type if there is room for it.
  */
 static size_t adjust_member_alignment(Type parent, Type type)
 {
     struct typetree *t;
-    size_t align = 0;
+    struct member *mb;
+    size_t align, bytes, offset;
+    int i;
 
     assert(is_struct_or_union(parent));
-    if (is_struct(parent)) {
-        t = get_typetree_handle(parent.ref);
-        align = type_alignment(type);
-        if (t->size % align) {
-            t->size += align - (t->size % align);
-            assert(t->size % align == 0);
-        }
+    if (!is_struct(parent))
+        return 0;
 
-        align = t->size;
+    t = get_typetree_handle(parent.ref);
+    i = array_len(&t->members) - 1;
+    if (i >= 0) {
+        mb = &array_get(&t->members, i);
+        if (mb->field_backing) {
+            offset = mb->offset;
+            bytes = mb->field_backing - (mb->field_offset + mb->field_width);
+            bytes = bytes / 8;
+            assert(bytes >= 0);
+            if (bytes) {
+                t->size -= bytes;
+                while (mb->offset == offset) {
+                    mb->field_backing -= bytes * 8;
+                    i--;
+                    if (i < 0)
+                        break;
+                    mb = &array_get(&t->members, i);
+                }
+            }
+        }
     }
 
-    return align;
+    align = type_alignment(type);
+    if (t->size % align) {
+        t->size += align - (t->size % align);
+        assert(t->size % align == 0);
+    }
+
+    return t->size;
 }
 
 INTERNAL Type type_create_pointer(Type next)
