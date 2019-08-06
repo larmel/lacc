@@ -1211,7 +1211,7 @@ INTERNAL struct block *declaration(
                 if (is_inline) {
                     sym = (struct symbol *) decl->symbol;
                     sym->inlined = 1;
-                    sym->referenced = storage_class == EXTERN;
+                    sym->referenced |= storage_class == EXTERN;
                 }
                 return parent;
             }
