@@ -456,6 +456,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-shared", &add_linker_arg},
         {"-static", &add_linker_arg},
         {"-[no]pie", &add_linker_arg},
+        {"-f[no-]PIE", &add_linker_arg},
         {"-l:", &add_linker_library},
         {"-L:", &add_linker_path},
         {NULL, &add_input_file}
