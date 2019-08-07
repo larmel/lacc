@@ -56,6 +56,12 @@ static size_t rlen;
 static array_of(const char *) search_path_list;
 
 /*
+ * List of files to include before first source file, specified with
+ * -include option.
+ */
+static array_of(const char *) include_files;
+
+/*
  * Keep stack of file descriptors as resolved by includes. Push and pop
  * from the end of the list.
  */
@@ -64,12 +70,6 @@ static array_of(struct source) source_stack;
 /* Expose for diagnostics. */
 INTERNAL String current_file_path;
 INTERNAL int current_file_line;
-
-static struct source *current_file(void)
-{
-    assert(array_len(&source_stack));
-    return &array_get(&source_stack, array_len(&source_stack) - 1);
-}
 
 static void push_file(struct source source)
 {
@@ -111,6 +111,7 @@ INTERNAL void input_finalize(void)
     assert(!array_len(&source_stack));
     array_clear(&source_stack);
     array_clear(&search_path_list);
+    array_clear(&include_files);
     free(path_buffer);
     free(rline);
 }
@@ -150,7 +151,8 @@ INTERNAL void include_file(const char *name)
      * which itself can include folders. Except for root level, where
      * the whole name is already specified.
      */
-    file = current_file();
+    assert(array_len(&source_stack));
+    file = &array_back(&source_stack);
     if (file->dirlen && name[0] != '/') {
         path = create_path(str_raw(file->path), file->dirlen, name);
     } else {
@@ -204,6 +206,36 @@ INTERNAL int add_include_search_path(const char *path)
     return 0;
 }
 
+INTERNAL int add_include_file(const char *path)
+{
+    array_push_back(&include_files, path);
+    return 0;
+}
+
+/*
+ * Files specified with -include foo are handled as if the first line
+ * of the source file contained '#include "foo"', except that it does
+ * not search relative to directory of the source file.
+ */
+static void inject_include_files(void)
+{
+    int i;
+    struct source source = {0};
+    const char *path;
+
+    for (i = array_len(&include_files) - 1; i >= 0; --i) {
+        path = array_get(&include_files, i);
+        source.file = fopen(path, "r");
+        if (source.file) {
+            source.path = str_register(path, strlen(path));
+            source.dirlen = path_dirlen(path);
+            push_file(source);
+        } else {
+            include_system_file(path);
+        }
+    }
+}
+
 INTERNAL void set_input_file(const char *path)
 {
     const char *sep;
@@ -237,6 +269,7 @@ INTERNAL void set_input_file(const char *path)
     }
 
     push_file(source);
+    inject_include_files();
 }
 
 /*

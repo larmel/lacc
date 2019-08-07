@@ -22,6 +22,9 @@ INTERNAL int add_include_search_path(const char *);
 INTERNAL void include_file(const char *);
 INTERNAL void include_system_file(const char *);
 
+/* Add file to be included before the main source file. */
+INTERNAL int add_include_file(const char *path);
+
 /*
  * Yield next line ready for further preprocessing. Joins continuations,
  * and replaces comments with a single space. Line implicitly ends with

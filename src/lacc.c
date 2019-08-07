@@ -443,6 +443,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"--dump-types", &long_option},
         {"-nostdinc", &option},
         {"-isystem:", &add_system_include_path},
+        {"-include:", &add_include_file},
         {"-print-file-name=", &print_file_name},
         {"-pipe", &option},
         {"-MD", &option},
