@@ -82,10 +82,12 @@ struct input_file {
 static const char *program, *output_name;
 static int optimization_level;
 static int dump_symbols, dump_types;
+static int nostdinc;
 
 static int object_file_count;
 static array_of(struct input_file) input_files;
 static array_of(char *) predefined_macros;
+static array_of(const char *) system_include_paths;
 
 static int help(const char *arg)
 {
@@ -147,6 +149,8 @@ static int option(const char *arg)
         } else assert(0);
     } else if (!strcmp("-dot", arg)) {
         context.target = TARGET_IR_DOT;
+    } else if (!strcmp("-nostdinc", arg)) {
+        nostdinc = 1;
     }
 
     return 0;
@@ -175,6 +179,12 @@ static int set_output_name(const char *file)
     output_name = file;
     add_linker_arg("-o");
     add_linker_arg(file);
+    return 0;
+}
+
+static int add_system_include_path(const char *path)
+{
+    array_push_back(&system_include_paths, path);
     return 0;
 }
 
@@ -431,6 +441,8 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-D:", &define_macro},
         {"--dump-symbols", &long_option},
         {"--dump-types", &long_option},
+        {"-nostdinc", &option},
+        {"-isystem:", &add_system_include_path},
         {"-print-file-name=", &print_file_name},
         {"-pipe", &option},
         {"-MD", &option},
@@ -527,12 +539,27 @@ static void register_builtin_declarations(void)
  */
 static void add_include_search_paths(void)
 {
-    add_include_search_path("/usr/local/include");
+    int i;
+    const char *path;
+
+    if (!nostdinc) {
+        add_include_search_path("/usr/local/include");
+    }
+
     add_include_search_path(LACC_LIB_PATH "/include");
+    if (!nostdinc) {
 #ifdef SYSTEM_LIB_PATH
-    add_include_search_path(SYSTEM_LIB_PATH);
+        add_include_search_path(SYSTEM_LIB_PATH);
 #endif
-    add_include_search_path("/usr/include");
+        add_include_search_path("/usr/include");
+    }
+
+    for (i = 0; i < array_len(&system_include_paths); ++i) {
+        path = array_get(&system_include_paths, i);
+        add_include_search_path(path);
+    }
+
+    array_clear(&system_include_paths);
 }
 
 static int process_file(struct input_file file)
