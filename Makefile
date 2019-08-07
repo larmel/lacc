@@ -41,20 +41,28 @@ SOURCES = \
 	src/parser/declaration.c \
 	src/parser/eval.c
 
-LIBDIR_SOURCE = $(SRCDIR)/include/stdlib
-LIBDIR_TARGET = $(LIBDIR)/lacc/include
+INCLUDES = \
+	include/stdlib/alloca.h \
+	include/stdlib/float.h \
+	include/stdlib/stdalign.h \
+	include/stdlib/stdarg.h \
+	include/stdlib/stdbool.h \
+	include/stdlib/stddef.h
+
+LIBDIR_SOURCE = $(SRCDIR)/bin
+LIBDIR_TARGET = $(LIBDIR)/lacc
 TARGET = bin/selfhost/lacc
 
-bin/lacc: $(SOURCES)
+bin/lacc: $(SOURCES) bin/include
 	@mkdir -p $(@D)
 	$(CC) -std=c89 -g $(CFLAGS) -Iinclude src/lacc.c -o $@ \
-		-D'LACC_STDLIB_PATH="$(LIBDIR_SOURCE)"' \
+		-D'LACC_LIB_PATH="$(LIBDIR_SOURCE)"' \
 		-DAMALGAMATION
 
 bin/release/lacc: $(SOURCES)
 	@mkdir -p $(@D)
 	$(CC) -std=c89 -O3 $(CFLAGS) -Iinclude src/lacc.c -o $@ \
-		-D'LACC_STDLIB_PATH="$(LIBDIR_TARGET)"' \
+		-D'LACC_LIB_PATH="$(LIBDIR_TARGET)"' \
 		-DAMALGAMATION \
 		-DNDEBUG
 
@@ -63,7 +71,7 @@ bin/bootstrap/lacc: bin/lacc
 	for file in $(SOURCES) ; do \
 		target=$(@D)/$$(basename $$file .c).o ; \
 		$? -std=c89 -Iinclude -c $$file -o $$target \
-			-D'LACC_STDLIB_PATH="$(LIBDIR_SOURCE)"' ; \
+			-D'LACC_LIB_PATH="$(LIBDIR_SOURCE)"' ; \
 	done
 	$(CC) $(@D)/*.o -o $@
 
@@ -73,10 +81,14 @@ bin/selfhost/lacc: bin/bootstrap/lacc
 		name=$$(basename $$file .c) ; \
 		target=$(@D)/$${name}.o ; \
 		$? -std=c89 -Iinclude -c $$file -o $$target \
-			-D'LACC_STDLIB_PATH="$(LIBDIR_SOURCE)"' ; \
+			-D'LACC_LIB_PATH="$(LIBDIR_SOURCE)"' ; \
 		diff bin/bootstrap/$${name}.o $$target ; \
 	done
 	$(CC) $(@D)/*.o -o $@
+
+bin/include: $(INCLUDES)
+	mkdir -p $@
+	cp $? --target-directory=$@
 
 test-c89: $(TARGET)
 	for file in $$(find test/ -maxdepth 1 -type f -iname '*.c') ; do \

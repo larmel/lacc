@@ -54,12 +54,11 @@
 #include <unistd.h>
 
 /*
- * Configurable location of implementation defined standard library
- * headers. This is set in the makefile, by default pointing to files
- * from the source tree under /include/stdlib/.
+ * Configurable location of where compiler is installed. Headers can be
+ * found under include folder.
  */
-#ifndef LACC_STDLIB_PATH
-# define LACC_STDLIB_PATH "/usr/local/lib/lacc/include"
+#ifndef LACC_LIB_PATH
+# define LACC_LIB_PATH "/usr/local/lib/lacc"
 #endif
 
 /*
@@ -68,9 +67,9 @@
  *
  * OpenBSD does not need a special path.
  */
-#ifndef SYSTEM_STDLIB_PATH
+#ifndef SYSTEM_LIB_PATH
 # ifdef __linux__
-#  define SYSTEM_STDLIB_PATH "/usr/include/x86_64-linux-gnu"
+#  define SYSTEM_LIB_PATH "/usr/include/x86_64-linux-gnu"
 # endif
 #endif
 
@@ -382,6 +381,27 @@ static int add_linker_path(const char *path)
     return 0;
 }
 
+static int print_file_name(const char *name)
+{
+    FILE *f;
+    char *path;
+
+    assert(name);
+    path = calloc(1, strlen(LACC_LIB_PATH) + strlen(name) + 2);
+    strcpy(path, LACC_LIB_PATH);
+    strcat(path, "/");
+    strcat(path, name);
+    if ((f = fopen(path, "r")) != 0) {
+        printf("%s\n", path);
+        fclose(f);
+    } else {
+        printf("%s\n", name);
+    }
+
+    free(path);
+    return -1;
+}
+
 static int parse_program_arguments(int argc, char *argv[])
 {
     int i, input_file_count;
@@ -408,6 +428,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-D:", &define_macro},
         {"--dump-symbols", &long_option},
         {"--dump-types", &long_option},
+        {"-print-file-name=", &print_file_name},
         {"-pipe", &option},
         {"-MD", &option},
         {"-MP", &option},
@@ -504,9 +525,9 @@ static void register_builtin_declarations(void)
 static void add_include_search_paths(void)
 {
     add_include_search_path("/usr/local/include");
-    add_include_search_path(LACC_STDLIB_PATH);
-#ifdef SYSTEM_STDLIB_PATH
-    add_include_search_path(SYSTEM_STDLIB_PATH);
+    add_include_search_path(LACC_LIB_PATH "/include");
+#ifdef SYSTEM_LIB_PATH
+    add_include_search_path(SYSTEM_LIB_PATH);
 #endif
     add_include_search_path("/usr/include");
 }
@@ -603,5 +624,5 @@ end:
     clear_predefined_macros();
     clear_input_files();
     clear_linker_args();
-    return ret;
+    return ret < 0 ? 0 : ret;
 }
