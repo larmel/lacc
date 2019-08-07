@@ -27,6 +27,7 @@ INTERNAL struct context {
     int suppress_warning;
     unsigned int pic : 1;            /* position independent code */
     unsigned int debug : 1;          /* Generate debug information. */
+    unsigned int no_common : 1;      /* Don't use COMMON symbols. */
     enum target target;
     enum cstd standard;
 } context;

@@ -614,7 +614,9 @@ INTERNAL int elf_symbol(const struct symbol *sym)
         } else {
             elf_section_write(section.rodata, &sym->value.constant, entry.st_size);
         }
-    } else if (sym->linkage == LINK_INTERN) {
+    } else if (sym->linkage == LINK_INTERN
+        || (sym->symtype == SYM_TENTATIVE && context.no_common))
+    {
         elf_section_align(section.bss, sym_alignment(sym));
         entry.st_shndx = section.bss;
         entry.st_size = size_of(sym->type);
@@ -623,9 +625,11 @@ INTERNAL int elf_symbol(const struct symbol *sym)
         shdr[section.bss].sh_size += entry.st_size;
     } else if (sym->symtype == SYM_TENTATIVE) {
         assert(sym->linkage == LINK_EXTERN);
+        assert(is_object(sym->type));
         entry.st_shndx = SHN_COMMON;
         entry.st_size = size_of(sym->type);
         entry.st_value = sym_alignment(sym);
+        entry.st_info |= STT_OBJECT;
     }
 
     elf_symtab_assoc((struct symbol *) sym, entry);

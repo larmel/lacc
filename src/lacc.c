@@ -142,6 +142,8 @@ static int option(const char *arg)
         }
         if (!strcmp("PIC", arg)) {
             context.pic = !disable;
+        } else if (!strcmp("common", arg)) {
+            context.no_common = disable;
         } else if (!strcmp("fast-math", arg)) {
             /* Always slow... */
         } else if (!strcmp("strict-aliasing", arg)) {
@@ -430,6 +432,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-f[no-]PIC", &option},
         {"-f[no-]fast-math", &option},
         {"-f[no-]strict-aliasing", &option},
+        {"-f[no-]common", &option},
         {"-fvisibility=", &set_visibility},
         {"-dot", &option},
         {"--help", &help},

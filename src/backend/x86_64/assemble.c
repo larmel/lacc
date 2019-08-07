@@ -4,6 +4,7 @@
 #endif
 #include "abi.h"
 #include "assemble.h"
+#include <lacc/context.h>
 
 #include <assert.h>
 #include <ctype.h>
@@ -199,10 +200,12 @@ INTERNAL int asm_symbol(const struct symbol *sym)
     switch (sym->symtype) {
     case SYM_TENTATIVE:
         assert(is_object(sym->type));
-        if (sym->linkage == LINK_INTERN)
-            out("\t.local\t%s\n", name);
-        out("\t.comm\t%s,%lu,%lu\n", name, size, type_alignment(sym->type));
-        break;
+        if (!context.no_common) {
+            if (sym->linkage == LINK_INTERN)
+                out("\t.local\t%s\n", name);
+            out("\t.comm\t%s,%lu,%lu\n", name, size, type_alignment(sym->type));
+            break;
+        }
     case SYM_DEFINITION:
         if (is_function(sym->type)) {
             set_section(SECTION_TEXT);
@@ -218,6 +221,9 @@ INTERNAL int asm_symbol(const struct symbol *sym)
             out("\t.type\t%s, @object\n", name);
             out("\t.size\t%s, %lu\n", name, size);
             out("%s:\n", name);
+            if (sym->symtype == SYM_TENTATIVE) {
+                out("\t.zero %lu\n", size);
+            }
         }
         break;
     case SYM_LITERAL:
