@@ -149,6 +149,18 @@ static int option(const char *arg)
         } else if (!strcmp("strict-aliasing", arg)) {
             /* We don't consider aliasing. */
         } else assert(0);
+    } else if (arg[1] == 'm') {
+        arg = arg + 2;
+        disable = strncmp("no-", arg, 3) == 0;
+        if (disable) {
+            arg = arg + 3;
+        }
+        if (!strcmp("sse", arg) || !strcmp("sse2", arg)
+            || !strcmp("mmx", arg)
+            || !strcmp("3dnow", arg))
+        {
+            context.no_sse = 1;
+        } else assert(0);
     } else if (!strcmp("-dot", arg)) {
         context.target = TARGET_IR_DOT;
     } else if (!strcmp("-nostdinc", arg)) {
@@ -434,6 +446,10 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-f[no-]strict-aliasing", &option},
         {"-f[no-]common", &option},
         {"-fvisibility=", &set_visibility},
+        {"-m[no-]sse", &option},
+        {"-m[no-]sse2", &option},
+        {"-m[no-]3dnow", &option},
+        {"-m[no-]mmx", &option},
         {"-dot", &option},
         {"--help", &help},
         {"-march=", &set_cpu},

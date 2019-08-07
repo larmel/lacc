@@ -47,6 +47,8 @@ static array_of(struct var) func_args;
 #define TEMP_INT_REGS (sizeof(temp_int_reg) / sizeof(temp_int_reg[0]))
 #define TEMP_SSE_REGS (sizeof(temp_sse_reg) / sizeof(temp_sse_reg[0]))
 
+#define is_sse(c) (c > INSTR_XOR && c < INSTR_PXOR)
+
 static enum reg
     temp_int_reg[] = {BX, R12, R13, R14, R15},
     temp_sse_reg[] = {XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15},
@@ -158,6 +160,9 @@ static void emit(enum opcode opcode, enum instr_optype optype, ...)
         instr.source.width = va_arg(args, int);
         break;
     }
+
+    /* No actual enforcement yet. */
+    assert(!is_sse(opcode) || !context.no_sse);
 
     va_end(args);
     emit_instruction(instr);
