@@ -296,14 +296,14 @@ static void clear_input_files(void)
 
 static int set_c_std(const char *std)
 {
-    if (!strcmp("c89", std)) {
+    if (!strcmp("c89", std) || !strcmp("gnu89", std)) {
         context.standard = STD_C89;
-    } else if (!strcmp("c99", std)) {
+    } else if (!strcmp("c99", std) || !strcmp("gnu99", std)) {
         context.standard = STD_C99;
-    } else if (!strcmp("c11", std)) {
+    } else if (!strcmp("c11", std) || !strcmp("gnu11", std)) {
         context.standard = STD_C11;
     } else {
-        fprintf(stderr, "Unrecognized option %s.\n", std);
+        fprintf(stderr, "Unrecognized c standard %s.\n", std);
         return 1;
     }
 
