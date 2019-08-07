@@ -166,6 +166,8 @@ static int option(const char *arg)
             || !strcmp("3dnow", arg))
         {
             context.no_sse = 1;
+        } else if (!strcmp("red-zone", arg)) {
+            /* Don't use red-zone in any case. */
         } else assert(0);
     } else if (!strcmp("-dot", arg)) {
         context.target = TARGET_IR_DOT;
@@ -213,6 +215,11 @@ static int set_cpu(const char *arg)
 
 /* Ignore all warning options specified with -W<option> */
 static int warn(const char *arg)
+{
+    return 0;
+}
+
+static int ignore(const char *arg)
 {
     return 0;
 }
@@ -477,11 +484,17 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-f[no-]fast-math", &option},
         {"-f[no-]strict-aliasing", &option},
         {"-f[no-]common", &option},
+        {"-f[no-]asynchronous-unwind-tables", &ignore},
+        {"-f[no-]unused-but-set-variable", &ignore},
+        {"-f[no-]omit-frame-pointer", &ignore},
+        {"-f[no-]optimize-sibling-calls", &ignore},
         {"-fvisibility=", &set_visibility},
         {"-m[no-]sse", &option},
         {"-m[no-]sse2", &option},
         {"-m[no-]3dnow", &option},
         {"-m[no-]mmx", &option},
+        {"-m[no-]red-zone", &option},
+        {"-m64", &ignore},
         {"-dot", &option},
         {"--help", &help},
         {"-march=", &set_cpu},
