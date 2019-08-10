@@ -106,7 +106,9 @@ static int match_arg(struct option opt, int argc, char *argv[], int *ret)
         rulelen -= 1;
     case '=':
         if (!strncmp(opt.rule, argv[0], rulelen)) {
-            if (arglen == rulelen) {
+            if (!strcmp(argv[0], "-W")) {
+                argv[0] = "-Wextra";
+            } else if (arglen == rulelen) {
                 fprintf(stderr, "Missing argument to %s.\n", argv[0]);
                 *ret = 1;
                 return 0;
