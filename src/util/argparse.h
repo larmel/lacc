@@ -5,16 +5,19 @@
  * Specify command line argument pattern as a rule template with an
  * associated callback, which is invoked on match.
  *
- *  "-S"        Flag, which can match in conjunction with other flags.
- *              Matches -Sv if both -S and -v are flag options.
- *  "--help"    Toggle option. Like flags, but must match exactly as a
- *              single token.
+ *  "-S"        Regular options, which must match exactly as a single
+ *  "--help"    token.
+ *
  *  "-I:"       Option with argument. The next token, or suffix of
  *              this token, is passed as argument to callback. Matches
  *              both -Ifoo and -I foo.
- *  "-std="     Option with argument which must no be preceeded by any
+ *
+ *  "-std="     Option with argument which must not be preceeded by any
  *  "-W<"       whitespace. Matches -std=c89 and -Wall, but not
  *              -std= c89 or -W all.
+ *
+ *  "foo.c"     Arguments without preceeding dash is matched by NULL
+ *              rule.
  */
 struct option {
     const char *rule;

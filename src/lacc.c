@@ -91,14 +91,16 @@ static int help(const char *arg)
 {
     fprintf(
         stderr,
-        "Usage: %s [-(S|E|c)] [-v] [-fPIC] [-I <path>] [-o <file>] <file ...>\n",
+        "Usage: %s [-(S|E|c)] [-I <path>] [-o <file>] <file ...>\n",
         program);
     return 1;
 }
 
 static int flag(const char *arg)
 {
-    switch (*arg) {
+    assert(arg[0] == '-');
+    assert(strlen(arg) == 2);
+    switch (arg[1]) {
     case 'c':
         context.target = TARGET_x86_64_OBJ;
         break;
