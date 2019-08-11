@@ -415,6 +415,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-v", &flag},
         {"-w", &flag},
         {"-g", &flag},
+        {"-W", &warn},
         {"-W<", &warn},
         {"-f[no-]PIC", &option},
         {"-f[no-]fast-math", &option},
