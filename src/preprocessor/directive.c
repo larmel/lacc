@@ -636,7 +636,11 @@ static struct macro preprocess_define(
                 exit(1);
             }
             array_push_back(&params, *line++);
-            if (line->token != ',')
+            if (line->token == DOTS) {
+                macro.is_vararg = 1;
+                line++;
+                break;
+            } else if (line->token != ',')
                 break;
             line++;
         }
