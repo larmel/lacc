@@ -73,10 +73,17 @@
 # endif
 #endif
 
+static enum lang {
+    LANG_UNKNOWN,
+    LANG_C,
+    LANG_ASM
+} source_language;
+
 struct input_file {
     const char *name;
     const char *output_name;
     int is_default_name;
+    enum lang language;
 };
 
 static const char *program, *output_name;
@@ -84,7 +91,6 @@ static int optimization_level;
 static int dump_symbols, dump_types;
 static int nostdinc;
 
-static int object_file_count;
 static array_of(struct input_file) input_files;
 static array_of(char *) predefined_macros;
 static array_of(const char *) system_include_paths;
@@ -170,6 +176,29 @@ static int option(const char *arg)
     return 0;
 }
 
+static int language(const char *arg)
+{
+    enum lang lang;
+
+    assert(arg);
+    if (!strcmp("c", arg)
+        || !strcmp("c-header", arg)
+        || !strcmp("c-cpp-output", arg))
+    {
+        lang = LANG_C;
+    } else if (!strcmp("assembler", arg)) {
+        lang = LANG_ASM;
+    } else if (!strcmp("none", arg)) {
+        lang = LANG_UNKNOWN;
+    } else {
+        fprintf(stderr, "Unrecognized input language %s.\n", arg);
+        return 1;
+    }
+
+    source_language = lang;
+    return 0;
+}
+
 /* Support -fvisibility, with no effect. */
 static int set_visibility(const char *arg)
 {
@@ -221,14 +250,14 @@ static char *change_file_suffix(const char *file, enum target target)
     case TARGET_PREPROCESS:
         return NULL;
     case TARGET_IR_DOT:
-        suffix = "dot";
+        suffix = ".dot";
         break;
     case TARGET_x86_64_ASM:
-        suffix = "s";
+        suffix = ".s";
         break;
     case TARGET_x86_64_OBJ:
     case TARGET_x86_64_EXE:
-        suffix = "o";
+        suffix = ".o";
         break;
     }
 
@@ -242,38 +271,40 @@ static char *change_file_suffix(const char *file, enum target target)
         dot = file + strlen(file);
     }
 
-    len = (dot - file) + 1;
+    len = (dot - file);
     name = calloc(len + strlen(suffix) + 1, sizeof(*name));
     strncpy(name, file, len);
-    assert(name[len - 1] == '.');
+    assert(!name[len] || name[len] == '.');
+    name[len] = '.';
     strcpy(name + len, suffix);
     return name;
 }
 
 static int add_input_file(const char *name)
 {
-    char *ptr, *obj;
+    char *ptr;
     struct input_file file = {0};
 
-    ptr = strrchr(name, '.');
-    if (!ptr) {
-        fprintf(stderr, "Unrecognized input file '%s'\n", name);
-        return 1;
+    if ((file.language = source_language) == LANG_UNKNOWN) {
+        ptr = strrchr(name, '.');
+        if (ptr && (ptr[1] == 'c' || ptr[1] == 'i') && ptr[2] == '\0') {
+            file.language = LANG_C;
+        }
     }
 
-    object_file_count++;
-    switch (*(ptr + 1)) {
-    case 'c':
-    case 'i':
-        file.name = name;
-        array_push_back(&input_files, file);
-        obj = change_file_suffix(name, TARGET_x86_64_OBJ);
-        add_linker_arg(obj);
-        free(obj);
-        break;
-    default:
+    file.name = name;
+    array_push_back(&input_files, file);
+
+    /*
+     * Linker argument might not be needed, but make sure order is
+     * preserved.
+     */
+    if (file.language != LANG_UNKNOWN) {
+        ptr = change_file_suffix(name, TARGET_x86_64_OBJ);
+        add_linker_arg(ptr);
+        free(ptr);
+    } else {
         add_linker_arg(name);
-        break;
     }
 
     return 0;
@@ -430,7 +461,7 @@ static int print_file_name(const char *name)
 
 static int parse_program_arguments(int argc, char *argv[])
 {
-    int i, input_file_count;
+    int i, n, k;
     struct input_file *file;
     struct option optv[] = {
         {"-S", &flag},
@@ -441,6 +472,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-g", &flag},
         {"-W", &warn},
         {"-W<", &warn},
+        {"-x:", &language},
         {"-f[no-]PIC", &option},
         {"-f[no-]fast-math", &option},
         {"-f[no-]strict-aliasing", &option},
@@ -487,38 +519,44 @@ static int parse_program_arguments(int argc, char *argv[])
         return i;
     }
 
-    input_file_count = array_len(&input_files);
-    if (context.target != TARGET_x86_64_EXE
-        && input_file_count != object_file_count)
-    {
-        fprintf(stderr, "%s\n", "Unrecognized input files.");
+    for (i = 0, k = 0; i < array_len(&input_files); ++i) {
+        file = &array_get(&input_files, i);
+        if (file->language == LANG_UNKNOWN) {
+            switch (context.target) {
+            case TARGET_PREPROCESS:
+                file->language = LANG_C;
+                break;
+            case TARGET_x86_64_EXE:
+                array_erase(&input_files, i);
+                i--;
+                k++;
+                break;
+            default:
+                fprintf(stderr, "Unrecognized input file %s.\n", file->name);
+                return 1;
+            }
+        }
+    }
+
+    n = array_len(&input_files);
+    if (n == 0 && (k == 0 || context.target != TARGET_x86_64_EXE)) {
+        fprintf(stderr, "%s\n", "No input files.");
         return 1;
     }
 
-    if (input_file_count == 0) {
-        if (context.target != TARGET_x86_64_EXE || !object_file_count) {
-            fprintf(stderr, "%s\n", "No input files.");
+    if (output_name && context.target != TARGET_x86_64_EXE) {
+        if (n > 1) {
+            fprintf(stderr, "%s\n", "Cannot set -o with multiple inputs.");
             return 1;
         }
-    } else if (input_file_count == 1) {
+
+        assert(n == 1);
         file = &array_get(&input_files, 0);
-        if (output_name && context.target != TARGET_x86_64_EXE) {
-            file->output_name = output_name;
-        } else {
-            file->output_name = change_file_suffix(file->name, context.target);
-            file->is_default_name = 1;
-        }
-    } else {
-        if (output_name && context.target != TARGET_x86_64_EXE) {
-            fprintf(stderr, "%s\n",
-                "Cannot set -o with multiple inputs and -c, -S, -E or -dot.");
-            return 1;
-        }
-        for (i = 0; i < input_file_count; ++i) {
-            file = &array_get(&input_files, i);
-            file->output_name = change_file_suffix(file->name, context.target);
-            file->is_default_name = 1;
-        }
+        file->output_name = output_name;
+    } else for (i = 0; i < n; ++i) {
+        file = &array_get(&input_files, i);
+        file->output_name = change_file_suffix(file->name, context.target);
+        file->is_default_name = 1;
     }
 
     return 0;
