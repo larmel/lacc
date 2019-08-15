@@ -201,6 +201,18 @@ static int language(const char *arg)
     return 0;
 }
 
+static int cmodel(const char *arg)
+{
+    if (!strcmp("small", arg)) {
+    } else if (!strcmp("kernel", arg)) {
+    } else {
+        fprintf(stderr, "Unrecognized memory model %s\n", arg);
+        return 1;
+    }
+
+    return 0;
+}
+
 /* Support -fvisibility, with no effect. */
 static int set_visibility(const char *arg)
 {
@@ -495,6 +507,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-m[no-]mmx", &option},
         {"-m[no-]red-zone", &option},
         {"-m64", &ignore},
+        {"-mcmodel=", &cmodel},
         {"-dot", &option},
         {"--help", &help},
         {"-march=", &set_cpu},
