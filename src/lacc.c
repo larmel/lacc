@@ -154,6 +154,8 @@ static int option(const char *arg)
             /* Always slow... */
         } else if (!strcmp("strict-aliasing", arg)) {
             /* We don't consider aliasing. */
+        } else if (!strcmp("short-wchar", arg)) {
+            /* What to do here? */
         } else assert(0);
     } else if (arg[1] == 'm') {
         arg = arg + 2;
@@ -501,6 +503,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-f[no-]omit-frame-pointer", &ignore},
         {"-f[no-]optimize-sibling-calls", &ignore},
         {"-fvisibility=", &set_visibility},
+        {"-fshort-wchar", &option},
         {"-m[no-]sse", &option},
         {"-m[no-]sse2", &option},
         {"-m[no-]3dnow", &option},
