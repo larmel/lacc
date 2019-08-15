@@ -863,6 +863,7 @@ INTERNAL void register_builtin_definitions(enum cstd version)
     register_macro("__CHAR_BIT__", "8");
     register_macro("__SIZEOF_LONG__", "8");
     register_macro("__SIZEOF_POINTER__", "8");
+    register_macro("__lacc__", "");
 
 #ifdef __linux__
     register_macro("__linux__", XSTR(__linux__));
