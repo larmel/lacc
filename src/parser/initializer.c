@@ -421,7 +421,7 @@ static struct block *initialize_array(
     assert(target.kind == DIRECT);
 
     i = c = 0;
-    count = type_array_len(target.type);
+    count = is_complete(target.type) ? type_array_len(target.type) : 0;
     type = target.type;
     elem = type_next(type);
     width = size_of(elem);
@@ -469,9 +469,8 @@ static struct block *initialize_array(
         }
     }
 
-    if (!size_of(type)) {
+    if (!is_complete(type) || !size_of(type)) {
         assert(is_array(target.symbol->type));
-        assert(!size_of(target.symbol->type));
         set_array_length(target.symbol->type, c);
     }
 
@@ -729,7 +728,9 @@ static void initialize_trailing_padding(
     size_t size,
     size_t bitfield_size)
 {
-    assert(size >= target.offset);
+    if (size <= target.offset) {
+        return;
+    }
 
     if (target.field_offset) {
         switch (bitfield_size) {

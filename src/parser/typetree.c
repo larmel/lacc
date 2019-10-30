@@ -1105,13 +1105,31 @@ INTERNAL Type type_next(Type type)
     return t->next;
 }
 
+INTERNAL Type type_copy_incomplete(Type type)
+{
+    struct typetree *tb, *tn;
+    Type tp = type_create(type.type);
+    tp.is_const = type.is_const;
+    tp.is_pointer = type.is_pointer;
+    tp.is_pointer_const = type.is_pointer_const;
+    tp.is_pointer_restrict = type.is_pointer_restrict;
+    tp.is_pointer_volatile = type.is_pointer_volatile;
+    tp.is_restrict = type.is_restrict;
+    tp.is_unsigned = type.is_unsigned;
+    tp.is_volatile = type.is_volatile;
+    tb = get_typetree_handle(type.ref);
+    tn = get_typetree_handle(tp.ref);
+    *tn = *tb;
+    tn->is_incomplete = 1;
+    return tp;
+}
+
 INTERNAL void set_array_length(Type type, size_t length)
 {
     struct typetree *t;
     assert(is_array(type));
 
     t = get_typetree_handle(type.ref);
-    assert(!t->size);
     assert(t->is_incomplete);
     t->size = length;
     t->is_incomplete = 0;

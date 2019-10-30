@@ -505,6 +505,9 @@ exprsize:   head = cfg_block_init(def);
             tail = unary_expression(def, head);
             type = tail->expr.type;
         }
+        if (!is_complete(type) && is_array(type) && size_of(type)) {
+            set_array_length(type, type_array_len(type));
+        }
         if (is_complete(type)) {
             if (is_vla(type)) {
                 block->expr = eval_vla_size(def, block, type);

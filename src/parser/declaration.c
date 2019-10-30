@@ -354,7 +354,11 @@ static struct block *direct_declarator(
         consume(')');
         break;
     default:
-        *type = base;
+        if (base.type == T_ARRAY && is_complete(base)) {
+            *type = type_copy_incomplete(base);
+        } else {
+            *type = base;
+        }
         break;
     }
 

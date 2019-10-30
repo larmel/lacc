@@ -26,6 +26,7 @@ INTERNAL Type type_create_function(Type next);
 INTERNAL Type type_create_array(Type next, size_t count);
 INTERNAL Type type_create_incomplete(Type next);
 INTERNAL Type type_create_vla(Type next, const struct symbol *count);
+INTERNAL Type type_copy_incomplete(Type type);
 
 /* Add const, volatile, and restrict qualifiers to type. */
 INTERNAL Type type_set_const(Type type);
