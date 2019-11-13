@@ -61,9 +61,9 @@ static struct block *parameter_list(
 {
     String name;
     size_t length;
-    int is_register;
     struct block *block;
     struct member *param;
+    struct declaration_specifier_info info;
 
     *func = type_create_function(base);
     block = current_scope_depth(&ns_ident) == 1
@@ -73,7 +73,12 @@ static struct block *parameter_list(
     while (peek().token != ')') {
         name.len = 0;
         length = 0;
-        base = declaration_specifiers(NULL, NULL, &is_register);
+        base = declaration_specifiers(&info);
+        if (info.storage_class) {
+            error("Unexpected storage class in parameter list.");
+        } else if (info.is_inline) {
+            error("Parameter cannot be declared inline.");
+        }
         block = parameter_declarator(def, block, base, &base, &name, &length);
         if (is_void(base)) {
             if (nmembers(*func)) {
@@ -419,7 +424,7 @@ static void member_declaration_list(Type type)
     Type decl_base, decl_type;
 
     do {
-        decl_base = declaration_specifiers(NULL, NULL, NULL);
+        decl_base = declaration_specifiers(NULL);
         while (1) {
             name.len = 0;
             declarator(NULL, NULL, decl_base, &decl_type, &name);
@@ -613,10 +618,7 @@ static void enum_declaration(void)
  *     enum specifier
  *     typedef name
  */
-INTERNAL Type declaration_specifiers(
-    int *storage_class,
-    int *is_inline,
-    int *is_register)
+INTERNAL Type declaration_specifiers(struct declaration_specifier_info *info)
 {
     Type type = {0};
     const Type *tagged;
@@ -650,9 +652,9 @@ INTERNAL Type declaration_specifiers(
         Q_CONST_VOLATILE = Q_CONST | Q_VOLATILE
     } qual = 0;
 
-    if (storage_class) *storage_class = '$';
-    if (is_inline) *is_inline = 0;
-    if (is_register) *is_register = 0;
+    if (info) {
+        memset(info, 0, sizeof(*info));
+    }
 
     while (1) {
         switch ((tok = peek()).token) {
@@ -751,22 +753,22 @@ INTERNAL Type declaration_specifiers(
             break;
         case INLINE:
             next();
-            if (!is_inline) {
+            if (!info) {
                 error("Unexpected 'inline' specifier.");
-            } else if (*is_inline) {
+            } else if (info->is_inline) {
                 error("Multiple 'inline' specifiers.");
             } else {
-                *is_inline = 1;
+                info->is_inline = 1;
             }
             break;
         case REGISTER:
             next();
-            if (!is_register) {
+            if (!info) {
                 error("Unexpected 'register' specifier.");
-            } else if (*is_register) {
+            } else if (info->is_register) {
                 error("Multiple 'register' specifiers.");
             } else {
-                *is_register = 1;
+                info->is_register = 1;
             }
             break;
         case AUTO:
@@ -774,12 +776,12 @@ INTERNAL Type declaration_specifiers(
         case EXTERN:
         case TYPEDEF:
             next();
-            if (!storage_class) {
+            if (!info) {
                 error("Unexpected storage class in qualifier list.");
-            } else if (*storage_class != '$') {
+            } else if (info->storage_class) {
                 error("Multiple storage class specifiers.");
             } else {
-                *storage_class = tok.token;
+                info->storage_class = tok.token;
             }
             break;
         default:
@@ -1158,7 +1160,7 @@ INTERNAL struct block *declaration(
     enum linkage linkage;
     struct definition *decl;
     struct symbol *sym;
-    int storage_class, is_inline, is_register;
+    struct declaration_specifier_info info;
 
     if (peek().token == STATIC_ASSERT) {
         static_assertion();
@@ -1166,8 +1168,8 @@ INTERNAL struct block *declaration(
         return parent;
     }
 
-    base = declaration_specifiers(&storage_class, &is_inline, &is_register);
-    switch (storage_class) {
+    base = declaration_specifiers(&info);
+    switch (info.storage_class) {
     case EXTERN:
         symtype = SYM_DECLARATION;
         linkage = LINK_EXTERN;
@@ -1208,10 +1210,10 @@ INTERNAL struct block *declaration(
             if (!decl->symbol) {
                 cfg_discard(decl);
             } else if (is_function(decl->symbol->type)) {
-                if (is_inline) {
+                if (info.is_inline) {
                     sym = (struct symbol *) decl->symbol;
                     sym->inlined = 1;
-                    sym->referenced |= storage_class == EXTERN;
+                    sym->referenced |= info.storage_class == EXTERN;
                 }
                 return parent;
             }

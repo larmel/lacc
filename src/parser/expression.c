@@ -82,7 +82,7 @@ static struct block *parse__builtin_va_arg(
     block = assignment_expression(def, block);
     value = eval(def, block, block->expr);
     consume(',');
-    type = declaration_specifiers(NULL, NULL, NULL);
+    type = declaration_specifiers(NULL);
     if (peek().token != ')') {
         block = declarator(def, block, type, &type, NULL);
     }
@@ -492,7 +492,7 @@ static struct block *unary_expression(
                     goto exprsize;;
             case FIRST(type_name):
                 consume('(');
-                type = declaration_specifiers(NULL, NULL, NULL);
+                type = declaration_specifiers(NULL);
                 if (peek().token != ')') {
                     block = declarator(def, block, type, &type, NULL);
                 }
@@ -520,7 +520,7 @@ exprsize:   head = cfg_block_init(def);
     case ALIGNOF:
         next();
         consume('(');
-        type = declaration_specifiers(NULL, NULL, NULL);
+        type = declaration_specifiers(NULL);
         if (peek().token != ')') {
             block = declarator(def, block, type, &type, NULL);
         }
@@ -604,7 +604,7 @@ static struct block *cast_expression(
                 break;
         case FIRST(type_name):
             next();
-            type = declaration_specifiers(NULL, NULL, NULL);
+            type = declaration_specifiers(NULL);
             if (peek().token != ')') {
                 block = declarator(def, block, type, &type, NULL);
             }

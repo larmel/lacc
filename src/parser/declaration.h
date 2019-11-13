@@ -20,10 +20,14 @@ INTERNAL struct block *declarator(
     Type *type,
     String *name);
 
+struct declaration_specifier_info {
+    enum token_type storage_class;
+    unsigned int is_inline : 1;
+    unsigned int is_register : 1;
+};
+
 INTERNAL Type declaration_specifiers(
-    int *storage_class,
-    int *is_inline,
-    int *is_register);
+    struct declaration_specifier_info *info);
 
 INTERNAL struct block *declare_vla(
     struct definition *def,
