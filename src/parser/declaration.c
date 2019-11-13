@@ -737,6 +737,9 @@ INTERNAL Type declaration_specifiers(struct declaration_specifier_info *info)
             next();
             type = *tagged;
             base = B_AGGREGATE;
+            if (info) {
+                info->from_typedef = 1;
+            }
             break;
         case UNION:
         case STRUCT:
@@ -1155,7 +1158,7 @@ INTERNAL struct block *declaration(
     struct definition *def,
     struct block *parent)
 {
-    Type base;
+    Type base, type;
     enum symtype symtype;
     enum linkage linkage;
     struct definition *decl;
@@ -1204,9 +1207,17 @@ INTERNAL struct block *declaration(
     }
 
     while (1) {
+        type = base;
+        if (info.from_typedef && is_array(base) && !is_complete(base)) {
+            type = type_next(base);
+            type = type_create_incomplete(type);
+            type = type_apply_qualifiers(type, base);
+            assert(type_equal(type, base));
+        }
+
         if (linkage == LINK_INTERN || linkage == LINK_EXTERN) {
             decl = cfg_init();
-            init_declarator(decl, decl->body, base, symtype, linkage);
+            init_declarator(decl, decl->body, type, symtype, linkage);
             if (!decl->symbol) {
                 cfg_discard(decl);
             } else if (is_function(decl->symbol->type)) {
@@ -1218,7 +1229,7 @@ INTERNAL struct block *declaration(
                 return parent;
             }
         } else {
-            parent = init_declarator(def, parent, base, symtype, linkage);
+            parent = init_declarator(def, parent, type, symtype, linkage);
         }
 
         if (peek().token == ',') {

@@ -24,6 +24,7 @@ struct declaration_specifier_info {
     enum token_type storage_class;
     unsigned int is_inline : 1;
     unsigned int is_register : 1;
+    unsigned int from_typedef : 1;
 };
 
 INTERNAL Type declaration_specifiers(
