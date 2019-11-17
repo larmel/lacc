@@ -10,7 +10,7 @@ struct obj {
 	struct id oid;
 };
 
-static int foo(struct obj *o) {
+static void foo(struct obj *o) {
 	char *arr = (char *) o;
 	int i;
 	for (i = 0; i < sizeof(*o); ++i) {
@@ -18,10 +18,29 @@ static int foo(struct obj *o) {
 	}
 
 	printf(" (%lu)\n", sizeof(*o));
-	return 0;
+}
+
+static void test1(void) {
+	struct obj o = {0x3, 0x4, {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}};
+	foo(&o);
+}
+
+struct S {
+	int f : 17;
+	char b[5];
+} s1 = {1, '2', '3'};
+
+static void test2(void) {
+	int i;
+	for (i = 0; i < sizeof(struct S); ++i) {
+		printf("%d ", ((char *) &s1)[i]);
+	}
+
+	printf(" (%lu)\n", sizeof(struct S));
 }
 
 int main(void) {
-	struct obj o = {0x3, 0x4, {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}};
-	return foo(&o);
+	test1();
+	test2();
+	return 0;
 }

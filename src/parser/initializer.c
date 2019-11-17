@@ -679,113 +679,192 @@ static void zero_initialize_bytes(
 }
 
 /*
- * Zero initialize padding bytes between target reference and next field
+ * Zero initialize padding bytes between previous and next field
  * assignment.
  *
- * Target has offset and field offset pointing to first location not yet
- * initialized.
+ * Previous member has offset and field offset pointing to first
+ * location not yet initialized. All other properties are undefined.
+ *
+ * To make IR logical, first try to complete bitfield, then add bytes
+ * as needed, and end with potential padding as start of new bitfield.
  */
 static void initialize_padding(
     struct definition *def,
     struct block *block,
-    struct var target,
-    struct var field)
+    struct var prev,
+    struct var next)
 {
-    size_t bits;
-    size_t padding;
+    size_t bytes;
 
-    if (target.offset < field.offset) {
-        if (target.field_offset) {
-            bits = size_of(target.type) * 8;
-            target.field_width = bits - target.field_offset;
-            zero_initialize(def, block, target);
-            target.offset += size_of(target.type);
-            target.field_offset = 0;
-            target.field_width = 0;
-            if (target.offset > field.offset) {
-                target.offset = field.offset;
+    assert(!prev.field_width);
+    assert(prev.offset <= next.offset);
+    assert(prev.offset * 8 + prev.field_offset
+        <= next.offset * 8 + next.field_offset);
+
+    while (1) {
+        if (prev.offset == next.offset) {
+            assert(prev.field_offset <= next.field_offset);
+            prev.field_width = next.field_offset - prev.field_offset;
+            if (prev.field_width) {
+                if (next.field_offset > 32) {
+                    assert(next.field_offset < 64);
+                    prev.type = basic_type__unsigned_long;
+                } else if (next.field_offset > 16) {
+                    prev.type = basic_type__unsigned_int;
+                } else if (next.field_offset > 8) {
+                    prev.type = basic_type__unsigned_short;
+                } else {
+                    prev.type = basic_type__unsigned_char;
+                }
+
+                zero_initialize(def, block, prev);
             }
+
+            break;
         }
 
-        assert(field.offset >= target.offset);
-        padding = field.offset - target.offset;
-        zero_initialize_bytes(def, block, target, padding);
-    } else if (target.field_offset < field.field_offset) {
-        target.field_width = field.field_offset - target.field_offset;
-        zero_initialize(def, block, target);
+        switch (prev.field_offset) {
+        case 8:
+        case 16:
+        case 32:
+        case 64:
+            prev.offset += prev.field_offset / 8;
+            prev.field_offset = 0;
+        case 0:
+            break;
+        default:
+            if (prev.field_offset < 32) {
+                prev.type = basic_type__unsigned_int;
+            } else {
+                assert(prev.field_offset < 64);
+                prev.type = basic_type__unsigned_long;
+            }
+
+            bytes = prev.offset + size_of(prev.type);
+            prev.field_width = size_of(prev.type) * 8 - prev.field_offset;
+            if (bytes > next.offset) {
+                assert(prev.field_width * 8 > (bytes - next.offset));
+                prev.field_width -= (bytes - next.offset) * 8;
+            }
+
+            assert((prev.field_offset + prev.field_width) % 8 == 0);
+            zero_initialize(def, block, prev);
+            prev.offset += (prev.field_offset + prev.field_width) / 8;
+            prev.field_offset = 0;
+            prev.field_width = 0;
+            break;
+        }
+
+        assert(prev.offset <= next.offset);
+        zero_initialize_bytes(def, block, prev, next.offset - prev.offset);
+        prev.offset = next.offset;
     }
 }
 
-/*
- * Initialize padding at the end of object.
- *
- * Consider both last bits of a bitfield, and any remaining space after
- * the bitfield itself.
- */
-static void initialize_trailing_padding(
-    struct definition *def,
-    struct block *block,
-    struct var target,
-    size_t size,
-    size_t bitfield_size)
+static int is_constant_assignment(const struct statement *st)
 {
-    assert(size >= target.offset);
+    assert(st->st == IR_ASSIGN);
+    return is_identity(st->expr)
+        && is_integer(st->expr.type)
+        && st->expr.l.kind == IMMEDIATE;
+}
 
-    if (target.field_offset) {
-        switch (bitfield_size) {
-        case 1:
-            target.type = basic_type__char;
-            target.field_width = 8 - target.field_offset;
-            break;
-        case 2:
-            target.type = basic_type__short;
-            target.field_width = 16 - target.field_offset;
-            break;
-        case 4:
-            target.type = basic_type__int;
-            target.field_width = 32 - target.field_offset;
-            break;
-        default:
-            assert(bitfield_size == 8);
-            target.type = basic_type__long;
-            target.field_width = 64 - target.field_offset;
-            break;
-        }
+static int merge_assignments(struct statement *a, const struct statement *b)
+{
+    long m1, m2;
 
-        assert(target.field_width > 0);
-        zero_initialize(def, block, target);
-        target.offset += size_of(target.type);
+    if (a->t.offset != b->t.offset
+        || !is_constant_assignment(a)
+        || !is_constant_assignment(b))
+    {
+        return 0;
     }
 
-    assert(size >= target.offset);
-    if (size > target.offset) {
-        zero_initialize_bytes(def, block, target, size - target.offset);
+    assert(is_field(a->t) && is_field(b->t));
+
+    m1 = ((1l << a->t.field_width) - 1);
+    m2 = ((1l << b->t.field_width) - 1);
+
+    a->t.type = usual_arithmetic_conversion(a->t.type, b->t.type);
+    a->t.field_width += b->t.field_width;
+    a->expr.type = a->t.type;
+    a->expr.l.imm.i = ((a->expr.l.imm.i & m1) << a->t.field_offset)
+        | ((b->expr.l.imm.i & m2) << b->t.field_offset);
+    a->expr.l.type = a->t.type;
+    a->expr.l.symbol = NULL;
+    if (!a->t.field_offset && a->t.field_width == size_of(a->t.type) * 8) {
+        a->t.field_width = 0;
+    }
+
+    return 1;
+}
+
+/*
+ * Merge adjacent field assignments with constant values.
+ *
+ * This is a required step for backend to be able to emit correct code,
+ * since it can enforce more restrictions on the IR. Static or global
+ * variables will always be assigned as whole bytes.
+ */
+static void normalize_field_assignment(
+    struct definition *def,
+    struct block *block)
+{
+    int i;
+    struct statement *a, *b;
+
+    assert(array_len(&block->code) > 1);
+    a = &array_get(&block->code, 0);
+
+    for (i = 1; i < array_len(&block->code); ++i) {
+        b = &array_get(&block->code, i);
+        if (merge_assignments(a, b)) {
+            array_erase(&block->code, i);
+            i--;
+        } else {
+            a = b;
+        }
     }
 }
 
 #ifndef NDEBUG
-static void validate_initializer_block(struct block *block)
+
+/*
+ * Initializer blocks should always result in a list of assignment
+ * operations writing to all bits of the target object, in order.
+ *
+ * Some additional constrants are put on field assignments; the first
+ * assignment to a field on a new offset must have field_offset 0.
+ */
+static size_t validate_contiguous_initialization(struct block *block)
 {
     int i;
+    size_t bits = 0;
     struct statement st;
-    struct var target = {0}, field;
+    struct var field, prev;
 
     for (i = 0; i < array_len(&block->code); ++i) {
         st = array_get(&block->code, i);
         assert(st.st == IR_ASSIGN);
-        assert(target.offset <= st.t.offset);
         field = st.t;
-        if (target.offset < field.offset) {
-            assert(field.offset - target.offset <= size_of(target.type));
+
+        if (field.field_width) {
+            assert(!field.field_offset
+                || (i && prev.offset == field.offset));
+            assert(field.offset * 8 + field.field_offset == bits);
+            bits += field.field_width;
         } else {
-            assert(target.offset == field.offset);
-            assert(target.field_offset + target.field_width
-                == field.field_offset);
+            assert(field.offset * 8 == bits);
+            bits += size_of(field.type) * 8;
         }
 
-        target = field;
+        prev = field;
     }
+
+    assert(bits % 8 == 0);
+    return bits / 8;
 }
+
 #endif
 
 /*
@@ -833,57 +912,42 @@ static struct block *postprocess_object_initialization(
     struct block *values,
     struct var target)
 {
-    int i, bitfield_size;
-    size_t total_size;
+    int i, has_field;
     struct statement st;
-    struct var field;
+    struct var prev, next;
     struct block *block;
 
-    assert(target.offset == 0);
+    assert(!target.offset);
     sort_and_trim(values);
     block = get_initializer_block();
-    total_size = size_of(target.type);
-    bitfield_size = 0;
+    prev = target;
 
-    for (i = 0; i < array_len(&values->code); ++i) {
+    for (i = 0, has_field = 0; i < array_len(&values->code); ++i) {
         st = array_get(&values->code, i);
-        field = st.t;
-        if (i == 0) {
-            target.type = field.type;
-        }
-
+        next = st.t;
         assert(st.st == IR_ASSIGN);
         assert(st.expr.op != IR_OP_CALL);
-        assert(field.offset >= 0);
-        assert(target.offset <= field.offset);
-
-        initialize_padding(def, block, target, field);
+        assert(next.symbol == target.symbol);
+        initialize_padding(def, block, prev, next);
         array_push_back(&block->code, st);
-        target.type = field.type;
-        target.offset = field.offset;
-        if (field.field_width) {
-            if (size_of(field.type) > bitfield_size) {
-                bitfield_size = size_of(field.type);
-            }
-            target.field_offset = field.field_offset + field.field_width;
-            target.field_width = 0;
-            if (target.field_offset == bitfield_size * 8) {
-                target.field_offset = 0;
-                target.offset += bitfield_size;
-            }
+        prev.offset = next.offset;
+        prev.field_offset = next.field_offset + next.field_width;
+        if (!next.field_width) {
+            prev.offset += size_of(next.type);
         } else {
-            target.field_offset = 0;
-            target.field_width = 0;
-            target.offset += size_of(field.type);
-            bitfield_size = 0;
+            has_field = 1;
         }
     }
 
-    initialize_trailing_padding(def, block, target, total_size, bitfield_size);
+    next.offset = size_of(target.type);
+    next.field_offset = 0;
+    initialize_padding(def, block, prev, next);
+    if (has_field) {
+        normalize_field_assignment(def, block);
+    }
+
     release_initializer_block(values);
-#ifndef NDEBUG
-    validate_initializer_block(block);
-#endif
+    assert(validate_contiguous_initialization(block) == size_of(target.type));
     return block;
 }
 
