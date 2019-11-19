@@ -225,7 +225,9 @@ static void dot_print_node(struct block *node)
         s = array_get(&node->code, i);
         switch (s.st) {
         case IR_ASSIGN:
-            fprintf(stream, " | %s = ", vartostr(s.t));
+            fprintf(stream, " | %s [", vartostr(s.t));
+            fprinttype(stream, s.t.type, NULL);
+            fprintf(stream, "] = ");
             dot_print_expr(s.expr);
             break;
         case IR_PARAM:
