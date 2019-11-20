@@ -59,7 +59,7 @@ bin/lacc: $(SOURCES) bin/include
 		-D'LACC_LIB_PATH="$(LIBDIR_SOURCE)"' \
 		-DAMALGAMATION
 
-bin/release/lacc: $(SOURCES)
+bin/release/lacc: $(SOURCES) bin/include
 	@mkdir -p $(@D)
 	$(CC) -std=c89 -O3 $(CFLAGS) -Iinclude src/lacc.c -o $@ \
 		-D'LACC_LIB_PATH="$(LIBDIR_TARGET)"' \
@@ -125,8 +125,8 @@ test: test-c89 test-c99 test-c11
 test-all: test test-gnu test-asm test-linker test-sqlite
 
 install: bin/release/lacc
-	mkdir -p $(LIBDIR_TARGET)
-	cp $(LIBDIR_SOURCE)/*.h $(LIBDIR_TARGET)/
+	mkdir -p $(LIBDIR_TARGET)/include/
+	cp $(LIBDIR_SOURCE)/include/*.h $(LIBDIR_TARGET)/include/
 	cp $? $(BINDIR)/lacc
 
 uninstall:
