@@ -805,8 +805,8 @@ static int is_32_bit_imm(struct immediate imm)
 }
 
 static int match_instruction_encoding(
-    struct instruction *instr,
-    struct encoding *enc)
+    const struct instruction *instr,
+    const struct encoding *enc)
 {
     int i;
     union operand op;
@@ -839,10 +839,12 @@ static int match_instruction_encoding(
         }
     }
 
-    if (enc->openc[0].widths && (enc->openc[0].widths & instr->source.width) == 0)
+    if (enc->openc[0].widths
+        && (enc->openc[0].widths & instr->source.width) == 0)
         return 0;
 
-    if (instr->dest.width && enc->openc[1].widths && ((enc->openc[1].widths & instr->dest.width) == 0))
+    if (instr->dest.width && enc->openc[1].widths
+        && ((enc->openc[1].widths & instr->dest.width) == 0))
         return 0;
 
     return 1;
@@ -890,15 +892,13 @@ static int is_single_width(unsigned int w)
 INTERNAL int mnemonic_match_operands(
     const char *mnemonic,
     size_t length,
-    enum instr_optype optype,
-    union operand *source,
-    union operand *dest)
+    struct instruction *instr)
 {
     int i;
     int ws, wd, sfx;
     size_t mlen;
     struct encoding *enc;
-    struct instruction instr = {0};
+    struct instruction candidate = {0};
     unsigned int w0, w1;
 
     assert(length > 0);
@@ -907,13 +907,13 @@ INTERNAL int mnemonic_match_operands(
         if (!enc->mnemonic.str)
             break;
 
-        if ((enc->optype & optype) != optype)
+        if ((enc->optype & instr->optype) != instr->optype)
             continue;
 
         w0 = enc->openc[0].widths;
         w1 = enc->openc[1].widths;
-        ws = source->width;
-        wd = dest->width;
+        ws = instr->source.width;
+        wd = instr->dest.width;
         sfx = 0;
 
         /* lea breaks rule with inferring memory operand size. */
@@ -948,7 +948,7 @@ INTERNAL int mnemonic_match_operands(
             }
         }
 
-        switch (optype) {
+        switch (instr->optype) {
         case OPT_NONE:
             break;
         case OPT_REG:
@@ -976,20 +976,19 @@ INTERNAL int mnemonic_match_operands(
             break;
         }
 
-        instr.optype = optype;
-        instr.opcode = enc->opc;
-        instr.source = *source;
-        instr.source.width = ws;
-        instr.dest = *dest;
-        instr.dest.width = wd;
-        if (match_instruction_encoding(&instr, enc)) {
-            source->width = ws;
-            dest->width = wd;
-            return enc->opc ? enc->opc : i;
+        candidate = *instr;
+        candidate.opcode = enc->opc;
+        candidate.source.width = ws;
+        candidate.dest.width = wd;
+        if (match_instruction_encoding(&candidate, enc)) {
+            instr->source.width = ws;
+            instr->dest.width = wd;
+            instr->opcode = enc->opc ? enc->opc : i;
+            return 1;
         }
     }
 
-    return -1;
+    return 0;
 }
 
 INTERNAL void get_mnemonic(struct instruction instr, char *buf)

@@ -40,7 +40,7 @@ static int extract_literal_char(struct var v)
 
     str = v.symbol->value.string;
     raw = str_raw(str);
-    if (v.offset < 0 || v.offset >= str.len) {
+    if (v.offset >= str.len) {
         error("Access outside bounds of string literal.");
         exit(1);
     }

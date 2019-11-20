@@ -387,10 +387,7 @@ static struct instruction parse__asm__instruction(
         }
     }
 
-    instr.opcode = mnemonic_match_operands(t.str, t.len,
-        instr.optype, &instr.source, &instr.dest);
-
-    if (instr.opcode == -1) {
+    if (!mnemonic_match_operands(t.str, t.len, &instr)) {
         error("Unrecognized instruction %s", t.str);
         exit(1);
     }

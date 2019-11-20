@@ -258,8 +258,6 @@ INTERNAL void get_mnemonic(struct instruction instr, char *buf);
 INTERNAL int mnemonic_match_operands(
     const char *mnemonic,
     size_t length,
-    enum instr_optype optype,
-    union operand *source,
-    union operand *dest);
+    struct instruction *instr);
 
 #endif

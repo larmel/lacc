@@ -2405,7 +2405,6 @@ static enum reg compile_neg(
     enum reg xmm0, xmm1;
     struct var val;
     union value num = {0};
-    size_t w;
 
     if (is_float(l.type)) {
         if (!c32) {
@@ -2422,8 +2421,7 @@ static enum reg compile_neg(
         val = var_direct(c64);
     }
 
-    w = size_of(l.type);
-    assert(w == size_of(val.type));
+    assert(size_of(l.type) == size_of(val.type));
     xmm0 = load_cast(val, val.type);
     xmm1 = load_cast(l, l.type);
     emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
