@@ -396,6 +396,11 @@ INTERNAL Type type_create_function(Type next)
     Type type;
     struct typetree *t;
 
+    if (is_array(next) || is_function(next)) {
+        error("Function cannot return function or array.");
+        exit(1);
+    }
+
     type = type_create(T_FUNCTION);
     t = get_typetree_handle(type.ref);
     t->next = next;

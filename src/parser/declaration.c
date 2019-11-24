@@ -1027,7 +1027,11 @@ static struct block *init_declarator(
         }
     }
 
-    if (is_function(type) && !is_complete(type) && peek().token != ';') {
+    if (is_function(type)
+        && !current_scope_depth(&ns_ident)
+        && !is_complete(type)
+        && peek().token != ';')
+    {
         push_scope(&ns_ident);
         parent = parameter_declaration_list(def, parent, type);
         pop_scope(&ns_ident);
@@ -1063,26 +1067,22 @@ static struct block *init_declarator(
     switch (peek().token) {
     case '=':
         if (sym->symtype == SYM_DECLARATION) {
-            error("Extern symbol '%s' cannot be initialized.",
-                str_raw(sym->name));
-            exit(1);
-        }
-        if (!sym->depth && sym->symtype == SYM_DEFINITION) {
+            error("Symbol '%s' cannot be initialized.", str_raw(sym->name));
+        } else if (!sym->depth && sym->symtype == SYM_DEFINITION) {
             error("Symbol '%s' was already defined.", str_raw(sym->name));
-            exit(1);
-        }
-        if (is_vla(sym->type)) {
+        } else if (is_vla(sym->type)) {
             error("Variable length array cannot be initialized.");
-            exit(1);
+        } else {
+            next();
+            sym->symtype = SYM_DEFINITION;
+            parent = initializer(def, parent, sym);
+            assert(size_of(sym->type) > 0);
+            if (sym->linkage != LINK_NONE) {
+                cfg_define(def, sym);
+            }
+            break;
         }
-        consume('=');
-        sym->symtype = SYM_DEFINITION;
-        parent = initializer(def, parent, sym);
-        assert(size_of(sym->type) > 0);
-        if (sym->linkage != LINK_NONE) {
-            cfg_define(def, sym);
-        }
-        break;
+        exit(1);
     case IDENTIFIER:
     case FIRST(type_specifier):
     case FIRST(type_qualifier):
