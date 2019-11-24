@@ -90,6 +90,7 @@ static const char *program, *output_name;
 static int optimization_level;
 static int dump_symbols, dump_types;
 static int nostdinc;
+static int write_deps;
 
 static array_of(struct input_file) input_files;
 static array_of(char *) predefined_macros;
@@ -177,6 +178,117 @@ static int option(const char *arg)
         nostdinc = 1;
     }
 
+    return 0;
+}
+
+/*
+ -M, -MD, -MF, -MG, -MM, -MMD -MP, -MQ, -MT
+
+   -M  Instead of outputting the result of preprocessing, output a rule
+       suitable for make describing the dependencies of the main source
+       file.  The preprocessor outputs one make rule containing the object
+       file name for that source file, a colon, and the names of all the
+       included files, including those coming from -include or -imacros
+       command-line options.
+
+       Unless specified explicitly (with -MT or -MQ), the object file name
+       consists of the name of the source file with any suffix replaced
+       with object file suffix and with any leading directory parts
+       removed.  If there are many included files then the rule is split
+       into several lines using \-newline.  The rule has no commands.
+
+       This option does not suppress the preprocessor's debug output, such
+       as -dM.  To avoid mixing such debug output with the dependency
+       rules you should explicitly specify the dependency output file with
+       -MF, or use an environment variable like DEPENDENCIES_OUTPUT.
+       Debug output is still sent to the regular output stream as normal.
+
+       Passing -M to the driver implies -E, and suppresses warnings with
+       an implicit -w.
+
+   -MM Like -M but do not mention header files that are found in system
+       header directories, nor header files that are included, directly or
+       indirectly, from such a header.
+
+       This implies that the choice of angle brackets or double quotes in
+       an #include directive does not in itself determine whether that
+       header appears in -MM dependency output.
+
+   -MF file
+       When used with -M or -MM, specifies a file to write the
+       dependencies to.  If no -MF switch is given the preprocessor sends
+       the rules to the same place it would send preprocessed output.
+
+       When used with the driver options -MD or -MMD, -MF overrides the
+       default dependency output file.
+
+   -MG In conjunction with an option such as -M requesting dependency
+       generation, -MG assumes missing header files are generated files
+       and adds them to the dependency list without raising an error.  The
+       dependency filename is taken directly from the "#include" directive
+       without prepending any path.  -MG also suppresses preprocessed
+       output, as a missing header file renders this useless.
+
+       This feature is used in automatic updating of makefiles.
+   -MP This option instructs CPP to add a phony target for each dependency
+       other than the main file, causing each to depend on nothing.  These
+       dummy rules work around errors make gives if you remove header
+       files without updating the Makefile to match.
+
+       This is typical output:
+
+               test.o: test.c test.h
+
+               test.h:
+
+   -MT target
+       Change the target of the rule emitted by dependency generation.  By
+       default CPP takes the name of the main input file, deletes any
+       directory components and any file suffix such as .c, and appends
+       the platform's usual object suffix.  The result is the target.
+
+       An -MT option sets the target to be exactly the string you specify.
+       If you want multiple targets, you can specify them as a single
+       argument to -MT, or use multiple -MT options.
+
+       For example, -MT '$(objpfx)foo.o' might give
+
+               $(objpfx)foo.o: foo.c
+
+   -MQ target
+       Same as -MT, but it quotes any characters which are special to
+       Make.  -MQ '$(objpfx)foo.o' gives
+
+               $$(objpfx)foo.o: foo.c
+
+       The default target is automatically quoted, as if it were given
+       with -MQ.
+
+   -MD -MD is equivalent to -M -MF file, except that -E is not implied.
+       The driver determines file based on whether an -o option is given.
+       If it is, the driver uses its argument but with a suffix of .d,
+       otherwise it takes the name of the input file, removes any
+       directory components and suffix, and applies a .d suffix.
+
+       If -MD is used in conjunction with -E, any -o switch is understood
+       to specify the dependency output file, but if used without -E, each
+       -o is understood to specify a target object file.
+
+       Since -E is not implied, -MD can be used to generate a dependency
+       output file as a side-effect of the compilation process.
+
+   -MMD
+       Like -MD except mention only user header files, not system header
+       files.
+
+*/
+static int preprocessor_option(const char *arg)
+{
+    if (!strcmp("-MD", arg)) {
+        write_deps = 1;
+    } else if (!strcmp("-MP", arg)) {
+
+    } else assert(0);
     return 0;
 }
 
@@ -526,8 +638,8 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-include:", &add_include_file},
         {"-print-file-name=", &print_file_name},
         {"-pipe", &option},
-        {"-MD", &option},
-        {"-MP", &option},
+        {"-MD", &preprocessor_option},
+        {"-MP", &preprocessor_option},
         {"-Wl,", &add_linker_flag},
         {"-rdynamic", &add_linker_flag},
         {"-shared", &add_linker_arg},

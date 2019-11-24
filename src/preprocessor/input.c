@@ -62,6 +62,12 @@ static array_of(const char *) search_path_list;
 static array_of(const char *) include_files;
 
 /*
+ * List of included files resolved during translation. This can be used
+ * to generate make dependency files (-MD).
+ */
+static array_of(const char *) dependencies;
+
+/*
  * Keep stack of file descriptors as resolved by includes. Push and pop
  * from the end of the list.
  */
@@ -70,6 +76,22 @@ static array_of(struct source) source_stack;
 /* Expose for diagnostics. */
 INTERNAL String current_file_path;
 INTERNAL int current_file_line;
+
+static void register_dependency(const char *path)
+{
+    int i;
+    const char *prev;
+
+    assert(path);
+    for (i = 0; i < array_len(&dependencies); ++i) {
+        prev = array_get(&dependencies, i);
+        if (!strcmp(prev, path)) {
+            return;
+        }
+    }
+
+    array_push_back(&dependencies, path);
+}
 
 static void push_file(struct source source)
 {
@@ -81,6 +103,7 @@ static void push_file(struct source source)
     source.buffer = malloc(FILE_BUFFER_SIZE);
     source.size = FILE_BUFFER_SIZE;
     array_push_back(&source_stack, source);
+    register_dependency(source.path);
 }
 
 static int pop_file(void)
@@ -234,6 +257,15 @@ static void inject_include_files(void)
             include_system_file(path);
         }
     }
+}
+
+INTERNAL void write_make_dependencies(FILE *f)
+{
+    int i;
+    String name;
+
+    assert(root_source_name);
+    fprintf(f, "%s: ")
 }
 
 INTERNAL void set_input_file(const char *path)
