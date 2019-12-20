@@ -82,16 +82,16 @@ static enum lang {
 struct input_file {
     const char *name;
     const char *output_name;
-    const char *deps_output_name;
+    const char *makefile_name;
     int is_default_name;
     enum lang language;
 };
 
-static const char *program, *output_name;
+static const char *program, *output_name, *dependency_output_name;
+static const char *dependency_target;
 static int optimization_level;
 static int dump_symbols, dump_types;
 static int nostdinc;
-static int write_deps;
 
 static array_of(struct input_file) input_files;
 static array_of(char *) predefined_macros;
@@ -265,47 +265,75 @@ static int option(const char *arg)
        The default target is automatically quoted, as if it were given
        with -MQ.
 
-   -MD -MD is equivalent to -M -MF file, except that -E is not implied.
-       The driver determines file based on whether an -o option is given.
-       If it is, the driver uses its argument but with a suffix of .d,
-       otherwise it takes the name of the input file, removes any
-       directory components and suffix, and applies a .d suffix.
-
-       If -MD is used in conjunction with -E, any -o switch is understood
-       to specify the dependency output file, but if used without -E, each
-       -o is understood to specify a target object file.
-
-       Since -E is not implied, -MD can be used to generate a dependency
-       output file as a side-effect of the compilation process.
-
    -MMD
        Like -MD except mention only user header files, not system header
        files.
 
 */
 
-struct dependency_output_options {
+INTERNAL struct dependency_config dependency_config;
 
-}
-
-
-static int preprocessor_option(const char *arg)
+static int dependency_option(const char *arg)
 {
+    struct dependency_config *opts = &dependency_config;
     assert(arg[0] == '-');
     assert(arg[1] == 'M');
 
+    /* -M, -MD, -MF, -MG, -MM, -MMD -MP, -MQ, -MT */
+    context.generate_dependencies = 1;
     if (!strcmp("-M", arg)) {
         flag("-E");
         flag("-w");
-        context.generate_dependencies = 1;
+    } else if (!strcmp("-MM", arg)) {
+        flag("-E");
+        flag("-w");
+        opts->skip_system_headers = 1;
     } else if (!strcmp("-MD", arg)) {
-        write_deps = 1;
-        context.generate_dependencies = 1;
+        flag("-w");
+        opts->generate_file_name = 1;
+    } else if (!strcmp("-MMD", arg)) {
+        flag("-w");
+        opts->generate_file_name = 1;
+        opts->skip_system_headers = 1;
+    } else if (!strcmp("-MG", arg)) {
+        opts->accept_missing_headers = 1;
     } else if (!strcmp("-MP", arg)) {
-        context.generate_dependencies = 1;
-
+        opts->phony_targets = 1;
     } else assert(0);
+
     return 0;
+}
+
+/*
+ * Specify file name to write dependencies to.
+ */
+static int set_makefile_name(const char *name)
+{
+    dependency_output_name = name;
+    return 0;
+}
+
+/*
+ * -MT target
+ *
+ * Set name of target in makefile.
+ */
+static int set_dependency_target(const char *name)
+{
+    dependency_target = name;
+    return 0;
+}
+
+/*
+ * -MQ target
+ *
+ * Set target in makefile to a string with special chanacters in Make
+ * syntax is quoted.
+ */
+static int set_dependency_target_quoted(const char *name)
+{
+    /* todo: Actual quoting */
+    return set_dependency_target(name);
 }
 
 static int language(const char *arg)
@@ -424,6 +452,19 @@ static char *change_file_suffix(const char *file, enum target target)
     name = calloc(len + strlen(suffix) + 1, sizeof(*name));
     strncpy(name, file, len);
     assert(!name[len] || name[len] == '.');
+    name[len] = '.';
+    strcpy(name + len, suffix);
+    return name;
+}
+
+static char *append_suffix(const char *file, const char *suffix)
+{
+    char *name;
+    size_t len;
+
+    len = strlen(file);
+    name = calloc(len + strlen(suffix) + 1, 1);
+    strncpy(name, file, len);
     name[len] = '.';
     strcpy(name + len, suffix);
     return name;
@@ -654,8 +695,11 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-include:", &add_include_file},
         {"-print-file-name=", &print_file_name},
         {"-pipe", &option},
-        {"-M", &preprocessor_option},
-        {"-M<", &preprocessor_option},
+        {"-M", &dependency_option},
+        {"-MF", &set_makefile_name},
+        {"-MT", &set_dependency_target},
+        {"-MQ", &set_dependency_target_quoted},
+        {"-M<", &dependency_option},
         {"-Wl,", &add_linker_flag},
         {"-rdynamic", &add_linker_flag},
         {"-shared", &add_linker_arg},
@@ -714,6 +758,9 @@ static int parse_program_arguments(int argc, char *argv[])
         file = &array_get(&input_files, i);
         file->output_name = change_file_suffix(file->name, context.target);
         file->is_default_name = 1;
+        if (context.generate_dependencies) {
+            file->makefile_name = append_suffix(file->output_name, ".d");
+        }
     }
 
     return 0;
@@ -780,7 +827,7 @@ static void add_include_search_paths(void)
 
 static int process_file(struct input_file file)
 {
-    FILE *output;
+    FILE *output, *makefile;
     struct definition *def;
     const struct symbol *sym;
 
@@ -835,9 +882,17 @@ static int process_file(struct input_file file)
         pop_scope(&ns_ident);
     }
 
+    if (context.generate_dependencies) {
+        makefile = fopen(file.makefile_name, "w");
+        write_makefile(makefile, dependency_target);
+        fclose(makefile);
+    }
+
+
     if (output != stdout) {
         fclose(output);
     }
+
 
     return context.errors;
 }

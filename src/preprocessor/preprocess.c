@@ -45,14 +45,6 @@ INTERNAL void preprocess_finalize(void)
     deque_destroy(&lookahead);
 }
 
-INTERNAL int set_preprocessor_flag(const char *opt)
-{
-    if (!strcmp("-MD", opt)) {
-        
-    } else assert(0);
-    return 1;
-}
-
 static struct token get_token(void)
 {
     struct token r;

@@ -82,14 +82,16 @@ static void register_dependency(String path)
     int i;
     String prev;
 
-    for (i = 0; i < array_len(&dependencies); ++i) {
-        prev = array_get(&dependencies, i);
-        if (!str_cmp(prev, path)) {
-            return;
+    if (context.generate_dependencies) {
+        for (i = 0; i < array_len(&dependencies); ++i) {
+            prev = array_get(&dependencies, i);
+            if (!str_cmp(prev, path)) {
+                return;
+            }
         }
-    }
 
-    array_push_back(&dependencies, path);
+        array_push_back(&dependencies, path);
+    }
 }
 
 static void push_file(struct source source)
@@ -102,7 +104,6 @@ static void push_file(struct source source)
     source.buffer = malloc(FILE_BUFFER_SIZE);
     source.size = FILE_BUFFER_SIZE;
     array_push_back(&source_stack, source);
-    register_dependency(source.path);
 }
 
 static int pop_file(void)
@@ -186,6 +187,7 @@ INTERNAL void include_file(const char *name)
         source.path = str_register(path, strlen(path));
         source.dirlen = path_dirlen(path);
         push_file(source);
+        register_dependency(source.path);
     } else {
         include_system_file(name);
     }
@@ -216,6 +218,9 @@ INTERNAL void include_system_file(const char *name)
 
     if (source.file) {
         push_file(source);
+        if (!dependency_config.skip_system_headers) {
+            register_dependency(source.path);
+        }
     } else {
         error("Unable to resolve include file '%s'.", name);
         exit(1);
@@ -252,18 +257,19 @@ static void inject_include_files(void)
             source.path = str_register(path, strlen(path));
             source.dirlen = path_dirlen(path);
             push_file(source);
+            register_dependency(source.path);
         } else {
             include_system_file(path);
         }
     }
 }
 
-INTERNAL void write_make_dependencies(FILE *f)
+INTERNAL void write_makefile(FILE *f, const char *target)
 {
     int i;
     String path;
 
-    fprintf(f, "?: ");
+    fprintf(f, "%s: ", target);
     for (i = 0; i < array_len(&dependencies); ++i) {
         path = array_get(&dependencies, i);
         if (i) {
@@ -271,6 +277,14 @@ INTERNAL void write_make_dependencies(FILE *f)
         }
 
         fprintf(f, "%s", str_raw(path));
+    }
+
+    if (dependency_config.phony_targets) {
+        fprintf(f, "\n");
+        for (i = 0; i < array_len(&dependencies); ++i) {
+            path = array_get(&dependencies, i);
+            fprintf(f, "%s:\n", str_raw(path));
+        }
     }
 }
 

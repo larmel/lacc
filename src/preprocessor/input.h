@@ -4,6 +4,19 @@
 #include <lacc/string.h>
 
 /*
+ * Options controlling how to emit make dependencies.
+ */
+struct dependency_config {
+    unsigned int skip_system_headers : 1;
+    unsigned int phony_targets : 1;
+    unsigned int accept_missing_headers : 1;
+    unsigned int suppress_preprocessor_output : 1;
+    unsigned int generate_file_name : 1;
+};
+
+EXTERNAL struct dependency_config dependency_config;
+
+/*
  * Initialize with root file name, and store relative path to resolve
  * later includes. Passing NULL defaults to taking input from stdin.
  */
@@ -31,6 +44,9 @@ INTERNAL int add_include_file(const char *path);
  * a single newline character ('\n'), but it is not included.
  */
 INTERNAL char *getprepline(void);
+
+/* Output dependencies to file. */
+INTERNAL void write_makefile(FILE *f, const char *target);
 
 /* Path of file and line number that was last read. */
 EXTERNAL String current_file_path;
