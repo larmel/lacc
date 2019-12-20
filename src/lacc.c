@@ -82,6 +82,7 @@ static enum lang {
 struct input_file {
     const char *name;
     const char *output_name;
+    const char *deps_output_name;
     int is_default_name;
     enum lang language;
 };
@@ -282,11 +283,26 @@ static int option(const char *arg)
        files.
 
 */
+
+struct dependency_output_options {
+
+}
+
+
 static int preprocessor_option(const char *arg)
 {
-    if (!strcmp("-MD", arg)) {
+    assert(arg[0] == '-');
+    assert(arg[1] == 'M');
+
+    if (!strcmp("-M", arg)) {
+        flag("-E");
+        flag("-w");
+        context.generate_dependencies = 1;
+    } else if (!strcmp("-MD", arg)) {
         write_deps = 1;
+        context.generate_dependencies = 1;
     } else if (!strcmp("-MP", arg)) {
+        context.generate_dependencies = 1;
 
     } else assert(0);
     return 0;
@@ -638,8 +654,8 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-include:", &add_include_file},
         {"-print-file-name=", &print_file_name},
         {"-pipe", &option},
-        {"-MD", &preprocessor_option},
-        {"-MP", &preprocessor_option},
+        {"-M", &preprocessor_option},
+        {"-M<", &preprocessor_option},
         {"-Wl,", &add_linker_flag},
         {"-rdynamic", &add_linker_flag},
         {"-shared", &add_linker_arg},
