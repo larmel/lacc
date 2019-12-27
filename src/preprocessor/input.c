@@ -264,19 +264,20 @@ static void inject_include_files(void)
     }
 }
 
-INTERNAL void write_makefile(FILE *f, const char *target)
+INTERNAL void write_makefile(FILE *f, const char *target, const char *source)
 {
     int i;
     String path;
 
-    fprintf(f, "%s: ", target);
+    assert(target);
+    fprintf(f, "%s: %s", target, source);
     for (i = 0; i < array_len(&dependencies); ++i) {
         path = array_get(&dependencies, i);
         if (i) {
-            fprintf(f, " ");
+            fprintf(f, " \\\n");
         }
 
-        fprintf(f, "%s", str_raw(path));
+        fprintf(f, " %s", str_raw(path));
     }
 
     if (dependency_config.phony_targets) {
@@ -286,6 +287,8 @@ INTERNAL void write_makefile(FILE *f, const char *target)
             fprintf(f, "%s:\n", str_raw(path));
         }
     }
+
+    fprintf(f, "\n");
 }
 
 INTERNAL void set_input_file(const char *path)

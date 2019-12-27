@@ -46,7 +46,7 @@ INTERNAL int add_include_file(const char *path);
 INTERNAL char *getprepline(void);
 
 /* Output dependencies to file. */
-INTERNAL void write_makefile(FILE *f, const char *target);
+INTERNAL void write_makefile(FILE *f, const char *target, const char *source);
 
 /* Path of file and line number that was last read. */
 EXTERNAL String current_file_path;

@@ -83,12 +83,13 @@ struct input_file {
     const char *name;
     const char *output_name;
     const char *makefile_name;
+    const char *makefile_target;
     int is_default_name;
     enum lang language;
 };
 
-static const char *program, *output_name, *dependency_output_name;
-static const char *dependency_target;
+static const char *program, *output_name;
+static const char *makefile_name, *makefile_target;
 static int optimization_level;
 static int dump_symbols, dump_types;
 static int nostdinc;
@@ -309,7 +310,7 @@ static int dependency_option(const char *arg)
  */
 static int set_makefile_name(const char *name)
 {
-    dependency_output_name = name;
+    makefile_name = name;
     return 0;
 }
 
@@ -318,9 +319,9 @@ static int set_makefile_name(const char *name)
  *
  * Set name of target in makefile.
  */
-static int set_dependency_target(const char *name)
+static int set_makefile_target(const char *name)
 {
-    dependency_target = name;
+    makefile_target = name;
     return 0;
 }
 
@@ -330,10 +331,10 @@ static int set_dependency_target(const char *name)
  * Set target in makefile to a string with special chanacters in Make
  * syntax is quoted.
  */
-static int set_dependency_target_quoted(const char *name)
+static int set_makefile_target_quoted(const char *name)
 {
     /* todo: Actual quoting */
-    return set_dependency_target(name);
+    return set_makefile_target(name);
 }
 
 static int language(const char *arg)
@@ -457,14 +458,28 @@ static char *change_file_suffix(const char *file, enum target target)
     return name;
 }
 
-static char *append_suffix(const char *file, const char *suffix)
+static const char *set_suffix(const char *path, const char *suffix)
 {
     char *name;
+    const char *slash, *dot;
     size_t len;
 
-    len = strlen(file);
+    assert(path);
+    assert(suffix);
+
+    slash = strrchr(path, '/');
+    if (slash) {
+        path = slash + 1;
+    }
+
+    dot = strrchr(path, '.');
+    if (!dot) {
+        dot = path + strlen(path);
+    }
+
+    len = (dot - path);
     name = calloc(len + strlen(suffix) + 1, 1);
-    strncpy(name, file, len);
+    strncpy(name, path, len);
     name[len] = '.';
     strcpy(name + len, suffix);
     return name;
@@ -696,9 +711,9 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-print-file-name=", &print_file_name},
         {"-pipe", &option},
         {"-M", &dependency_option},
-        {"-MF", &set_makefile_name},
-        {"-MT", &set_dependency_target},
-        {"-MQ", &set_dependency_target_quoted},
+        {"-MF:", &set_makefile_name},
+        {"-MT:", &set_makefile_target},
+        {"-MQ:", &set_makefile_target_quoted},
         {"-M<", &dependency_option},
         {"-Wl,", &add_linker_flag},
         {"-rdynamic", &add_linker_flag},
@@ -756,10 +771,29 @@ static int parse_program_arguments(int argc, char *argv[])
         file->output_name = output_name;
     } else for (i = 0; i < n; ++i) {
         file = &array_get(&input_files, i);
-        file->output_name = change_file_suffix(file->name, context.target);
         file->is_default_name = 1;
-        if (context.generate_dependencies) {
-            file->makefile_name = append_suffix(file->output_name, ".d");
+        file->makefile_target = makefile_target;
+        switch (context.target) {
+        case TARGET_PREPROCESS:
+            if (context.generate_dependencies && !makefile_target) {
+                file->makefile_target = set_suffix(file->name, ".o");
+            }
+            break;
+        case TARGET_IR_DOT:
+            file->output_name = set_suffix(file->name, ".dot");
+            break;
+        case TARGET_x86_64_ASM:
+            file->output_name = set_suffix(file->name, ".s");
+            break;
+        case TARGET_x86_64_OBJ:
+        case TARGET_x86_64_EXE:
+            file->output_name = set_suffix(file->name, ".o");
+            if (context.generate_dependencies && !makefile_target) {
+                file->makefile_name = set_suffix(file->name, ".o.d");
+                file->makefile_target = file->name;
+            }
+        default:
+            break;
         }
     }
 
@@ -847,6 +881,9 @@ static int process_file(struct input_file file)
     }
 
     if (context.target == TARGET_PREPROCESS) {
+        if (context.generate_dependencies && output == stdout) {
+            output = NULL;
+        }
         preprocess(output);
     } else {
         set_compile_target(output, file.name);
@@ -883,16 +920,18 @@ static int process_file(struct input_file file)
     }
 
     if (context.generate_dependencies) {
-        makefile = fopen(file.makefile_name, "w");
-        write_makefile(makefile, dependency_target);
-        fclose(makefile);
+        if (file.makefile_name) {
+            makefile = fopen(file.makefile_name, "w");
+            write_makefile(makefile, file.makefile_target, file.name);
+            fclose(makefile);
+        } else {
+            write_makefile(stdout, file.makefile_target, file.name);
+        }
     }
 
-
-    if (output != stdout) {
+    if (output && output != stdout) {
         fclose(output);
     }
-
 
     return context.errors;
 }

@@ -678,29 +678,34 @@ INTERNAL void preprocess(FILE *output)
     struct token t;
 
     output_preprocessed = 1;
-    while ((t = next()).token != END) {
-        if (t.leading_whitespace) {
-            fprintf(output, "%*s", t.leading_whitespace, " ");
-        }
+    if (output) {
+        while ((t = next()).token != END) {
+            if (t.leading_whitespace) {
+                fprintf(output, "%*s", t.leading_whitespace, " ");
+            }
 
-        switch (t.token) {
-        case NUMBER:
-            assert(0);
-            break;
-        case PREP_STRING:
-        case STRING:
-            putc('\"', output);
-            fprintf(output, "%s", str_raw(t.d.string));
-            putc('\"', output);
-            break;
-        case PREP_CHAR:
-            putc('\'', output);
-            fprintf(output, "%s", str_raw(t.d.string));
-            putc('\'', output);
-            break;
-        default:
-            fprintf(output, "%s", str_raw(t.d.string));
-            break;
+            switch (t.token) {
+            case NUMBER:
+                assert(0);
+                break;
+            case PREP_STRING:
+            case STRING:
+                putc('\"', output);
+                fprintf(output, "%s", str_raw(t.d.string));
+                putc('\"', output);
+                break;
+            case PREP_CHAR:
+                putc('\'', output);
+                fprintf(output, "%s", str_raw(t.d.string));
+                putc('\'', output);
+                break;
+            default:
+                fprintf(output, "%s", str_raw(t.d.string));
+                break;
+            }
         }
+    } else {
+        while ((t = next()).token != END)
+            ;
     }
 }
