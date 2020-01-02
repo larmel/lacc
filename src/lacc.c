@@ -104,6 +104,12 @@ static int help(const char *arg)
     return 1;
 }
 
+static int version(const char *arg)
+{
+    fprintf(stdout, "lacc version 0.0.1\n");
+    return 1;
+}
+
 static int flag(const char *arg)
 {
     assert(arg[0] == '-');
@@ -484,6 +490,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-m[no-]mmx", &option},
         {"-dot", &option},
         {"--help", &help},
+        {"--version", &version},
         {"-march=", &set_cpu},
         {"-o:", &set_output_name},
         {"-I:", &add_include_search_path},
