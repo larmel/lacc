@@ -671,7 +671,7 @@ INTERNAL int elf_data(struct immediate imm)
             imm.d.addr.sym, R_X86_64_64, 0, imm.d.addr.displacement);
         break;
     case IMM_STRING:
-        assert(w == imm.d.string.len + 1 || w == imm.d.string.len);
+        assert(w == str_len(imm.d.string) + 1 || w == str_len(imm.d.string));
         ptr = str_raw(imm.d.string);
         break;
     }

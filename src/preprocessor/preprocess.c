@@ -486,7 +486,7 @@ static const char *destringize(String str)
     size_t len;
     const char *raw;
 
-    len = str.len;
+    len = str_len(str);
     raw = str_raw(str);
     if (len + 1 > dstr_length) {
         dstr_length = len + 1;

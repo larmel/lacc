@@ -559,9 +559,11 @@ INTERNAL struct symbol *sym_create_string(String str)
 {
     static int n;
     struct symbol *sym;
+    size_t len;
 
+    len = str_len(str);
     sym = alloc_sym();
-    sym->type = get_string_type(str.len + 1);
+    sym->type = get_string_type(len + 1);
     sym->value.string = str;
     sym->symtype = SYM_LITERAL;
     sym->linkage = LINK_INTERN;

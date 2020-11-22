@@ -71,7 +71,7 @@ static struct block *parameter_list(
         : cfg_block_init(def);
 
     while (peek().token != ')') {
-        name.len = 0;
+        name = str_empty();
         length = 0;
         base = declaration_specifiers(&info);
         if (info.storage_class) {
@@ -94,7 +94,7 @@ static struct block *parameter_list(
         }
         param = type_add_member(*func, name, base);
         param->offset = length;
-        if (name.len) {
+        if (!str_is_empty(name)) {
             param->sym =
                 sym_add(&ns_ident, name, base, SYM_DEFINITION, LINK_NONE);
         }
@@ -426,7 +426,7 @@ static void member_declaration_list(Type type)
     do {
         decl_base = declaration_specifiers(NULL);
         while (1) {
-            name.len = 0;
+            name = str_empty();
             declarator(NULL, NULL, decl_base, &decl_type, &name);
             if (is_struct_or_union(type) && peek().token == ':') {
                 if (!is_integer(decl_type)) {
@@ -440,7 +440,7 @@ static void member_declaration_list(Type type)
                     exit(1);
                 }
                 type_add_field(type, name, decl_type, expr.imm.u);
-            } else if (!name.len) {
+            } else if (str_is_empty(name)) {
                 if (is_struct_or_union(decl_type)) {
                     type_add_anonymous_member(type, decl_type);
                 } else {
@@ -850,12 +850,14 @@ static void define_builtin__func__(String name)
 {
     Type type;
     struct symbol *sym;
+    size_t len;
 
     static String func = SHORT_STRING_INIT("__func__");
 
     assert(current_scope_depth(&ns_ident) == 1);
     if (context.standard >= STD_C99) {
-        type = type_create_array(basic_type__char, (size_t) name.len + 1);
+        len = str_len(name);
+        type = type_create_array(basic_type__char, len + 1);
         sym = sym_add(&ns_ident, func, type, SYM_LITERAL, LINK_INTERN);
         sym->value.string = name;
     }
@@ -909,7 +911,7 @@ static struct block *parameter_declaration_list(
     def->symbol = NULL;
     for (i = 0; i < nmembers(type); ++i) {
         param = get_member(type, i);
-        if (!param->name.len) {
+        if (str_is_empty(param->name)) {
             error("Missing parameter name at position %d.", i + 1);
             exit(1);
         }
@@ -946,7 +948,7 @@ static struct block *make_parameters_visible(
 
     for (i = 0; i < nmembers(def->symbol->type); ++i) {
         param = get_member(def->symbol->type, i);
-        if (!param->name.len) {
+        if (str_is_empty(param->name)) {
             error("Missing parameter at position %d.", i + 1);
             exit(1);
         }
@@ -992,7 +994,7 @@ static struct block *init_declarator(
     enum linkage linkage)
 {
     Type type;
-    String name = {0};
+    String name = SHORT_STRING_INIT("");
     struct symbol *sym;
     const struct member *param;
 
@@ -1002,7 +1004,7 @@ static struct block *init_declarator(
         parent = declarator(def, parent, base, &type, &name);
     }
 
-    if (!name.len) {
+    if (str_is_empty(name)) {
         return parent;
     }
 

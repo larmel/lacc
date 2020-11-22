@@ -9,14 +9,14 @@
 #include <string.h>
 
 struct hash_entry {
+    int hash;
+    struct hash_entry *next;
+
     /*
      * We don't own the data, only keep pointers to some block of memory
      * controlled by the client.
      */
     void *data;
-
-    unsigned long hash;
-    struct hash_entry *next;
 };
 
 enum hash_op {
@@ -28,19 +28,26 @@ enum hash_op {
 /*
  * Hash algorithm is adapted from http://www.cse.yorku.ca/~oz/hash.html.
  */
-static unsigned long djb2_hash(String str)
+static int djb2_hash(String str)
 {
-    int c;
-    unsigned long hash = 5381;
-    const char
-        *p = str_raw(str),
-        *q = p + str.len;
+    int c, hash = 5381;
+    const char *p, *q;
+
+    if (IS_SHORT_STRING(str)) {
+        p = str.small.buf;
+        q = p + (SHORT_STRING_LEN - str.small.cap);
+    } else {
+        p = str.large.ptr;
+        q = p + (str.large.len & MAX_STRING_LEN);
+    }
 
     while (p < q) {
         c = *p++;
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
     }
 
+    hash = hash & 0x7FFFFFFF;
+    assert(hash >= 0);
     return hash;
 }
 
@@ -77,7 +84,7 @@ static struct hash_entry *hash_walk(
     static struct hash_entry deleted;
 
     struct hash_entry *ref, *pre;
-    unsigned long
+    int
         hash = djb2_hash(key),
         pos = hash % tab->capacity;
 

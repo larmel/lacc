@@ -356,10 +356,10 @@ INTERNAL int asm_data(struct immediate data)
             out("\t.quad\t%s\n", sym_name(data.d.addr.sym));
         break;
     case IMM_STRING:
-        if (data.width == data.d.string.len) {
+        if (data.width == str_len(data.d.string)) {
             out("\t.ascii\t");
         } else {
-            assert(data.width == data.d.string.len + 1);
+            assert(data.width == str_len(data.d.string) + 1);
             out("\t.string\t");
         }
         fprintstr(asm_output, data.d.string);

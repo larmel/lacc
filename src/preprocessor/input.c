@@ -74,7 +74,7 @@ INTERNAL int current_file_line;
 static void push_file(struct source source)
 {
     assert(source.file);
-    assert(source.path.len);
+    assert(!str_is_empty(source.path));
 
     current_file_line = 0;
     current_file_path = source.path;

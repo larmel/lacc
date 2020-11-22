@@ -1496,7 +1496,7 @@ static void allocate_asmblock_registers(
             continue;
         }
 
-        if ((str_chr(str, 'r') && !str_chr(str, 'm'))
+        if ((str_has_chr(str, 'r') && !str_has_chr(str, 'm'))
             || op->variable.kind == DEREF)
         {
             if (is_integer(op->variable.type) || is_pointer(op->variable.type)) {
@@ -1521,7 +1521,7 @@ static void allocate_asmblock_registers(
                 }
                 sym->slot = *sse_regs;
             }
-        } else if (!str_chr(str, 'r') && str_chr(str, 'm')) {
+        } else if (!str_has_chr(str, 'r') && str_has_chr(str, 'm')) {
             sym->memory = 1;
         }
     }
@@ -2893,7 +2893,7 @@ static void compile__asm(struct asm_statement st)
     /* Put all variables in register according to constraint. */
     for (i = 0; i < array_len(&st.operands); ++i) {
         op = array_get(&st.operands, i);
-        if (!str_chr(op.constraint, '=')
+        if (!str_has_chr(op.constraint, '=')
             && explicit_reg_constraint(op.constraint, &r))
         {
             load(op.variable, r);
@@ -2905,7 +2905,7 @@ static void compile__asm(struct asm_statement st)
     /* Store variables from register constraint. */
     for (i = 0; i < array_len(&st.operands); ++i) {
         op = array_get(&st.operands, i);
-        if ((str_chr(op.constraint, '=') || str_chr(op.constraint, '+'))
+        if ((str_has_chr(op.constraint, '=') || str_has_chr(op.constraint, '+'))
             && explicit_reg_constraint(op.constraint, &r))
         {
             store(r, op.variable);

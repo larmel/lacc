@@ -265,19 +265,22 @@ static struct token paste(struct token left, struct token right)
     char *buf;
     const char *endptr;
     String s1, s2;
+    size_t l1, l2;
 
     assert(left.token != NUMBER);
     assert(right.token != NUMBER);
 
     s1 = left.d.string;
     s2 = right.d.string;
+    l1 = str_len(s1);
+    l2 = str_len(s2);
 
-    buf = calloc(s1.len + s2.len + 1, sizeof(*buf));
-    strncpy(buf, str_raw(s1), s1.len);
-    strncpy(buf + s1.len, str_raw(s2), s2.len);
+    buf = calloc(l1 + l2 + 1, sizeof(*buf));
+    strncpy(buf, str_raw(s1), l1);
+    strncpy(buf + l1, str_raw(s2), l2);
 
     right = tokenize(buf, &endptr);
-    if (endptr != buf + s1.len + s2.len) {
+    if (endptr != buf + l1 + l2) {
         error("Invalid token resulting from pasting '%s' and '%s'.",
             str_raw(s1), str_raw(s2));
         exit(1);
@@ -690,7 +693,7 @@ static char *stringify_concat(
 
     assert(tok.token != NUMBER);
     str = tok.d.string;
-    len = (tok.leading_whitespace != 0) + str.len * 2;
+    len = (tok.leading_whitespace != 0) + str_len(str) * 2;
     if (*pos + len > *cap) {
         *cap = *pos + len;
         buf = realloc(buf, *cap);
@@ -700,6 +703,7 @@ static char *stringify_concat(
         buf[(*pos)++] = ' ';
     }
 
+    len = str_len(str);
     raw = str_raw(str);
     ptr = buf + *pos;
     switch (tok.token) {
@@ -707,18 +711,18 @@ static char *stringify_concat(
     case STRING:
         *ptr++ = '\\';
         *ptr++ = '"';
-        ptr = str_write_escaped(ptr, raw, str.len);
+        ptr = str_write_escaped(ptr, raw, len);
         *ptr++ = '\\';
         *ptr++ = '"';
         break;
     case PREP_CHAR:
         *ptr++ = '\'';
-        ptr = str_write_escaped(ptr, raw, str.len);
+        ptr = str_write_escaped(ptr, raw, len);
         *ptr++ = '\'';
         break;
     default:
-        memcpy(ptr, raw, str.len);
-        ptr += str.len;
+        memcpy(ptr, raw, len);
+        ptr += len;
         break;
     }
 
