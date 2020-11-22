@@ -300,7 +300,10 @@ static int dependency_option(const char *arg)
         opts->accept_missing_headers = 1;
     } else if (!strcmp("-MP", arg)) {
         opts->phony_targets = 1;
-    } else assert(0);
+    } else {
+        fprintf(stderr, "Invalid makefile option %s.\n", arg);
+        return 1;
+    }
 
     return 0;
 }
@@ -417,48 +420,7 @@ static int add_system_include_path(const char *path)
  * its output to the current working directory. This matches what gcc
  * and clang do.
  */
-static char *change_file_suffix(const char *file, enum target target)
-{
-    char *name, *suffix;
-    const char *slash, *dot;
-    size_t len;
-
-    switch (target) {
-    default: assert(0);
-    case TARGET_PREPROCESS:
-        return NULL;
-    case TARGET_IR_DOT:
-        suffix = ".dot";
-        break;
-    case TARGET_x86_64_ASM:
-        suffix = ".s";
-        break;
-    case TARGET_x86_64_OBJ:
-    case TARGET_x86_64_EXE:
-        suffix = ".o";
-        break;
-    }
-
-    slash = strrchr(file, '/');
-    if (slash) {
-        file = slash + 1;
-    }
-
-    dot = strrchr(file, '.');
-    if (!dot) {
-        dot = file + strlen(file);
-    }
-
-    len = (dot - file);
-    name = calloc(len + strlen(suffix) + 1, sizeof(*name));
-    strncpy(name, file, len);
-    assert(!name[len] || name[len] == '.');
-    name[len] = '.';
-    strcpy(name + len, suffix);
-    return name;
-}
-
-static const char *set_suffix(const char *path, const char *suffix)
+static char *base_with_suffix(const char *path, const char *suffix)
 {
     char *name;
     const char *slash, *dot;
@@ -505,7 +467,7 @@ static int add_input_file(const char *name)
      * preserved.
      */
     if (file.language != LANG_UNKNOWN) {
-        ptr = change_file_suffix(name, TARGET_x86_64_OBJ);
+        ptr = base_with_suffix(name, ".o");
         add_linker_arg(ptr);
         free(ptr);
     } else {
@@ -714,7 +676,11 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-MF:", &set_makefile_name},
         {"-MT:", &set_makefile_target},
         {"-MQ:", &set_makefile_target_quoted},
-        {"-M<", &dependency_option},
+        {"-MD", &dependency_option},
+        {"-MG", &dependency_option},
+        {"-MM", &dependency_option},
+        {"-MMD", &dependency_option},
+        {"-MP", &dependency_option},
         {"-Wl,", &add_linker_flag},
         {"-rdynamic", &add_linker_flag},
         {"-shared", &add_linker_arg},
@@ -769,28 +735,41 @@ static int parse_program_arguments(int argc, char *argv[])
         assert(n == 1);
         file = &array_get(&input_files, 0);
         file->output_name = output_name;
+        if (context.generate_dependencies) {
+            file->makefile_target = makefile_target;
+            file->makefile_name = makefile_name;
+            if (!makefile_target) {
+                file->makefile_target = base_with_suffix(file->name, ".o");
+            }
+            if (!makefile_name) {
+                file->makefile_name = base_with_suffix(file->name, ".o.d");
+            }
+        }
     } else for (i = 0; i < n; ++i) {
         file = &array_get(&input_files, i);
         file->is_default_name = 1;
         file->makefile_target = makefile_target;
+        file->makefile_name = makefile_name;
         switch (context.target) {
         case TARGET_PREPROCESS:
             if (context.generate_dependencies && !makefile_target) {
-                file->makefile_target = set_suffix(file->name, ".o");
+                file->makefile_target = base_with_suffix(file->name, ".o");
             }
             break;
         case TARGET_IR_DOT:
-            file->output_name = set_suffix(file->name, ".dot");
+            file->output_name = base_with_suffix(file->name, ".dot");
             break;
         case TARGET_x86_64_ASM:
-            file->output_name = set_suffix(file->name, ".s");
+            file->output_name = base_with_suffix(file->name, ".s");
             break;
         case TARGET_x86_64_OBJ:
         case TARGET_x86_64_EXE:
-            file->output_name = set_suffix(file->name, ".o");
-            if (context.generate_dependencies && !makefile_target) {
-                file->makefile_name = set_suffix(file->name, ".o.d");
-                file->makefile_target = file->name;
+            file->output_name = base_with_suffix(file->name, ".o");
+            if (context.generate_dependencies) {
+                if (!makefile_name)
+                    file->makefile_name = base_with_suffix(file->name, ".o.d");
+                if (!makefile_target)
+                    file->makefile_target = file->name;
             }
         default:
             break;

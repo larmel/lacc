@@ -280,10 +280,11 @@ INTERNAL void write_makefile(FILE *f, const char *target, const char *source)
         fprintf(f, " %s", str_raw(path));
     }
 
-    if (dependency_config.phony_targets) {
+    if (dependency_config.phony_targets && array_len(&dependencies)) {
         fprintf(f, "\n");
         for (i = 0; i < array_len(&dependencies); ++i) {
             path = array_get(&dependencies, i);
+            fprintf(f, "\n");
             fprintf(f, "%s:\n", str_raw(path));
         }
     }
