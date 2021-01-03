@@ -144,12 +144,12 @@ INTERNAL void symtab_finalize(void)
  * depth. As a special case, depth 1 containing function arguments is
  * assumed to contain fewer symbols.
  */
-static unsigned current_scope_hash_cap(struct namespace *ns)
+static int current_scope_hash_cap(struct namespace *ns)
 {
-    static const unsigned hash_cap[] = {256, 16, 128, 64, 32, 16};
-    static const unsigned hash_cap_default = 8;
+    static const int hash_cap[] = {256, 16, 128, 64, 32, 16};
+    static const int hash_cap_default = 8;
 
-    unsigned cap;
+    int cap;
     assert(array_len(&ns->scope));
     cap = hash_cap_default;
     if (array_len(&ns->scope) < sizeof(hash_cap) / sizeof(hash_cap[0])) {

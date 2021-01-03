@@ -86,8 +86,9 @@ static struct hash_entry *hash_walk(
     struct hash_entry *ref, *pre;
     int
         hash = djb2_hash(key),
-        pos = hash % tab->capacity;
+        pos = hash & (tab->capacity - 1);
 
+    assert(pos == (hash % tab->capacity));
     pre = NULL;
     ref = &tab->table[pos];
     while (ref && ref->data) {
@@ -181,19 +182,20 @@ static struct hash_entry *hash_chain_clear(
 
 INTERNAL struct hash_table *hash_init(
     struct hash_table *tab,
-    unsigned cap,
+    int cap,
     String (*key)(void *),
     void *(*add)(void *),
     void (*del)(void *))
 {
-    assert(cap > 0);
     assert(key);
+    assert(cap == 8 || cap == 16 || cap == 32 || cap == 64
+        || cap == 128 || cap == 256 || cap == 512 || cap == 1024);
 
     tab->capacity = cap;
     tab->key = key;
     tab->add = add ? add : hash_add_identity;
     tab->del = del ? del : hash_del_noop;
-    tab->table = calloc(tab->capacity + 1, sizeof(*tab->table));
+    tab->table = calloc(cap + 1, sizeof(*tab->table));
     return tab;
 }
 

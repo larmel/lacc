@@ -7,8 +7,23 @@
 #include "string.h"
 
 struct hash_table {
-    /* Number of slots in the top level array. */
-    unsigned capacity;
+    /*
+     * Number of slots in table. Require to be a power of 2, in order to
+     * do efficient modulo calculation by bitwise and.
+     */
+    int capacity;
+
+    /*
+     * First level array of entries, of length capacity. Resolve
+     * collisions by chaining elements.
+     *
+     * [A] -> [B]
+     * [ ]
+     * [C]
+     * [ ]
+     *
+     */
+    struct hash_entry *table;
 
     /*
      * Retrieve string representing the key we are hashing on. Keys are
@@ -29,24 +44,12 @@ struct hash_table {
      * destroyed.
      */
     void (*del)(void *);
-
-    /*
-     * First level array of entries, of length capacity. Resolve
-     * collisions by chaining elements.
-     *
-     * [A] -> [B]
-     * [ ]
-     * [C]
-     * [ ]
-     *
-     */
-    struct hash_entry *table;
 };
 
 /* Initialize hash structure. Must be freed by hash_destroy. */
 INTERNAL struct hash_table *hash_init(
     struct hash_table *tab,
-    unsigned cap,
+    int cap,
     String (*key)(void *),
     void *(*add)(void *),
     void (*del)(void *));
