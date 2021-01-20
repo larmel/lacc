@@ -125,7 +125,7 @@ test: test-c89 test-c99 test-c11
 test-all: test test-gnu test-asm test-linker test-sqlite
 
 install: bin/release/lacc
-	mkdir -p $(LIBDIR_TARGET)/include/
+	mkdir -p $(LIBDIR_TARGET)/include/ $(BINDIR)
 	cp $(LIBDIR_SOURCE)/include/*.h $(LIBDIR_TARGET)/include/
 	cp $? $(BINDIR)/lacc
 
