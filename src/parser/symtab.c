@@ -17,11 +17,12 @@ INTERNAL struct namespace
     ns_tag = {"tags"};
 
 /* Name prefixes assigned to compiler generated symbols. */
-#define PREFIX_TEMPORARY ".t"
-#define PREFIX_UNNAMED ".u"
-#define PREFIX_CONSTANT ".C"
-#define PREFIX_STRING ".LC"
-#define PREFIX_LABEL ".L"
+static String
+    prefix_temporary = SHORT_STRING_INIT(".t"),
+    prefix_unnamed = SHORT_STRING_INIT(".u"),
+    prefix_constant = SHORT_STRING_INIT(".C"),
+    prefix_string = SHORT_STRING_INIT(".LC"),
+    prefix_label = SHORT_STRING_INIT(".L");
 
 /*
  * Maintain list of symbols allocated for temporaries and labels, which
@@ -95,22 +96,6 @@ INTERNAL const struct symbol *decl_memcpy = NULL;
  * actual definition.
  */
 static struct hash_table functions;
-static int functions_init;
-
-static String sym_hash_key(void *ref)
-{
-    return ((const struct symbol *) ref)->name;
-}
-
-static struct symbol *sym_lookup_function(String name)
-{
-    if (!functions_init) {
-        hash_init(&functions, 1024, &sym_hash_key, NULL, NULL);
-        functions_init = 1;
-    }
-
-    return hash_lookup(&functions, name);
-}
 
 static void symtab_reset_buffers(void)
 {
@@ -119,7 +104,7 @@ static void symtab_reset_buffers(void)
     ns_label.cursor = 0;
     decl_memcpy = NULL;
     array_clear(&string_types);
-    hash_clear(&functions);
+    hash_clear(&functions, NULL);
 }
 
 INTERNAL void symtab_finalize(void)
@@ -134,29 +119,7 @@ INTERNAL void symtab_finalize(void)
 
     array_clear(&temporaries);
     array_clear(&string_types);
-    if (functions_init) {
-        hash_destroy(&functions);
-    }
-}
-
-/*
- * Initialize hash table with initial size heuristic based on scope
- * depth. As a special case, depth 1 containing function arguments is
- * assumed to contain fewer symbols.
- */
-static int current_scope_hash_cap(struct namespace *ns)
-{
-    static const int hash_cap[] = {256, 16, 128, 64, 32, 16};
-    static const int hash_cap_default = 8;
-
-    int cap;
-    assert(array_len(&ns->scope));
-    cap = hash_cap_default;
-    if (array_len(&ns->scope) < sizeof(hash_cap) / sizeof(hash_cap[0])) {
-        cap = hash_cap[array_len(&ns->scope) - 1];
-    }
-
-    return cap;
+    hash_destroy(&functions);
 }
 
 INTERNAL void push_scope(struct namespace *ns)
@@ -383,22 +346,14 @@ static struct symbol *sym_redeclare(
 
 INTERNAL void sym_make_visible(struct namespace *ns, struct symbol *sym)
 {
-    unsigned cap;
     struct scope *scope;
 
     scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
-    switch (scope->state) {
-    case SCOPE_CREATED:
-        cap = current_scope_hash_cap(ns);
-        hash_init(&scope->table, cap, &sym_hash_key, NULL, NULL);
-        break;
-    case SCOPE_DIRTY:
-        hash_clear(&scope->table);
-        break;
-    default: break;
+    if (scope->state == SCOPE_DIRTY) {
+        hash_clear(&scope->table, NULL);
     }
 
-    hash_insert(&scope->table, (void *) sym);
+    hash_insert(&scope->table, sym->name, sym, NULL);
     scope->state = SCOPE_INITIALIZED;
 }
 
@@ -418,6 +373,7 @@ INTERNAL struct symbol *sym_add(
     enum linkage linkage)
 {
     static int n;
+    static String smemcpy = SHORT_STRING_INIT("memcpy");
 
     unsigned depth;
     struct symbol *sym;
@@ -428,7 +384,7 @@ INTERNAL struct symbol *sym_add(
     depth = current_scope_depth(ns);
     if (!sym && symtype != SYM_TYPEDEF && is_function(type)) {
         assert(ns == &ns_ident);
-        sym = sym_lookup_function(name);
+        sym = hash_lookup(&functions, name);
         if (sym) {
             sym_apply_type(sym, type);
             sym_make_visible(ns, sym);
@@ -450,7 +406,7 @@ INTERNAL struct symbol *sym_add(
     sym->type = type;
     sym->symtype = symtype;
     sym->linkage = linkage;
-    if (!decl_memcpy && !str_cmp(str_init("memcpy"), sym->name)) {
+    if (!decl_memcpy && str_eq(smemcpy, sym->name)) {
         decl_memcpy = sym;
     }
 
@@ -465,7 +421,7 @@ INTERNAL struct symbol *sym_add(
     array_push_back(&ns->symbol, sym);
     sym_make_visible(ns, sym);
     if (symtype != SYM_TYPEDEF && is_function(sym->type)) {
-        hash_insert(&functions, sym);
+        hash_insert(&functions, sym->name, sym, NULL);
     }
 
     if (context.verbose) {
@@ -495,7 +451,7 @@ INTERNAL struct symbol *sym_create_temporary(Type type)
     sym = alloc_sym();
     sym->symtype = SYM_DEFINITION;
     sym->linkage = LINK_NONE;
-    sym->name = str_init(PREFIX_TEMPORARY);
+    sym->name = prefix_temporary;
     sym->type = type;
     sym->n = ++n;
     return sym;
@@ -514,7 +470,7 @@ INTERNAL struct symbol *sym_create_unnamed(Type type)
     }
 
     sym->symtype = SYM_DEFINITION;
-    sym->name = str_init(PREFIX_UNNAMED);
+    sym->name = prefix_unnamed;
     sym->type = type;
     sym->n = ++n;
     return sym;
@@ -529,7 +485,7 @@ INTERNAL struct symbol *sym_create_label(void)
     sym->type = basic_type__void;
     sym->symtype = SYM_LABEL;
     sym->linkage = LINK_INTERN;
-    sym->name = str_init(PREFIX_LABEL);
+    sym->name = prefix_label;
     sym->n = ++n;
     return sym;
 }
@@ -544,7 +500,7 @@ INTERNAL struct symbol *sym_create_constant(Type type, union value val)
     sym->value.constant = val;
     sym->symtype = SYM_CONSTANT;
     sym->linkage = LINK_INTERN;
-    sym->name = str_init(PREFIX_CONSTANT);
+    sym->name = prefix_constant;
     sym->n = ++n;
     array_push_back(&ns_ident.symbol, sym);
     return sym;
@@ -567,7 +523,7 @@ INTERNAL struct symbol *sym_create_string(String str)
     sym->value.string = str;
     sym->symtype = SYM_LITERAL;
     sym->linkage = LINK_INTERN;
-    sym->name = str_init(PREFIX_STRING);
+    sym->name = prefix_string;
     sym->n = ++n;
     array_push_back(&ns_ident.symbol, sym);
     return sym;
@@ -580,8 +536,7 @@ INTERNAL void sym_discard(struct symbol *sym)
 
 INTERNAL int is_temporary(const struct symbol *sym)
 {
-    const char *raw = str_raw(sym->name);
-    return strcmp(PREFIX_TEMPORARY, raw) == 0;
+    return str_eq(prefix_temporary, sym->name);
 }
 
 INTERNAL const struct symbol *yield_declaration(struct namespace *ns)

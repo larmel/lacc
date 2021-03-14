@@ -55,16 +55,6 @@ INTERNAL int fprintstr(FILE *stream, String str)
     return n + 2;
 }
 
-INTERNAL String str_init(const char *str)
-{
-    String s;
-    size_t len;
-
-    len = strlen(str);
-    str_set(&s, str, len);
-    return s;
-}
-
 INTERNAL String str_empty(void)
 {
     String s = SHORT_STRING_INIT("");
@@ -73,7 +63,7 @@ INTERNAL String str_empty(void)
 
 INTERNAL void str_set(String *s, const char *str, size_t len)
 {
-    if (len < SHORT_STRING_LEN) {
+    if (len <= SHORT_STRING_LEN) {
         memcpy(s->small.buf, str, len);
         memset(s->small.buf + len, '\0', SHORT_STRING_LEN - len);
         s->small.cap = SHORT_STRING_LEN - len;
@@ -105,18 +95,9 @@ INTERNAL int str_is_empty(String s)
     return str_len(s) == 0;
 }
 
-INTERNAL int str_cmp(String s1, String s2)
+INTERNAL int str_eq(String s1, String s2)
 {
-    if (s1.large.len != s2.large.len)
-        return 1;
-
-    if (s1.large.ptr == s2.large.ptr)
-        return 0;
-
-    if (IS_SHORT_STRING(s1))
-        return 1;
-
-    return memcmp(s1.large.ptr, s2.large.ptr, s1.large.len & MAX_STRING_LEN);
+    return s1.large.ptr == s2.large.ptr && s1.large.len == s2.large.len;
 }
 
 INTERNAL int str_has_chr(String s, char c)
@@ -134,4 +115,21 @@ INTERNAL int str_has_chr(String s, char c)
     }
 
     return 0;
+}
+
+INTERNAL int str_hash(String str)
+{
+    int hash, i;
+    union {
+        String s;
+        int d[4];
+    } p;
+
+    p.s = str;
+    assert(sizeof(str) == sizeof(p.d));
+    for (hash = 5381, i = 0; i < 4; ++i) {
+        hash = ((hash << 5) + hash) + p.d[i];
+    }
+
+    return hash;
 }

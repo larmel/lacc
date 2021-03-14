@@ -11,7 +11,7 @@
 struct scope {
     struct hash_table table;
     enum {
-        SCOPE_CREATED,      /* Pending hash_init. */
+        SCOPE_CREATED,      /* No data. */
         SCOPE_DIRTY,        /* Pending hash_clear. */
         SCOPE_INITIALIZED   /* In use, containing symbols. */
     } state;

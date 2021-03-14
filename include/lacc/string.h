@@ -61,14 +61,14 @@ INTERNAL int str_is_empty(String s);
 /* Write length and buffer to pre-allocated string object. */
 INTERNAL void str_set(String *s, const char *str, size_t len);
 
-/* Initialize string, where the length can be determined by strlen. */
-INTERNAL String str_init(const char *str);
-
-/* Compare two strings, returning 0 if equal. */
-INTERNAL int str_cmp(String s1, String s2);
+/* Compare two strings for equality. */
+INTERNAL int str_eq(String s1, String s2);
 
 /* Return 1 iff string contains given character. */
 INTERNAL int str_has_chr(String s, char c);
+
+/* Hash of string. */
+INTERNAL int str_hash(String str);
 
 /*
  * Output string to stream, in safe encoding for textual assembly or as

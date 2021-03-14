@@ -585,7 +585,7 @@ static void preprocess_include(TokenArray *line)
             break;
         }
         if (t.token == '<' && array_get(line, len - 2).token == '>') {
-            path = str_init("");
+            path = str_empty();
             for (i = 1; i < len - 2; ++i) {
                 t = array_get(line, i);
                 path = str_cat(path, t.d.string);

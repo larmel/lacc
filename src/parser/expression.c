@@ -56,7 +56,7 @@ static struct block *parse__builtin_va_start(
     }
 
     mb = get_member(type, nmembers(type) - 1);
-    if (str_cmp(mb->name, sym->name) || sym->depth != 1) {
+    if (!str_eq(mb->name, sym->name) || sym->depth != 1) {
         error("Expected last function argument %s as va_start argument.",
             str_raw(mb->name));
         exit(1);

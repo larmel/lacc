@@ -2,279 +2,202 @@
 # define INTERNAL
 # define EXTERNAL extern
 #endif
+#include <lacc/context.h>
 #include <lacc/hash.h>
 
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+
+#define HASH_CAPACITY_INITIAL 16
+#define HASH_CAPACITY_MAX INT_MAX
 
 struct hash_entry {
     int hash;
-    struct hash_entry *next;
+    int deleted;
+    String key;
 
     /*
      * We don't own the data, only keep pointers to some block of memory
      * controlled by the client.
      */
-    void *data;
+    void *value;
 };
 
-enum hash_op {
-    HASH_LOOKUP,
-    HASH_INSERT,
-    HASH_REMOVE
-};
-
-/*
- * Hash algorithm is adapted from http://www.cse.yorku.ca/~oz/hash.html.
- */
-static int djb2_hash(String str)
+INTERNAL void hash_clear(struct hash_table *tab, void (*del)(void *))
 {
-    int c, hash = 5381;
-    const char *p, *q;
+    int i;
+    struct hash_entry *entry;
 
-    if (IS_SHORT_STRING(str)) {
-        p = str.small.buf;
-        q = p + (SHORT_STRING_LEN - str.small.cap);
-    } else {
-        p = str.large.ptr;
-        q = p + (str.large.len & MAX_STRING_LEN);
-    }
-
-    while (p < q) {
-        c = *p++;
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    }
-
-    hash = hash & 0x7FFFFFFF;
-    assert(hash >= 0);
-    return hash;
-}
-
-static struct hash_entry *hash_alloc_entry(struct hash_table *tab)
-{
-    struct hash_entry *ref;
-
-    ref = tab->table[tab->capacity].next;
-    if (ref) {
-        tab->table[tab->capacity].next = ref->next;
-        memset(ref, 0, sizeof(*ref));
-    } else {
-        ref = calloc(1, sizeof(*ref));
-    }
-
-    return ref;
-}
-
-static void hash_free_entry(struct hash_table *tab, struct hash_entry *ref)
-{
-    ref->next = tab->table[tab->capacity].next;
-    tab->table[tab->capacity].next = ref;
-}
-
-static struct hash_entry *hash_walk(
-    struct hash_table *tab,
-    enum hash_op op,
-    String key)
-{
-    /*
-     * Sentinel to hold return value from deleted entries, as we want to
-     * have the same interface for all invocations.
-     */
-    static struct hash_entry deleted;
-
-    struct hash_entry *ref, *pre;
-    int
-        hash = djb2_hash(key),
-        pos = hash & (tab->capacity - 1);
-
-    assert(pos == (hash % tab->capacity));
-    pre = NULL;
-    ref = &tab->table[pos];
-    while (ref && ref->data) {
-        if (ref->hash == hash && !str_cmp(tab->key(ref->data), key))
-            break;
-
-        if (!ref->next && op == HASH_INSERT)
-            ref->next = hash_alloc_entry(tab);
-
-        pre = ref;
-        ref = ref->next;
-    }
-
-    if (op == HASH_INSERT) {
-        assert(!ref->data || ref->hash == hash);
-        ref->hash = hash;
-    } else if (op == HASH_REMOVE && ref) {
-        if (!ref->data) {
-            assert(!pre);
-            assert(!ref->hash);
-
-            /* Delete in first slot, but no data. Nothing to do. */
-            ref = NULL;
-        } else {
-            deleted.data = ref->data;
-            deleted.hash = ref->hash;
-
-            if (!pre) {
-                /*
-                 * Delete entry in first slot, moving the next element
-                 * in if it exists, or reset to zero.
-                 */
-                if (ref->next) {
-                    pre = ref->next;
-                    *ref = *(ref->next);
-                    hash_free_entry(tab, pre);
-                } else {
-                    memset(ref, 0, sizeof(*ref));
-                }
-            } else {
-                pre->next = ref->next;
-                hash_free_entry(tab, ref);
-            }
-
-            /*
-             * Entry is freed, but pointer to data as well as hash value
-             * is still valid.
-             */
-            ref = &deleted;
-        }
-    }
-
-    return ref;
-}
-
-static void *hash_add_identity(void *elem)
-{
-    return elem;
-}
-
-static void hash_del_noop(void *elem)
-{
-    return;
-}
-
-static void hash_chain_free(struct hash_entry *ref, void (*del)(void *))
-{
-    if (ref->next) {
-        hash_chain_free(ref->next, del);
-        free(ref->next);
-    }
-
-    del(ref->data);
-}
-
-static struct hash_entry *hash_chain_clear(
-    struct hash_table *tab,
-    struct hash_entry *ref)
-{
-    struct hash_entry *last = ref;
-    assert(tab->table);
-    assert(ref->data);
-
-    if (ref->next) {
-        last = hash_chain_clear(tab, ref->next);
-    }
-
-    tab->del(ref->data);
-    return last;
-}
-
-INTERNAL struct hash_table *hash_init(
-    struct hash_table *tab,
-    int cap,
-    String (*key)(void *),
-    void *(*add)(void *),
-    void (*del)(void *))
-{
-    assert(key);
-    assert(cap == 8 || cap == 16 || cap == 32 || cap == 64
-        || cap == 128 || cap == 256 || cap == 512 || cap == 1024);
-
-    tab->capacity = cap;
-    tab->key = key;
-    tab->add = add ? add : hash_add_identity;
-    tab->del = del ? del : hash_del_noop;
-    tab->table = calloc(cap + 1, sizeof(*tab->table));
-    return tab;
-}
-
-/*
- * Delete all values, putting hash_entry objects already allocated in
- * overflow slot at table[capacity].
- */
-INTERNAL void hash_clear(struct hash_table *tab)
-{
-    unsigned i;
-    struct hash_entry *ref, *last;
-    assert(tab->table);
-
-    for (i = 0; i < tab->capacity; ++i) {
-        ref = &tab->table[i];
-        if (ref->data) {
-            tab->del(ref->data);
-            if (ref->next) {
-                /*
-                 * Put chain of allocated hash_entry objects at the
-                 * beginning of overflow slot.
-                 */
-                last = hash_chain_clear(tab, ref->next);
-                last->next = tab->table[tab->capacity].next;
-                tab->table[tab->capacity].next = ref->next;
+    if (del) {
+        for (i = 0; i < tab->capacity; ++i) {
+            entry = &tab->entries[i];
+            if (entry->value) {
+                del(entry->value);
             }
         }
     }
 
-    memset(tab->table, 0, sizeof(*tab->table) * tab->capacity);
+    tab->count = 0;
+    memset(tab->entries, 0, tab->capacity * sizeof(*tab->entries));
 }
 
 INTERNAL void hash_destroy(struct hash_table *tab)
 {
-    unsigned i;
-    struct hash_entry *ref;
-
-    assert(tab->table);
-    for (i = 0; i < tab->capacity; ++i) {
-        ref = &tab->table[i];
-
-        if (ref->data)
-            hash_chain_free(ref, tab->del);
-        else
-            assert(!ref->next);
-    }
-
-    hash_chain_free(&tab->table[tab->capacity], &hash_del_noop);
-    free(tab->table);
+    free(tab->entries);
     memset(tab, 0, sizeof(*tab));
 }
 
-INTERNAL void *hash_insert(struct hash_table *tab, void *val)
+static int hash_match_entry(
+    const struct hash_entry *entry,
+    String key,
+    int hash)
 {
-    struct hash_entry *ref;
+    if (entry->deleted)
+        return 0;
 
-    assert(val);
-    assert(tab->table);
+    return !entry->value || (entry->hash == hash && str_eq(entry->key, key));
+}
 
-    ref = hash_walk(tab, HASH_INSERT, tab->key(val));
-    if (!ref->data)
-        ref->data = tab->add(val);
+static struct hash_entry *hash_find_entry(
+    struct hash_table *tab,
+    String key,
+    int hash)
+{
+    int i, j;
+    struct hash_entry *entry;
 
-    return ref->data;
+    assert(tab->capacity > 0);
+    i = hash & (tab->capacity - 1);
+    entry = &tab->entries[i];
+    if (hash_match_entry(entry, key, hash)) {
+        return entry;
+    }
+
+    for (j = i + 1; j < tab->capacity; ++j) {
+        entry = &tab->entries[j];
+        if (hash_match_entry(entry, key, hash)) {
+            return entry;
+        }
+    }
+
+    for (j = 0; j < i; ++j) {
+        entry = &tab->entries[j];
+        if (hash_match_entry(entry, key, hash)) {
+            return entry;
+        }
+    }
+
+    assert(0);
+    return NULL;
+}
+
+static void hash_expand(struct hash_table *tab)
+{
+    int i;
+    struct hash_entry *a, *b;
+    struct hash_table copy = {0};
+
+    if (!tab->capacity) {
+        copy.capacity = HASH_CAPACITY_INITIAL;
+    } else if (tab->capacity < HASH_CAPACITY_MAX) {
+        copy.capacity = tab->capacity * 2;
+    } else {
+        error("Reached hash table size limit after %d elements.", tab->count);
+        exit(1);
+    }
+
+    copy.count = tab->count;
+    copy.entries = calloc(copy.capacity, sizeof(struct hash_entry));
+    for (i = 0; i < tab->capacity; ++i) {
+        a = &tab->entries[i];
+        if (!a->value || a->deleted)
+            continue;
+
+        b = hash_find_entry(&copy, a->key, a->hash);
+        b->hash = a->hash;
+        b->key = a->key;
+        b->value = a->value;
+    }
+
+    free(tab->entries);
+    *tab = copy;
+}
+
+static int hash_is_full(struct hash_table *tab)
+{
+    return tab->count >= tab->capacity / 2;
+}
+
+INTERNAL void *hash_insert(
+    struct hash_table *tab,
+    String key,
+    void *value,
+    void *(*add)(void *, String *))
+{
+    int hash;
+    struct hash_entry *entry;
+
+    if (hash_is_full(tab)) {
+        hash_expand(tab);
+        assert(!hash_is_full(tab));
+    }
+
+    assert(tab->capacity > 0);
+    assert(tab->count < tab->capacity - 1);
+    hash = str_hash(key);
+    entry = hash_find_entry(tab, key, hash);
+
+    assert(!entry->deleted);
+    if (!entry->value) {
+        tab->count++;
+        entry->hash = hash;
+        if (add) {
+            entry->value = add(value, &entry->key);
+        } else {
+            entry->key = key;
+            entry->value = value;
+        }
+    }
+
+    assert(entry->hash == hash && str_eq(entry->key, key));
+    return entry->value;
 }
 
 INTERNAL void *hash_lookup(struct hash_table *tab, String key)
 {
-    struct hash_entry *ref;
+    int hash;
+    struct hash_entry *entry;
 
-    ref = hash_walk(tab, HASH_LOOKUP, key);
-    return ref ? ref->data : NULL;
+    if (!tab->capacity)
+        return NULL;
+
+    hash = str_hash(key);
+    entry = hash_find_entry(tab, key, hash);
+    return entry->value;
 }
 
-INTERNAL void hash_remove(struct hash_table *tab, String key)
+INTERNAL void hash_remove(
+    struct hash_table *tab,
+    String key,
+    void (*del)(void *))
 {
-    struct hash_entry *ref;
+    int hash;
+    struct hash_entry *entry;
 
-    ref = hash_walk(tab, HASH_REMOVE, key);
-    if (ref)
-        tab->del(ref->data);
+    if (!tab->capacity)
+        return;
+
+    hash = str_hash(key);
+    entry = hash_find_entry(tab, key, hash);
+    if (entry->value) {
+        entry->deleted = 1;
+        entry->hash = 0;
+        if (del) {
+            del(entry->value);
+        }
+
+        entry->value = NULL;
+    }
 }

@@ -8,13 +8,16 @@
 #include <stddef.h>
 
 /*
- * Register a string and store it internally, allocating a new copy if
- * needed. Manages memory ownership for all string constants used at
- * runtime.
+ * Register a string and store it internally as a singleton, allocating
+ * a copy for each unique string.
+ *
+ * This is the only valid way of creating string objects, and it
+ * guarantees that equality checks can be reduced to checking pointers
+ * internally.
  */
-INTERNAL String str_register(const char *str, size_t len);
+INTERNAL String str_intern(const char *str, size_t len);
 
-/* Concatenate two strings together. */
+/* Concatenate two strings together, returning a new interned string. */
 INTERNAL String str_cat(String a, String b);
 
 /* Free memory used for string table. */

@@ -131,7 +131,7 @@ static struct token stringtonum(const char *in, const char **endptr)
         }
     }
 
-    tok.d.string = str_register(ptr, in - ptr);
+    tok.d.string = str_intern(ptr, in - ptr);
     *endptr = in;
     return tok;
 }
@@ -380,7 +380,7 @@ INTERNAL struct token convert_preprocessing_string(struct token t)
         *btr++ = convert_char(ptr, &ptr);
     }
 
-    tok.d.string = str_register(buf, btr - buf);
+    tok.d.string = str_intern(buf, btr - buf);
     return tok;
 }
 
@@ -458,7 +458,7 @@ static struct token strtochar(const char *in, const char **endptr)
         exit(1);
     }
 
-    tok.d.string = str_register(start, in - start);
+    tok.d.string = str_intern(start, in - start);
     *endptr = in + 1;
     return tok;
 }
@@ -482,7 +482,7 @@ static struct token strtostr(const char *in, const char **endptr)
     }
 
     assert(*in == '"');
-    tok.d.string = str_register(start, in - start);
+    tok.d.string = str_intern(start, in - start);
     *endptr = in + 1;
     return tok;
 }
@@ -635,7 +635,7 @@ static struct token strtoident(const char *in, const char **endptr)
         in++;
     }
 
-    ident.d.string = str_register(start, in - start);
+    ident.d.string = str_intern(start, in - start);
     ident.is_expandable = 1;
     *endptr = in;
     return ident;

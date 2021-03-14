@@ -59,6 +59,8 @@ static struct block *parameter_list(
     Type base,
     Type *func)
 {
+    static String dots = SHORT_STRING_INIT("...");
+
     String name;
     size_t length;
     struct block *block;
@@ -105,7 +107,7 @@ static struct block *parameter_list(
         if (peek().token == DOTS) {
             consume(DOTS);
             assert(!is_vararg(*func));
-            type_add_member(*func, str_init("..."), basic_type__void);
+            type_add_member(*func, dots, basic_type__void);
             assert(is_vararg(*func));
             break;
         }
@@ -871,7 +873,7 @@ static void ensure_main_returns_zero(
 
     assert(is_function(sym->type));
     assert(!sym->n);
-    if (context.standard < STD_C99 || str_cmp(name, sym->name))
+    if (context.standard < STD_C99 || !str_eq(name, sym->name))
         return;
 
     if (!block->has_return_value) {

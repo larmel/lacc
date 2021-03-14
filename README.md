@@ -213,7 +213,7 @@ Performance
 -----------
 Some effort has been put into making the compiler itself fast (although the generated code is still very much unoptimized).
 Serving as both a performance benchmark and correctness test, we use the [sqlite](https://sqlite.org/download.html) database engine.
-The source code is distributed as a single ~7 MB large C file spanning more than 200 K lines (including comments and whitespace), which is perfect for stress testing the compiler.
+The source code is distributed as a single ~7 MB (7184634 bytes) large C file spanning more than 200 K lines (including comments and whitespace), which is perfect for stress testing the compiler.
 
 The following experiments were run on a laptop with an i5-7300U CPU, compiling version 3.20.1 of sqlite3. Measurements are made from compiling to object code (-c).
 
@@ -222,19 +222,19 @@ The following experiments were run on a laptop with an i5-7300U CPU, compiling v
 It takes less than 200 ms to compile the file with lacc, but rather than time we look at a more accurate sampling of CPU cycles and instructions executed.
 Hardware performance counter data is collected with `perf stat`, and memory allocations with `valgrind --trace-children=yes`.
 In valgrind, we are only counting contributions from the compiler itself (`cc1` executable) while running GCC.
-Results for clang is missing because it for some reason crashes under valgrind.
 
-Numbers for lacc is from an optimized build produced by clang (-O3).
+Numbers for lacc is from an optimized build produced by `make CC='clang -O3 -DNDEBUG' bin/lacc`.
+Each compiler is invoked with arguments `-c sqlite/sqlite3.c -o foo.o`.
 
-| Compiler      | Cycles        | Instructions   | Allocations | Bytes allocated |
-|:--------------|--------------:|---------------:|------------:|----------------:|
-| lacc          |   564,093,304 |    748,670,355 |      62,305 |      30,986,825 |
-| tcc (0.9.27)  |   231,212,025 |    389,553,813 |       2,795 |      22,969,302 |
-| gcc (6.3.0)   | 9,128,950,153 | 14,009,317,914 |   1,508,037 |     715,297,766 |
-| clang (4.0.0) | 4,037,958,570 |  5,538,918,744 |           - |               - |
+| Compiler       | Cycles        | Instructions   | Allocations | Bytes allocated |
+|:---------------|--------------:|---------------:|------------:|----------------:|
+| lacc           |   512,666,319 |    744,924,987 |      53,590 |      33,658,098 |
+| tcc (0.9.27)   |   245,142,166 |    397,514,762 |       2,909 |      23,020,917 |
+| gcc (9.3.0)    | 9,958,514 599 | 14,524,274,665 |   1,546,790 |   1,111,331,606 |
+| clang (10.0.0) | 4,351,456,211 |  5,466,808,426 |   1,434,072 |     476,529,342 |
 
 There is yet work to be done to get closer to [TCC](http://bellard.org/tcc/), which is probably one of the fastest C compilers available.
-Still, we are within reasonable distance from TCC performance, and an order of magnitude better than GCC.
+Still, we are within reasonable distance from TCC performance, and an order of magnitude better than GCC and clang.
 
 ### Codegen quality
 

@@ -1470,7 +1470,7 @@ static void allocate_asmblock_registers(
     *sse_regs = 0;
     for (i = 0; i < array_len(&st->clobbers); ++i) {
         str = array_get(&st->clobbers, i);
-        if (!str_cmp(memory, str) || !str_cmp(cc, str)) {
+        if (str_eq(memory, str) || str_eq(cc, str)) {
             continue;
         }
 
