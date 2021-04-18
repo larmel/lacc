@@ -686,8 +686,7 @@ INTERNAL Type declaration_specifiers(struct declaration_specifier_info *info)
             base = B_INT;
             break;
         case LONG:
-            if ((base && (base != B_INT || base != B_DOUBLE))
-                || (modifier && modifier != M_LONG)) goto done;
+            if (base || (modifier && modifier != M_LONG)) goto done;
             next();
             if (modifier == M_LONG) {
                 modifier = M_LONG_LONG;
