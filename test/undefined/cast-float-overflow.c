@@ -1,6 +1,7 @@
-int printf(const char *, ...);
+#include <assert.h>
+#include <limits.h>
 
-int float_to_unsigned(void) {
+static int float_to_unsigned(void) {
 	unsigned char
 		float_char_of = (unsigned char) 289.0f,
 		float_char_uf = (unsigned char) -41.0f,
@@ -22,18 +23,30 @@ int float_to_unsigned(void) {
 		double_long_of = (unsigned long) 4.1e24,
 		double_long_uf = (unsigned long) -41.0;
 
-	return printf(
-		"unsigned char: (%u, %u, %u, %u)\n"
-		"unsigned short: (%u, %u, %u, %u)\n"
-		"unsigned int: (%u, %u, %u, %u)\n"
-		"unsigned long: (%lu, %lu, %lu, %lu)\n",
-		float_char_of, float_char_uf, double_char_of, double_char_uf,
-		float_short_of, float_short_uf, double_short_of, double_short_uf,
-		float_int_of, float_int_uf, double_int_of, double_int_uf,
-		float_long_of, float_long_uf, double_long_of, double_long_uf);
+	assert(float_char_of == 33);
+	assert(float_char_uf == 215);
+	assert(double_char_of == 33);
+	assert(double_char_uf == 215);
+
+	assert(float_short_of == 6365);
+	assert(float_short_uf == 65495);
+	assert(double_short_of == 6365);
+	assert(double_short_uf == 65495);
+
+	assert(float_int_of == 1383166976);
+	assert(float_int_uf == 4294967255);
+	assert(double_int_of == 1383166828);
+	assert(double_int_uf == 4294967255);
+
+	assert(float_long_of == 0);
+	assert(float_long_uf == 18446744073709551575ul);
+	assert(double_long_of == 0);
+	assert(double_long_uf == 18446744073709551575ul);
+
+	return 0;
 }
 
-int float_to_signed(void) {
+static int float_to_signed(void) {
 	char
 		float_char_of = (char) 160.0f,
 		float_char_uf = (char) -160.0f,
@@ -55,15 +68,28 @@ int float_to_signed(void) {
 		double_long_of = (long) 4.1e24,
 		double_long_uf = (long) -4.1e24;
 
-	return printf(
-		"char: (%d, %d, %d, %d)\n"
-		"short: (%d, %d, %d, %d)\n"
-		"int: (%d, %d, %d, %d)\n"
-		"long: (%ld, %ld, %ld, %ld)\n",
-		float_char_of, float_char_uf, double_char_of, double_char_uf,
-		float_short_of, float_short_uf, double_short_of, double_short_uf,
-		float_int_of, float_int_uf, double_int_of, double_int_uf,
-		float_long_of, float_long_uf, double_long_of, double_long_uf);
+	assert(float_char_of == -96);
+	assert(float_char_uf == 96);
+	assert(double_char_of == -96);
+	assert(double_char_uf == 96);
+
+	assert(float_short_of == 6365);
+	assert(float_short_uf == -6365);
+	assert(double_short_of == 6365);
+	assert(double_short_uf == -6365);
+
+	assert(float_int_of == -2147483648);
+	assert(float_int_uf == -2147483648);
+	assert(double_int_of == -2147483648);
+	assert(double_int_uf == -2147483648);
+
+	assert(LONG_MIN == -9223372036854775807 - 1);
+	assert(float_long_of == LONG_MIN);
+	assert(float_long_uf == LONG_MIN);
+	assert(double_long_of == LONG_MIN);
+	assert(double_long_uf == LONG_MIN);
+
+	return 0;
 }
 
 int main(void) {

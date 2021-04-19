@@ -105,14 +105,26 @@ test-c11: $(TARGET)
 		./check.sh "$? -std=c11" "$$file" "$(CC) -std=c11 -w" ; \
 	done
 
-test-gnu: $(TARGET)
-	for file in $$(find test/gnu -type f -iname '*.c') ; do \
-		./check.sh "$?" "$$file" "gcc -w" ; \
-	done
-
 test-asm: $(TARGET)
 	for file in $$(find test/asm -type f -iname '*.c') ; do \
 		./check.sh "$?" "$$file" "$(CC) -w" ; \
+	done
+
+test-extensions: $(TARGET)
+	for file in $$(find test/extensions -type f -iname '*.c') ; do \
+		./check.sh "$?" "$$file" "$(CC) -w" ; \
+	done
+
+test-limits: $(TARGET)
+	for file in $$(find test/limits -type f -iname '*.c') ; do \
+		$? "$$file" -o "$$file"".out" && "./""$$file"".out" ; \
+		rm "$$file"".out" ; \
+	done
+
+test-undefined: $(TARGET)
+	for file in $$(find test/undefined -type f -iname '*.c') ; do \
+		$? "$$file" -o "$$file"".out" && "./""$$file"".out" ; \
+		rm "$$file"".out" ; \
 	done
 
 test-linker: $(TARGET)
@@ -121,8 +133,8 @@ test-linker: $(TARGET)
 test-sqlite: $(TARGET)
 	./sqlite.sh $? "$(CC)"
 
-test: test-c89 test-c99 test-c11
-test-all: test test-gnu test-asm test-linker test-sqlite
+test: test-c89 test-c99 test-c11 test-limits
+test-all: test test-undefined test-extensions test-asm test-linker test-sqlite
 
 install: bin/release/lacc
 	mkdir -p $(LIBDIR_TARGET)/include/ $(BINDIR)
@@ -137,6 +149,6 @@ clean:
 	rm -rf bin
 	rm -f test/*.out test/*.txt test/*.s
 
-.PHONY: install uninstall clean test \
-	test-c89 test-c99 test-c11 test-gnu test-asm \
-	test-sqlite test-linker test-all
+.PHONY: install uninstall clean test test-c89 test-c99 test-c11 test-limits \
+	test-undefined test-extensions test-asm \
+	test-linker test-sqlite test-all
