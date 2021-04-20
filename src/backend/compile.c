@@ -252,7 +252,6 @@ static struct address address_of(struct var var)
     addr.displacement = displacement_from_offset(var.offset);
     switch (var.symbol->linkage) {
     case LINK_EXTERN:
-        assert(!context.pic || var.kind == ADDRESS);
     case LINK_INTERN:
         addr.base = IP;
         addr.sym = var.symbol;

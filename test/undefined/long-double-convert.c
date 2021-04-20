@@ -1,11 +1,11 @@
 #include <assert.h>
 
-int main(void) {
-	long double
-		x = 3.14,
-		y = 145260912182745.12486L,
-		z = -972316.70L;
+long double
+	x = 3.14,
+	y = 145260912182745.12486L,
+	z = -972316.70L;
 
+int main(void) {
 	char a;
 	unsigned char b;
 	int c;
