@@ -653,8 +653,6 @@ static int process_file(struct input_file file)
         preprocess(output);
     } else {
         set_compile_target(output, file.name);
-        push_scope(&ns_ident);
-        push_scope(&ns_tag);
         register_builtin_declarations();
         push_optimization(optimization_level);
 
@@ -681,8 +679,7 @@ static int process_file(struct input_file file)
         flush();
         pop_optimization();
         clear_types(dump_types ? stdout : NULL);
-        pop_scope(&ns_tag);
-        pop_scope(&ns_ident);
+        symtab_clear();
     }
 
     if (output != stdout) {

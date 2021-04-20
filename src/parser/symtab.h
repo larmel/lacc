@@ -5,17 +5,7 @@
 #include <lacc/hash.h>
 #include <lacc/symbol.h>
 
-/*
- * Delay initializing a new scope until new symbols are added.
- */
-struct scope {
-    struct hash_table table;
-    enum {
-        SCOPE_CREATED,      /* No data. */
-        SCOPE_DIRTY,        /* Pending hash_clear. */
-        SCOPE_INITIALIZED   /* In use, containing symbols. */
-    } state;
-};
+typedef array_of(struct symbol *) SymbolArray;
 
 /*
  * A namespace holds symbols and manage resolution in scopes as they are
@@ -23,34 +13,49 @@ struct scope {
  */
 struct namespace {
     /*
-     * Friendly name of the namespace, can be identifier, label, tags or
-     * anonymous.
-     */
-    const char *name;
-
-    /*
      * All symbols, regardless of scope, are stored in the same list.
      * Must not be affected by reallocation, so store pointers.
      */
-    array_of(struct symbol *) symbol;
+    SymbolArray symbols;
+
+    /* Global symbols are stored in a hash table for fast lookup. */
+    struct hash_table globals;
 
     /*
-     * Use hash table per scope, storing pointers to symbols in the
-     * namespace symbol list.
+     * Scoped symbols are keps in a simple array, using just linear
+     * search for lookup and relying on there being relatively few names
+     * to check in the typical case. In practice this is much faster
+     * than having a hash table per scope.
      */
-    array_of(struct scope) scope;
+    struct {
+        /*
+         * List containing number of symbols in each scope, last element
+         * corresponding to current scope.
+         */
+        array_of(int) counts;
 
-    /* Maximum number of scopes pushed. */
-    int max_scope_depth;
+        /*
+         * All symbols contained in some scope, expanding on entering a
+         * new block, and shrinking when leaving. Resolving symbols will
+         * traverse this list backwards.
+         */
+        array_of(String) names;
+        SymbolArray symbols;
+    } scope;
 
     /* Iterator for successive calls to yield. */
     int cursor;
 };
 
+/*
+ * There are tree different namespaces; in addition to normal identifier
+ * names, there also labels (for goto) and struct/union tags. These
+ * categories do not collide with each other.
+ */
 EXTERNAL struct namespace
-    ns_ident,   /* Identifiers. */
-    ns_label,   /* Labels. */
-    ns_tag;     /* Tags. */
+    ns_ident,
+    ns_label,
+    ns_tag;
 
 /* Push scope to namespace. */
 INTERNAL void push_scope(struct namespace *ns);
@@ -114,6 +119,9 @@ INTERNAL const struct symbol *yield_declaration(struct namespace *ns);
 
 /* Verbose output all symbols from symbol table. */
 INTERNAL void output_symbols(FILE *stream, struct namespace *ns);
+
+/* Called after each translation unit to clear buffers. */
+INTERNAL void symtab_clear(void);
 
 /* Free memory after all input files are processed. */
 INTERNAL void symtab_finalize(void);

@@ -12,9 +12,9 @@
 #include <string.h>
 
 INTERNAL struct namespace
-    ns_ident = {"identifiers"},
-    ns_label = {"labels"},
-    ns_tag = {"tags"};
+    ns_ident = {0},
+    ns_label = {0},
+    ns_tag = {0};
 
 /* Name prefixes assigned to compiler generated symbols. */
 static String
@@ -30,7 +30,7 @@ static String
  *
  * Calling sym_discard will push symbols back into this list.
  */
-static array_of(struct symbol *) temporaries;
+static SymbolArray temporaries;
 
 static struct symbol *alloc_sym(void)
 {
@@ -97,13 +97,51 @@ INTERNAL const struct symbol *decl_memcpy = NULL;
  */
 static struct hash_table functions;
 
-static void symtab_reset_buffers(void)
+/*
+ * Deallocate all memory owned by namespace.
+ */
+static void clear_namespace(struct namespace *ns)
 {
-    ns_tag.cursor = 0;
-    ns_ident.cursor = 0;
-    ns_label.cursor = 0;
+    int i;
+    struct symbol *sym;
+
+    ns->cursor = 0;
+
+    assert(array_len(&ns->scope.counts) == 0);
+    assert(array_len(&ns->scope.names) == 0);
+    assert(array_len(&ns->scope.symbols) == 0);
+    array_clear(&ns->scope.counts);
+    array_clear(&ns->scope.names);
+    array_clear(&ns->scope.symbols);
+
+    for (i = 0; i < array_len(&ns->symbols); ++i) {
+        sym = array_get(&ns->symbols, i);
+        free(sym);
+    }
+
+    array_clear(&ns->symbols);
+    hash_destroy(&ns->globals);
+}
+
+INTERNAL void symtab_clear(void)
+{
+    int i;
+    struct symbol *sym;
+
     decl_memcpy = NULL;
-    array_clear(&string_types);
+
+    for (i = 0; i < array_len(&ns_label.symbols); ++i) {
+        sym = array_get(&ns_label.symbols, i);
+        if (sym->symtype == SYM_TENTATIVE) {
+            error("Undefined label '%s'.", sym_name(sym));
+        }
+    }
+
+    clear_namespace(&ns_tag);
+    clear_namespace(&ns_ident);
+    clear_namespace(&ns_label);
+
+    array_empty(&string_types);
     hash_clear(&functions, NULL);
 }
 
@@ -124,87 +162,47 @@ INTERNAL void symtab_finalize(void)
 
 INTERNAL void push_scope(struct namespace *ns)
 {
-    static struct scope empty;
-    struct scope *scope;
-
-    if (array_len(&ns->scope) < ns->max_scope_depth) {
-        assert(array_len(&ns->scope) < ns->scope.capacity);
-        array_len(&ns->scope) += 1;
-        scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
-        if (scope->state == SCOPE_INITIALIZED) {
-            scope->state = SCOPE_DIRTY;
-        }
-    } else {
-        ns->max_scope_depth += 1;
-        array_push_back(&ns->scope, empty);
-        scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
-        scope->state = SCOPE_CREATED;
-    }
+    array_push_back(&ns->scope.counts, 0);
 }
 
 INTERNAL void pop_scope(struct namespace *ns)
 {
-    int i;
-    struct symbol *sym;
-    struct scope *scope;
+    int count;
 
-    /*
-     * Popping last scope frees the whole symbol table, including the
-     * symbols themselves. For label scope, which is per function, make
-     * sure there are no tentative definitions.
-     */
-    assert(array_len(&ns->scope) > 0);
-    if (array_len(&ns->scope) == 1) {
-        for (i = 0; i < ns->max_scope_depth; ++i) {
-            scope = &array_get(&ns->scope, i);
-            if (scope->state != SCOPE_CREATED) {
-                hash_destroy(&scope->table);
-            }
-        }
+    assert(array_len(&ns->scope.counts) > 0);
 
-        ns->max_scope_depth = 0;
-        array_clear(&ns->scope);
-        for (i = 0; i < array_len(&ns->symbol); ++i) {
-            sym = array_get(&ns->symbol, i);
-            if (ns == &ns_label && sym->symtype == SYM_TENTATIVE) {
-                error("Undefined label '%s'.", sym_name(sym));
-            }
-            free(sym);
-        }
-
-        array_clear(&ns->symbol);
-        if (ns == &ns_ident) {
-            symtab_reset_buffers();
-        }
-    } else {
-        array_len(&ns->scope) -= 1;
-    }
+    count = array_pop_back(&ns->scope.counts);
+    array_len(&ns->scope.symbols) -= count;
+    array_len(&ns->scope.names) -= count;
 }
 
 INTERNAL unsigned current_scope_depth(struct namespace *ns)
 {
-    unsigned depth = array_len(&ns->scope);
-    assert(depth);
-    return depth - 1;
+    /*
+     * Labels are scoped within a function, and to work with existing
+     * logic for other scopes we need that to be depth 0.
+     */
+    if (ns == &ns_label) {
+        assert(array_len(&ns->scope.counts) == 1);
+        return 0;
+    }
+
+    return array_len(&ns->scope.counts);
 }
 
 INTERNAL struct symbol *sym_lookup(struct namespace *ns, String name)
 {
     int i;
-    struct scope *scope;
-    struct symbol *sym;
+    String n;
 
-    for (i = array_len(&ns->scope) - 1; i >= 0; --i) {
-        scope = &array_get(&ns->scope, i);
-        if (scope->state == SCOPE_INITIALIZED) {
-            sym = hash_lookup(&scope->table, name);
-            if (sym) {
-                return sym;
-            }
+    for (i = array_len(&ns->scope.symbols) - 1; i >= 0; --i) {
+        n = array_get(&ns->scope.names, i);
+        if (str_eq(name, n)) {
+            return array_get(&ns->scope.symbols, i);
         }
     }
 
-    return NULL;
+    return hash_lookup(&ns->globals, name);
 }
 
 INTERNAL const char *sym_name(const struct symbol *sym)
@@ -346,15 +344,13 @@ static struct symbol *sym_redeclare(
 
 INTERNAL void sym_make_visible(struct namespace *ns, struct symbol *sym)
 {
-    struct scope *scope;
-
-    scope = &array_get(&ns->scope, array_len(&ns->scope) - 1);
-    if (scope->state == SCOPE_DIRTY) {
-        hash_clear(&scope->table, NULL);
+    if (array_len(&ns->scope.counts) == 0) {
+        hash_insert(&ns->globals, sym->name, sym, NULL);
+    } else {
+        array_push_back(&ns->scope.names, sym->name);
+        array_push_back(&ns->scope.symbols, sym);
+        array_back(&ns->scope.counts) += 1;
     }
-
-    hash_insert(&scope->table, sym->name, sym, NULL);
-    scope->state = SCOPE_INITIALIZED;
 }
 
 /*
@@ -393,10 +389,7 @@ INTERNAL struct symbol *sym_add(
             }
             return sym;
         }
-    } else if (sym
-        && (!depth || linkage == LINK_EXTERN)
-        && !sym->depth)
-    {
+    } else if (sym && (!depth || linkage == LINK_EXTERN) && !sym->depth) {
         return sym_redeclare(sym, ns, type, symtype, linkage);
     }
 
@@ -418,7 +411,7 @@ INTERNAL struct symbol *sym_add(
         type_set_tag(type, sym);
     }
 
-    array_push_back(&ns->symbol, sym);
+    array_push_back(&ns->symbols, sym);
     sym_make_visible(ns, sym);
     if (symtype != SYM_TYPEDEF && is_function(sym->type)) {
         hash_insert(&functions, sym->name, sym, NULL);
@@ -502,7 +495,7 @@ INTERNAL struct symbol *sym_create_constant(Type type, union value val)
     sym->linkage = LINK_INTERN;
     sym->name = prefix_constant;
     sym->n = ++n;
-    array_push_back(&ns_ident.symbol, sym);
+    array_push_back(&ns_ident.symbols, sym);
     return sym;
 }
 
@@ -525,7 +518,7 @@ INTERNAL struct symbol *sym_create_string(String str)
     sym->linkage = LINK_INTERN;
     sym->name = prefix_string;
     sym->n = ++n;
-    array_push_back(&ns_ident.symbol, sym);
+    array_push_back(&ns_ident.symbols, sym);
     return sym;
 }
 
@@ -543,8 +536,8 @@ INTERNAL const struct symbol *yield_declaration(struct namespace *ns)
 {
     const struct symbol *sym;
 
-    while (ns->cursor < array_len(&ns->symbol)) {
-        sym = array_get(&ns->symbol, ns->cursor);
+    while (ns->cursor < array_len(&ns->symbols)) {
+        sym = array_get(&ns->symbols, ns->cursor);
         ns->cursor++;
         switch (sym->symtype) {
         case SYM_LITERAL:
@@ -640,12 +633,11 @@ INTERNAL void output_symbols(FILE *stream, struct namespace *ns)
     int i;
     const struct symbol *sym;
 
-    for (i = 0; i < array_len(&ns->symbol); ++i) {
-        if (!i) {
-            fprintf(stream, "namespace %s:\n", ns->name);
-        }
+    fprintf(stream, "namespace %s:\n", ns == &ns_ident ? "identifiers"
+        : ns == &ns_label ? "labels" : "tags");
 
-        sym = array_get(&ns->symbol, i);
+    for (i = 0; i < array_len(&ns->symbols); ++i) {
+        sym = array_get(&ns->symbols, i);
         print_symbol(stream, sym);
         fprintf(stream, "\n");
     }
