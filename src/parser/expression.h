@@ -15,11 +15,8 @@ INTERNAL struct block *conditional_expression(
     struct definition *def,
     struct block *block);
 
-/*
- * Free memory used to hold function arguments.
- *
- * Should be called exactly once before exiting.
- */
-INTERNAL void clear_argument_lists(void);
+INTERNAL void expression_parse_init(void);
+
+INTERNAL void expression_parse_finalize(void);
 
 #endif

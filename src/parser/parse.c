@@ -291,6 +291,6 @@ INTERNAL void parse_finalize(void)
     array_clear(&blocks);
 
     initializer_finalize();
-    clear_argument_lists();
+    expression_parse_finalize();
     symtab_finalize();
 }

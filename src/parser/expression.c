@@ -14,6 +14,41 @@
 
 #include <assert.h>
 
+typedef array_of(struct expression) ExprArray;
+
+/*
+ * Need to buffer parameter expressions before each function call, and
+ * since calls can be nested, the same buffer cannot be used for all.
+ */
+static array_of(ExprArray *) args;
+static unsigned max_depth;
+
+static String
+    str__builtin_va_start,
+    str__builtin_va_arg,
+    str__builtin_alloca;
+
+INTERNAL void expression_parse_init(void)
+{
+    str__builtin_va_start = str_c("__builtin_va_start");
+    str__builtin_va_arg = str_c("__builtin_va_arg");
+    str__builtin_alloca = str_c("__builtin_alloca");
+}
+
+INTERNAL void expression_parse_finalize(void)
+{
+    int i;
+    ExprArray *a;
+
+    for (i = 0; i < max_depth; ++i) {
+        a = array_get(&args, i);
+        array_clear(a);
+        free(a);
+    }
+
+    array_clear(&args);
+}
+
 static struct block *cast_expression(
     struct definition *def,
     struct block *block);
@@ -143,14 +178,15 @@ static struct block *primary_expression(
     const struct symbol *sym;
     struct token tok;
 
+
     switch ((tok = next()).token) {
     case IDENTIFIER:
         sym = find_symbol(tok.d.string);
-        if (!strcmp("__builtin_va_start", str_raw(sym->name))) {
+        if (str_eq(str__builtin_va_start, sym->name)) {
             block = parse__builtin_va_start(def, block);
-        } else if (!strcmp("__builtin_va_arg", str_raw(sym->name))) {
+        } else if (str_eq(str__builtin_va_arg, sym->name)) {
             block = parse__builtin_va_arg(def, block);
-        } else if (!strcmp("__builtin_alloca", str_raw(sym->name))) {
+        } else if (str_eq(str__builtin_alloca, sym->name)) {
             block = parse__builtin_alloca(def, block);
         } else {
             block->expr = as_expr(var_direct(sym));
@@ -177,29 +213,6 @@ static struct block *primary_expression(
     }
 
     return block;
-}
-
-typedef array_of(struct expression) ExprArray;
-
-/*
- * Need to buffer parameter expressions before each function call, and
- * since calls can be nested, the same buffer cannot be used for all.
- */
-static array_of(ExprArray *) args;
-static unsigned max_depth;
-
-INTERNAL void clear_argument_lists(void)
-{
-    int i;
-    ExprArray *a;
-
-    for (i = 0; i < max_depth; ++i) {
-        a = array_get(&args, i);
-        array_clear(a);
-        free(a);
-    }
-
-    array_clear(&args);
 }
 
 static ExprArray *push_argument_list(void)

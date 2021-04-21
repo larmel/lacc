@@ -796,7 +796,7 @@ static void register_macro(const char *key, const char *value)
     struct macro macro = {0};
 
     macro.type = OBJECT_LIKE;
-    macro.name = str_intern(key, strlen(key));
+    macro.name = str_c(key);
     macro.replacement = parse_macro_replacement(value);
     define(macro);
 }

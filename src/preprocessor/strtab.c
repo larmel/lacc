@@ -191,6 +191,11 @@ INTERNAL String str_intern(const char *buf, size_t len)
     return str;
 }
 
+INTERNAL String str_c(const char *s)
+{
+    return str_intern(s, strlen(s));
+}
+
 INTERNAL String str_cat(String a, String b)
 {
     size_t len, la, lb;

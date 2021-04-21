@@ -635,6 +635,7 @@ static int process_file(struct input_file file)
     const struct symbol *sym;
 
     preprocess_reset();
+    expression_parse_init();
     set_input_file(file.name);
     register_builtin_definitions(context.standard);
     register_argument_definitions();

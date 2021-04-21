@@ -71,6 +71,12 @@ INTERNAL int str_has_chr(String s, char c);
 INTERNAL int str_hash(String str);
 
 /*
+ * Create string from c string, where length can be determined by
+ * strlen.
+ */
+INTERNAL String str_c(const char *s);
+
+/*
  * Output string to stream, in safe encoding for textual assembly or as
  * plain C code.
  */

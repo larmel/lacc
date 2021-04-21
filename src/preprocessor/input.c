@@ -161,7 +161,7 @@ INTERNAL void include_file(const char *name)
 
     source.file = fopen(path, "r");
     if (source.file) {
-        source.path = str_intern(path, strlen(path));
+        source.path = str_c(path);
         source.dirlen = path_dirlen(path);
         push_file(source);
     } else {
@@ -186,7 +186,7 @@ INTERNAL void include_system_file(const char *name)
         path = create_path(path, dirlen, name);
         source.file = fopen(path, "r");
         if (source.file) {
-            source.path = str_intern(path, strlen(path));
+            source.path = str_c(path);
             source.dirlen = path_dirlen(path);
             break;
         }
@@ -227,7 +227,7 @@ static void inject_include_files(void)
         path = array_get(&include_files, i);
         source.file = fopen(path, "r");
         if (source.file) {
-            source.path = str_intern(path, strlen(path));
+            source.path = str_c(path);
             source.dirlen = path_dirlen(path);
             push_file(source);
         } else {
@@ -256,7 +256,7 @@ INTERNAL void set_input_file(const char *path)
 
     if (path) {
         sep = strrchr(path, '/');
-        source.path = str_intern(path, strlen(path));
+        source.path = str_c(path);
         source.file = fopen(path, "r");
         if (sep) {
             source.dirlen = sep - path;
