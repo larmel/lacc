@@ -176,7 +176,7 @@ INTERNAL void pop_scope(struct namespace *ns)
     array_len(&ns->scope.names) -= count;
 }
 
-INTERNAL unsigned current_scope_depth(struct namespace *ns)
+INTERNAL int current_scope_depth(struct namespace *ns)
 {
     /*
      * Labels are scoped within a function, and to work with existing
@@ -371,7 +371,7 @@ INTERNAL struct symbol *sym_add(
     static int n;
     static String smemcpy = SHORT_STRING_INIT("memcpy");
 
-    unsigned depth;
+    int depth;
     struct symbol *sym;
     assert(symtype != SYM_LABEL);
     assert(symtype != SYM_TAG || ns == &ns_tag);

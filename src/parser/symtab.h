@@ -68,7 +68,7 @@ INTERNAL void pop_scope(struct namespace *ns);
  * translation unit, 1 is function arguments, and n is local or member
  * variables.
  */
-INTERNAL unsigned current_scope_depth(struct namespace *ns);
+INTERNAL int current_scope_depth(struct namespace *ns);
 
 /*
  * Retrieve a symbol based on identifier name, or NULL of not registered

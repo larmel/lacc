@@ -85,7 +85,7 @@ static void push_file(struct source source)
 
 static int pop_file(void)
 {
-    unsigned len;
+    int len;
     struct source source;
 
     len = array_len(&source_stack);

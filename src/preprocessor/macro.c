@@ -291,11 +291,11 @@ static enum token_type peek_token(const TokenArray *list, int i)
  */ 
 static void array_replace_slice(
     TokenArray *list,
-    unsigned start,
-    unsigned gaplength,
+    int start,
+    int gaplength,
     TokenArray *slice)
 {
-    unsigned length;
+    int length;
     assert(start + gaplength <= array_len(list));
 
     length = array_len(list) - gaplength + array_len(slice);

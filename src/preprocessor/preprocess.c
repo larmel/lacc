@@ -431,7 +431,7 @@ added:
  */
 static int is_lookahead_ready(int n)
 {
-    unsigned len;
+    int len;
     struct token last;
 
     len = deque_len(&lookahead);

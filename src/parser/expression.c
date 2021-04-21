@@ -21,7 +21,7 @@ typedef array_of(struct expression) ExprArray;
  * since calls can be nested, the same buffer cannot be used for all.
  */
 static array_of(ExprArray *) args;
-static unsigned max_depth;
+static int max_depth;
 
 static String
     str__builtin_va_start,
@@ -217,7 +217,7 @@ static struct block *primary_expression(
 
 static ExprArray *push_argument_list(void)
 {
-    unsigned len;
+    int len;
     ExprArray *list;
 
     len = array_len(&args);

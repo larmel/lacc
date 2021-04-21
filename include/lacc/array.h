@@ -1,41 +1,24 @@
 #ifndef ARRAY_H
 #define ARRAY_H
 
-#define ARRAY_CAPACITY_INITIAL 16
-#define ARRAY_CAPACITY_GROWTH(cap) (cap * 2)
-
 /* Declare an object representing an array of given type. */
 #define array_of(T) \
     struct {                                                                   \
-        unsigned capacity;                                                     \
-        unsigned length;                                                       \
+        int capacity;                                                          \
+        int length;                                                            \
         T *data;                                                               \
     }
-
-#define array_increase_cap(arr) \
-    do {                                                                       \
-        if ((arr)->length == (arr)->capacity) {                                \
-            if (!(arr)->capacity) {                                            \
-                (arr)->capacity = ARRAY_CAPACITY_INITIAL;                      \
-                (arr)->data = calloc((arr)->capacity, sizeof(*(arr)->data));   \
-            } else {                                                           \
-                (arr)->capacity = ARRAY_CAPACITY_GROWTH((arr)->capacity);      \
-                (arr)->data =                                                  \
-                    realloc(                                                   \
-                        (arr)->data,                                           \
-                        (arr)->capacity * sizeof(*(arr)->data));               \
-                memset(                                                        \
-                    (arr)->data + (arr)->length,                               \
-                    0,                                                         \
-                    sizeof(*(arr)->data) * ((arr)->capacity - (arr)->length)); \
-            }                                                                  \
-        }                                                                      \
-    } while (0)
 
 /* Add element to array. Expands to a block statement. */
 #define array_push_back(arr, elem) \
     do {                                                                       \
-        array_increase_cap(arr);                                               \
+        if ((arr)->length == (arr)->capacity) {                                \
+            (arr)->capacity = (arr)->capacity ? (arr)->capacity * 2 : 16;      \
+            (arr)->data =                                                      \
+                realloc(                                                       \
+                    (arr)->data,                                               \
+                    (arr)->capacity * sizeof(*(arr)->data));                   \
+        }                                                                      \
         (arr)->data[(arr)->length++] = elem;                                   \
     } while (0)
 
@@ -46,8 +29,7 @@
 #define array_concat(a, b) \
     do {                                                                       \
         if ((a)->capacity < array_len(a) + array_len(b)) {                     \
-            (a)->capacity =                                                    \
-                array_len(a) + array_len(b) + ARRAY_CAPACITY_INITIAL;          \
+            (a)->capacity = array_len(a) + array_len(b);                       \
             (a)->data = realloc((a)->data, (a)->capacity * sizeof(*(a)->data));\
         }                                                                      \
         memcpy(                                                                \
@@ -105,10 +87,6 @@
         if ((len) > (arr)->capacity) {                                         \
             (arr)->data = realloc((arr)->data, len * sizeof(*(arr)->data));    \
             (arr)->capacity = len;                                             \
-            memset(                                                            \
-                (arr)->data + (arr)->length,                                   \
-                0,                                                             \
-                sizeof(*(arr)->data) * ((arr)->capacity - array_len(arr)));    \
         }                                                                      \
     } while (0)
 

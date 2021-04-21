@@ -9,7 +9,7 @@
  */
 #define deque_of(T) \
     struct {                                                                   \
-        unsigned cursor;                                                       \
+        int cursor;                                                            \
         array_of(T) array;                                                     \
     }
 
