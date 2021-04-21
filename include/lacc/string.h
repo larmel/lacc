@@ -58,9 +58,6 @@ INTERNAL String str_empty(void);
 /* Compare string length to 0. */
 INTERNAL int str_is_empty(String s);
 
-/* Write length and buffer to pre-allocated string object. */
-INTERNAL void str_set(String *s, const char *str, size_t len);
-
 /* Compare two strings for equality. */
 INTERNAL int str_eq(String s1, String s2);
 

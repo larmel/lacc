@@ -61,26 +61,6 @@ INTERNAL String str_empty(void)
     return s;
 }
 
-INTERNAL void str_set(String *s, const char *str, size_t len)
-{
-    if (len <= SHORT_STRING_LEN) {
-        memcpy(s->small.buf, str, len);
-        memset(s->small.buf + len, '\0', SHORT_STRING_LEN - len);
-        s->small.cap = SHORT_STRING_LEN - len;
-        assert(IS_SHORT_STRING(*s));
-        assert(str_len(*s) == len);
-    } else if (len <= MAX_STRING_LEN) {
-        s->large.ptr = str;
-        s->large.len = len;
-        s->small.cap = -1;
-        assert(!IS_SHORT_STRING(*s));
-        assert(str_len(*s) == len);
-    } else {
-        error("String length %lu exceeds maximum supported size.", len);
-        exit(1);
-    }
-}
-
 INTERNAL size_t str_len(String s)
 {
     if (IS_SHORT_STRING(s)) {

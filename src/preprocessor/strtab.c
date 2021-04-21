@@ -149,14 +149,24 @@ static void strtab_expand(void)
 
 INTERNAL String str_intern(const char *buf, size_t len)
 {
-    int hash;
+    int hash, i;
     struct strtab_entry *entry;
     String str = {0};
 
     if (len <= SHORT_STRING_LEN) {
-        str_set(&str, buf, len);
+        for (i = 0; i < len; ++i) {
+            str.small.buf[i] = buf[i];
+        }
+
+        str.small.cap = SHORT_STRING_LEN - len;
         assert(IS_SHORT_STRING(str));
+        assert(str_len(str) == len);
         return str;
+    }
+
+    if (len > MAX_STRING_LEN) {
+        error("String length %lu exceeds maximum supported size.", len);
+        exit(1);
     }
 
     if (strtab_is_full()) {
@@ -188,6 +198,7 @@ INTERNAL String str_intern(const char *buf, size_t len)
     str.large.len = len;
     str.small.cap = -1;
     assert(!IS_SHORT_STRING(str));
+    assert(str_len(str) == len);
     return str;
 }
 
