@@ -329,6 +329,9 @@ static size_t read_line_comment(const char *line, int *linecount)
 /*
  * Read trigraph character, produced by pattern '??X', where X is the
  * input.
+ *
+ * Trigraphs are handled in the very first translation step, before
+ * splicing escaped newlines.
  */
 static char read_trigraph(char c)
 {
@@ -430,73 +433,107 @@ static size_t read_literal(const char *line, char **buf, int *lines)
 INTERNAL size_t read_line(
     const char *line,
     size_t len,
-    char *ptr,
+    char *write,
     int *linecount)
 {
-    int lines;
-    size_t count;
-    const char *end;
     char c;
+    int lines;
+    size_t count, i, n;
+    const char *start;
 
+    assert(write[-1] == '\0');
+    count = 0;
     lines = 0;
-    assert(ptr[-1] == '\0');
-    end = line;
-    do {
-        switch (*end) {
+    start = line;
+
+    for (i = 0; i < len; ++i) {
+        switch (line[i]) {
         case '\n':
+            if (count) {
+                memcpy(write, start, count);
+            }
+            write[count] = '\0';
             *linecount += lines + 1;
-            *ptr++ = '\0';
-            return end + 1 - line;
-        case '\\':
-            if (end[1] == '\n') {
-                lines += 1;
-                end += 2;
-                continue;
-            }
-            break;
-        case '?':
-            if (end[1] == '?') {
-                c = read_trigraph(end[2]);
-                if (c) {
-                    end += 3;
-                    *ptr++ = c;
-                    continue;
-                }
-            }
-            break;
-        case '\'':
+            return i + 1;
         case '"':
-            count = read_literal(end, &ptr, &lines);
-            end += count;
-            if (!count) {
-                return 0;
-            }
-            continue;
+        case '\'':
         case '/':
-            if (ptr[-1] == '/') {
-                count = read_line_comment(end + 1, &lines);
-                if (!count) {
+        case '?':
+        case '\\':
+            break;
+        default:
+            count++;
+            continue;
+        }
+
+        break;
+    }
+
+    for (; i < len; ++i) {
+        switch (line[i]) {
+        case '\n':
+            if (count) {
+                memcpy(write, start, count);
+            }
+            write[count] = '\0';
+            *linecount += lines + 1;
+            return i + 1;
+        case '"':
+        case '\'':
+        case '*':
+        case '/':
+        case '?':
+        case '\\':
+            if (count) {
+                memcpy(write, start, count);
+                write += count;
+                start += count;
+                count = 0;
+            }
+            c = line[i];
+            if (c == '"' || c == '\'') {
+                n = read_literal(&line[i], &write, &lines);
+                if (!n) {
                     return 0;
                 }
-                ptr[-1] = '\0';
+                i += n - 1;
+                start = &line[i + 1];
+            } else if (c == '*' && write[-1] == '/') {
+                n = read_comment(&line[i + 1], &lines);
+                if (!n) {
+                    return 0;
+                }
+                write[-1] = ' ';
+                i += n;
+                start = &line[i + 1];
+            } else if (c == '\\' && line[i + 1] == '\n') {
+                i += 1;
+                start = &line[i + 1];
+                lines += 1;
+            } else if (c == '?' && line[i + 1] == '?') {
+                c = read_trigraph(line[i + 2]);
+                if (c) {
+                    i += 2;
+                    start = &line[i + 1];
+                    *write++ = c;
+                }
+            } else if (c == '/' && write[-1] == '/') {
+                n = read_line_comment(&line[i + 1], &lines);
+                if (!n) {
+                    return 0;
+                }
+                write[-1] = '\0';
                 *linecount += lines + 1;
-                return end + count + 1 - line;
+                return i + n + 1;
+            } else {
+                count++;
             }
             break;
-        case '*':
-            if (ptr[-1] == '/') {
-                count = read_comment(end + 1, &lines);
-                if (!count) {
-                    return 0;
-                }
-                end += count + 1;
-                ptr[-1] = ' ';
-                continue;
-            }
+        default:
+            count++;
             break;
         }
-        *ptr++ = *end++;
-    } while (end - line < len);
+    }
 
     return 0;
 }
