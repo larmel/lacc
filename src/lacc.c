@@ -106,7 +106,14 @@ static int help(const char *arg)
 
 static int version(const char *arg)
 {
-    fprintf(stdout, "lacc version 0.0.1\n");
+    fprintf(stdout, "lacc version 0.0.1");
+#ifdef LACC_GIT_REVISION
+    fprintf(stdout, " (" LACC_GIT_REVISION ")");
+#endif
+#ifndef NDEBUG
+    fprintf(stdout, " DEBUG");
+#endif
+    fprintf(stdout, "\n");
     return 1;
 }
 

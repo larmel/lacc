@@ -53,15 +53,17 @@ LIBDIR_SOURCE = $(SRCDIR)/bin
 LIBDIR_TARGET = $(LIBDIR)/lacc
 TARGET = bin/selfhost/lacc
 
-bin/lacc: $(SOURCES) bin/include
+bin/lacc: $(SOURCES) bin/include bin/revision.h
 	@mkdir -p $(@D)
 	$(CC) -std=c89 -g $(CFLAGS) -Iinclude src/lacc.c -o $@ \
+		-include bin/revision.h \
 		-D'LACC_LIB_PATH="$(LIBDIR_SOURCE)"' \
 		-DAMALGAMATION
 
-bin/release/lacc: $(SOURCES) bin/include
+bin/release/lacc: $(SOURCES) bin/include bin/revision.h
 	@mkdir -p $(@D)
 	$(CC) -std=c89 -O3 $(CFLAGS) -Iinclude src/lacc.c -o $@ \
+		-include bin/revision.h \
 		-D'LACC_LIB_PATH="$(LIBDIR_TARGET)"' \
 		-DAMALGAMATION \
 		-DNDEBUG
@@ -89,6 +91,12 @@ bin/selfhost/lacc: bin/bootstrap/lacc
 bin/include: $(INCLUDES)
 	mkdir -p $@
 	cp $? --target-directory=$@
+
+bin/revision.h: $(SOURCES)
+	mkdir -p $(@D)
+	echo -n '#define LACC_GIT_REVISION "' > $@
+	git rev-parse --short HEAD | tr -d "\n" >> $@
+	echo '"' >> $@
 
 test-c89: $(TARGET)
 	for file in $$(find test/ -maxdepth 1 -type f -iname '*.c') ; do \
