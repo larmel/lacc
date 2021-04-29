@@ -681,10 +681,12 @@ static void load_address(struct var v, enum reg r)
     if (v.kind == DIRECT) {
         if (is_global_offset(v.symbol)) {
             emit(INSTR_MOV, OPT_MEM_REG, location(got(v.symbol), 8), reg(r, 8));
-            emit(INSTR_LEA, OPT_MEM_REG,
-                location(address(
-                    displacement_from_offset(v.offset), r, 0, 0), 8),
-                reg(r, 8));
+            if (v.offset) {
+                emit(INSTR_LEA, OPT_MEM_REG,
+                    location(address(
+                        displacement_from_offset(v.offset), r, 0, 0), 8),
+                    reg(r, 8));
+            }
         } else {
             emit(INSTR_LEA, OPT_MEM_REG, location_of(v, 8), reg(r, 8));
         }
@@ -712,6 +714,51 @@ static struct var x87_unsigned_adjust_constant(void)
     }
 
     return var_direct(sym);
+}
+
+/*
+ * Emit code for copying given nymber of bytes between %rsi and %rdi.
+ *
+ * It is not easy to beat memcpy, in particular rep movsb seems
+ * surprisingly slow.
+ */
+static void emit_memcpy(size_t bytes)
+{
+    int i;
+    size_t w;
+    struct address source, dest;
+
+    if (bytes <= 64) {
+        for (i = 0; i < bytes; i += w) {
+            source = address(i, SI, 0, 0);
+            dest = address(i, DI, 0, 0);
+            switch (bytes - i) {
+            case 1:
+            case 2:
+            case 4:
+            case 8:
+                w = bytes - i;
+                break;
+            case 3:
+                w = 2;
+                break;
+            case 5:
+            case 6:
+            case 7:
+                w = 4;
+                break;
+            default:
+                w = 8;
+                break;
+            }
+
+            emit(INSTR_MOV, OPT_MEM_REG, location(source, w), reg(AX, w));
+            emit(INSTR_MOV, OPT_REG_MEM, reg(AX, w), location(dest, w));
+        }
+    } else {
+        emit(INSTR_MOV, OPT_IMM_REG, constant(bytes, 8), reg(DX, 8));
+        emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
+    }
 }
 
 /* Push value to stack, rounded up to always be 8 byte aligned. */
@@ -1984,8 +2031,7 @@ static void compile__builtin_va_arg(struct var res, struct var args)
         }
     } else {
         load_address(res, DI);
-        emit(INSTR_MOV, OPT_IMM_REG, constant(w, 4), reg(DX, 4));
-        emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
+        emit_memcpy(w);
     }
 
     /*
@@ -2680,11 +2726,13 @@ static enum reg set_compare_value(Type type, enum tttn cc)
  * Handle special case of char [] = string literal. This will only occur
  * as part of initializer, at block scope. External definitions are
  * handled before this. At no other point should array types be seen in
- * assembly backend. We handle these assignments with memcpy, other
- * compilers load the string into register as ascii numbers.
+ * assembly backend.
  */
 static void store_copy_object(struct var var, struct var target)
 {
+    size_t b;
+
+    b = size_of(var.type);
     if (is_array(var.type)) {
         assert(target.kind == DIRECT);
         assert(var.symbol);
@@ -2696,8 +2744,7 @@ static void store_copy_object(struct var var, struct var target)
     }
 
     load_address(target, DI);
-    emit(INSTR_MOV, OPT_IMM_REG, constant(size_of(target.type), 4), reg(DX, 4));
-    emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
+    emit_memcpy(b);
 }
 
 static enum reg compile_cast(
@@ -2750,7 +2797,7 @@ static enum reg compile_cast(
         break;
     case PC_INTEGER:
     case PC_SSE:
-        if (EIGHTBYTES(type) == 1) {
+        if (pc.eightbyte[1] == PC_NO_CLASS) {
             if (is_struct_or_union(type)) {
                 type = slice_type(type, pc, 0);
                 l.type = type;
@@ -2758,7 +2805,7 @@ static enum reg compile_cast(
             if (!is_void(target.type)) {
                 target.type = type;
                 if (type_equal(l.type, type)) {
-                     if (is_int_constant(l)) {
+                    if (is_int_constant(l)) {
                         op.imm = value_of(l, w);
                         store_op(OPT_IMM, op, target);
                         ax = AX;
@@ -3007,8 +3054,7 @@ static void compile_return(Type func, struct expression expr)
             location(address(return_address_offset, BP, 0, 0), 8), reg(DI, 8));
         emit(INSTR_CMP, OPT_REG_REG, reg(DI, 8), reg(SI, 8));
         emit(INSTR_Jcc, OPT_IMM, CC_E, addr(label));
-        emit(INSTR_MOV, OPT_IMM_REG, constant(w, 8), reg(DX, 8));
-        emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
+        emit_memcpy(w);
         emit(INSTR_MOV, OPT_MEM_REG,
             location(address(return_address_offset, BP, 0, 0), 8), reg(AX, 8));
         enter_context(label);
