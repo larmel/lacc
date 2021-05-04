@@ -179,7 +179,7 @@ INTERNAL Type get_type_placeholder(void)
     return t;
 }
 
-static Type remove_qualifiers(Type type)
+INTERNAL Type type_unqualified(Type type)
 {
     if (type.is_pointer) {
         type.is_pointer_const = 0;
@@ -382,7 +382,7 @@ INTERNAL Type type_create_pointer(Type next)
         t = get_typetree_handle(type.ref);
         t->is_const = is_const(next);
         t->is_volatile = is_volatile(next);
-        next = remove_qualifiers(next);
+        next = type_unqualified(next);
         next.is_pointer = 0;
         t->next = next;
     } else {
@@ -888,6 +888,9 @@ static int typetree_equal(const struct typetree *a, const struct typetree *b)
 
     if (a->type != b->type
         || a->size != b->size
+        || a->is_const != b->is_const
+        || a->is_volatile != b->is_volatile
+        || a->is_restrict != b->is_restrict
         || a->is_unsigned != b->is_unsigned
         || a->is_vararg != b->is_vararg
         || a->is_flexible != b->is_flexible
@@ -899,6 +902,10 @@ static int typetree_equal(const struct typetree *a, const struct typetree *b)
 
     len = array_len(&a->members);
     if (len != array_len(&b->members)) {
+        return 0;
+    }
+
+    if (!type_equal(a->next, b->next)) {
         return 0;
     }
 
@@ -918,37 +925,128 @@ static int typetree_equal(const struct typetree *a, const struct typetree *b)
     return 1;
 }
 
-/*
- * Determine whether two types are the same. Disregard qualifiers, and
- * names of function parameters.
- */
-INTERNAL int type_equal(Type a, Type b)
+static int typetree_equal_unqualified(
+    const struct typetree *a,
+    const struct typetree *b)
 {
-    struct typetree *ta, *tb;
+    int i, len;
+    struct member *ma, *mb;
 
-    if (!memcmp(&a, &b, sizeof(a)))
-        return 1;
-
-    if (a.type != b.type || a.is_unsigned != b.is_unsigned)
+    if (a->type != b->type
+        || a->size != b->size
+        || a->is_unsigned != b->is_unsigned
+        || a->is_vararg != b->is_vararg
+        || a->is_flexible != b->is_flexible
+        || a->is_vla != b->is_vla
+        || a->is_incomplete != b->is_incomplete)
+    {
         return 0;
+    }
 
-    if ((a.ref == 0) != (b.ref == 0))
+    len = array_len(&a->members);
+    if (len != array_len(&b->members)) {
         return 0;
+    }
 
-    if (a.ref != 0 && b.ref != 0) {
-        ta = get_typetree_handle(a.ref);
-        tb = get_typetree_handle(b.ref);
-        return typetree_equal(ta, tb);
+    if (!type_equal_unqualified(a->next, b->next)) {
+        return 0;
+    }
+
+    for (i = 0; i < len; ++i) {
+        ma = &array_get(&a->members, i);
+        mb = &array_get(&b->members, i);
+        if (!type_equal_unqualified(ma->type, mb->type)) {
+            return 0;
+        } else if (a->type != T_FUNCTION) {
+            assert(ma->offset == mb->offset);
+            if (!str_eq(ma->name, mb->name)) {
+                return 0;
+            }
+        }
     }
 
     return 1;
 }
+
+INTERNAL int type_equal(Type a, Type b)
+{
+    struct typetree *ta, *tb;
+    union {
+        Type type;
+        struct {
+            short flags, ref;
+        } data;
+    } x, y;
+
+    x.type = a;
+    y.type = b;
+
+    if (x.data.flags != y.data.flags) {
+        return 0;
+    }
+
+    if (x.data.ref == y.data.ref) {
+        return 1;
+    }
+
+    if (x.data.ref == 0 || y.data.ref == 0) {
+        return 0;
+    }
+
+    ta = get_typetree_handle(a.ref);
+    tb = get_typetree_handle(b.ref);
+    return typetree_equal(ta, tb);
+}
+
+INTERNAL int type_equal_unqualified(Type a, Type b)
+{
+    struct typetree *ta, *tb;
+    union {
+        Type type;
+        struct {
+            short flags, ref;
+        } data;
+    } x, y;
+
+    x.type = type_unqualified(a);
+    y.type = type_unqualified(b);
+
+    if (x.data.flags != y.data.flags) {
+        return 0;
+    }
+
+    if (x.data.ref == y.data.ref) {
+        return 1;
+    }
+
+    if (x.data.ref == 0 || y.data.ref == 0) {
+        return 0;
+    }
+
+    ta = get_typetree_handle(a.ref);
+    tb = get_typetree_handle(b.ref);
+    return typetree_equal_unqualified(ta, tb);
+}
+
 
 INTERNAL Type promote_integer(Type type)
 {
     assert(is_integer(type));
     if (size_of(type) < 4) {
         type = basic_type__int;
+    }
+
+    return type;
+}
+
+INTERNAL Type default_argument_promotion(Type type)
+{
+    if (is_float(type)) {
+        return basic_type__double;
+    }
+
+    if (is_integer(type)) {
+        return promote_integer(type);
     }
 
     return type;
@@ -978,12 +1076,14 @@ INTERNAL Type usual_arithmetic_conversion(Type t1, Type t2)
         }
     }
 
-    return remove_qualifiers(res);
+    return type_unqualified(res);
 }
 
 INTERNAL int is_compatible(Type l, Type r)
 {
+    int i;
     size_t s1, s2;
+    const struct member *m1, *m2;
 
     if (type_of(l) != type_of(r)
         || is_const(l) != is_const(r)
@@ -1020,6 +1120,17 @@ INTERNAL int is_compatible(Type l, Type r)
         if (!is_complete(l) || !is_complete(r)) {
             return 1;
         }
+        if (nmembers(l) != nmembers(r)) {
+            return 0;
+        }
+        for (i = 0; i < nmembers(l); ++i) {
+            m1 = get_member(l, i);
+            m2 = get_member(r, i);
+            if (!is_compatible_unqualified(m1->type, m2->type)) {
+                return 0;
+            }
+        }
+        return 1;
     default:
         return type_equal(l, r);
     }
@@ -1027,8 +1138,8 @@ INTERNAL int is_compatible(Type l, Type r)
 
 INTERNAL int is_compatible_unqualified(Type l, Type r)
 {
-    l = remove_qualifiers(l);
-    r = remove_qualifiers(r);
+    l = type_unqualified(l);
+    r = type_unqualified(r);
     return is_compatible(l, r);
 }
 
@@ -1085,7 +1196,7 @@ INTERNAL Type type_deref(Type type)
 {
     assert(is_pointer(type));
     if (type.is_pointer) {
-        type = remove_qualifiers(type);
+        type = type_unqualified(type);
         type.is_pointer = 0;
     } else {
         type = get_type_handle(type.ref);

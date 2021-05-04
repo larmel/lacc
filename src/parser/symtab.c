@@ -245,29 +245,52 @@ INTERNAL const char *sym_name(const struct symbol *sym)
  */
 static void sym_apply_type(struct symbol *sym, Type type)
 {
-    if (is_function(sym->type)
-        && is_function(type)
-        && type_equal(type_next(sym->type), type_next(type)))
-    {
-        if (!is_complete(sym->type)
-            || (is_complete(type) && is_compatible(sym->type, type)))
-        {
-            sym->type = type;
-        } else if (!is_complete(type)) {
-            return;
+    if (is_function(sym->type)) {
+        if (!is_function(type)) {
+            error("Conflicting types for %s.", sym_name(sym));
+            exit(1);
         }
-    } else if (is_array(sym->type) && is_array(type)) {
-        if (type_equal(type_next(sym->type), type_next(type))) {
-            if (!is_complete(sym->type) && is_complete(type)) {
-                set_array_length(sym->type, type_array_len(type));
-            } else if (!is_complete(type)) {
-                return;
+
+        if (!is_compatible(type_next(sym->type), type_next(type))) {
+            error("Conflicting return type for function %s.", sym_name(sym));
+            exit(1);
+        }
+
+        if (!is_complete(sym->type)) {
+            assert(nmembers(sym->type) == 0);
+            if (is_complete(type)) {
+                sym->type = type;
+            }
+        } else if (is_complete(type)) {
+            if (is_compatible(sym->type, type)) {
+                sym->type = type;
+            } else {
+                error("Conflicting types for function %s.", sym_name(sym));
+                exit(1);
             }
         }
-    }
+    } else if (is_array(sym->type)) {
+        if (!is_array(type)) {
+            error("Conflicting types for array %s.", sym_name(sym));
+            exit(1);
+        }
 
-    if (!type_equal(sym->type, type)) {
-        error("'%s' declared with different types.", sym_name(sym));
+        if (!type_equal_unqualified(type_next(sym->type), type_next(type))) {
+            error("Redefinition of array %s with different type.",
+                sym_name(sym));
+            exit(1);
+        }
+
+        if (!is_complete(sym->type)) {
+            if (is_complete(type)) {
+                set_array_length(sym->type, type_array_len(type));
+            }
+        } else if (is_complete(type) && !is_compatible(sym->type, type)) {
+            error("Conflicting declaration of array %s.", sym_name(sym));
+            exit(1);
+        }
+    } else if (!is_compatible(sym->type, type)) {
+        error("Conflicting types for %s.", sym_name(sym), sym->type, type);
         exit(1);
     }
 }

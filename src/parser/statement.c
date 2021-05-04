@@ -344,7 +344,7 @@ static struct block *switch_statement(
             prev_cond = cond;
             sc = array_get(&switch_context->cases, i);
             cond = cfg_block_init(def);
-            cond->expr = eval_expr(def, cond, IR_OP_EQ, sc.value, value);
+            cond->expr = eval_cmp_eq(def, cond, sc.value, value);
             cond->jump[1] = sc.label;
             prev_cond->jump[0] = cond;
         }

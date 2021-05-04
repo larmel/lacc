@@ -247,8 +247,7 @@ static struct block *array_declarator(
 
         if (!type_equal(val.type, basic_type__unsigned_long)) {
             val = eval(def, block,
-                eval_expr(def, block, IR_OP_CAST, val,
-                    basic_type__unsigned_long));
+                eval_cast(def, block, val, basic_type__unsigned_long));
         } else if (val.kind == DIRECT && !is_temporary(val.symbol)) {
             val = eval_copy(def, block, val);
         }

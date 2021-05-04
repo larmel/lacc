@@ -32,6 +32,9 @@ INTERNAL Type type_set_const(Type type);
 INTERNAL Type type_set_volatile(Type type);
 INTERNAL Type type_set_restrict(Type type);
 
+/* Get type without any (top level) qualifiers. */
+INTERNAL Type type_unqualified(Type type);
+
 /* Set qualifiers from other on type. */
 INTERNAL Type type_apply_qualifiers(Type type, Type other);
 
@@ -151,5 +154,8 @@ INTERNAL Type type_deref(Type type);
  * be converted to int.
  */
 INTERNAL Type promote_integer(Type type);
+
+/* Apply default argument promotions to type. */
+INTERNAL Type default_argument_promotion(Type type);
 
 #endif

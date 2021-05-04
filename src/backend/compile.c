@@ -3168,7 +3168,7 @@ static void compile_block(struct block *block, Type type)
     if (!block->jump[0] && !block->jump[1]) {
         if (block->has_return_value) {
             assert(is_object(block->expr.type));
-            assert(type_equal(block->expr.type, type_next(type)));
+            assert(type_equal_unqualified(block->expr.type, type_next(type)));
             compile_return(type, block->expr);
             relase_regs();
             assert(x87_stack == 0);
@@ -3290,7 +3290,7 @@ static void compile_data_assign(struct var target, struct var val)
         case IMMEDIATE:
             assert(!is_array(target.type));
             assert(type_equal(target.type, val.type));
-            assert(!val.symbol);
+            assert(!val.symbol || val.symbol->symtype == SYM_CONSTANT);
             imm.type = IMM_INT;
             if (is_long_double(val.type)) {
                 union {

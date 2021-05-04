@@ -162,8 +162,14 @@ INTERNAL size_t size_of(Type type);
 /* Alignment in bytes. */
 INTERNAL size_t type_alignment(Type type);
 
-/* Returns 1 if types are equal, 0 otherwise. */
+/* Returns 1 if types are identical, 0 otherwise. */
 INTERNAL int type_equal(Type l, Type r);
+
+/*
+ * Compare types without considering const, volatile and restrict
+ * qualifiers - also recursively.
+ */
+INTERNAL int type_equal_unqualified(Type l, Type r);
 
 /*
  * Find a common real type between operands used in an expression,

@@ -32,13 +32,6 @@ INTERNAL struct var eval(
     struct block *block,
     struct expression expr);
 
-/* Evaluate l <op> r, or unary expression <op> l. */
-INTERNAL struct expression eval_expr(
-    struct definition *def,
-    struct block *block,
-    enum optype optype,
-    struct var l, ...);
-
 /* Evaluate &a. */
 INTERNAL struct var eval_addr(
     struct definition *def,
@@ -51,6 +44,116 @@ INTERNAL struct var eval_deref(
     struct block *block,
     struct var var);
 
+INTERNAL struct expression eval_cast(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    Type type);
+
+INTERNAL struct expression eval_va_arg(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    Type type);
+
+INTERNAL struct expression eval_call(
+    struct definition *def,
+    struct block *block,
+    struct var l);
+
+INTERNAL struct expression eval_not(
+    struct definition *def,
+    struct block *block,
+    struct var l);
+
+INTERNAL struct expression eval_neg(
+    struct definition *def,
+    struct block *block,
+    struct var l);
+
+INTERNAL struct expression eval_mod(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_mul(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_div(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_add(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_sub(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_cmp_eq(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_cmp_ne(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_cmp_ge(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_cmp_gt(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_and(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_or(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_xor(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_lshift(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
+
+INTERNAL struct expression eval_rshift(
+    struct definition *def,
+    struct block *block,
+    struct var l,
+    struct var r);
 /*
  * Evaluate simple assignment (6.5.16.1).
  *
@@ -85,7 +188,14 @@ INTERNAL Type eval_conditional(
     struct block *right);
 
 /* Prepare parameter expression. */
-INTERNAL struct expression eval_param(
+INTERNAL struct expression eval_prepare_arg(
+    struct definition *def,
+    struct block *block,
+    struct expression expr,
+    Type target);
+
+/* Prepare parameter expression. */
+INTERNAL struct expression eval_prepare_vararg(
     struct definition *def,
     struct block *block,
     struct expression expr);
@@ -94,7 +204,7 @@ INTERNAL struct expression eval_param(
  * Push given parameter in preparation of a function call. Invoke in
  * left to right order, as argument appear in parameter list.
  */
-INTERNAL void param(struct block *block, struct expression arg);
+INTERNAL void eval_push_param(struct block *block, struct expression arg);
 
 /*
  * Evaluate return (expr).

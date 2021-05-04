@@ -9,6 +9,8 @@ int foo(enum token tok)
 	return tok;
 }
 
+static int tokens[] = {FOO, BAR, BAZ};
+
 int main() {
 	enum BOOL { TRUE, FALSE } truth = FALSE;
 	enum token { FOO = 1 } shadow = 0;
@@ -18,5 +20,5 @@ int main() {
 	t = 3 + truth;
 	a = t;
 
-	return BAZ - a;
+	return BAZ - a + tokens[1];
 }
