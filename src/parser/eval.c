@@ -277,39 +277,35 @@ static struct expression create_expr(enum optype op, struct var l, ...)
     return expr;
 }
 
-/*
- * Add a statement to the list of ir operations in the block. Parameters
- * are given by the statement opcode.
- *
- * Current block can be NULL when parsing an expression that should not
- * be evaluated, for example argument to sizeof.
- */
-INTERNAL void emit_ir(struct block *block, enum sttype st, ...)
+static void ir_assign(
+    struct block *block,
+    struct var t,
+    struct expression expr)
 {
-    va_list args;
-    struct statement stmt = {0};
+    struct statement stmt = {IR_ASSIGN};
 
-    if (block) {
-        va_start(args, st);
-        stmt.st = st;
-        stmt.t = var_void();
-        switch (st) {
-        case IR_ASSIGN:
-        case IR_VLA_ALLOC:
-            stmt.t = va_arg(args, struct var);
-        case IR_EXPR:
-        case IR_PARAM:
-        case IR_VA_START:
-            stmt.expr = va_arg(args, struct expression);
-            break;
-        case IR_ASM:
-            stmt.asm_index = va_arg(args, int);
-            break;
-        }
+    assert(block);
+    stmt.t = t;
+    stmt.expr = expr;
+    array_push_back(&block->code, stmt);
+}
 
-        array_push_back(&block->code, stmt);
-        va_end(args);
-    }
+static void ir_expr(struct block *block, struct expression expr)
+{
+    struct statement stmt = {IR_EXPR};
+
+    assert(block);
+    stmt.expr = expr;
+    array_push_back(&block->code, stmt);
+}
+
+INTERNAL void ir_asm(struct block *block, int index)
+{
+    struct statement stmt = {IR_ASM};
+
+    assert(block);
+    stmt.asm_index = index;
+    array_push_back(&block->code, stmt);
 }
 
 /*
@@ -330,10 +326,10 @@ INTERNAL struct expression eval_expression_statement(
 
     if (has_side_effects(expr)) {
         if (!is_struct_or_union(expr.type)) {
-            emit_ir(block, IR_EXPR, expr);
+            ir_expr(block, expr);
         } else {
             res = create_var(def, expr.type);
-            emit_ir(block, IR_ASSIGN, res, expr);
+            ir_assign(block, res, expr);
         }
     }
 
@@ -350,11 +346,11 @@ INTERNAL struct var eval(
     if (is_identity(expr)) {
         res = expr.l;
     } else if (is_void(expr.type)) {
-        emit_ir(block, IR_EXPR, expr);
+        ir_expr(block, expr);
         res = var_void();
     } else {
         res = create_var(def, expr.type);
-        emit_ir(block, IR_ASSIGN, res, expr);
+        ir_assign(block, res, expr);
         res.lvalue = 0;
     }
 
@@ -1411,7 +1407,7 @@ static struct var eval_assign_string_literal(
         assert(size_of(target.symbol->type) == 0);
         set_array_length(target.symbol->type, size_of(expr.type));
         target.type = expr.type;
-        emit_ir(block, IR_ASSIGN, target, expr);
+        ir_assign(block, target, expr);
     } else {
         if (size_of(expr.type) == size_of(target.type) + 1) {
             expr.type = target.type;
@@ -1423,7 +1419,7 @@ static struct var eval_assign_string_literal(
 
         type = target.type;
         target.type = expr.type;
-        emit_ir(block, IR_ASSIGN, target, expr);
+        ir_assign(block, target, expr);
         target.type = type;
     }
 
@@ -1478,7 +1474,7 @@ static struct var assign_field(
         expr = eval_expr(def, block, IR_OP_CAST, eval(def, block, expr), type);
     }
 
-    emit_ir(block, IR_ASSIGN, target, expr);
+    ir_assign(block, target, expr);
     if (is_immediate(expr)) {
         target = expr.l;
     } else {
@@ -1528,7 +1524,7 @@ static struct var eval_assign_pointer(
     }
 
     expr.type = target.type;
-    emit_ir(block, IR_ASSIGN, target, expr);
+    ir_assign(block, target, expr);
     if (is_immediate(expr)) {
         target = expr.l;
     } else {
@@ -1605,7 +1601,7 @@ INTERNAL struct var eval_assign(
         exit(1);
     }
 
-    emit_ir(block, IR_ASSIGN, target, expr);
+    ir_assign(block, target, expr);
     if (is_immediate(expr)) {
         target = expr.l;
     } else {
@@ -1770,9 +1766,15 @@ INTERNAL void eval_vla_alloc(
     struct block *block,
     const struct symbol *sym)
 {
+    struct statement stmt = {IR_VLA_ALLOC};
+
+    assert(block);
     assert(is_vla(sym->type));
     block->expr = eval_vla_size(def, block, sym->type);
-    emit_ir(block, IR_VLA_ALLOC, var_direct(sym), block->expr);
+
+    stmt.t = var_direct(sym);
+    stmt.expr = block->expr;
+    array_push_back(&block->code, stmt);
 }
 
 INTERNAL struct expression eval_vla_size(
@@ -1904,12 +1906,20 @@ INTERNAL struct expression eval_param(
 
 INTERNAL void param(struct block *block, struct expression expr)
 {
-    emit_ir(block, IR_PARAM, expr);
+    struct statement stmt = {IR_PARAM};
+
+    assert(block);
+    stmt.expr = expr;
+    array_push_back(&block->code, stmt);
 }
 
 INTERNAL void eval__builtin_va_start(
     struct block *block,
     struct expression arg)
 {
-    emit_ir(block, IR_VA_START, arg);
+    struct statement stmt = {IR_VA_START};
+
+    assert(block);
+    stmt.expr = arg;
+    array_push_back(&block->code, stmt);
 }

@@ -534,7 +534,7 @@ static struct block *asm_statement(
 end:
     consume(')');
     array_push_back(&def->asm_statements, st);
-    emit_ir(block, IR_ASM, array_len(&def->asm_statements) - 1);
+    ir_asm(block, array_len(&def->asm_statements) - 1);
     block->jump[0] = writeback;
     return writeback;
 }

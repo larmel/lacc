@@ -3,8 +3,8 @@
 
 #include <lacc/ir.h>
 
-/* Add statement to current block. */
-INTERNAL void emit_ir(struct block *block, enum sttype st, ...);
+/* Add asm statement to current block. */
+INTERNAL void ir_asm(struct block *block, int index);
 
 /* Convert function, array, or field to rvalue. */
 INTERNAL struct var rvalue(

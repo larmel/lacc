@@ -73,7 +73,7 @@ static int x87_stack;
  * Convert x87 register (ST0 through ST7) to stack relative position,
  * where top of stack means ST0.
  */
-int x87_stack_pos(enum reg r)
+INTERNAL int x87_stack_pos(enum reg r)
 {
     assert(r >= ST0);
     assert(r <= ST7);
@@ -110,61 +110,146 @@ static void relase_regs(void)
     sse_regs_used = 0;
 }
 
-static void compile_block(struct block *block, Type type);
-
-static void emit(enum opcode opcode, enum instr_optype optype, ...)
+static void emit_jcc(enum tttn cc, struct immediate imm)
 {
-    va_list args;
+    struct instruction instr = {INSTR_Jcc};
+
+    instr.optype = OPT_IMM;
+    instr.cc = cc;
+    instr.source.imm = imm;
+    emit_instruction(instr);
+}
+
+static void emit_setcc(enum tttn cc, struct registr reg)
+{
+    struct instruction instr = {INSTR_SETcc};
+
+    instr.optype = OPT_REG;
+    instr.cc = cc;
+    instr.source.reg = reg;
+    emit_instruction(instr);
+}
+
+static void emit_rep_movs(int width)
+{
+    struct instruction instr = {INSTR_MOV_STR};
+
+    instr.optype = OPT_NONE;
+    instr.prefix = PREFIX_REP;
+    instr.source.width = width;
+    emit_instruction(instr);
+}
+
+static void emit_cxy(int width)
+{
     struct instruction instr = {0};
 
-    instr.opcode = opcode;
-    instr.optype = optype;
-    va_start(args, optype);
-    if (opcode == INSTR_Jcc || opcode == INSTR_SETcc) {
-        instr.cc = va_arg(args, enum tttn);
-    } else if (opcode == INSTR_MOV_STR) {
-        instr.prefix = va_arg(args, enum prefix);
-    }
+    instr.opcode = INSTR_Cxy;
+    instr.optype = OPT_NONE;
+    instr.source.width = width;
+    emit_instruction(instr);
+}
 
-    switch (optype) {
-    case OPT_IMM:
-        instr.source.imm = va_arg(args, struct immediate);
-        break;
-    case OPT_REG:
-        instr.source.reg = va_arg(args, struct registr);
-        break;
-    case OPT_MEM:
-        instr.source.mem = va_arg(args, struct memory);
-        break;
-    case OPT_REG_REG:
-        instr.source.reg = va_arg(args, struct registr);
-        instr.dest.reg = va_arg(args, struct registr);
-        break;
-    case OPT_REG_MEM:
-        instr.source.reg = va_arg(args, struct registr);
-        instr.dest.mem = va_arg(args, struct memory);
-        break;
-    case OPT_MEM_REG:
-        instr.source.mem = va_arg(args, struct memory);
-        instr.dest.reg = va_arg(args, struct registr);
-        break;
-    case OPT_IMM_REG:
-        instr.source.imm = va_arg(args, struct immediate);
-        instr.dest.reg = va_arg(args, struct registr);
-        break;
-    case OPT_IMM_MEM:
-        instr.source.imm = va_arg(args, struct immediate);
-        instr.dest.mem = va_arg(args, struct memory);
-        break;
-    case OPT_NONE:
-        instr.source.width = va_arg(args, int);
-        break;
-    }
+static void emit_leave(void)
+{
+    struct instruction instr = {0};
 
-    /* No actual enforcement yet. */
-    assert(!is_sse(opcode) || !context.no_sse);
+    instr.opcode = INSTR_LEAVE;
+    instr.optype = OPT_NONE;
+    emit_instruction(instr);
+}
 
-    va_end(args);
+static void emit_ret(void)
+{
+    struct instruction instr = {0};
+
+    instr.opcode = INSTR_RET;
+    instr.optype = OPT_NONE;
+    emit_instruction(instr);
+}
+
+static void emit_i_(enum opcode op, struct immediate imm)
+{
+    struct instruction instr = {0};
+
+    instr.opcode = op;
+    instr.optype = OPT_IMM;
+    instr.source.imm = imm;
+    emit_instruction(instr);
+}
+
+static void emit_r_(enum opcode op, struct registr reg)
+{
+    struct instruction instr = {0};
+
+    instr.opcode = op;
+    instr.optype = OPT_REG;
+    instr.source.reg = reg;
+    emit_instruction(instr);
+}
+
+static void emit_m_(enum opcode op, struct memory mem)
+{
+    struct instruction instr = {0};
+
+    instr.opcode = op;
+    instr.optype = OPT_MEM;
+    instr.source.mem = mem;
+    emit_instruction(instr);
+}
+
+static void emit_rm(enum opcode op, struct registr reg, struct memory mem)
+{
+    struct instruction instr = {0};
+
+    instr.opcode = op;
+    instr.optype = OPT_REG_MEM;
+    instr.source.reg = reg;
+    instr.dest.mem = mem;
+    emit_instruction(instr);
+}
+
+static void emit_rr(enum opcode op, struct registr r1, struct registr r2)
+{
+    struct instruction instr = {0};
+
+    instr.opcode = op;
+    instr.optype = OPT_REG_REG;
+    instr.source.reg = r1;
+    instr.dest.reg = r2;
+    emit_instruction(instr);
+}
+
+static void emit_mr(enum opcode op, struct memory mem, struct registr reg)
+{
+    struct instruction instr = {0};
+
+    instr.opcode = op;
+    instr.optype = OPT_MEM_REG;
+    instr.source.mem = mem;
+    instr.dest.reg = reg;
+    emit_instruction(instr);
+}
+
+static void emit_im(enum opcode op, struct immediate imm, struct memory mem)
+{
+    struct instruction instr = {0};
+
+    instr.opcode = op;
+    instr.optype = OPT_IMM_MEM;
+    instr.source.imm = imm;
+    instr.dest.mem = mem;
+    emit_instruction(instr);
+}
+
+static void emit_ir(enum opcode op, struct immediate imm, struct registr reg)
+{
+    struct instruction instr = {0};
+
+    instr.opcode = op;
+    instr.optype = OPT_IMM_REG;
+    instr.source.imm = imm;
+    instr.dest.reg = reg;
     emit_instruction(instr);
 }
 
@@ -491,25 +576,25 @@ static void emit_load(
             source.kind = DIRECT;
         } else if (is_zero(source.imm, source.type)) {
             assert(is_integer(source.type) || is_pointer(source.type));
-            emit(INSTR_XOR, OPT_REG_REG, dest, dest);
+            emit_rr(INSTR_XOR, dest, dest);
             break;
         } else {
             assert(opcode == INSTR_MOV);
-            emit(INSTR_MOV, OPT_IMM_REG, value_of(source, w), dest);
+            emit_ir(INSTR_MOV, value_of(source, w), dest);
             break;
         }
     case DIRECT:
         if (is_register_allocated(source)) {
             ax = allocated_register(source);
-            emit(opcode, OPT_REG_REG, reg(ax, w), dest);
+            emit_rr(opcode, reg(ax, w), dest);
         } else if (is_global_offset(source.symbol)) {
             ax = dest.r < XMM0 ? dest.r : R11;
-            emit(INSTR_MOV, OPT_MEM_REG,
+            emit_mr(INSTR_MOV,
                 location(got(source.symbol), 8), reg(ax, 8));
-            emit(opcode, OPT_MEM_REG, location(address(
+            emit_mr(opcode, location(address(
                 displacement_from_offset(source.offset), ax, 0, 0), w), dest);
         } else {
-            emit(opcode, OPT_MEM_REG, location_of(source, w), dest);
+            emit_mr(opcode, location_of(source, w), dest);
         }
         break;
     case DEREF:
@@ -519,17 +604,16 @@ static void emit_load(
             ax = allocated_register(ptr);
         } else if (is_global_offset(source.symbol)) {
             ax = dest.r < XMM0 ? dest.r : R11;
-            emit(INSTR_MOV, OPT_MEM_REG,
+            emit_mr(INSTR_MOV,
                 location(got(source.symbol), 8), reg(ax, 8));
-            emit(INSTR_MOV, OPT_MEM_REG,
+            emit_mr(INSTR_MOV,
                 location(address(0, ax, 0, 0), 8),
                 reg(ax, 8));
         } else {
             ax = R11;
-            emit(INSTR_MOV, OPT_MEM_REG, location_of(ptr, 8), reg(ax, 8));
+            emit_mr(INSTR_MOV, location_of(ptr, 8), reg(ax, 8));
         }
-        emit(opcode,
-            OPT_MEM_REG,
+        emit_mr(opcode,
             location(
                 address(
                     displacement_from_offset(source.offset), ax, 0, 0), w),
@@ -540,15 +624,15 @@ static void emit_load(
         assert(dest.width == 8);
         if (is_global_offset(source.symbol)) {
             ax = dest.r;
-            emit(INSTR_MOV, OPT_MEM_REG, location(got(source.symbol), 8), dest);
+            emit_mr(INSTR_MOV, location(got(source.symbol), 8), dest);
             if (source.offset) {
-                emit(INSTR_LEA, OPT_MEM_REG,
+                emit_mr(INSTR_LEA,
                     location(address(
                         displacement_from_offset(source.offset), ax, 0, 0), 8),
                     dest);
             }
         } else {
-            emit(opcode, OPT_MEM_REG, location_of(source, 8), dest);
+            emit_mr(opcode, location_of(source, 8), dest);
         }
         break;
     }
@@ -590,19 +674,18 @@ static void load_field(struct var v, enum reg r, int w)
     emit_load(INSTR_MOV, v, ax);
     bits = (ax.width * 8) - (v.field_offset + v.field_width);
     if (bits > 0) {
-        emit(INSTR_SHL, OPT_IMM_REG, constant(bits, 1), ax);
+        emit_ir(INSTR_SHL, constant(bits, 1), ax);
     }
 
     bits = v.field_offset + bits;
     if (bits > 0) {
-        emit(is_signed(v.type) ? INSTR_SAR : INSTR_SHR,
-            OPT_IMM_REG,
+        emit_ir(is_signed(v.type) ? INSTR_SAR : INSTR_SHR,
             constant(bits, 1),
             ax);
     }
 
     if (is_signed(v.type) && w > ax.width) {
-        emit(INSTR_MOVSX, OPT_REG_REG, reg(r, 4), reg(r, 8));
+        emit_rr(INSTR_MOVSX, reg(r, 4), reg(r, 8));
     }
 }
 
@@ -680,21 +763,21 @@ static void load_address(struct var v, enum reg r)
 {
     if (v.kind == DIRECT) {
         if (is_global_offset(v.symbol)) {
-            emit(INSTR_MOV, OPT_MEM_REG, location(got(v.symbol), 8), reg(r, 8));
+            emit_mr(INSTR_MOV, location(got(v.symbol), 8), reg(r, 8));
             if (v.offset) {
-                emit(INSTR_LEA, OPT_MEM_REG,
+                emit_mr(INSTR_LEA,
                     location(address(
                         displacement_from_offset(v.offset), r, 0, 0), 8),
                     reg(r, 8));
             }
         } else {
-            emit(INSTR_LEA, OPT_MEM_REG, location_of(v, 8), reg(r, 8));
+            emit_mr(INSTR_LEA, location_of(v, 8), reg(r, 8));
         }
     } else {
         assert(v.kind == DEREF);
         load(var_direct(v.symbol), r);
         if (v.offset) {
-            emit(INSTR_ADD, OPT_IMM_REG, constant(v.offset, 8), reg(r, 8));
+            emit_ir(INSTR_ADD, constant(v.offset, 8), reg(r, 8));
         }
     }
 }
@@ -752,12 +835,12 @@ static void emit_memcpy(size_t bytes)
                 break;
             }
 
-            emit(INSTR_MOV, OPT_MEM_REG, location(source, w), reg(AX, w));
-            emit(INSTR_MOV, OPT_REG_MEM, reg(AX, w), location(dest, w));
+            emit_mr(INSTR_MOV, location(source, w), reg(AX, w));
+            emit_rm(INSTR_MOV, reg(AX, w), location(dest, w));
         }
     } else {
-        emit(INSTR_MOV, OPT_IMM_REG, constant(bytes, 8), reg(DX, 8));
-        emit(INSTR_CALL, OPT_IMM, addr(decl_memcpy));
+        emit_ir(INSTR_MOV, constant(bytes, 8), reg(DX, 8));
+        emit_i_(INSTR_CALL, addr(decl_memcpy));
     }
 }
 
@@ -773,17 +856,17 @@ static void push(struct var v)
         }
         if (v.kind == DIRECT) {
             v.offset += 8;
-            emit(INSTR_PUSH, OPT_MEM, location_of(v, 8));
+            emit_m_(INSTR_PUSH, location_of(v, 8));
             v.offset -= 8;
-            emit(INSTR_PUSH, OPT_MEM, location_of(v, 8));
+            emit_m_(INSTR_PUSH, location_of(v, 8));
         } else {
             load_address(v, SI);
-            emit(INSTR_PUSH, OPT_MEM, location(address(8, SI, 0, 0), 8));
-            emit(INSTR_PUSH, OPT_MEM, location(address(0, SI, 0, 0), 8));
+            emit_m_(INSTR_PUSH, location(address(8, SI, 0, 0), 8));
+            emit_m_(INSTR_PUSH, location(address(0, SI, 0, 0), 8));
         }
     } else if (is_scalar(v.type)) {
         if (v.kind == IMMEDIATE && is_int_constant(v)) {
-            emit(INSTR_PUSH, OPT_IMM, value_of(v, 8));
+            emit_i_(INSTR_PUSH, value_of(v, 8));
         } else {
             /*
              * Not possible to push SSE registers, so load as if normal
@@ -795,15 +878,15 @@ static void push(struct var v)
                     : basic_type__unsigned_long;
             }
             load_int(v, AX, 8);
-            emit(INSTR_PUSH, OPT_REG, reg(AX, 8));
+            emit_r_(INSTR_PUSH, reg(AX, 8));
         }
     } else {
         eb = EIGHTBYTES(v.type);
-        emit(INSTR_SUB, OPT_IMM_REG, constant(eb * 8, 8), reg(SP, 8));
-        emit(INSTR_MOV, OPT_IMM_REG, constant(eb, 4), reg(CX, 4));
-        emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(DI, 8));
+        emit_ir(INSTR_SUB, constant(eb * 8, 8), reg(SP, 8));
+        emit_ir(INSTR_MOV, constant(eb, 4), reg(CX, 4));
+        emit_rr(INSTR_MOV, reg(SP, 8), reg(DI, 8));
         load_address(v, SI);
-        emit(INSTR_MOV_STR, OPT_NONE, PREFIX_REP, 8);
+        emit_rep_movs(8);
     }
 }
 
@@ -813,6 +896,7 @@ static void push(struct var v)
  */
 static enum reg load_x87(struct var v)
 {
+    size_t w;
     enum reg ax, st;
     const struct symbol *label;
 
@@ -822,32 +906,31 @@ static enum reg load_x87(struct var v)
         v.kind = DIRECT;
     }
 
+    w = size_of(v.type);
     if (is_real(v.type)) {
         if (v.kind == DIRECT
             && !is_register_allocated(v)
             && !is_global_offset(v.symbol))
         {
-            emit(INSTR_FLD, OPT_MEM, location_of(v, size_of(v.type)));
+            emit_m_(INSTR_FLD, location_of(v, w));
         } else {
             push(v);
-            emit(INSTR_FLD, OPT_MEM,
-                location(address(0, SP, 0, 0), size_of(v.type)));
-            emit(INSTR_ADD, OPT_IMM_REG,
-                constant(EIGHTBYTES(v.type) * 8, 8), reg(SP, 8));
+            emit_m_(INSTR_FLD, location(address(0, SP, 0, 0), w));
+            emit_ir(INSTR_ADD, constant(EIGHTBYTES(v.type) * 8, 8), reg(SP, 8));
         }
-    } else if (is_unsigned(v.type) || size_of(v.type) == 1) {
+    } else if (is_unsigned(v.type) || w == 1) {
         ax = get_int_reg();
         load_int(v, ax, 8);
-        emit(INSTR_PUSH, OPT_REG, reg(ax, 8));
-        emit(INSTR_FILD, OPT_MEM, location(address(0, SP, 0, 0), 8));
-        emit(INSTR_ADD, OPT_IMM_REG, constant(8, 8), reg(SP, 8));
-        if (size_of(v.type) == 8) {
+        emit_r_(INSTR_PUSH, reg(ax, 8));
+        emit_m_(INSTR_FILD, location(address(0, SP, 0, 0), 8));
+        emit_ir(INSTR_ADD, constant(8, 8), reg(SP, 8));
+        if (w == 8) {
             label = create_label(definition);
-            emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
-            emit(INSTR_Jcc, OPT_IMM, CC_NS, addr(label));
+            emit_rr(INSTR_TEST, reg(ax, 8), reg(ax, 8));
+            emit_jcc(CC_NS, addr(label));
             v = x87_unsigned_adjust_constant();
             load_x87(v);
-            emit(INSTR_FADDP, OPT_REG, reg(st, 16));
+            emit_r_(INSTR_FADDP, reg(st, 16));
             x87_stack--;
             enter_context(label);
         }
@@ -855,15 +938,13 @@ static enum reg load_x87(struct var v)
         relase_regs();
     } else {
         assert(is_signed(v.type));
-        assert(size_of(v.type) != 1);
+        assert(w != 1);
         if (v.kind == DIRECT && !is_global_offset(v.symbol)) {
-            emit(INSTR_FILD, OPT_MEM, location_of(v, size_of(v.type)));
+            emit_m_(INSTR_FILD, location_of(v, w));
         } else {
             push(v);
-            emit(INSTR_FILD, OPT_MEM,
-                location(address(0, SP, 0, 0), size_of(v.type)));
-            emit(INSTR_ADD, OPT_IMM_REG,
-                constant(size_of(v.type), 8), reg(SP, 8));
+            emit_m_(INSTR_FILD, location(address(0, SP, 0, 0), w));
+            emit_ir(INSTR_ADD, constant(w, 8), reg(SP, 8));
         }
     }
 
@@ -908,17 +989,17 @@ static enum reg load_float_as_integer(
             limit.d = (double) LONG_MAX;
             load_sse(var_numeric(basic_type__double, limit), xmm1, ws);
         }
-        emit(INSTR_UCOMIS, OPT_REG_REG, reg(xmm1, ws), reg(xmm0, ws));
-        emit(INSTR_Jcc, OPT_IMM, CC_AE, addr(convert));
+        emit_rr(INSTR_UCOMIS, reg(xmm1, ws), reg(xmm0, ws));
+        emit_jcc(CC_AE, addr(convert));
         /* Value is representable as signed long. */
         emit_load(INSTR_CVTTS2SI, val, reg(ax, 8));
-        emit(INSTR_JMP, OPT_IMM, addr(next));
+        emit_i_(INSTR_JMP, addr(next));
         enter_context(convert);
         /* Trickery to convert value not within signed long. */
-        emit(INSTR_SUBS, OPT_REG_REG, reg(xmm1, ws), reg(xmm0, ws));
-        emit(INSTR_CVTTS2SI, OPT_REG_REG, reg(xmm0, ws), reg(ax, 8));
-        emit(INSTR_MOV, OPT_IMM_REG, constant(LONG_MAX + 1ul, 8), reg(cx, 8));
-        emit(INSTR_XOR, OPT_REG_REG, reg(cx, 8), reg(ax, 8));
+        emit_rr(INSTR_SUBS, reg(xmm1, ws), reg(xmm0, ws));
+        emit_rr(INSTR_CVTTS2SI, reg(xmm0, ws), reg(ax, 8));
+        emit_ir(INSTR_MOV, constant(LONG_MAX + 1ul, 8), reg(cx, 8));
+        emit_rr(INSTR_XOR, reg(cx, 8), reg(ax, 8));
         enter_context(next);
     }
 
@@ -940,7 +1021,7 @@ static enum reg load_integer_as_float(struct var val, Type type)
         if (size_of(val.type) < 4 || is_field(val)) {
             ax = get_int_reg();
             load_int(val, ax, 4);
-            emit(INSTR_CVTSI2S, OPT_REG_REG, reg(ax, 4), reg(xmm, w));
+            emit_rr(INSTR_CVTSI2S, reg(ax, 4), reg(xmm, w));
         } else {
             emit_load(INSTR_CVTSI2S, val, reg(xmm, w));
         }
@@ -948,7 +1029,7 @@ static enum reg load_integer_as_float(struct var val, Type type)
         ax = get_int_reg();
         if (size_of(val.type) < 4) {
             load_int(val, ax, 4);
-            emit(INSTR_CVTSI2S, OPT_REG_REG, reg(ax, 4), reg(xmm, w));
+            emit_rr(INSTR_CVTSI2S, reg(ax, 4), reg(xmm, w));
         } else {
             cx = get_int_reg();
             load_int(val, ax, 8);
@@ -959,22 +1040,22 @@ static enum reg load_integer_as_float(struct var val, Type type)
              * interpreted as signed.
              */
             if (size_of(val.type) == 4) {
-                emit(INSTR_MOV, OPT_REG_REG, reg(ax, 4), reg(ax, 4));
+                emit_rr(INSTR_MOV, reg(ax, 4), reg(ax, 4));
             }
-            emit(INSTR_TEST, OPT_REG_REG, reg(ax, 8), reg(ax, 8));
-            emit(INSTR_Jcc, OPT_IMM, CC_S, addr(label));
-            emit(INSTR_CVTSI2S, OPT_REG_REG, reg(ax, 8), reg(xmm, w));
-            emit(INSTR_JMP, OPT_IMM, addr(next));
+            emit_rr(INSTR_TEST, reg(ax, 8), reg(ax, 8));
+            emit_jcc(CC_S, addr(label));
+            emit_rr(INSTR_CVTSI2S, reg(ax, 8), reg(xmm, w));
+            emit_i_(INSTR_JMP, addr(next));
             enter_context(label);
             /*
              * Convert large unsigned integer by adding up two halves.
              */
-            emit(INSTR_MOV, OPT_REG_REG, reg(ax, 8), reg(cx, 8));
-            emit(INSTR_SHR, OPT_IMM_REG, constant(1, 1), reg(cx, 8));
-            emit(INSTR_AND, OPT_IMM_REG, constant(1, 4), reg(ax, 4));
-            emit(INSTR_OR, OPT_REG_REG, reg(cx, 8), reg(ax, 8));
-            emit(INSTR_CVTSI2S, OPT_REG_REG, reg(ax, 8), reg(xmm, w));
-            emit(INSTR_ADDS, OPT_REG_REG, reg(xmm, w), reg(xmm, w));
+            emit_rr(INSTR_MOV, reg(ax, 8), reg(cx, 8));
+            emit_ir(INSTR_SHR, constant(1, 1), reg(cx, 8));
+            emit_ir(INSTR_AND, constant(1, 4), reg(ax, 4));
+            emit_rr(INSTR_OR, reg(cx, 8), reg(ax, 8));
+            emit_rr(INSTR_CVTSI2S, reg(ax, 8), reg(xmm, w));
+            emit_rr(INSTR_ADDS, reg(xmm, w), reg(xmm, w));
             enter_context(next);
         }
     }
@@ -994,8 +1075,8 @@ static enum reg load_float_from_long_double(
     w = size_of(type);
     xmm = get_sse_reg();
     load_x87(val);
-    emit(INSTR_FSTP, OPT_MEM, location(address(-8, SP, 0, 0), w));
-    emit(INSTR_MOVS, OPT_MEM_REG,
+    emit_m_(INSTR_FSTP, location(address(-8, SP, 0, 0), w));
+    emit_mr(INSTR_MOVS,
         location(address(-8, SP, 0, 0), w), reg(xmm, w));
 
     assert(x87_stack == 1);
@@ -1031,22 +1112,22 @@ static enum reg load_integer_from_long_double(
     ax = get_int_reg();
 
     /* Store and modify control word using magic. */
-    emit(INSTR_FNSTCW, OPT_MEM, location(address(-16, SP, 0, 0), 2));
-    emit(INSTR_MOVZX, OPT_MEM_REG,
+    emit_m_(INSTR_FNSTCW, location(address(-16, SP, 0, 0), 2));
+    emit_mr(INSTR_MOVZX,
         location(address(-16, SP, 0, 0), 2), reg(ax, 4));
-    emit(INSTR_OR, OPT_IMM_REG, constant(12 << 8, 4), reg(ax, 4));
-    emit(INSTR_MOV, OPT_REG_MEM,
+    emit_ir(INSTR_OR, constant(12 << 8, 4), reg(ax, 4));
+    emit_rm(INSTR_MOV,
         reg(ax, 2), location(address(-14, SP, 0, 0), 2));
 
     /* Load control word, and store integer. */
-    emit(INSTR_FLDCW, OPT_MEM, location(address(-14, SP, 0, 0), 2));
-    emit(INSTR_FISTP, OPT_MEM, location(address(-8, SP, 0, 0), w));
+    emit_m_(INSTR_FLDCW, location(address(-14, SP, 0, 0), 2));
+    emit_m_(INSTR_FISTP, location(address(-8, SP, 0, 0), w));
     assert(x87_stack == 1);
     x87_stack = 0;
 
     /* Restore the old control word and load result to register. */
-    emit(INSTR_FLDCW, OPT_MEM, location(address(-16, SP, 0, 0), 2));
-    emit(INSTR_MOV, OPT_MEM_REG,
+    emit_m_(INSTR_FLDCW, location(address(-16, SP, 0, 0), 2));
+    emit_mr(INSTR_MOV,
         location(address(-8, SP, 0, 0), w), reg(ax, w));
     return ax;
 }
@@ -1107,17 +1188,17 @@ static void store_x87(struct var v)
         r2 = get_int_reg();
         load_address(v, r2);
         v.type = basic_type__long;
-        emit(INSTR_SUB, OPT_IMM_REG, constant(16, 8), reg(SP, 8));
-        emit(INSTR_FSTP, OPT_MEM, location(address(0, SP, 0, 0), 16));
-        emit(INSTR_POP, OPT_REG, reg(r1, 8));
-        emit(INSTR_MOV, OPT_REG_MEM,
+        emit_ir(INSTR_SUB, constant(16, 8), reg(SP, 8));
+        emit_m_(INSTR_FSTP, location(address(0, SP, 0, 0), 16));
+        emit_r_(INSTR_POP, reg(r1, 8));
+        emit_rm(INSTR_MOV,
             reg(r1, 8), location(address(0, r2, 0, 0), 8));
-        emit(INSTR_POP, OPT_REG, reg(r1, 8));
-        emit(INSTR_MOV, OPT_REG_MEM,
+        emit_r_(INSTR_POP, reg(r1, 8));
+        emit_rm(INSTR_MOV,
             reg(r1, 8), location(address(8, r2, 0, 0), 8));
     } else {
         assert(v.kind == DIRECT);
-        emit(INSTR_FSTP, OPT_MEM, location_of(v, 16));
+        emit_m_(INSTR_FSTP, location_of(v, 16));
     }
 }
 
@@ -1129,10 +1210,10 @@ static void bitwise_imm_reg(
     assert(imm.type == IMM_INT);
     assert(target.r != R11);
     if (imm.width == 8 && (imm.d.qword > INT_MAX || imm.d.qword < INT_MIN)) {
-        emit(INSTR_MOV, OPT_IMM_REG, imm, reg(R11, 8));
-        emit(opcode, OPT_REG_REG, reg(R11, 8), target);
+        emit_ir(INSTR_MOV, imm, reg(R11, 8));
+        emit_rr(opcode, reg(R11, 8), target);
     } else {
-        emit(opcode, OPT_IMM_REG, imm, target);
+        emit_ir(opcode, imm, target);
     }
 }
 
@@ -1184,12 +1265,12 @@ static void store_op(
             op.reg = reg(CX, w);
         } else {
             if (target.field_offset) {
-                emit(INSTR_SHL, OPT_IMM_REG,
+                emit_ir(INSTR_SHL,
                     constant(target.field_offset, 1), op.reg);
             }
             assert(op.width == w);
             bitwise_imm_reg(INSTR_AND, constant(mask, w), op.reg);
-            emit(INSTR_OR, OPT_REG_REG, reg(CX, w), op.reg);
+            emit_rr(INSTR_OR, reg(CX, w), op.reg);
         }
     }
 
@@ -1198,10 +1279,10 @@ static void store_op(
         assert(!is_array(target.type));
         if (optype == OPT_IMM) {
             if ((ax = allocated_register(target)) != 0) {
-                emit(opc, OPT_IMM_REG, op.imm, reg(ax, w));
+                emit_ir(opc, op.imm, reg(ax, w));
             } else {
                 if (is_global_offset(target.symbol)) {
-                    emit(INSTR_MOV, OPT_MEM_REG,
+                    emit_mr(INSTR_MOV,
                         location(got(target.symbol), 8), reg(R11, 8));
                     mem = location(address(
                         displacement_from_offset(target.offset), R11, 0, 0), w);
@@ -1209,19 +1290,19 @@ static void store_op(
                     mem = location_of(target, w);
                 }
 
-                emit(opc, OPT_IMM_MEM, op.imm, mem);
+                emit_im(opc, op.imm, mem);
             }
         } else {
             if ((ax = allocated_register(target)) != 0) {
-                emit(opc, OPT_REG_REG, op.reg, reg(ax, w));
+                emit_rr(opc, op.reg, reg(ax, w));
             } else if (is_global_offset(target.symbol)) {
-                emit(INSTR_MOV, OPT_MEM_REG,
+                emit_mr(INSTR_MOV,
                     location(got(target.symbol), 8), reg(R11, 8));
-                emit(opc, OPT_REG_MEM, op.reg,
+                emit_rm(opc, op.reg,
                     location(address(
                         displacement_from_offset(target.offset), R11, 0, 0), w));
             } else {
-                emit(opc, OPT_REG_MEM, op.reg, location_of(target, w));
+                emit_rm(opc, op.reg, location_of(target, w));
             }
         }
         break;
@@ -1237,9 +1318,9 @@ static void store_op(
         mem = location(address(
             displacement_from_offset(target.offset), R11, 0, 0), w);
         if (optype == OPT_IMM) {
-            emit(opc, OPT_IMM_MEM, op.imm, mem);
+            emit_im(opc, op.imm, mem);
         } else {
-            emit(opc, OPT_REG_MEM, op.reg, mem);
+            emit_rm(opc, op.reg, mem);
         }
         break;
     }
@@ -1395,7 +1476,7 @@ static int push_function_arguments(Type type, struct param_class respc)
     if (mem_used % 16) {
         mem_used += 8;
         assert((mem_used % 16) == 0);
-        emit(INSTR_SUB, OPT_IMM_REG, constant(8, 8), reg(SP, 8));
+        emit_ir(INSTR_SUB, constant(8, 8), reg(SP, 8));
     }
 
     /*
@@ -1439,7 +1520,7 @@ static int push_function_arguments(Type type, struct param_class respc)
      */
     if (is_vararg(type)) {
         assert(next_sse_reg >= 0 && next_sse_reg <= MAX_SSE_ARGS);
-        emit(INSTR_MOV, OPT_IMM_REG, constant(next_sse_reg, 4), reg(AX, 4));
+        emit_ir(INSTR_MOV, constant(next_sse_reg, 4), reg(AX, 4));
     }
 
     array_empty(&func_args);
@@ -1721,7 +1802,7 @@ static void enter(struct definition *def)
 
     /* Store callee-saved registers to be used for local variables. */
     for (i = 0; i < int_regs_alloc; ++i) {
-        emit(INSTR_PUSH, OPT_REG, reg(temp_int_reg[i], 8));
+        emit_r_(INSTR_PUSH, reg(temp_int_reg[i], 8));
     }
 
     /*
@@ -1738,9 +1819,9 @@ static void enter(struct definition *def)
 
     /* Allocate space in the call frame to hold local variables. */
     if (stack_offset < 0) {
-        emit(INSTR_SUB, OPT_IMM_REG, constant(-stack_offset, 8), reg(SP, 8));
+        emit_ir(INSTR_SUB, constant(-stack_offset, 8), reg(SP, 8));
         if (res.eightbyte[0] == PC_MEMORY) {
-            emit(INSTR_MOV, OPT_REG_MEM,
+            emit_rm(INSTR_MOV,
                 reg(param_int_reg[0], 8),
                 location(address(return_address_offset, BP, 0, 0), 8));
         }
@@ -1759,11 +1840,11 @@ static void enter(struct definition *def)
         vararg.fp_offset = 8*MAX_INTEGER_ARGS + 16*next_sse_reg;
         vararg.overflow_arg_area_offset = mem_offset;
         vararg.reg_save_area_offset = 0;
-        emit(INSTR_TEST, OPT_REG_REG, reg(AX, 1), reg(AX, 1));
-        emit(INSTR_Jcc, OPT_IMM, CC_E, addr(sym));
+        emit_rr(INSTR_TEST, reg(AX, 1), reg(AX, 1));
+        emit_jcc(CC_E, addr(sym));
         for (i = 0; i < MAX_SSE_ARGS; ++i) {
             vararg.reg_save_area_offset -= 16;
-            emit(INSTR_MOVAP, OPT_REG_MEM,
+            emit_rm(INSTR_MOVAP,
                 reg(XMM0 + (7 - i), 4),
                 location(address(vararg.reg_save_area_offset, BP, 0, 0), 4));
         }
@@ -1771,7 +1852,7 @@ static void enter(struct definition *def)
         enter_context(sym);
         for (i = 0; i < MAX_INTEGER_ARGS; ++i) {
             vararg.reg_save_area_offset -= 8;
-            emit(INSTR_MOV, OPT_REG_MEM,
+            emit_rm(INSTR_MOV,
                 reg(param_int_reg[5 - i], 8),
                 location(address(vararg.reg_save_area_offset, BP, 0, 0), 8));
         }
@@ -1843,26 +1924,26 @@ static void compile__builtin_va_start(struct var args)
         args, &gp_offset, &fp_offset, &overflow_arg_area, &reg_save_area);
 
     if (args.kind == DEREF) {
-        emit(INSTR_MOV, OPT_IMM_REG, constant(vararg.gp_offset, 4), reg(AX, 4));
+        emit_ir(INSTR_MOV, constant(vararg.gp_offset, 4), reg(AX, 4));
         store(AX, gp_offset);
-        emit(INSTR_MOV, OPT_IMM_REG, constant(vararg.fp_offset, 4), reg(AX, 4));
+        emit_ir(INSTR_MOV, constant(vararg.fp_offset, 4), reg(AX, 4));
         store(AX, fp_offset);
     } else {
         assert(args.kind == DIRECT);
-        emit(INSTR_MOV, OPT_IMM_MEM,
+        emit_im(INSTR_MOV,
             constant(vararg.gp_offset, 4),
             location_of(gp_offset, 4));
-        emit(INSTR_MOV, OPT_IMM_MEM,
+        emit_im(INSTR_MOV,
             constant(vararg.fp_offset, 4),
             location_of(fp_offset, 4));
     }
 
-    emit(INSTR_LEA, OPT_MEM_REG,
+    emit_mr(INSTR_LEA,
         location(address(vararg.overflow_arg_area_offset, BP, 0, 0), 8),
         reg(AX, 8));
     store(AX, overflow_arg_area);
 
-    emit(INSTR_LEA, OPT_MEM_REG,
+    emit_mr(INSTR_LEA,
         location(address(vararg.reg_save_area_offset, BP, 0, 0), 8),
         reg(AX, 8));
     store(AX, reg_save_area);
@@ -1928,16 +2009,16 @@ static void compile__builtin_va_arg(struct var res, struct var args)
          */
         if (num_gp) {
             load(gp_offset, CX);
-            emit(INSTR_CMP, OPT_IMM_REG,
+            emit_ir(INSTR_CMP,
                 constant(MAX_INTEGER_ARGS*8 - 8*num_gp, 4), reg(CX, 4));
-            emit(INSTR_Jcc, OPT_IMM, CC_A, addr(stack));
+            emit_jcc(CC_A, addr(stack));
         }
         if (num_fp) {
             load(fp_offset, DX);
-            emit(INSTR_CMP, OPT_IMM_REG,
+            emit_ir(INSTR_CMP,
                 constant(MAX_INTEGER_ARGS*8 + MAX_SSE_ARGS*16 - 16*num_fp, 4),
                 reg(DX, 4));
-            emit(INSTR_Jcc, OPT_IMM, CC_A, addr(stack));
+            emit_jcc(CC_A, addr(stack));
         }
 
         /*
@@ -1965,14 +2046,14 @@ static void compile__builtin_va_arg(struct var res, struct var args)
                 slice.type = slice_type(res.type, pc, i);
                 i = integer_regs_loaded++;
                 w = size_of(slice.type);
-                emit(INSTR_MOV, OPT_MEM_REG,
+                emit_mr(INSTR_MOV,
                     location(address(i*8, SI, CX, 1), w), reg(AX, w));
                 store(AX, slice);
                 break;
             case PC_SSE:
                 i = sse_regs_loaded++;
                 slice.type = basic_type__double;
-                emit(INSTR_MOVS, OPT_MEM_REG,
+                emit_mr(INSTR_MOVS,
                     location(address(i*16, SI, DX, 1), 8), reg(XMM0, 8));
                 store(XMM0, slice);
                 break;
@@ -1988,28 +2069,26 @@ static void compile__builtin_va_arg(struct var res, struct var args)
          */
         if (num_gp) {
             if (gp_offset.kind == DIRECT) {
-                emit(INSTR_ADD, OPT_IMM_MEM,
+                emit_im(INSTR_ADD,
                     constant(8*num_gp, 4), location_of(gp_offset, 4));
             } else {
                 load(gp_offset, AX);
-                emit(INSTR_ADD, OPT_IMM_REG,
-                    constant(8*num_gp, 4), reg(AX, 4));
+                emit_ir(INSTR_ADD, constant(8*num_gp, 4), reg(AX, 4));
                 store(AX, gp_offset);
             }
         }
         if (num_fp) {
             if (fp_offset.kind == DIRECT) {
-                emit(INSTR_ADD, OPT_IMM_MEM,
+                emit_im(INSTR_ADD,
                     constant(16*num_fp, 4), location_of(fp_offset, 4));
             } else {
                 load(fp_offset, AX);
-                emit(INSTR_ADD, OPT_IMM_REG,
-                    constant(16*num_fp, 4), reg(AX, 4));
+                emit_ir(INSTR_ADD, constant(16*num_fp, 4), reg(AX, 4));
                 store(AX, fp_offset);
             }
         }
 
-        emit(INSTR_JMP, OPT_IMM, addr(done));
+        emit_i_(INSTR_JMP, addr(done));
         enter_context(stack);
     }
 
@@ -2022,12 +2101,10 @@ static void compile__builtin_va_arg(struct var res, struct var args)
     w = size_of(res.type);
     if (is_standard_register_width(w) && res.kind == DIRECT) {
         if ((ax = allocated_register(res)) != 0) {
-            emit(INSTR_MOV, OPT_MEM_REG,
-                location(address(0, SI, 0, 0), w), reg(ax, w));
+            emit_mr(INSTR_MOV, location(address(0, SI, 0, 0), w), reg(ax, w));
         } else {
-            emit(INSTR_MOV, OPT_MEM_REG,
-                location(address(0, SI, 0, 0), w), reg(AX, w));
-            emit(INSTR_MOV, OPT_REG_MEM, reg(AX, w), location_of(res, w));
+            emit_mr(INSTR_MOV, location(address(0, SI, 0, 0), w), reg(AX, w));
+            emit_rm(INSTR_MOV, reg(AX, w), location_of(res, w));
         }
     } else {
         load_address(res, DI);
@@ -2040,11 +2117,10 @@ static void compile__builtin_va_arg(struct var res, struct var args)
      */
     w = EIGHTBYTES(res.type);
     if (overflow_arg_area.kind == DIRECT) {
-        emit(INSTR_ADD, OPT_IMM_MEM,
-            constant(w*8, 8), location_of(overflow_arg_area, 8));
+        emit_im(INSTR_ADD, constant(w*8, 8), location_of(overflow_arg_area, 8));
     } else {
         load(overflow_arg_area, AX);
-        emit(INSTR_ADD, OPT_IMM_REG, constant(w*8, 8), reg(AX, 8));
+        emit_ir(INSTR_ADD, constant(w*8, 8), reg(AX, 8));
         store(AX, overflow_arg_area);
     }
 
@@ -2059,8 +2135,8 @@ static void store_caller_saved_registers(void)
     int i;
 
     for (i = 0; i < sse_regs_alloc; ++i) {
-        emit(INSTR_SUB, OPT_IMM_REG, constant(16, 8), reg(SP, 8));
-        emit(INSTR_MOVS, OPT_REG_MEM,
+        emit_ir(INSTR_SUB, constant(16, 8), reg(SP, 8));
+        emit_rm(INSTR_MOVS,
             reg(temp_sse_reg[i], 8),
             location(address(0, SP, 0, 0), 8));
     }
@@ -2071,10 +2147,10 @@ static void load_caller_saved_registers(void)
     int i;
 
     for (i = sse_regs_alloc - 1; i >= 0; --i) {
-        emit(INSTR_MOVS, OPT_MEM_REG,
+        emit_mr(INSTR_MOVS,
             location(address(0, SP, 0, 0), 8),
             reg(temp_sse_reg[i], 8));
-        emit(INSTR_ADD, OPT_IMM_REG, constant(16, 8), reg(SP, 8));
+        emit_ir(INSTR_ADD, constant(16, 8), reg(SP, 8));
     }
 }
 
@@ -2105,14 +2181,14 @@ static enum reg compile_call(struct var target, struct var ptr)
 
     if (ptr.kind == ADDRESS) {
         assert(!ptr.offset);
-        emit(INSTR_CALL, OPT_IMM, addr(ptr.symbol));
+        emit_i_(INSTR_CALL, addr(ptr.symbol));
     } else {
         load(ptr, R11);
-        emit(INSTR_CALL, OPT_REG, reg(R11, 8));
+        emit_r_(INSTR_CALL, reg(R11, 8));
     }
 
     if (mem_used) {
-        emit(INSTR_ADD, OPT_IMM_REG, constant(mem_used, 8), reg(SP, 8));
+        emit_ir(INSTR_ADD, constant(mem_used, 8), reg(SP, 8));
     }
 
     load_caller_saved_registers();
@@ -2175,15 +2251,15 @@ static enum tttn compile_compare(
         xmm1 = load_cast(r, r.type);
         if (is_long_double(l.type)) {
             if (op == IR_OP_GE || op == IR_OP_GT) {
-                emit(INSTR_FXCH, OPT_REG, reg(xmm0, 16));
+                emit_r_(INSTR_FXCH, reg(xmm0, 16));
             }
-            emit(INSTR_FUCOMIP, OPT_REG, reg(xmm0, 16));
-            emit(INSTR_FSTP, OPT_REG, reg(xmm1, 16));
+            emit_r_(INSTR_FUCOMIP, reg(xmm0, 16));
+            emit_r_(INSTR_FSTP, reg(xmm1, 16));
             assert(x87_stack == 2);
             x87_stack = 0;
         } else {
             assert(is_float(l.type) || is_double(l.type));
-            emit(INSTR_UCOMIS, OPT_REG_REG, reg(xmm1, w), reg(xmm0, w));
+            emit_rr(INSTR_UCOMIS, reg(xmm1, w), reg(xmm0, w));
         }
     } else {
         assert(w == size_of(r.type));
@@ -2193,14 +2269,13 @@ static enum tttn compile_compare(
                 && !is_field(r))
             {
                 if ((ax = allocated_register(r)) != 0) {
-                    emit(INSTR_CMP, OPT_IMM_REG, value_of(l, w), reg(ax, w));
+                    emit_ir(INSTR_CMP, value_of(l, w), reg(ax, w));
                 } else {
-                    emit(INSTR_CMP, OPT_IMM_MEM, value_of(l, w),
-                        location_of(r, w));
+                    emit_im(INSTR_CMP, value_of(l, w), location_of(r, w));
                 }
             } else {
                 ax = load_cast(r, r.type);
-                emit(INSTR_CMP, OPT_IMM_REG, value_of(l, w), reg(ax, w));
+                emit_ir(INSTR_CMP, value_of(l, w), reg(ax, w));
             }
             switch (cc) {
             case CC_AE:
@@ -2223,14 +2298,14 @@ static enum tttn compile_compare(
                 && !is_field(l))
             {
                 if ((ax = allocated_register(l)) != 0) {
-                    emit(INSTR_CMP, OPT_IMM_REG, value_of(r, w), reg(ax, w));
+                    emit_ir(INSTR_CMP, value_of(r, w), reg(ax, w));
                 } else {
-                    emit(INSTR_CMP, OPT_IMM_MEM, value_of(r, w),
+                    emit_im(INSTR_CMP, value_of(r, w),
                         location_of(l, w));
                 }
             } else {
                 ax = load_cast(l, l.type);
-                emit(INSTR_CMP, OPT_IMM_REG, value_of(r, w), reg(ax, w));
+                emit_ir(INSTR_CMP, value_of(r, w), reg(ax, w));
             }
         } else {
             if (l.kind == DIRECT
@@ -2240,10 +2315,10 @@ static enum tttn compile_compare(
                 if ((ax = allocated_register(l)) != 0) {
                     ax = load_cast(l, l.type);
                     cx = load_cast(r, r.type);
-                    emit(INSTR_CMP, OPT_REG_REG, reg(cx, w), reg(ax, w));
+                    emit_rr(INSTR_CMP, reg(cx, w), reg(ax, w));
                 } else {
                     ax = load_cast(r, r.type);
-                    emit(INSTR_CMP, OPT_REG_MEM, reg(ax, w), location_of(l, w));
+                    emit_rm(INSTR_CMP, reg(ax, w), location_of(l, w));
                 }
             } else if (r.kind == DIRECT
                 && !is_global_offset(r.symbol)
@@ -2252,15 +2327,15 @@ static enum tttn compile_compare(
                 if ((ax = allocated_register(r)) != 0) {
                     ax = load_cast(l, l.type);
                     cx = load_cast(r, r.type);
-                    emit(INSTR_CMP, OPT_REG_REG, reg(cx, w), reg(ax, w));
+                    emit_rr(INSTR_CMP, reg(cx, w), reg(ax, w));
                 } else {
                     ax = load_cast(l, l.type);
-                    emit(INSTR_CMP, OPT_MEM_REG, location_of(r, w), reg(ax, w));
+                    emit_mr(INSTR_CMP, location_of(r, w), reg(ax, w));
                 }
             } else {
                 ax = load_cast(l, l.type);
                 cx = load_cast(r, r.type);
-                emit(INSTR_CMP, OPT_REG_REG, reg(cx, w), reg(ax, w));
+                emit_rr(INSTR_CMP, reg(cx, w), reg(ax, w));
             }
         }
     }
@@ -2297,13 +2372,13 @@ static enum reg compile_add(
     if (is_long_double(type)) {
         ax = load_cast(l, type);
         load_cast(r, type);
-        emit(INSTR_FADDP, OPT_REG, reg(ax, w));
+        emit_r_(INSTR_FADDP, reg(ax, w));
         assert(x87_stack == 2);
         x87_stack--;
     } else if (is_real(type)) {
         ax = load_cast(l, type);
         cx = load_cast(r, type);
-        emit(INSTR_ADDS, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        emit_rr(INSTR_ADDS, reg(cx, w), reg(ax, w));
     } else {
         if (!is_void(target.type)
             && target.kind == DIRECT
@@ -2314,40 +2389,38 @@ static enum reg compile_add(
             if (operand_equal(target, r)) {
                 if (is_int_constant(l)) {
                     if ((cx = allocated_register(r)) != 0) {
-                        emit(INSTR_ADD, OPT_REG_REG, reg(ax, w), reg(cx, w));
+                        emit_rr(INSTR_ADD, reg(ax, w), reg(cx, w));
                         ax = cx;
                     } else {
-                        emit(INSTR_ADD, OPT_IMM_MEM,
+                        emit_im(INSTR_ADD,
                             value_of(l, w), location_of(target, w));
                     }
                 } else {
                     ax = load_cast(l, type);
                     if ((cx = allocated_register(r)) != 0) {
-                        emit(INSTR_ADD, OPT_REG_REG, reg(ax, w), reg(cx, w));
+                        emit_rr(INSTR_ADD, reg(ax, w), reg(cx, w));
                         ax = cx;
                     } else {
-                        emit(INSTR_ADD, OPT_REG_MEM,
-                            reg(ax, w), location_of(target, w));
+                        emit_rm(INSTR_ADD, reg(ax, w), location_of(target, w));
                     }
                 }
                 return ax;
             } else if (operand_equal(target, l)) {
                 if (is_int_constant(r)) {
                     if ((cx = allocated_register(l)) != 0) {
-                        emit(INSTR_ADD, OPT_REG_REG, reg(ax, w), reg(cx, w));
+                        emit_rr(INSTR_ADD, reg(ax, w), reg(cx, w));
                         ax = cx;
                     } else {
-                        emit(INSTR_ADD, OPT_IMM_MEM,
+                        emit_im(INSTR_ADD,
                             value_of(r, w), location_of(target, w));
                     }
                 } else {
                     ax = load_cast(r, type);
                     if ((cx = allocated_register(l)) != 0) {
-                        emit(INSTR_ADD, OPT_REG_REG, reg(ax, w), reg(cx, w));
+                        emit_rr(INSTR_ADD, reg(ax, w), reg(cx, w));
                         ax = cx;
                     } else {
-                        emit(INSTR_ADD, OPT_REG_MEM,
-                            reg(ax, w), location_of(target, w));
+                        emit_rm(INSTR_ADD, reg(ax, w), location_of(target, w));
                     }
                 }
                 return ax;
@@ -2355,19 +2428,19 @@ static enum reg compile_add(
         }
         if (is_int_constant(l)) {
             ax = load_cast(r, type);
-            emit(INSTR_ADD, OPT_IMM_REG, value_of(l, w), reg(ax, w));
+            emit_ir(INSTR_ADD, value_of(l, w), reg(ax, w));
         } else if (is_int_constant(r)) {
             ax = load_cast(l, type);
-            emit(INSTR_ADD, OPT_IMM_REG, value_of(r, w), reg(ax, w));
+            emit_ir(INSTR_ADD, value_of(r, w), reg(ax, w));
         } else if (l.kind == DIRECT
             && !is_global_offset(l.symbol)
             && !is_field(l))
         {
             ax = load_cast(r, type);
             if ((cx = allocated_register(l)) != 0) {
-                emit(INSTR_ADD, OPT_REG_REG, reg(cx, w), reg(ax, w));
+                emit_rr(INSTR_ADD, reg(cx, w), reg(ax, w));
             } else {
-                emit(INSTR_ADD, OPT_MEM_REG, location_of(l, w), reg(ax, w));
+                emit_mr(INSTR_ADD, location_of(l, w), reg(ax, w));
             }
         } else if (r.kind == DIRECT
             && !is_global_offset(r.symbol)
@@ -2375,14 +2448,14 @@ static enum reg compile_add(
         {
             ax = load_cast(l, type);
             if ((cx = allocated_register(r)) != 0) {
-                emit(INSTR_ADD, OPT_REG_REG, reg(cx, w), reg(ax, w));
+                emit_rr(INSTR_ADD, reg(cx, w), reg(ax, w));
             } else {
-                emit(INSTR_ADD, OPT_MEM_REG, location_of(r, w), reg(ax, w));
+                emit_mr(INSTR_ADD, location_of(r, w), reg(ax, w));
             }
         } else {
             ax = load_cast(l, type);
             cx = load_cast(r, type);
-            emit(INSTR_ADD, OPT_REG_REG, reg(cx, w), reg(ax, w));
+            emit_rr(INSTR_ADD, reg(cx, w), reg(ax, w));
         }
     }
 
@@ -2407,7 +2480,7 @@ static enum reg compile_sub(
     if (is_long_double(type)) {
         ax = load_cast(l, type);
         load_cast(r, type);
-        emit(INSTR_FSUBRP, OPT_REG, reg(ax, w));
+        emit_r_(INSTR_FSUBRP, reg(ax, w));
         assert(x87_stack == 2);
         x87_stack--;
         if (!is_void(target.type)) {
@@ -2417,7 +2490,7 @@ static enum reg compile_sub(
         ax = load_cast(l, type);
         cx = load_cast(r, type);
         opc = (is_float(type) || is_double(type)) ? INSTR_SUBS : INSTR_SUB;
-        emit(opc, OPT_REG_REG, reg(cx, w), reg(ax, w));
+        emit_rr(opc, reg(cx, w), reg(ax, w));
         if (!is_void(target.type)) {
             store(ax, target);
         }
@@ -2433,7 +2506,7 @@ static enum reg compile_not(
     enum reg ax;
 
     ax = load(l, AX);
-    emit(INSTR_NOT, OPT_REG, reg(AX, size_of(l.type)));
+    emit_r_(INSTR_NOT, reg(AX, size_of(l.type)));
     if (!is_void(target.type)) {
         store(ax, target);
     }
@@ -2469,7 +2542,7 @@ static enum reg compile_neg(
     assert(size_of(l.type) == size_of(val.type));
     xmm0 = load_cast(val, val.type);
     xmm1 = load_cast(l, l.type);
-    emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, 8), reg(xmm0, 8));
+    emit_rr(INSTR_PXOR, reg(xmm1, 8), reg(xmm0, 8));
     if (!is_void(target.type)) {
         store(xmm0, target);
     }
@@ -2491,14 +2564,14 @@ static enum reg compile_mul(
         ax = load_cast(l, type);
         cx = load_cast(r, type);
         if (is_long_double(type)) {
-            emit(INSTR_FMULP, OPT_REG, reg(ax, w));
+            emit_r_(INSTR_FMULP, reg(ax, w));
             assert(x87_stack == 2);
             x87_stack--;
             if (!is_void(target.type)) {
                 store_x87(target);
             }
         } else {
-            emit(INSTR_MULS, OPT_REG_REG, reg(cx, w), reg(ax, w));
+            emit_rr(INSTR_MULS, reg(cx, w), reg(ax, w));
             if (!is_void(target.type)) {
                 store(ax, target);
             }
@@ -2510,10 +2583,10 @@ static enum reg compile_mul(
             && !is_register_allocated(l)
             && !is_global_offset(l.symbol))
         {
-            emit(INSTR_MUL, OPT_MEM, location_of(l, w));
+            emit_m_(INSTR_MUL, location_of(l, w));
         } else {
             cx = load_cast(l, l.type);
-            emit(INSTR_MUL, OPT_REG, reg(cx, w));
+            emit_r_(INSTR_MUL, reg(cx, w));
         }
         if (!is_void(target.type)) {
             store(ax, target);
@@ -2538,14 +2611,14 @@ static enum reg compile_div(
         ax = load_cast(l, type);
         cx = load_cast(r, type);
         if (is_long_double(type)) {
-            emit(INSTR_FDIVRP, OPT_REG, reg(ax, w));
+            emit_r_(INSTR_FDIVRP, reg(ax, w));
             assert(x87_stack == 2);
             x87_stack--;
             if (!is_void(target.type)) {
                 store_x87(target);
             }
         } else {
-            emit(INSTR_DIVS, OPT_REG_REG, reg(cx, w), reg(ax, w));
+            emit_rr(INSTR_DIVS, reg(cx, w), reg(ax, w));
             if (!is_void(target.type)) {
                 store(ax, target);
             }
@@ -2556,9 +2629,9 @@ static enum reg compile_div(
         if (is_signed(l.type)) {
             w = size_of(l.type);
             assert(w == 8 || w == 4);
-            emit(INSTR_Cxy, OPT_NONE, w);
+            emit_cxy(w);
         } else {
-            emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
+            emit_rr(INSTR_XOR, reg(DX, 8), reg(DX, 8));
         }
         opc = is_signed(type) ? INSTR_IDIV : INSTR_DIV;
         if (r.kind == DIRECT
@@ -2566,10 +2639,10 @@ static enum reg compile_div(
             && !is_register_allocated(r)
             && !is_field(r))
         {
-            emit(opc, OPT_MEM, location_of(r, size_of(r.type)));
+            emit_m_(opc, location_of(r, size_of(r.type)));
         } else {
             cx = load_cast(r, r.type);
-            emit(opc, OPT_REG, reg(cx, size_of(r.type)));
+            emit_r_(opc, reg(cx, size_of(r.type)));
         }
         if (!is_void(target.type)) {
             store(ax, target);
@@ -2596,9 +2669,9 @@ static enum reg compile_mod(
     if (is_signed(l.type)) {
         w = size_of(l.type);
         assert(w == 8 || w == 4);
-        emit(INSTR_Cxy, OPT_NONE, w);
+        emit_cxy(w);
     } else {
-        emit(INSTR_XOR, OPT_REG_REG, reg(DX, 8), reg(DX, 8));
+        emit_rr(INSTR_XOR, reg(DX, 8), reg(DX, 8));
     }
 
     opc = is_signed(type) ? INSTR_IDIV : INSTR_DIV;
@@ -2607,10 +2680,10 @@ static enum reg compile_mod(
         && !is_global_offset(r.symbol)
         && !is_field(r))
     {
-        emit(opc, OPT_MEM, location_of(r, size_of(r.type)));
+        emit_m_(opc, location_of(r, size_of(r.type)));
     } else {
         ax = load_cast(r, r.type);
-        emit(opc, OPT_REG, reg(ax, size_of(r.type)));
+        emit_r_(opc, reg(ax, size_of(r.type)));
     }
 
     if (!is_void(target.type)) {
@@ -2633,14 +2706,14 @@ static enum reg compile_bitwise(
     assert(size_of(r.type) == w);
     if (r.kind == IMMEDIATE && w < 8) {
         ax = load(l, AX);
-        emit(opcode, OPT_IMM_REG, value_of(r, w), reg(ax, w));
+        emit_ir(opcode, value_of(r, w), reg(ax, w));
     } else if (l.kind == IMMEDIATE && w < 8) {
         ax = load(r, AX);
-        emit(opcode, OPT_IMM_REG, value_of(l, w), reg(ax, w));
+        emit_ir(opcode, value_of(l, w), reg(ax, w));
     } else {
         ax = load(l, AX);
         load(r, CX);
-        emit(opcode, OPT_REG_REG, reg(CX, w), reg(ax, w));
+        emit_rr(opcode, reg(CX, w), reg(ax, w));
     }
 
     if (!is_void(target.type)) {
@@ -2664,7 +2737,7 @@ static enum reg compile_shl(
 {
     load(l, AX);
     load(r, CX);
-    emit(INSTR_SHL, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(l.type)));
+    emit_rr(INSTR_SHL, reg(CX, 1), reg(AX, size_of(l.type)));
     if (!is_void(target.type)) {
         store(AX, target);
     }
@@ -2680,9 +2753,9 @@ static enum reg compile_shr(
     load(l, AX);
     load(r, CX);
     if (is_unsigned(l.type)) {
-        emit(INSTR_SHR, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(l.type)));
+        emit_rr(INSTR_SHR, reg(CX, 1), reg(AX, size_of(l.type)));
     } else {
-        emit(INSTR_SAR, OPT_REG_REG, reg(CX, 1), reg(AX, size_of(l.type)));
+        emit_rr(INSTR_SAR, reg(CX, 1), reg(AX, size_of(l.type)));
     }
 
     if (!is_void(target.type)) {
@@ -2703,19 +2776,19 @@ static enum reg compile_shr(
  */
 static enum reg set_compare_value(Type type, enum tttn cc)
 {
-    emit(INSTR_SETcc, OPT_REG, cc, reg(AX, 1));
+    emit_setcc(cc, reg(AX, 1));
     if (is_real(type)) {
         if (cc == CC_E) {
-            emit(INSTR_SETcc, OPT_REG, CC_NP, reg(CX, 1));
-            emit(INSTR_AND, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
+            emit_setcc(CC_NP, reg(CX, 1));
+            emit_rr(INSTR_AND, reg(CX, 1), reg(AX, 1));
         } else if (cc == CC_NE) {
-            emit(INSTR_SETcc, OPT_REG, CC_P, reg(CX, 1));
-            emit(INSTR_OR, OPT_REG_REG, reg(CX, 1), reg(AX, 1));
+            emit_setcc(CC_P, reg(CX, 1));
+            emit_rr(INSTR_OR, reg(CX, 1), reg(AX, 1));
         }
-        emit(INSTR_AND, OPT_IMM_REG, constant(1, 1), reg(AX, 1));
+        emit_ir(INSTR_AND, constant(1, 1), reg(AX, 1));
     }
 
-    emit(INSTR_MOVZX, OPT_REG_REG, reg(AX, 1), reg(AX, 4));
+    emit_rr(INSTR_MOVZX, reg(AX, 1), reg(AX, 4));
     return AX;
 }
 
@@ -2738,7 +2811,7 @@ static void store_copy_object(struct var var, struct var target)
         assert(var.symbol);
         assert(var.symbol->symtype == SYM_LITERAL);
         assert(type_equal(target.type, var.type));
-        emit(INSTR_LEA, OPT_MEM_REG, location_of(var, 8), reg(SI, 8));
+        emit_mr(INSTR_LEA, location_of(var, 8), reg(SI, 8));
     } else {
         load_address(var, SI);
     }
@@ -2922,9 +2995,9 @@ static void compile_vla_alloc(
 
     /* Subtract aligned variable length from %rsp. */
     ax = compile_expression(size);
-    emit(INSTR_SUB, OPT_REG_REG, reg(ax, 8), reg(SP, 8));
-    emit(INSTR_MOV, OPT_IMM_REG, constant(-16, 8), reg(R11, 8));
-    emit(INSTR_AND, OPT_REG_REG, reg(R11, 8), reg(SP, 8));
+    emit_rr(INSTR_SUB, reg(ax, 8), reg(SP, 8));
+    emit_ir(INSTR_MOV, constant(-16, 8), reg(R11, 8));
+    emit_rr(INSTR_AND, reg(R11, 8), reg(SP, 8));
 
     /* Assign current stack location to VLA symbol. */
     store(SP, var_direct(sym->value.vla_address));
@@ -3019,7 +3092,7 @@ static void compile_return(Type func, struct expression expr)
             ax = compile_expression(expr);
             if (ax != ret_int_reg[0]) {
                 assert(is_standard_register_width(w));
-                emit(INSTR_MOV, OPT_REG_REG,
+                emit_rr(INSTR_MOV,
                     reg(ax, w), reg(ret_int_reg[0], w));
             }
         } else {
@@ -3032,7 +3105,7 @@ static void compile_return(Type func, struct expression expr)
             ax = compile_expression(expr);
             if (ax != ret_sse_reg[0]) {
                 assert(w == 8 || w == 4);
-                emit(INSTR_MOV, OPT_REG_REG,
+                emit_rr(INSTR_MOV,
                     reg(ax, w), reg(ret_sse_reg[0], w));
             }
         } else {
@@ -3050,12 +3123,12 @@ static void compile_return(Type func, struct expression expr)
         assert(is_identity(expr));
         label = create_label(definition);
         load_address(expr.l, SI);
-        emit(INSTR_MOV, OPT_MEM_REG,
+        emit_mr(INSTR_MOV,
             location(address(return_address_offset, BP, 0, 0), 8), reg(DI, 8));
-        emit(INSTR_CMP, OPT_REG_REG, reg(DI, 8), reg(SI, 8));
-        emit(INSTR_Jcc, OPT_IMM, CC_E, addr(label));
+        emit_rr(INSTR_CMP, reg(DI, 8), reg(SI, 8));
+        emit_jcc(CC_E, addr(label));
         emit_memcpy(w);
-        emit(INSTR_MOV, OPT_MEM_REG,
+        emit_mr(INSTR_MOV,
             location(address(return_address_offset, BP, 0, 0), 8), reg(AX, 8));
         enter_context(label);
         break;
@@ -3101,18 +3174,18 @@ static void compile_block(struct block *block, Type type)
             assert(x87_stack == 0);
         }
         if (int_regs_alloc) {
-            emit(INSTR_LEA, OPT_MEM_REG,
+            emit_mr(INSTR_LEA,
                 location(address(-int_regs_alloc * 8, BP, 0, 0), 8),
                 reg(SP, 8));
             for (i = int_regs_alloc; i > 0; --i) {
-                emit(INSTR_POP, OPT_REG, reg(temp_int_reg[i - 1], 8));
+                emit_r_(INSTR_POP, reg(temp_int_reg[i - 1], 8));
             }
         }
-        emit(INSTR_LEAVE, OPT_NONE, 0);
-        emit(INSTR_RET, OPT_NONE, 0);
+        emit_leave();
+        emit_ret();
     } else if (!block->jump[1]) {
         if (block->jump[0]->color == BLACK) {
-            emit(INSTR_JMP, OPT_IMM, addr(block->jump[0]->label));
+            emit_i_(INSTR_JMP, addr(block->jump[0]->label));
         } else {
             compile_block(block->jump[0], type);
         }
@@ -3128,45 +3201,45 @@ static void compile_block(struct block *block, Type type)
             default: assert(0);
             case CC_E:
                 if (is_real(block->expr.l.type)) {
-                    emit(INSTR_Jcc, OPT_IMM, CC_NE, br0);
-                    emit(INSTR_Jcc, OPT_IMM, CC_P, br0);
-                    emit(INSTR_JMP, OPT_IMM, br1);
+                    emit_jcc(CC_NE, br0);
+                    emit_jcc(CC_P, br0);
+                    emit_i_(INSTR_JMP, br1);
                 } else {
-                    emit(INSTR_Jcc, OPT_IMM, CC_NE, br0);
+                    emit_jcc(CC_NE, br0);
                 }
                 break;
             case CC_NE:
                 if (is_real(block->expr.l.type)) {
-                    emit(INSTR_Jcc, OPT_IMM, CC_NE, br1);
-                    emit(INSTR_Jcc, OPT_IMM, CC_P, br1);
-                    emit(INSTR_JMP, OPT_IMM, br0);
+                    emit_jcc(CC_NE, br1);
+                    emit_jcc(CC_P, br1);
+                    emit_i_(INSTR_JMP, br0);
                 } else {
-                    emit(INSTR_Jcc, OPT_IMM, CC_E, br0);
+                    emit_jcc(CC_E, br0);
                 }
                 break;
             case CC_G:
-                emit(INSTR_Jcc, OPT_IMM, CC_NG, br0);
+                emit_jcc(CC_NG, br0);
                 break;
             case CC_NG:
-                emit(INSTR_Jcc, OPT_IMM, CC_G, br0);
+                emit_jcc(CC_G, br0);
                 break;
             case CC_A:
-                emit(INSTR_Jcc, OPT_IMM, CC_NA, br0);
+                emit_jcc(CC_NA, br0);
                 break;
             case CC_NA:
-                emit(INSTR_Jcc, OPT_IMM, CC_A, br0);
+                emit_jcc(CC_A, br0);
                 break;
             case CC_GE:
-                emit(INSTR_Jcc, OPT_IMM, CC_NGE, br0);
+                emit_jcc(CC_NGE, br0);
                 break;
             case CC_NGE:
-                emit(INSTR_Jcc, OPT_IMM, CC_GE, br0);
+                emit_jcc(CC_GE, br0);
                 break;
             case CC_AE:
-                emit(INSTR_Jcc, OPT_IMM, CC_NAE, br0);
+                emit_jcc(CC_NAE, br0);
                 break;
             case CC_NAE:
-                emit(INSTR_Jcc, OPT_IMM, CC_AE, br0);
+                emit_jcc(CC_AE, br0);
                 break;
             }
         } else {
@@ -3176,21 +3249,21 @@ static void compile_block(struct block *block, Type type)
                 assert(w == 4 || w == 8);
                 xmm0 = ax;
                 xmm1 = (xmm0 == XMM0) ? XMM1 : XMM0;
-                emit(INSTR_PXOR, OPT_REG_REG, reg(xmm1, 8), reg(xmm1, 8));
-                emit(INSTR_UCOMIS, OPT_REG_REG, reg(xmm0, w), reg(xmm1, w));
-                emit(INSTR_Jcc, OPT_IMM, CC_NE, br1);
-                emit(INSTR_Jcc, OPT_IMM, CC_P, br1);
-                emit(INSTR_JMP, OPT_IMM, br0);
+                emit_rr(INSTR_PXOR, reg(xmm1, 8), reg(xmm1, 8));
+                emit_rr(INSTR_UCOMIS, reg(xmm0, w), reg(xmm1, w));
+                emit_jcc(CC_NE, br1);
+                emit_jcc(CC_P, br1);
+                emit_i_(INSTR_JMP, br0);
             } else {
                 assert(w == 1 || w == 2 || w == 4 || w == 8);
-                emit(INSTR_CMP, OPT_IMM_REG, constant(0, w), reg(ax, w));
-                emit(INSTR_Jcc, OPT_IMM, CC_E, br0);
+                emit_ir(INSTR_CMP, constant(0, w), reg(ax, w));
+                emit_jcc(CC_E, br0);
             }
         }
 
         relase_regs();
         if (block->jump[1]->color == BLACK) {
-            emit(INSTR_JMP, OPT_IMM, br1);
+            emit_i_(INSTR_JMP, br1);
         } else {
             compile_block(block->jump[1], type);
         }
@@ -3270,8 +3343,8 @@ static void compile_function(struct definition *def)
 {
     assert(is_function(def->symbol->type));
     enter_context(def->symbol);
-    emit(INSTR_PUSH, OPT_REG, reg(BP, 8));
-    emit(INSTR_MOV, OPT_REG_REG, reg(SP, 8), reg(BP, 8));
+    emit_r_(INSTR_PUSH, reg(BP, 8));
+    emit_rr(INSTR_MOV, reg(SP, 8), reg(BP, 8));
 
     /* Make sure parameters and local variables are placed on stack. */
     enter(def);
