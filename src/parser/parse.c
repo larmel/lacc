@@ -223,7 +223,7 @@ INTERNAL struct definition *parse(void)
          * fill up the buffer. Tentative declarations will only affect
          * the symbol table.
          */
-        while (!deque_len(&definitions) && peek().token != END) {
+        while (!deque_len(&definitions) && peek() != END) {
             declaration(NULL, NULL);
         }
 
@@ -240,7 +240,7 @@ INTERNAL struct definition *parse(void)
         }
     }
 
-    assert(peek().token == END);
+    assert(peek() == END);
     assert(!deque_len(&definitions));
     def = pop_inline_function();
     if (!def) {

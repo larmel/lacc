@@ -620,86 +620,106 @@ INTERNAL void inject_line(char *line)
     line_buffer = NULL;
 }
 
-INTERNAL struct token next(void)
+INTERNAL void next(void)
 {
-    if (deque_len(&lookahead) < 1) {
-        preprocess_line(1);
-    }
-
-    return deque_pop_front(&lookahead);
+    assert(deque_len(&lookahead) >= 1);
+    lookahead.cursor++;
 }
 
-INTERNAL struct token peek(void)
+INTERNAL enum token_type peek(void)
 {
     return peekn(1);
 }
 
-INTERNAL struct token peekn(int n)
+INTERNAL enum token_type peekn(int n)
 {
     assert(n > 0);
     if (deque_len(&lookahead) < n) {
         preprocess_line(n);
     }
 
-    return deque_get(&lookahead, n - 1);
+    return deque_get(&lookahead, n - 1).token;
 }
 
-INTERNAL struct token consume(enum token_type type)
+INTERNAL int try_consume(enum token_type type)
 {
-    struct token t;
-    const char *str;
-
-    t = next();
-    if (t.token != type) {
-        switch (type) {
-        case IDENTIFIER:
-            str = "identifier";
-            break;
-        case NUMBER:
-            str = "number";
-            break;
-        case STRING:
-            str = "string";
-            break;
-        default:
-            str = str_raw(basic_token[type].d.string);
-            break;
-        }
-
-        error("Expected %s but got %s.", str, stringify_token(&t));
-        exit(1);
+    if (peek() == type) {
+        lookahead.cursor++;
+        return 1;
     }
 
-    return t;
+    return 0;
+}
+
+INTERNAL void consume(enum token_type type)
+{
+    enum token_type t;
+    const char *str, *tok;
+
+    t = peek();
+    next();
+    if (t == type) {
+        return;
+    }
+
+    switch (type) {
+    case IDENTIFIER:
+        str = "identifier";
+        break;
+    case NUMBER:
+        str = "number";
+        break;
+    case STRING:
+        str = "string";
+        break;
+    default:
+        str = str_raw(basic_token[type].d.string);
+        break;
+    }
+
+    tok = stringify_token(access_token(0));
+    error("Expected %s but got %s.", str, tok);
+    exit(1);
+}
+
+INTERNAL const struct token *access_token(int n)
+{
+    assert(n >= 0);
+    assert(deque_len(&lookahead) >= n);
+    assert(n > 0 || lookahead.cursor > 0);
+
+    return &deque_get(&lookahead, n - 1);
 }
 
 INTERNAL void preprocess(FILE *output)
 {
-    struct token t;
+    const struct token *t;
 
     output_preprocessed = 1;
-    while ((t = next()).token != END) {
-        if (t.leading_whitespace) {
-            fprintf(output, "%*s", t.leading_whitespace, " ");
+    while (peek() != END) {
+        next();
+        t = access_token(0);
+        if (t->leading_whitespace) {
+            fprintf(output, "%*s", t->leading_whitespace, " ");
         }
 
-        switch (t.token) {
+        switch (t->token) {
         case NUMBER:
             assert(0);
             break;
         case PREP_STRING:
         case STRING:
             putc('\"', output);
-            fprintf(output, "%s", str_raw(t.d.string));
+            fprintf(output, "%s", str_raw(t->d.string));
             putc('\"', output);
             break;
         case PREP_CHAR:
             putc('\'', output);
-            fprintf(output, "%s", str_raw(t.d.string));
+            fprintf(output, "%s", str_raw(t->d.string));
             putc('\'', output);
             break;
         default:
-            fprintf(output, "%s", str_raw(t.d.string));
+            fprintf(output, "%s", str_raw(t->d.string));
             break;
         }
     }

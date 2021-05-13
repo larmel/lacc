@@ -171,15 +171,21 @@ struct token {
 };
 
 /* Peek lookahead of 1. */
-INTERNAL struct token peek(void);
+INTERNAL enum token_type peek(void);
 
 /* Peek lookahead of n. */
-INTERNAL struct token peekn(int n);
+INTERNAL enum token_type peekn(int n);
 
-/* Consume and return next token. */
-INTERNAL struct token next(void);
+/* Move lookahead to next token. */
+INTERNAL void next(void);
 
-/* Consume and return next token, or fail of not of expected type. */
-INTERNAL struct token consume(enum token_type type);
+/* Consume current token, or fail of not of expected type. */
+INTERNAL void consume(enum token_type type);
+
+/* Skip over expected token, otherwise return 0. */
+INTERNAL int try_consume(enum token_type type);
+
+/* Access token from lookahead. */
+INTERNAL const struct token *access_token(int n);
 
 #endif

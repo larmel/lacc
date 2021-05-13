@@ -80,10 +80,10 @@ This is where you will find the core data structures, and interfaces between pre
 
 ### Preprocessor
 Preprocessing includes reading files, tokenization, macro expansion, and directive handling.
-The interface to the preprocessor is `peek(0)`, `peekn(1)`, `consume(1)`, and `next(0)`, which looks at a stream of preprocessed `struct token` objects.
+The interface to the preprocessor is `peek(0)`, `peekn(1)`, `consume(1)`, `try_consume(1)`, and `next(0)`, which looks at a stream of preprocessed `struct token` objects.
 These are defined in [include/lacc/token.h](include/lacc/token.h).
 
-Input processing is done completely lazily, driven by the parser calling these four functions to consume more input.
+Input processing is done completely lazily, driven by the parser calling these functions to consume more input.
 A buffer of preprocessed tokens is kept for lookahead, and filled on demand when peeking ahead.
 
 ### Intermediate Representation
@@ -127,12 +127,10 @@ Logic in `eval_expr` will ensure that the operands `value` and `block->expr` are
         struct var value;
 
         block = exclusive_or_expression(def, block);
-        while (peek().token == '|') {
-            consume('|');
+        while (try_consume('|')) {
             value = eval(def, block, block->expr);
             block = exclusive_or_expression(def, block);
-            block->expr = eval_expr(def, block, IR_OP_OR, value,
-                eval(def, block, block->expr));
+            block->expr = eval_or(def, block, value, eval(def, block, block->expr));
         }
 
         return block;
@@ -213,9 +211,10 @@ Performance
 -----------
 Some effort has been put into making the compiler itself fast (although the generated code is still very much unoptimized).
 Serving as both a performance benchmark and correctness test, we use the [sqlite](https://sqlite.org/download.html) database engine.
-The source code is distributed as a single ~7 MB (7184634 bytes) large C file spanning more than 200 K lines (including comments and whitespace), which is perfect for stress testing the compiler.
+The source code is distributed as a single ~7 MB (7184634 bytes) large C file spanning more than 200 K lines (including comments and whitespace), which is perfect for stress testing the compiler. 
 
-The following experiments were run on a laptop with an i5-7300U CPU, compiling version 3.20.1 of sqlite3. Measurements are made from compiling to object code (-c).
+The following experiments were run on a laptop with an i5-7300U CPU, compiling version 3.20.1 of sqlite3.
+Measurements are made from compiling to object code (-c).
 
 ### Compilation speed
 
@@ -228,7 +227,7 @@ Each compiler is invoked with arguments `-c sqlite/sqlite3.c -o foo.o`.
 
 | Compiler       |        Cycles |   Instructions | Allocations | Bytes allocated | Result size |
 |:---------------|--------------:|---------------:|------------:|----------------:|------------:|
-| lacc           |   471,695,419 |    664,370,310 |      51,458 |      32,756,562 |   1,588,286 |
+| lacc           |   469,541,318 |    659,369,509 |      51,458 |      32,756,562 |   1,588,286 |
 | tcc (0.9.27)   |   245,142,166 |    397,514,762 |       2,909 |      23,020,917 |   1,409,716 |
 | gcc (9.3.0)    | 9,958,514,599 | 14,524,274,665 |   1,546,790 |   1,111,331,606 |   1,098,408 |
 | clang (10.0.0) | 4,351,456,211 |  5,466,808,426 |   1,434,072 |     476,529,342 |   1,116,992 |

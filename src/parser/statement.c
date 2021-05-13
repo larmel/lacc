@@ -107,8 +107,7 @@ static struct block *if_statement(
 
     right = statement(def, right);
     right->jump[0] = next;
-    if (peek().token == ELSE) {
-        consume(ELSE);
+    if (try_consume(ELSE)) {
         left = cfg_block_init(def);
         if (b != 1) {
             /*
@@ -118,6 +117,7 @@ static struct block *if_statement(
              */
             parent->jump[0] = left;
         }
+
         left = statement(def, left);
         left->jump[0] = next;
     }
@@ -219,26 +219,25 @@ static struct block *for_statement(
     struct block *parent)
 {
     int declared, b;
-    struct token tok;
     const struct symbol *sym;
     struct block
         *top = cfg_block_init(def),
         *body = cfg_block_init(def),
         *increment = cfg_block_init(def),
-        *next = cfg_block_init(def);
+        *tail = cfg_block_init(def);
 
     struct block
         *old_break_target,
         *old_continue_target;
 
-    set_break_target(old_break_target, next);
+    set_break_target(old_break_target, tail);
 
     declared = 0;
     consume(FOR);
     consume('(');
-    switch ((tok = peek()).token) {
+    switch (peek()) {
     case IDENTIFIER:
-        sym = sym_lookup(&ns_ident, tok.d.string);
+        sym = sym_lookup(&ns_ident, access_token(1)->d.string);
         if (!sym || sym->symtype != SYM_TYPEDEF) {
             parent = expression_statement(def, parent);
             consume(';');
@@ -252,11 +251,11 @@ static struct block *for_statement(
     default:
         parent = expression_statement(def, parent);
     case ';':
-        consume(';');
+        next();
         break;
     }
 
-    if (peek().token != ';') {
+    if (peek() != ';') {
         parent->jump[0] = top;
         top = expression(def, top);
         top = scalar(def, top, "Controlling expression");
@@ -264,10 +263,10 @@ static struct block *for_statement(
         if (b == 1) {
             top->jump[0] = body;
         } else if (b == 0) {
-            top->jump[0] = next;
+            top->jump[0] = tail;
         } else {
             assert(b == -1);
-            top->jump[0] = next;
+            top->jump[0] = tail;
             top->jump[1] = body;
         }
 
@@ -279,14 +278,13 @@ static struct block *for_statement(
     }
 
     consume(';');
-    if (peek().token != ')') {
+    if (!try_consume(')')) {
         expression_statement(def, increment)->jump[0] = top;
         consume(')');
         set_continue_target(old_continue_target, increment);
         body = statement(def, body);
         body->jump[0] = increment;
     } else {
-        consume(')');
         set_continue_target(old_continue_target, top);
         body = statement(def, body);
         body->jump[0] = top;
@@ -298,7 +296,7 @@ static struct block *for_statement(
         pop_scope(&ns_ident);
     }
 
-    return next;
+    return tail;
 }
 
 static struct block *switch_statement(
@@ -371,22 +369,20 @@ static struct asm_operand asm_operand(
     struct block **block,
     struct block *writeback)
 {
-    struct token t;
     struct asm_operand op = {0};
     struct var var, tmp;
     int force_register;
     const char *str;
 
-    if (peek().token == '[') {
-        next();
-        t = consume(IDENTIFIER);
-        op.alias = t.d.string;
+    if (try_consume('[')) {
+        consume(IDENTIFIER);
+        op.alias = access_token(0)->d.string;
         consume(']');
     }
 
-    t = consume(STRING);
-    op.constraint = t.d.string;
-    str = str_raw(t.d.string);
+    consume(STRING);
+    op.constraint = access_token(0)->d.string;
+    str = str_raw(op.constraint);
 
     consume('(');
     *block = conditional_expression(def, *block);
@@ -440,16 +436,8 @@ static struct asm_operand asm_operand(
  */
 static void asm_statement_qualifiers(int *is_volatile, int *is_goto)
 {
-    *is_volatile = 0;
-    *is_goto = 0;
-    if (peek().token == VOLATILE) {
-        next();
-        *is_volatile = 1;
-    }
-    if (peek().token == GOTO) {
-        next();
-        *is_goto = 1;
-    }
+    *is_volatile = try_consume(VOLATILE);
+    *is_goto = try_consume(GOTO);
 }
 
 /*
@@ -465,7 +453,6 @@ static struct block *asm_statement(
     struct definition *def,
     struct block *block)
 {
-    struct token t;
     struct asm_operand op;
     struct asm_statement st = {0};
     struct symbol *sym;
@@ -475,59 +462,53 @@ static struct block *asm_statement(
     writeback = cfg_block_init(def);
     asm_statement_qualifiers(&is_volatile, &is_goto);
     consume('(');
-    t = consume(STRING);
-    st.template = t.d.string;
+    consume(STRING);
+    st.template = access_token(0)->d.string;
 
     consume(':');
-    while (!is_goto && peek().token != ':') {
+    while (!is_goto && peek() != ':') {
         op = asm_operand(def, &block, writeback);
         array_push_back(&st.operands, op);
-        if (peek().token == ',') {
-            next();
-        } else break;
+        if (!try_consume(','))
+            break;
     }
 
-    if (peek().token != ':')
+    if (!try_consume(':'))
         goto end;
 
-    consume(':');
-    while (peek().token != ':' && peek().token != ')') {
+    while (peek() != ':' && peek() != ')') {
         op = asm_operand(def, &block, NULL);
         array_push_back(&st.operands, op);
-        if (peek().token == ',') {
-            next();
-        } else break;
+        if (!try_consume(','))
+            break;
     }
 
-    if (peek().token != ':')
+    if (!try_consume(':'))
         goto end;
 
-    consume(':');
-    while (peek().token == STRING) {
-        t = next();
-        array_push_back(&st.clobbers, t.d.string);
-        if (peek().token == ',') {
-            next();
-        } else break;
+    while (try_consume(STRING)) {
+        array_push_back(&st.clobbers, access_token(0)->d.string);
+        if (!try_consume(','))
+            break;
     }
 
     if (is_goto) {
         consume(':');
         while (1) {
-            t = consume(IDENTIFIER);
+            consume(IDENTIFIER);
             sym = sym_add(
                 &ns_label,
-                t.d.string,
+                access_token(0)->d.string,
                 basic_type__void,
                 SYM_TENTATIVE,
                 LINK_INTERN);
             if (!sym->value.label) {
                 sym->value.label = cfg_block_init(def);
             }
+
             array_push_back(&st.targets, sym->value.label);
-            if (peek().token == ',') {
-                next();
-            } else break;
+            if (!try_consume(','))
+                break;
         }
     }
 
@@ -544,11 +525,11 @@ INTERNAL struct block *statement(
     struct block *parent)
 {
     struct symbol *sym;
-    struct token tok;
+    String str;
 
-    switch ((tok = peek()).token) {
+    switch (peek()) {
     case ';':
-        consume(';');
+        next();
         break;
     case '{':
         parent = block(def, parent);
@@ -567,11 +548,11 @@ INTERNAL struct block *statement(
         parent = for_statement(def, parent);
         break;
     case GOTO:
-        consume(GOTO);
-        tok = consume(IDENTIFIER);
+        next();
+        consume(IDENTIFIER);
         sym = sym_add(
             &ns_label,
-            tok.d.string,
+            access_token(0)->d.string,
             basic_type__void,
             SYM_TENTATIVE,
             LINK_INTERN);
@@ -583,15 +564,19 @@ INTERNAL struct block *statement(
         consume(';');
         break;
     case CONTINUE:
+        next();
+        parent->jump[0] = continue_target;
+        consume(';');
+        parent = cfg_block_init(def); /* Orphan, unless labeled. */
+        break;
     case BREAK:
         next();
-        parent->jump[0] =
-            (tok.token == CONTINUE) ? continue_target : break_target;
+        parent->jump[0] = break_target;
         consume(';');
         parent = cfg_block_init(def); /* Orphan, unless labeled. */
         break;
     case RETURN:
-        consume(RETURN);
+        next();
         if (!is_void(type_next(def->symbol->type))) {
             parent = expression(def, parent);
             parent->expr = eval_return(def, parent);
@@ -603,7 +588,7 @@ INTERNAL struct block *statement(
         parent = switch_statement(def, parent);
         break;
     case CASE:
-        consume(CASE);
+        next();
         if (!switch_context) {
             error("Stray 'case' label, must be inside a switch statement.");
         } else {
@@ -617,7 +602,7 @@ INTERNAL struct block *statement(
         }
         break;
     case DEFAULT:
-        consume(DEFAULT);
+        next();
         consume(':');
         if (!switch_context) {
             error("Stray 'default' label, must be inside a switch statement.");
@@ -637,15 +622,16 @@ INTERNAL struct block *statement(
         consume(';');
         break;
     case IDENTIFIER:
-        if (peekn(2).token == ':') {
+        str = access_token(1)->d.string;
+        if (peekn(2) == ':') {
             consume(IDENTIFIER);
-            sym = sym_lookup(&ns_label, tok.d.string);
+            sym = sym_lookup(&ns_label, str);
             if (sym && sym->symtype == SYM_DEFINITION) {
-                error("Duplicate label '%s'.", str_raw(tok.d.string));
+                error("Duplicate label '%s'.", str_raw(str));
             } else {
                 sym = sym_add(
                     &ns_label,
-                    tok.d.string,
+                    str,
                     basic_type__void,
                     SYM_DEFINITION,
                     LINK_INTERN);
@@ -659,7 +645,7 @@ INTERNAL struct block *statement(
             consume(':');
             return statement(def, parent);
         }
-        sym = sym_lookup(&ns_ident, tok.d.string);
+        sym = sym_lookup(&ns_ident, str);
         if (sym && sym->symtype == SYM_TYPEDEF) {
             parent = declaration(def, parent);
             break;
@@ -691,10 +677,10 @@ INTERNAL struct block *block(struct definition *def, struct block *parent)
     consume('{');
     push_scope(&ns_ident);
     push_scope(&ns_tag);
-    while (peek().token != '}') {
+    while (!try_consume('}')) {
         parent = statement(def, parent);
     }
-    consume('}');
+
     pop_scope(&ns_tag);
     pop_scope(&ns_ident);
     return parent;

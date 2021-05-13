@@ -72,7 +72,7 @@ static struct block *parameter_list(
         ? parent
         : cfg_block_init(def);
 
-    while (peek().token != ')') {
+    while (peek() != ')') {
         name = str_empty();
         length = 0;
         base = declaration_specifiers(&info);
@@ -81,6 +81,7 @@ static struct block *parameter_list(
         } else if (info.is_inline) {
             error("Parameter cannot be declared inline.");
         }
+
         block = parameter_declarator(def, block, base, &base, &name, &length);
         if (is_void(base)) {
             if (nmembers(*func)) {
@@ -94,18 +95,19 @@ static struct block *parameter_list(
         } else if (is_function(base)) {
             base = type_create_pointer(base);
         }
+
         param = type_add_member(*func, name, base);
         param->offset = length;
         if (!str_is_empty(name)) {
             param->sym =
                 sym_add(&ns_ident, name, base, SYM_DEFINITION, LINK_NONE);
         }
-        if (peek().token != ',') {
+
+        if (!try_consume(',')) {
             break;
         }
-        consume(',');
-        if (peek().token == DOTS) {
-            consume(DOTS);
+
+        if (try_consume(DOTS)) {
             assert(!is_vararg(*func));
             type_add_member(*func, dots, basic_type__void);
             assert(is_vararg(*func));
@@ -124,19 +126,21 @@ static struct block *parameter_list(
  */
 static Type identifier_list(Type base)
 {
-    struct token t;
+    String str;
     Type type;
 
     type = type_create_function(base);
-    if (peek().token != ')') {
+    if (peek() != ')') {
         while (1) {
-            t = consume(IDENTIFIER);
-            if (get_typedef(t.d.string)) {
+            consume(IDENTIFIER);
+            str = access_token(0)->d.string;
+            if (get_typedef(str)) {
                 error("Unexpected type '%t' in identifier list.");
                 exit(1);
             }
-            type_add_member(type, t.d.string, get_type_placeholder());
-            if (peek().token == ',') {
+
+            type_add_member(type, str, get_type_placeholder());
+            if (peek() == ',') {
                 next();
             } else break;
         }
@@ -154,14 +158,9 @@ struct array_param {
 
 static void array_param_qualifiers(struct array_param *cvrs)
 {
-    assert(cvrs);
-    if (peek().token == STATIC) {
-        next();
-        cvrs->is_static = 1;
-    }
-
+    cvrs->is_static = try_consume(STATIC);
     while (1) {
-        switch (peek().token) {
+        switch (peek()) {
         case CONST:
             cvrs->is_const = 1;
             next();
@@ -180,10 +179,7 @@ static void array_param_qualifiers(struct array_param *cvrs)
         break;
     }
 
-    if (peek().token == STATIC && !cvrs->is_static) {
-        next();
-        cvrs->is_static = 1;
-    }
+    cvrs->is_static = cvrs->is_static || try_consume(STATIC);
 }
 
 /*
@@ -211,7 +207,7 @@ static struct block *array_declarator(
     const struct symbol *sym = NULL;
 
     consume('[');
-    if (peek().token == ']') {
+    if (peek() == ']') {
         is_incomplete = 1;
     } else {
         if (!def) {
@@ -221,12 +217,13 @@ static struct block *array_declarator(
             assert(block);
             if (static_length) {
                 array_param_qualifiers(&cvrs);
-                if (cvrs.is_static && peek().token == ']') {
+                if (cvrs.is_static && peek() == ']') {
                     error("Missing array length.");
                     exit(1);
                 }
             }
-            if (peek().token != ']') {
+
+            if (peek() != ']') {
                 block = assignment_expression(def, block);
                 val = eval(def, block, block->expr);
             } else {
@@ -266,7 +263,7 @@ static struct block *array_declarator(
     }
 
     consume(']');
-    if (peek().token == '[') {
+    if (peek() == '[') {
         block = array_declarator(def, block, base, &base, NULL);
     }
 
@@ -311,23 +308,23 @@ static struct block *direct_declarator(
     String *name,
     size_t *length)
 {
-    struct token t;
+    enum token_type t;
     Type head = basic_type__void;
 
-    switch (peek().token) {
+    switch (peek()) {
     case IDENTIFIER:
-        t = next();
+        next();
         if (!name) {
             error("Unexpected identifier in abstract declarator.");
             exit(1);
         }
-        *name = t.d.string;
+        *name = access_token(0)->d.string;
         break;
     case '(':
         t = peekn(2);
-        if ((t.token == IDENTIFIER && !get_typedef(t.d.string))
-            || t.token == '('
-            || t.token == '*')
+        if ((t == IDENTIFIER && !get_typedef(access_token(2)->d.string))
+            || t == '('
+            || t == '*')
         {
             next();
             block = declarator(def, block, head, &head, name);
@@ -341,7 +338,7 @@ static struct block *direct_declarator(
         break;
     }
 
-    switch (peek().token) {
+    switch (peek()) {
     case '[':
         block = array_declarator(def, block, base, type, length);
         break;
@@ -350,7 +347,7 @@ static struct block *direct_declarator(
         t = peek();
         push_scope(&ns_tag);
         push_scope(&ns_ident);
-        if (t.token == IDENTIFIER && !get_typedef(t.d.string)) {
+        if (t == IDENTIFIER && !get_typedef(access_token(1)->d.string)) {
             *type = identifier_list(base);
         } else {
             block = parameter_list(def, block, base, type);
@@ -376,7 +373,7 @@ static Type pointer(Type type)
     type = type_create_pointer(type);
     while (1) {
         next();
-        switch (peek().token) {
+        switch (peek()) {
         case CONST:
             type = type_set_const(type);
             break;
@@ -401,7 +398,7 @@ static struct block *parameter_declarator(
     size_t *length)
 {
     assert(type);
-    while (peek().token == '*') {
+    while (peek() == '*') {
         base = pointer(base);
     }
 
@@ -429,17 +426,19 @@ static void member_declaration_list(Type type)
         while (1) {
             name = str_empty();
             declarator(NULL, NULL, decl_base, &decl_type, &name);
-            if (is_struct_or_union(type) && peek().token == ':') {
+            if (is_struct_or_union(type) && peek() == ':') {
                 if (!is_integer(decl_type)) {
                     error("Unsupported type '%t' for bit-field.", decl_type);
                     exit(1);
                 }
+
                 consume(':');
                 expr = constant_expression();
                 if (is_signed(expr.type) && expr.imm.i < 0) {
                     error("Negative width in bit-field.");
                     exit(1);
                 }
+
                 type_add_field(type, name, decl_type, expr.imm.u);
             } else if (str_is_empty(name)) {
                 if (is_struct_or_union(decl_type)) {
@@ -452,13 +451,14 @@ static void member_declaration_list(Type type)
                 type_add_member(type, name, decl_type);
             }
 
-            if (peek().token == ',') {
-                consume(',');
-            } else break;
+            if (!try_consume(',')) {
+                break;
+            }
         }
 
         consume(';');
-    } while (peek().token != '}');
+    } while (peek() != '}');
+
     type_seal(type);
 }
 
@@ -476,8 +476,8 @@ static Type struct_or_union_declaration(enum token_type t)
 
     assert(t == STRUCT || t == UNION);
     kind = (t == STRUCT) ? T_STRUCT : T_UNION;
-    if (peek().token == IDENTIFIER) {
-        name = consume(IDENTIFIER).d.string;
+    if (try_consume(IDENTIFIER)) {
+        name = access_token(0)->d.string;
         sym = sym_lookup(&ns_tag, name);
         if (!sym) {
             type = type_create(kind);
@@ -492,18 +492,19 @@ static Type struct_or_union_declaration(enum token_type t)
                 (is_struct(sym->type)) ? "struct" : "union");
             exit(1);
         }
+
         type = sym->type;
-        if (peek().token == '{' && size_of(type)) {
+        if (peek() == '{' && size_of(type)) {
             error("Redefiniton of '%s'.", str_raw(sym->name));
             exit(1);
         }
     }
 
-    if (peek().token == '{') {
+    if (try_consume('{')) {
         if (!sym) {
             type = type_create(kind);
         }
-        next();
+
         member_declaration_list(type);
         assert(size_of(type));
         consume('}');
@@ -524,9 +525,9 @@ static void enumerator_list(void)
 
     consume('{');
     do {
-        name = consume(IDENTIFIER).d.string;
-        if (peek().token == '=') {
-            consume('=');
+        consume(IDENTIFIER);
+        name = access_token(0)->d.string;
+        if (try_consume('=')) {
             val = constant_expression();
             if (!is_integer(val.type)) {
                 error("Implicit conversion from non-integer type in enum.");
@@ -540,10 +541,9 @@ static void enumerator_list(void)
             SYM_CONSTANT,
             LINK_NONE);
         sym->value.constant.i = count++;
-        if (peek().token != ',')
+        if (!try_consume(','))
             break;
-        consume(',');
-    } while (peek().token != '}');
+    } while (peek() != '}');
     consume('}');
 }
 
@@ -556,13 +556,10 @@ static void enumerator_list(void)
 static void enum_declaration(void)
 {
     String name;
-    struct token t;
     struct symbol *tag;
 
-    t = peek();
-    if (t.token == IDENTIFIER) {
-        next();
-        name = t.d.string;
+    if (try_consume(IDENTIFIER)) {
+        name = access_token(0)->d.string;
         tag = sym_lookup(&ns_tag, name);
         if (!tag || tag->depth < current_scope_depth(&ns_tag)) {
             tag = sym_add(
@@ -576,7 +573,7 @@ static void enum_declaration(void)
                 str_raw(tag->name));
             exit(1);
         }
-        if (peek().token == '{') {
+        if (peek() == '{') {
             if (tag->value.constant.i) {
                 error("Redefiniton of enum '%s'.", str_raw(tag->name));
                 exit(1);
@@ -623,7 +620,7 @@ INTERNAL Type declaration_specifiers(struct declaration_specifier_info *info)
 {
     Type type = {0};
     const Type *tagged;
-    struct token tok;
+    enum token_type t;
     enum {
         B_NONE,
         B_VOID,
@@ -658,7 +655,8 @@ INTERNAL Type declaration_specifiers(struct declaration_specifier_info *info)
     }
 
     while (1) {
-        switch ((tok = peek()).token) {
+        t = peek();
+        switch (t) {
         case VOID:
             if (base || modifier || sign) goto done;
             next();
@@ -732,8 +730,9 @@ INTERNAL Type declaration_specifiers(struct declaration_specifier_info *info)
             qual |= Q_VOLATILE;
             break;
         case IDENTIFIER:
-            tagged = get_typedef(tok.d.string);
-            if (!tagged || base || modifier || sign) goto done;
+            if (base || modifier || sign) goto done;
+            tagged = get_typedef(access_token(1)->d.string);
+            if (!tagged) goto done;
             next();
             type = *tagged;
             base = B_AGGREGATE;
@@ -745,7 +744,7 @@ INTERNAL Type declaration_specifiers(struct declaration_specifier_info *info)
         case STRUCT:
             if (base || modifier || sign) goto done;
             next();
-            type = struct_or_union_declaration(tok.token);
+            type = struct_or_union_declaration(t);
             base = B_AGGREGATE;
             break;
         case ENUM:
@@ -784,7 +783,7 @@ INTERNAL Type declaration_specifiers(struct declaration_specifier_info *info)
             } else if (info->storage_class) {
                 error("Multiple storage class specifiers.");
             } else {
-                info->storage_class = tok.token;
+                info->storage_class = t;
             }
             break;
         default:
@@ -904,7 +903,7 @@ static struct block *parameter_declaration_list(
 
     sym.type = type;
     def->symbol = &sym;
-    while (peek().token != '{') {
+    while (peek() != '{') {
         block = declaration(def, block);
     }
 
@@ -1029,7 +1028,7 @@ static struct block *init_declarator(
         }
     }
 
-    if (is_function(type) && !is_complete(type) && peek().token != ';') {
+    if (is_function(type) && !is_complete(type) && peek() != ';') {
         push_scope(&ns_ident);
         parent = parameter_declaration_list(def, parent, type);
         pop_scope(&ns_ident);
@@ -1062,7 +1061,7 @@ static struct block *init_declarator(
         break;
     }
 
-    switch (peek().token) {
+    switch (peek()) {
     case '=':
         if (sym->symtype == SYM_DECLARATION) {
             error("Extern symbol '%s' cannot be initialized.",
@@ -1077,7 +1076,7 @@ static struct block *init_declarator(
             error("Variable length array cannot be initialized.");
             exit(1);
         }
-        consume('=');
+        next();
         sym->symtype = SYM_DEFINITION;
         parent = initializer(def, parent, sym);
         assert(size_of(sym->type) > 0);
@@ -1130,7 +1129,8 @@ static void static_assertion(void)
 
     val = constant_expression();
     consume(',');
-    message = consume(STRING).d.string;
+    consume(STRING);
+    message = access_token(0)->d.string;
 
     if (val.kind != IMMEDIATE || !is_integer(val.type)) {
         error("Expression in static assertion must be an integer constant.");
@@ -1167,7 +1167,7 @@ INTERNAL struct block *declaration(
     struct symbol *sym;
     struct declaration_specifier_info info;
 
-    if (peek().token == STATIC_ASSERT) {
+    if (peek() == STATIC_ASSERT) {
         static_assertion();
         consume(';');
         return parent;
@@ -1198,7 +1198,7 @@ INTERNAL struct block *declaration(
         break;
     }
 
-    switch (peek().token) {
+    switch (peek()) {
     case '*':
     case '(':
     case IDENTIFIER:
@@ -1234,9 +1234,8 @@ INTERNAL struct block *declaration(
             parent = init_declarator(def, parent, type, symtype, linkage);
         }
 
-        if (peek().token == ',') {
-            next();
-        } else break;
+        if (!try_consume(','))
+            break;
     }
 
     consume(';');
