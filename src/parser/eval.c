@@ -507,6 +507,13 @@ INTERNAL struct expression eval_mul(
     return create_binary_expression(IR_OP_MUL, type, l, r);
 }
 
+/*
+ * Special care is taken to avoid undefined behavior from division by
+ * zero.
+ *
+ * Floating point division by zero is also technically undefined, but
+ * useful compilers allow it according to Annex F.
+ */
 INTERNAL struct expression eval_div(
     struct definition *def,
     struct block *block,
@@ -523,9 +530,23 @@ INTERNAL struct expression eval_div(
     type = usual_arithmetic_conversion(l.type, r.type);
     l = cast_operand(def, block, l, type);
     r = cast_operand(def, block, r, type);
-    if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        l = eval_arithmetic_immediate(type, l, /, r);
-        return as_expr(l);
+    if (is_integer(type) && r.kind == IMMEDIATE &&
+        ((is_signed(type) && !r.imm.i) || (is_unsigned(type) && !r.imm.u)))
+    {
+        warning("Division by zero is undefined.");
+    } else if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
+        switch (type_of(type)) {
+        case T_FLOAT:
+            return as_expr(imm_float(l.imm.f / r.imm.f));
+        case T_DOUBLE:
+            return as_expr(imm_double(l.imm.d / r.imm.d));
+        case T_LDOUBLE:
+            return as_expr(imm_long_double(l.imm.ld / r.imm.ld));
+        default:
+            return is_signed(type)
+                ? as_expr(imm_signed(type, l.imm.i / r.imm.i))
+                : as_expr(imm_unsigned(type, l.imm.u / r.imm.u));
+        }
     }
 
     return create_binary_expression(IR_OP_DIV, type, l, r);
@@ -550,9 +571,14 @@ INTERNAL struct expression eval_mod(
 
     l = cast_operand(def, block, l, type);
     r = cast_operand(def, block, r, type);
-    if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        l = eval_integer_immediate(type, l, %, r);
-        return as_expr(l);
+    if (r.kind == IMMEDIATE &&
+        ((is_signed(type) && !r.imm.i) || (is_unsigned(type) && !r.imm.u)))
+    {
+        warning("Modulo by zero is undefined.");
+    } else if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
+        return is_signed(type)
+            ? as_expr(imm_signed(type, l.imm.i % r.imm.i))
+            : as_expr(imm_unsigned(type, l.imm.u % r.imm.u));
     }
 
     return create_binary_expression(IR_OP_MOD, type, l, r);
