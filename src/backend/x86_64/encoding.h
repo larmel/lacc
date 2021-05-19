@@ -167,7 +167,8 @@ enum opcode {
     INSTR_FILD = INSTR_FDIVRP + 1,      /* Load integer to ST(0). */
     INSTR_FISTP = INSTR_FILD + 3,       /* Store integer and pop. */
     INSTR_FLD = INSTR_FISTP + 3,        /* Load x87 real to ST(0). */
-    INSTR_FLDCW = INSTR_FLD + 4,        /* Load x87 FPU control word. */
+    INSTR_FLDZ = INSTR_FLD + 4,         /* Push +0.0. */
+    INSTR_FLDCW = INSTR_FLDZ + 1,       /* Load x87 FPU control word. */
     INSTR_FMULP = INSTR_FLDCW + 1,      /* Multiply and pop. */
     INSTR_FNSTCW = INSTR_FMULP + 1,     /* Store x87 FPU control word. */
     INSTR_FSTP = INSTR_FNSTCW + 1,      /* Store x87 real from ST(0) to mem and pop. */

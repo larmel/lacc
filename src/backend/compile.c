@@ -150,20 +150,11 @@ static void emit_cxy(int width)
     emit_instruction(instr);
 }
 
-static void emit_leave(void)
+static void emit_(enum opcode op)
 {
     struct instruction instr = {0};
 
-    instr.opcode = INSTR_LEAVE;
-    instr.optype = OPT_NONE;
-    emit_instruction(instr);
-}
-
-static void emit_ret(void)
-{
-    struct instruction instr = {0};
-
-    instr.opcode = INSTR_RET;
+    instr.opcode = op;
     instr.optype = OPT_NONE;
     emit_instruction(instr);
 }
@@ -3181,8 +3172,8 @@ static void compile_block(struct block *block, Type type)
                 emit_r_(INSTR_POP, reg(temp_int_reg[i - 1], 8));
             }
         }
-        emit_leave();
-        emit_ret();
+        emit_(INSTR_LEAVE);
+        emit_(INSTR_RET);
     } else if (!block->jump[1]) {
         if (block->jump[0]->color == BLACK) {
             emit_i_(INSTR_JMP, addr(block->jump[0]->label));
@@ -3246,11 +3237,21 @@ static void compile_block(struct block *block, Type type)
             ax = compile_expression(block->expr);
             w = size_of(block->expr.type);
             if (is_real(block->expr.type)) {
-                assert(w == 4 || w == 8);
-                xmm0 = ax;
-                xmm1 = (xmm0 == XMM0) ? XMM1 : XMM0;
-                emit_rr(INSTR_PXOR, reg(xmm1, 8), reg(xmm1, 8));
-                emit_rr(INSTR_UCOMIS, reg(xmm0, w), reg(xmm1, w));
+                if (is_long_double(block->expr.type)) {
+                    assert(x87_stack == 1);
+                    emit_(INSTR_FLDZ);
+                    x87_stack++;
+                    emit_r_(INSTR_FUCOMIP, reg(ax, 16));
+                    emit_r_(INSTR_FSTP, reg(ax, 16));
+                    x87_stack = 0;
+                } else {
+                    assert(w == 4 || w == 8);
+                    xmm0 = ax;
+                    xmm1 = (xmm0 == XMM0) ? XMM1 : XMM0;
+                    emit_rr(INSTR_PXOR, reg(xmm1, 8), reg(xmm1, 8));
+                    emit_rr(INSTR_UCOMIS, reg(xmm0, w), reg(xmm1, w));
+                }
+
                 emit_jcc(CC_NE, br1);
                 emit_jcc(CC_P, br1);
                 emit_i_(INSTR_JMP, br0);

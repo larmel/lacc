@@ -19,5 +19,9 @@ int main(void) {
 	double a = -3.3;
 	long double b = 22.5f;
 
-	return test(a) + test(b) + test(1.0L) + test(3.14L);
+	if (b) {
+		return test(a) + test(b) + test(1.0L) + test(3.14L);
+	}
+
+	return 0;
 }

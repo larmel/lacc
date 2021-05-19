@@ -271,6 +271,8 @@ static struct encoding {
     {INSTR_FLD, {"fldt"}, {0}, {0xD8 | 3}, OPX_NONE, 0x28, OPT_MEM}, /* 80 bit */
     {INSTR_FLD, {"fld"}, {0}, {0xD8 | 1}, OPX_NONE, 0x00, OPT_REG},
 
+    {INSTR_FLDZ, {"fldz"}, {0}, {0xD8 | 1, 0xEE}, OPX_NONE, 0x00, OPT_NONE},
+
     {INSTR_FLDCW, {"fldcw"}, {0}, {0xD8 | 1}, OPX_NONE, 0x28, OPT_MEM},
 
     {INSTR_FMULP, {"fmulp"}, {0}, {0xD8 | 6}, OPX_NONE, 0x08, OPT_REG},
