@@ -24,8 +24,8 @@ static void add_option(ArgArray *args, const char *opt)
     char *buf;
 
     len = strlen(opt) + 1;
-    buf = calloc(len, sizeof(*buf));
-    strncpy(buf, opt, len);
+    buf = malloc(len);
+    strcpy(buf, opt);
     array_push_back(args, buf);
 }
 
