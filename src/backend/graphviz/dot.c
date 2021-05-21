@@ -104,7 +104,7 @@ static char *vartostr(const struct var var)
             n = sprintf(buffer, "%f", var.imm.d);
             break;
         case T_LDOUBLE:
-            n = sprintf(buffer, "%LfL", var.imm.ld);
+            n = sprintf(buffer, "%LfL", get_long_double(var.imm));
             break;
         }
         break;

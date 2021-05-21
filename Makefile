@@ -5,7 +5,7 @@ BINDIR = $(PREFIX)/bin
 LIBDIR = $(PREFIX)/lib
 SRCDIR = $(CURDIR)$(.CURDIR)
 
-CC = cc -Wno-psabi
+CC = cc
 CFLAGS = -Wall -pedantic -Wno-missing-braces
 
 SOURCES = \

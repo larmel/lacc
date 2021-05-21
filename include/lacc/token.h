@@ -136,16 +136,23 @@ enum token_type {
     PREP_STRING
 };
 
+INTERNAL union value put_long_double(long double ld);
+
+INTERNAL long double get_long_double(union value value);
+
 /*
  * Hold an immediate numeric value. Associated type is used to determine
  * which element is valid.
+ *
+ * There is an indirection on long double values, which is done to save
+ * space for this structure. If inlined, it would be double the size.
  */
 union value {
     unsigned long u;
     signed long i;
     float f;
     double d;
-    long double ld;
+    int ld;
 };
 
 INTERNAL union value convert(union value val, Type from, Type to);

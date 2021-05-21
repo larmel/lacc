@@ -571,7 +571,13 @@ INTERNAL void elf_init(FILE *output, const char *file)
 
 INTERNAL int elf_symbol(const struct symbol *sym)
 {
+    const void *data;
     Elf64_Sym entry = {0};
+    union {
+        char arr[16];
+        long double ld;
+    } ldc = {0};
+
     assert(sym->linkage != LINK_NONE);
     assert(!sym->stack_offset);
 
@@ -609,11 +615,16 @@ INTERNAL int elf_symbol(const struct symbol *sym)
          * write to .rodata immediately.
          */
         if (sym->symtype == SYM_LITERAL) {
-            elf_section_write(section.rodata,
-                str_raw(sym->value.string), entry.st_size);
+            data = str_raw(sym->value.string);
+        } else if (is_long_double(sym->type)) {
+            ldc.ld = get_long_double(sym->value.constant);
+            data = &ldc.arr;
+            assert(sizeof(ldc.arr) == entry.st_size);
         } else {
-            elf_section_write(section.rodata, &sym->value.constant, entry.st_size);
+            data = &sym->value.constant;
         }
+
+        elf_section_write(section.rodata, data, entry.st_size);
     } else if (sym->linkage == LINK_INTERN
         || (sym->symtype == SYM_TENTATIVE && context.no_common))
     {

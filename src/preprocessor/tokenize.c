@@ -262,7 +262,7 @@ INTERNAL struct token convert_preprocessing_number(struct token t)
                 endptr++;
             } else if (*endptr == 'l' || *endptr == 'L') {
                 tok.type = basic_type__long_double;
-                tok.d.val.ld = (long double) tok.d.val.d;
+                tok.d.val = put_long_double((long double) tok.d.val.d);
                 endptr++;
             }
         }

@@ -250,7 +250,7 @@ INTERNAL int asm_symbol(const struct symbol *sym)
                 long i[2];
             } conv = {0};
             assert(is_long_double(sym->type));
-            conv.ld = sym->value.constant.ld;
+            conv.ld = get_long_double(sym->value.constant);
             out("\t.quad\t%ld\n", conv.i[0]);
             out("\t.quad\t%ld\n", conv.i[1] & 0xFFFF);
         }

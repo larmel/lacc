@@ -525,7 +525,7 @@ static int is_zero(union value val, Type type)
     case T_DOUBLE:
         return val.d == 0.0;
     case T_LDOUBLE:
-        return val.ld == 0;
+        return get_long_double(val) == 0;
     }
 
     return 0;
@@ -774,20 +774,26 @@ static void load_address(struct var v, enum reg r)
 }
 
 /*
+ * Keep reference to constant once generated, but reset between each
+ * source file.
+ */
+static struct symbol *x87_unsigned_adjust_constant;
+
+/*
  * Use long double constant with value MAX_LONG + 1 in order to generate
  * code for converting 64 bit unsigned to long double.
  */
-static struct var x87_unsigned_adjust_constant(void)
+static struct var get_x87_unsigned_adjust_constant(void)
 {
-    static const struct symbol *sym;
-    union value val = {0};
+    union value val;
 
-    if (!sym) {
-        val.ld = 18446744073709551616.L;
-        sym = sym_create_constant(basic_type__long_double, val);
+    if (!x87_unsigned_adjust_constant) {
+        val = put_long_double(18446744073709551616.L);
+        x87_unsigned_adjust_constant =
+            sym_create_constant(basic_type__long_double, val);
     }
 
-    return var_direct(sym);
+    return var_direct(x87_unsigned_adjust_constant);
 }
 
 /*
@@ -919,7 +925,7 @@ static enum reg load_x87(struct var v)
             label = create_label(definition);
             emit_rr(INSTR_TEST, reg(ax, 8), reg(ax, 8));
             emit_jcc(CC_NS, addr(label));
-            v = x87_unsigned_adjust_constant();
+            v = get_x87_unsigned_adjust_constant();
             load_x87(v);
             emit_r_(INSTR_FADDP, reg(st, 16));
             x87_stack--;
@@ -3299,7 +3305,7 @@ static void compile_data_assign(struct var target, struct var val)
                     long arr[2];
                 } cast = {0};
                 imm.width = 8;
-                cast.val = val.imm.ld;
+                cast.val = get_long_double(val.imm);
                 imm.d.qword = cast.arr[0];
                 emit_data(imm);
                 imm.d.qword = cast.arr[1] & 0xFFFF;
@@ -3428,6 +3434,8 @@ INTERNAL void flush(void)
     if (flush_backend) {
         flush_backend();
     }
+
+    x87_unsigned_adjust_constant = NULL;
 }
 
 INTERNAL void finalize(void)

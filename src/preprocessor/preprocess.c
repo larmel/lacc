@@ -371,7 +371,7 @@ static const char *stringify_token(const struct token *t)
             sprintf(buf, "%f", t->d.val.d);
         } else {
             assert(is_long_double(t->type));
-            sprintf(buf, "%Lf", t->d.val.ld);
+            sprintf(buf, "%Lf", get_long_double(t->d.val));
         }
         return buf;
     default:

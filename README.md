@@ -227,7 +227,7 @@ Each compiler is invoked with arguments `-c sqlite/sqlite3.c -o foo.o`.
 
 | Compiler       |        Cycles |   Instructions | Allocations | Bytes allocated | Result size |
 |:---------------|--------------:|---------------:|------------:|----------------:|------------:|
-| lacc           |   469,541,318 |    659,369,509 |      51,458 |      32,756,562 |   1,588,286 |
+| lacc           |   440,074,972 |    646,904,619 |      51,460 |      29,062,819 |   1,590,258 |
 | tcc (0.9.27)   |   245,142,166 |    397,514,762 |       2,909 |      23,020,917 |   1,409,716 |
 | gcc (9.3.0)    | 9,958,514,599 | 14,524,274,665 |   1,546,790 |   1,111,331,606 |   1,098,408 |
 | clang (10.0.0) | 4,351,456,211 |  5,466,808,426 |   1,434,072 |     476,529,342 |   1,116,992 |
@@ -246,8 +246,8 @@ Both of these targets are produced without any optimizations enabled, and withou
 
 | Compiler        | Cycles        | Instructions   |
 |:----------------|--------------:|---------------:|
-| lacc            | 1,046,327,532 |  1,659,594,278 |
-| lacc (selfhost) | 1,545,060,672 |  2,181,702,144 |
+| lacc            |   953,687,039 |  1,495,085,297 |
+| lacc (selfhost) | 1,418,739 599 |  2,063,292,331 |
 
 The selfhosted binary is slower to compile sqlite than the compiler built by GCC, showing that lacc indeed generates rather inefficient code.
 Improving the backend with better instruction selection is a priority, so these numbers should hopefully get closer in the future.

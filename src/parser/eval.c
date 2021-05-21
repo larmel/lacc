@@ -24,7 +24,7 @@ static int immediate_bool_value(union value value, Type type)
     case T_DOUBLE:
         return value.d != 0.0;
     case T_LDOUBLE:
-        return value.ld != 0.0L;
+        return get_long_double(value) != 0.0L;
     default:
         return value.u != 0l;
     }
@@ -198,13 +198,6 @@ static struct var imm_double(double n)
     return var_numeric(basic_type__double, val);
 }
 
-static struct var imm_long_double(long double n)
-{
-    union value val = {0};
-    val.ld = n;
-    return var_numeric(basic_type__long_double, val);
-}
-
 INTERNAL struct expression as_expr(struct var val)
 {
     struct expression expr = {0};
@@ -215,26 +208,6 @@ INTERNAL struct expression as_expr(struct var val)
     assert(is_identity(expr));
     return expr;
 }
-
-#define eval_arithmetic_immediate(t, l, op, r) ( \
-    is_signed(t)   ? imm_signed(t, (l).imm.i op (r).imm.i) : \
-    is_unsigned(t) || is_pointer(t) \
-                   ? imm_unsigned(t, (l).imm.u op (r).imm.u) : \
-    is_float(t)    ? imm_float((l).imm.f op (r).imm.f) : \
-    is_double(t)   ? imm_double((l).imm.d op (r).imm.d) \
-                   : imm_long_double((l).imm.ld op (r).imm.ld))
-
-#define eval_integer_immediate(t, l, op, r) ( \
-    is_signed(t)   ? imm_signed(t, (l).imm.i op (r).imm.i) \
-                   : imm_unsigned(t, (l).imm.u op (r).imm.u))
-
-#define eval_immediate_compare(t, l, op, r) var_int( \
-    is_signed(t)   ? (l).imm.i op (r).imm.i : \
-    is_unsigned(t) || is_pointer(t) \
-                   ? (l).imm.u op (r).imm.u : \
-    is_float(t)    ? (l).imm.f op (r).imm.f : \
-    is_double(t)   ? (l).imm.d op (r).imm.d \
-                   : (l).imm.ld op (r).imm.ld)
 
 static struct expression create_expression(
     enum optype op,
@@ -351,31 +324,32 @@ INTERNAL union value convert(union value val, Type type, Type to)
 {
     #define cast_immediate(v, t, T) ( \
         is_signed(t) ? (T) (v).i : \
-        is_unsigned(t) || is_pointer(t) ? (T) (v).u : \
+        (is_unsigned(t) || is_pointer(t)) ? (T) (v).u : \
         is_float(t) ? (T) (v).f : \
-        is_double(t) ? (T) (v).d : (T) (v).ld)
+        is_double(t) ? (T) (v).d : (T) get_long_double(v))
 
     switch (type_of(to)) {
+    default: assert(0);
     case T_FLOAT:
         val.f = is_double(type) ? (float) val.d
               : is_signed(type) ? (float) val.i
               : is_unsigned(type) ? (float) val.u
-              : is_long_double(type) ? (float) val.ld
+              : is_long_double(type) ? (float) get_long_double(val)
               : val.f;
         break;
     case T_DOUBLE:
         val.d = is_float(type) ? (double) val.f
               : is_signed(type) ? (double) val.i
               : is_unsigned(type) ? (double) val.u
-              : is_long_double(type) ? (double) val.ld
+              : is_long_double(type) ? (double) get_long_double(val)
               : val.d;
         break;
     case T_LDOUBLE:
-        val.ld = is_float(type) ? (long double) val.f
-              : is_double(type) ? (long double) val.d
-              : is_signed(type) ? (long double) val.i
-              : is_unsigned(type) ? (long double) val.u
-              : val.ld;
+        val = is_float(type) ? put_long_double((long double) val.f)
+              : is_double(type) ? put_long_double((long double) val.d)
+              : is_signed(type) ? put_long_double((long double) val.i)
+              : is_unsigned(type) ? put_long_double((long double) val.u)
+              : val;
         break;
     case T_BOOL:
         val.u = immediate_bool_value(val, type);
@@ -409,7 +383,6 @@ INTERNAL union value convert(union value val, Type type, Type to)
             val.u = cast_immediate(val, type, unsigned long);
         }
         break;
-    default: assert(0);
     }
 
     #undef cast_immediate
@@ -483,6 +456,34 @@ INTERNAL struct expression eval_cast(
     return create_expression(IR_OP_CAST, type, var);
 }
 
+static struct var eval_long_double_op(
+    enum optype op,
+    union value left,
+    union value right)
+{
+    long double l, r;
+
+    l = get_long_double(left);
+    r = get_long_double(right);
+    switch (op) {
+    default: assert(0);
+    case IR_OP_ADD:
+        l = l + r;
+        break;
+    case IR_OP_SUB:
+        l = l - r;
+        break;
+    case IR_OP_MUL:
+        l = l * r;
+        break;
+    case IR_OP_DIV:
+        l = l / r;
+        break;
+    }
+
+    return var_numeric(basic_type__long_double, put_long_double(l));
+}
+
 INTERNAL struct expression eval_mul(
     struct definition *def,
     struct block *block,
@@ -499,12 +500,22 @@ INTERNAL struct expression eval_mul(
     type = usual_arithmetic_conversion(l.type, r.type);
     l = cast_operand(def, block, l, type);
     r = cast_operand(def, block, r, type);
-    if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        l = eval_arithmetic_immediate(type, l, *, r);
-        return as_expr(l);
+    if (l.kind != IMMEDIATE || r.kind != IMMEDIATE) {
+        return create_binary_expression(IR_OP_MUL, type, l, r);
     }
 
-    return create_binary_expression(IR_OP_MUL, type, l, r);
+    switch (type_of(type)) {
+    case T_FLOAT:
+        return as_expr(imm_float(l.imm.f * r.imm.f));
+    case T_DOUBLE:
+        return as_expr(imm_double(l.imm.d * r.imm.d));
+    case T_LDOUBLE:
+        return as_expr(eval_long_double_op(IR_OP_MUL, l.imm, r.imm));
+    default:
+        return is_signed(type)
+            ? as_expr(imm_signed(type, l.imm.i * r.imm.i))
+            : as_expr(imm_unsigned(type, l.imm.u * r.imm.u));
+    }
 }
 
 /*
@@ -541,7 +552,7 @@ INTERNAL struct expression eval_div(
         case T_DOUBLE:
             return as_expr(imm_double(l.imm.d / r.imm.d));
         case T_LDOUBLE:
-            return as_expr(imm_long_double(l.imm.ld / r.imm.ld));
+            return as_expr(eval_long_double_op(IR_OP_DIV, l.imm, r.imm));
         default:
             return is_signed(type)
                 ? as_expr(imm_signed(type, l.imm.i / r.imm.i))
@@ -615,7 +626,22 @@ INTERNAL struct expression eval_add(
         l = cast_operand(def, block, l, type);
         r = cast_operand(def, block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-            l = eval_arithmetic_immediate(type, l, +, r);
+            switch (type_of(type)) {
+            case T_FLOAT:
+                l = imm_float(l.imm.f + r.imm.f);
+                break;
+            case T_DOUBLE:
+                l = imm_double(l.imm.d + r.imm.d);
+                break;
+            case T_LDOUBLE:
+                l = eval_long_double_op(IR_OP_ADD, l.imm, r.imm);
+                break;
+            default:
+                l = is_signed(type)
+                    ? imm_signed(type, l.imm.i + r.imm.i)
+                    : imm_unsigned(type, l.imm.u + r.imm.u);
+                break;
+            }
             expr = as_expr(l);
         } else if (l.kind == ADDRESS && r.kind == IMMEDIATE) {
             l.offset += r.imm.i;
@@ -695,7 +721,22 @@ INTERNAL struct expression eval_sub(
         l = cast_operand(def, block, l, type);
         r = cast_operand(def, block, r, type);
         if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-            l = eval_arithmetic_immediate(type, l, -, r);
+            switch (type_of(type)) {
+            case T_FLOAT:
+                l = imm_float(l.imm.f - r.imm.f);
+                break;
+            case T_DOUBLE:
+                l = imm_double(l.imm.d - r.imm.d);
+                break;
+            case T_LDOUBLE:
+                l = eval_long_double_op(IR_OP_SUB, l.imm, r.imm);
+                break;
+            default:
+                l = is_signed(type)
+                    ? imm_signed(type, l.imm.i - r.imm.i)
+                    : imm_unsigned(type, l.imm.u - r.imm.u);
+                break;
+            }
             expr = as_expr(l);
         } else if (l.kind == ADDRESS && r.kind == IMMEDIATE) {
             l.offset -= r.imm.i;
@@ -804,6 +845,14 @@ static void prepare_comparison_operands(
         exit(1);
     }
 }
+
+#define eval_immediate_compare(t, l, op, r) var_int( \
+    is_signed(t)   ? (l).imm.i op (r).imm.i : \
+    is_unsigned(t) || is_pointer(t) \
+                   ? (l).imm.u op (r).imm.u : \
+    is_float(t)    ? (l).imm.f op (r).imm.f : \
+    is_double(t)   ? (l).imm.d op (r).imm.d \
+                   : get_long_double((l).imm) op get_long_double((r).imm))
 
 INTERNAL struct expression eval_cmp_eq(
     struct definition *def,
@@ -916,7 +965,13 @@ INTERNAL struct expression eval_or(
     l = cast_operand(def, block, l, type);
     r = cast_operand(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        l = eval_integer_immediate(type, l, |, r);
+        if (is_signed(type)) {
+            l = imm_signed(type, l.imm.i | r.imm.i);
+        } else {
+            assert(is_unsigned(type));
+            l = imm_unsigned(type, l.imm.u | r.imm.u);
+        }
+
         return as_expr(l);
     }
 
@@ -940,7 +995,13 @@ INTERNAL struct expression eval_xor(
     l = cast_operand(def, block, l, type);
     r = cast_operand(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        l = eval_integer_immediate(type, l, ^, r);
+        if (is_signed(type)) {
+            l = imm_signed(type, l.imm.i ^ r.imm.i);
+        } else {
+            assert(is_unsigned(type));
+            l = imm_unsigned(type, l.imm.u ^ r.imm.u);
+        }
+
         return as_expr(l);
     }
 
@@ -964,7 +1025,13 @@ INTERNAL struct expression eval_and(
     l = cast_operand(def, block, l, type);
     r = cast_operand(def, block, r, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        l = eval_integer_immediate(type, l, &, r);
+        if (is_signed(type)) {
+            l = imm_signed(type, l.imm.i & r.imm.i);
+        } else {
+            assert(is_unsigned(type));
+            l = imm_unsigned(type, l.imm.u & r.imm.u);
+        }
+
         return as_expr(l);
     }
 
@@ -987,7 +1054,13 @@ INTERNAL struct expression eval_lshift(
     type = promote_integer(l.type);
     l = cast_operand(def, block, l, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        l = eval_integer_immediate(type, l, <<, r);
+        if (is_signed(type)) {
+            l = imm_signed(type, l.imm.i << r.imm.i);
+        } else {
+            assert(is_unsigned(type));
+            l = imm_unsigned(type, l.imm.u << r.imm.u);
+        }
+
         return as_expr(l);
     }
 
@@ -1010,7 +1083,13 @@ INTERNAL struct expression eval_rshift(
     type = promote_integer(l.type);
     l = cast_operand(def, block, l, type);
     if (l.kind == IMMEDIATE && r.kind == IMMEDIATE) {
-        l = eval_integer_immediate(type, l, >>, r);
+        if (is_signed(type)) {
+            l = imm_signed(type, l.imm.i >> r.imm.i);
+        } else {
+            assert(is_unsigned(type));
+            l = imm_unsigned(type, l.imm.u >> r.imm.u);
+        }
+
         return as_expr(l);
     }
 

@@ -572,7 +572,7 @@ static struct block *initialize_object(
     return block;
 }
 
-static const struct var var__immediate_zero = {IMMEDIATE, {T_INT}};
+static const struct var var__immediate_zero = {IMMEDIATE, 0, 0, 0, {T_INT}};
 
 /*
  * Set var = 0, using simple assignment on members for composite types.

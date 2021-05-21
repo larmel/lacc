@@ -3,6 +3,7 @@
 # define EXTERNAL extern
 #endif
 #include "strtab.h"
+#include <lacc/array.h>
 #include <lacc/context.h>
 #include <lacc/hash.h>
 
@@ -40,6 +41,9 @@ static struct {
 static char *catbuf;
 static size_t catlen;
 
+/* List of all long double values encountered. */
+static array_of(long double) long_double_values;
+
 INTERNAL void strtab_reset(void)
 {
     int i;
@@ -53,6 +57,7 @@ INTERNAL void strtab_reset(void)
     free(catbuf);
     catbuf = NULL;
     catlen = 0;
+    array_clear(&long_double_values);
 }
 
 /*
@@ -222,4 +227,31 @@ INTERNAL String str_cat(String a, String b)
     memcpy(catbuf, str_raw(a), la);
     memcpy(catbuf + la, str_raw(b), lb);
     return str_intern(catbuf, len);
+}
+
+INTERNAL union value put_long_double(long double ld)
+{
+    int i;
+    long double x;
+    union value val = {0};
+
+    for (i = 0; i < array_len(&long_double_values); ++i) {
+        x = array_get(&long_double_values, i);
+        if (x == ld) {
+            val.ld = i;
+            return val;
+        }
+    }
+
+    val.ld = i;
+    array_push_back(&long_double_values, ld);
+    assert(get_long_double(val) == ld);
+    return val;
+}
+
+INTERNAL long double get_long_double(union value value)
+{
+    assert(value.ld < array_len(&long_double_values));
+
+    return array_get(&long_double_values, value.ld);
 }

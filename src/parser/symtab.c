@@ -646,7 +646,7 @@ static void print_symbol(FILE *stream, const struct symbol *sym)
             fprintf(stream, ", value=%f", sym->value.constant.d);
         } else {
             assert(is_long_double(sym->type));
-            fprintf(stream, ", value=%Lf", sym->value.constant.ld);
+            fprintf(stream, ", value=%Lf", get_long_double(sym->value.constant));
         }
     }
 }
