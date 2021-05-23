@@ -11,7 +11,7 @@
 static int var_equal(struct var a, struct var b)
 {
     return type_equal(a.type, b.type)
-        && a.symbol == b.symbol
+        && ((!a.is_symbol && !b.is_symbol) || a.value.symbol == b.value.symbol)
         && a.kind == b.kind
         && a.field_width == b.field_width
         && a.field_offset == b.field_offset
@@ -42,9 +42,9 @@ static int can_merge(
         && var_equal(s1.t, s2.expr.l)
         && type_equal(s1.t.type, s2.t.type)
         && s1.t.kind == DIRECT
-        && s1.t.symbol->linkage == LINK_NONE
+        && s1.t.value.symbol->linkage == LINK_NONE
         && !is_field(s1.t)
-        && !is_live_after(s1.t.symbol, &s2);
+        && !is_live_after(s1.t.value.symbol, &s2);
 }
 
 INTERNAL int merge_chained_assignment(struct block *block)
@@ -80,8 +80,8 @@ INTERNAL int dead_store_elimination(struct block *block)
         st = &array_get(&block->code, i);
         if (st->st == IR_ASSIGN
             && st->t.kind == DIRECT
-            && !is_live_after(st->t.symbol, st)
-            && st->t.symbol->linkage == LINK_NONE)
+            && !is_live_after(st->t.value.symbol, st)
+            && st->t.value.symbol->linkage == LINK_NONE)
         {
             c += 1;
             if (has_side_effects(st->expr)) {

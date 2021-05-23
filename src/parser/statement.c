@@ -407,7 +407,7 @@ static struct asm_operand asm_operand(
 
     force_register = strchr(str, 'r') && !strchr(str, 'm');
 
-    if (force_register && (var.kind != DIRECT || !is_temporary(var.symbol))) {
+    if (force_register && (var.kind != DIRECT || !is_temporary(var.value.symbol))) {
         tmp = create_var(def, var.type);
         op.variable = tmp;
         if (!writeback || str[0] == '+') {
@@ -416,7 +416,7 @@ static struct asm_operand asm_operand(
         if (writeback) {
             eval_assign(def, writeback, var, as_expr(tmp));
         }
-    } else if (var.kind == DEREF && !is_temporary(var.symbol)) {
+    } else if (var.kind == DEREF && !is_temporary(var.value.symbol)) {
         var = eval_addr(def, *block, var);
         tmp = create_var(def, var.type);
         eval_assign(def, *block, tmp, as_expr(var));

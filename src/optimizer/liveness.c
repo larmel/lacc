@@ -21,8 +21,8 @@ static unsigned long set_def_bit(struct var var)
 {
     switch (var.kind) {
     case DIRECT:
-        if (is_scalar(var.symbol->type) && var.symbol->index) {
-            return 1ul << (var.symbol->index - 1);
+        if (is_scalar(var.value.symbol->type) && var.value.symbol->index) {
+            return 1ul << (var.value.symbol->index - 1);
         }
     default:
         return 0;
@@ -42,17 +42,17 @@ static unsigned long set_use_bit(struct var var)
         return 0xFFFFFFFFFFFFFFFFul;
     case DIRECT:
     case ADDRESS:
-        if (is_object(var.symbol->type)) {
-            assert(var.symbol->index);
-            return 1ul << (var.symbol->index - 1);
+        if (is_object(var.value.symbol->type)) {
+            assert(var.value.symbol->index);
+            return 1ul << (var.value.symbol->index - 1);
         }
         break;
     case IMMEDIATE:
-        if (var.symbol) {
-            assert(var.symbol->symtype == SYM_LITERAL
-                || var.symbol->symtype == SYM_CONSTANT);
-            assert(var.symbol->index);
-            return 1ul << (var.symbol->index - 1);
+        if (var.is_symbol) {
+            assert(var.value.symbol->symtype == SYM_LITERAL
+                || var.value.symbol->symtype == SYM_CONSTANT);
+            assert(var.value.symbol->index);
+            return 1ul << (var.value.symbol->index - 1);
         }
         break;
     }
@@ -113,7 +113,7 @@ static unsigned long uses(const struct statement *s)
     r = use(&s->expr);
     switch (s->st) {
     case IR_ASSIGN:
-        if (s->t.kind == DEREF && s->t.symbol) {
+        if (s->t.kind == DEREF && s->t.is_symbol) {
             t = s->t;
             t.kind = DIRECT;
             r |= set_use_bit(t);

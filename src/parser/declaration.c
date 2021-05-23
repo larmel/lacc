@@ -237,7 +237,7 @@ static struct block *array_declarator(
             error("Array dimension must be of integer type.");
             exit(1);
         }
-        if (val.kind == IMMEDIATE && is_signed(val.type) && val.imm.i < 0) {
+        if (val.kind == IMMEDIATE && is_signed(val.type) && val.value.imm.i < 0) {
             error("Array dimension must be a positive number.");
             exit(1);
         }
@@ -245,7 +245,7 @@ static struct block *array_declarator(
         if (!type_equal(val.type, basic_type__unsigned_long)) {
             val = eval(def, block,
                 eval_cast(def, block, val, basic_type__unsigned_long));
-        } else if (val.kind == DIRECT && !is_temporary(val.symbol)) {
+        } else if (val.kind == DIRECT && !is_temporary(val.value.symbol)) {
             val = eval_copy(def, block, val);
         }
 
@@ -254,11 +254,11 @@ static struct block *array_declarator(
 
         block->expr = as_expr(val);
         if (val.kind == IMMEDIATE) {
-            length = val.imm.u;
+            length = val.value.imm.u;
         } else {
             assert(val.kind == DIRECT);
-            assert(val.symbol);
-            sym = val.symbol;
+            assert(val.value.symbol);
+            sym = val.value.symbol;
         }
     }
 
@@ -434,12 +434,12 @@ static void member_declaration_list(Type type)
 
                 consume(':');
                 expr = constant_expression();
-                if (is_signed(expr.type) && expr.imm.i < 0) {
+                if (is_signed(expr.type) && expr.value.imm.i < 0) {
                     error("Negative width in bit-field.");
                     exit(1);
                 }
 
-                type_add_field(type, name, decl_type, expr.imm.u);
+                type_add_field(type, name, decl_type, expr.value.imm.u);
             } else if (str_is_empty(name)) {
                 if (is_struct_or_union(decl_type)) {
                     type_add_anonymous_member(type, decl_type);
@@ -532,7 +532,7 @@ static void enumerator_list(void)
             if (!is_integer(val.type)) {
                 error("Implicit conversion from non-integer type in enum.");
             }
-            count = val.imm.i;
+            count = val.value.imm.i;
         }
         sym = sym_add(
             &ns_ident,
@@ -1137,7 +1137,7 @@ static void static_assertion(void)
         exit(1);
     }
 
-    if (val.imm.i == 0) {
+    if (val.value.imm.i == 0) {
         error(str_raw(message));
         exit(1);
     }

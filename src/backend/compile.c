@@ -278,19 +278,19 @@ static int is_global_offset(const struct symbol *sym)
 static int is_register_allocated(struct var v)
 {
     return v.kind == DIRECT
-        && is_temporary(v.symbol)
-        && v.symbol->slot != 0;
+        && is_temporary(v.value.symbol)
+        && v.value.symbol->slot != 0;
 }
 
 static enum reg allocated_register(struct var v)
 {
     if (is_register_allocated(v)) {
-        if (is_integer(v.symbol->type) || is_pointer(v.symbol->type)) {
-            return temp_int_reg[v.symbol->slot - 1];
+        if (is_integer(v.value.symbol->type) || is_pointer(v.value.symbol->type)) {
+            return temp_int_reg[v.value.symbol->slot - 1];
         }
 
-        assert(is_float(v.symbol->type) || is_double(v.symbol->type));
-        return temp_sse_reg[v.symbol->slot - 1];
+        assert(is_float(v.value.symbol->type) || is_double(v.value.symbol->type));
+        return temp_sse_reg[v.value.symbol->slot - 1];
     }
 
     return 0;
@@ -307,7 +307,7 @@ static struct immediate value_of(struct var var, int w)
 
     imm.width = w;
     imm.type = IMM_INT;
-    imm.d.qword = var.imm.i;
+    imm.d.qword = var.value.imm.i;
     return imm;
 }
 
@@ -326,19 +326,19 @@ static struct address address_of(struct var var)
 
     addr.type = ADDR_NORMAL;
     addr.displacement = displacement_from_offset(var.offset);
-    switch (var.symbol->linkage) {
+    switch (var.value.symbol->linkage) {
     case LINK_EXTERN:
     case LINK_INTERN:
         addr.base = IP;
-        addr.sym = var.symbol;
+        addr.sym = var.value.symbol;
         break;
     case LINK_NONE:
-        addr.displacement += var.symbol->stack_offset;
+        addr.displacement += var.value.symbol->stack_offset;
         addr.base = BP;
         break;
     }
 
-    ((struct symbol *) var.symbol)->referenced = 1;
+    ((struct symbol *) var.value.symbol)->referenced = 1;
     return addr;
 }
 
@@ -407,9 +407,9 @@ static int is_int_constant(struct var v)
 {
     return v.kind == IMMEDIATE
         && (is_integer(v.type) || is_pointer(v.type))
-        && !v.symbol
+        && !v.is_symbol
         && (size_of(v.type) < 4
-            || (v.imm.i <= INT_MAX && v.imm.i >= INT_MIN));
+            || (v.value.imm.i <= INT_MAX && v.value.imm.i >= INT_MIN));
 }
 
 static struct immediate constant(long n, int w)
@@ -439,7 +439,7 @@ INTERNAL enum instr_optype allocation(struct var var, union operand *op)
         op->mem.addr = address_of(var);
         break;
     case DEREF:
-        tmp = var_direct(var.symbol);
+        tmp = var_direct(var.value.symbol);
         assert(is_register_allocated(tmp));
         ax = allocated_register(tmp);
         op->mem.addr = address(displacement_from_offset(var.offset), ax, 0, 0);
@@ -561,11 +561,12 @@ static void emit_load(
          * in memory first, so create symbol holding constant value.
          */
         if (is_real(source.type)) {
-            if (!source.symbol) {
-                source.symbol = sym_create_constant(source.type, source.imm);
+            if (!source.is_symbol) {
+                source.value.symbol = sym_create_constant(source.type, source.value.imm);
+                source.is_symbol = 1;
             }
             source.kind = DIRECT;
-        } else if (is_zero(source.imm, source.type)) {
+        } else if (is_zero(source.value.imm, source.type)) {
             assert(is_integer(source.type) || is_pointer(source.type));
             emit_rr(INSTR_XOR, dest, dest);
             break;
@@ -578,10 +579,10 @@ static void emit_load(
         if (is_register_allocated(source)) {
             ax = allocated_register(source);
             emit_rr(opcode, reg(ax, w), dest);
-        } else if (is_global_offset(source.symbol)) {
+        } else if (is_global_offset(source.value.symbol)) {
             ax = dest.r < XMM0 ? dest.r : R11;
             emit_mr(INSTR_MOV,
-                location(got(source.symbol), 8), reg(ax, 8));
+                location(got(source.value.symbol), 8), reg(ax, 8));
             emit_mr(opcode, location(address(
                 displacement_from_offset(source.offset), ax, 0, 0), w), dest);
         } else {
@@ -589,14 +590,14 @@ static void emit_load(
         }
         break;
     case DEREF:
-        ptr = var_direct(source.symbol);
+        ptr = var_direct(source.value.symbol);
         assert(is_pointer(ptr.type));
         if (is_register_allocated(ptr)) {
             ax = allocated_register(ptr);
-        } else if (is_global_offset(source.symbol)) {
+        } else if (is_global_offset(source.value.symbol)) {
             ax = dest.r < XMM0 ? dest.r : R11;
             emit_mr(INSTR_MOV,
-                location(got(source.symbol), 8), reg(ax, 8));
+                location(got(source.value.symbol), 8), reg(ax, 8));
             emit_mr(INSTR_MOV,
                 location(address(0, ax, 0, 0), 8),
                 reg(ax, 8));
@@ -613,9 +614,9 @@ static void emit_load(
     case ADDRESS:
         assert(opcode == INSTR_LEA);
         assert(dest.width == 8);
-        if (is_global_offset(source.symbol)) {
+        if (is_global_offset(source.value.symbol)) {
             ax = dest.r;
-            emit_mr(INSTR_MOV, location(got(source.symbol), 8), dest);
+            emit_mr(INSTR_MOV, location(got(source.value.symbol), 8), dest);
             if (source.offset) {
                 emit_mr(INSTR_LEA,
                     location(address(
@@ -753,8 +754,8 @@ static enum reg load(struct var v, enum reg r)
 static void load_address(struct var v, enum reg r)
 {
     if (v.kind == DIRECT) {
-        if (is_global_offset(v.symbol)) {
-            emit_mr(INSTR_MOV, location(got(v.symbol), 8), reg(r, 8));
+        if (is_global_offset(v.value.symbol)) {
+            emit_mr(INSTR_MOV, location(got(v.value.symbol), 8), reg(r, 8));
             if (v.offset) {
                 emit_mr(INSTR_LEA,
                     location(address(
@@ -766,7 +767,7 @@ static void load_address(struct var v, enum reg r)
         }
     } else {
         assert(v.kind == DEREF);
-        load(var_direct(v.symbol), r);
+        load(var_direct(v.value.symbol), r);
         if (v.offset) {
             emit_ir(INSTR_ADD, constant(v.offset, 8), reg(r, 8));
         }
@@ -848,7 +849,9 @@ static void push(struct var v)
 
     if (is_long_double(v.type)) {
         if (v.kind == IMMEDIATE) {
-            v.symbol = sym_create_constant(v.type, v.imm);
+            assert(!v.is_symbol);
+            v.value.symbol = sym_create_constant(v.type, v.value.imm);
+            v.is_symbol = 1;
             v.kind = DIRECT;
         }
         if (v.kind == DIRECT) {
@@ -899,7 +902,9 @@ static enum reg load_x87(struct var v)
 
     st = get_x87_reg();
     if (v.kind == IMMEDIATE) {
-        v.symbol = sym_create_constant(v.type, v.imm);
+        assert(!v.is_symbol);
+        v.value.symbol = sym_create_constant(v.type, v.value.imm);
+        v.is_symbol = 1;
         v.kind = DIRECT;
     }
 
@@ -907,7 +912,7 @@ static enum reg load_x87(struct var v)
     if (is_real(v.type)) {
         if (v.kind == DIRECT
             && !is_register_allocated(v)
-            && !is_global_offset(v.symbol))
+            && !is_global_offset(v.value.symbol))
         {
             emit_m_(INSTR_FLD, location_of(v, w));
         } else {
@@ -936,7 +941,7 @@ static enum reg load_x87(struct var v)
     } else {
         assert(is_signed(v.type));
         assert(w != 1);
-        if (v.kind == DIRECT && !is_global_offset(v.symbol)) {
+        if (v.kind == DIRECT && !is_global_offset(v.value.symbol)) {
             emit_m_(INSTR_FILD, location_of(v, w));
         } else {
             push(v);
@@ -1278,9 +1283,9 @@ static void store_op(
             if ((ax = allocated_register(target)) != 0) {
                 emit_ir(opc, op.imm, reg(ax, w));
             } else {
-                if (is_global_offset(target.symbol)) {
+                if (is_global_offset(target.value.symbol)) {
                     emit_mr(INSTR_MOV,
-                        location(got(target.symbol), 8), reg(R11, 8));
+                        location(got(target.value.symbol), 8), reg(R11, 8));
                     mem = location(address(
                         displacement_from_offset(target.offset), R11, 0, 0), w);
                 } else {
@@ -1292,9 +1297,9 @@ static void store_op(
         } else {
             if ((ax = allocated_register(target)) != 0) {
                 emit_rr(opc, op.reg, reg(ax, w));
-            } else if (is_global_offset(target.symbol)) {
+            } else if (is_global_offset(target.value.symbol)) {
                 emit_mr(INSTR_MOV,
-                    location(got(target.symbol), 8), reg(R11, 8));
+                    location(got(target.value.symbol), 8), reg(R11, 8));
                 emit_rm(opc, op.reg,
                     location(address(
                         displacement_from_offset(target.offset), R11, 0, 0), w));
@@ -1305,12 +1310,12 @@ static void store_op(
         break;
     default:
         assert(target.kind == DEREF);
-        if (!target.symbol) {
+        if (!target.is_symbol) {
             target.kind = IMMEDIATE;
             load_int(target, R11, 8);
         } else {
-            assert(is_pointer(target.symbol->type));
-            load_int(var_direct(target.symbol), R11, 8);
+            assert(is_pointer(target.value.symbol->type));
+            load_int(var_direct(target.value.symbol), R11, 8);
         }
         mem = location(address(
             displacement_from_offset(target.offset), R11, 0, 0), w);
@@ -1614,7 +1619,7 @@ static void allocate_asmblock_registers(
     for (i = 0; i < array_len(&st->operands); ++i) {
         op = &array_get(&st->operands, i);
         assert(op->variable.kind == DIRECT || op->variable.kind == DEREF);
-        sym = (struct symbol *) op->variable.symbol;
+        sym = (struct symbol *) op->variable.value.symbol;
         str = op->constraint;
         if (sym->slot || sym->memory || explicit_reg_constraint(str, &r)) {
             continue;
@@ -2178,7 +2183,7 @@ static enum reg compile_call(struct var target, struct var ptr)
 
     if (ptr.kind == ADDRESS) {
         assert(!ptr.offset);
-        emit_i_(INSTR_CALL, addr(ptr.symbol));
+        emit_i_(INSTR_CALL, addr(ptr.value.symbol));
     } else {
         load(ptr, R11);
         emit_r_(INSTR_CALL, reg(R11, 8));
@@ -2262,7 +2267,7 @@ static enum tttn compile_compare(
         assert(w == size_of(r.type));
         if (l.kind == IMMEDIATE && w < 8) {
             if (r.kind == DIRECT
-                && !is_global_offset(r.symbol)
+                && !is_global_offset(r.value.symbol)
                 && !is_field(r))
             {
                 if ((ax = allocated_register(r)) != 0) {
@@ -2291,7 +2296,7 @@ static enum tttn compile_compare(
             }
         } else if (r.kind == IMMEDIATE && w < 8) {
             if (l.kind == DIRECT
-                && !is_global_offset(l.symbol)
+                && !is_global_offset(l.value.symbol)
                 && !is_field(l))
             {
                 if ((ax = allocated_register(l)) != 0) {
@@ -2306,7 +2311,7 @@ static enum tttn compile_compare(
             }
         } else {
             if (l.kind == DIRECT
-                && !is_global_offset(l.symbol)
+                && !is_global_offset(l.value.symbol)
                 && !is_field(l))
             {
                 if ((ax = allocated_register(l)) != 0) {
@@ -2318,7 +2323,7 @@ static enum tttn compile_compare(
                     emit_rm(INSTR_CMP, reg(ax, w), location_of(l, w));
                 }
             } else if (r.kind == DIRECT
-                && !is_global_offset(r.symbol)
+                && !is_global_offset(r.value.symbol)
                 && !is_field(r))
             {
                 if ((ax = allocated_register(r)) != 0) {
@@ -2348,8 +2353,9 @@ static enum tttn compile_compare(
  */
 static int operand_equal(struct var a, struct var b)
 {
-    return a.symbol == b.symbol
-        && a.symbol != NULL
+    return a.is_symbol
+        && b.is_symbol
+        && a.value.symbol == b.value.symbol
         && a.kind == b.kind
         && a.field_width == b.field_width
         && a.field_offset == b.field_offset
@@ -2379,7 +2385,7 @@ static enum reg compile_add(
     } else {
         if (!is_void(target.type)
             && target.kind == DIRECT
-            && !is_global_offset(target.symbol)
+            && !is_global_offset(target.value.symbol)
             && !is_field(target))
         {
             ax = AX;
@@ -2430,7 +2436,7 @@ static enum reg compile_add(
             ax = load_cast(l, type);
             emit_ir(INSTR_ADD, value_of(r, w), reg(ax, w));
         } else if (l.kind == DIRECT
-            && !is_global_offset(l.symbol)
+            && !is_global_offset(l.value.symbol)
             && !is_field(l))
         {
             ax = load_cast(r, type);
@@ -2440,7 +2446,7 @@ static enum reg compile_add(
                 emit_mr(INSTR_ADD, location_of(l, w), reg(ax, w));
             }
         } else if (r.kind == DIRECT
-            && !is_global_offset(r.symbol)
+            && !is_global_offset(r.value.symbol)
             && !is_field(r))
         {
             ax = load_cast(l, type);
@@ -2578,7 +2584,7 @@ static enum reg compile_mul(
         assert(ax == AX);
         if (l.kind == DIRECT
             && !is_register_allocated(l)
-            && !is_global_offset(l.symbol))
+            && !is_global_offset(l.value.symbol))
         {
             emit_m_(INSTR_MUL, location_of(l, w));
         } else {
@@ -2632,7 +2638,7 @@ static enum reg compile_div(
         }
         opc = is_signed(type) ? INSTR_IDIV : INSTR_DIV;
         if (r.kind == DIRECT
-            && !is_global_offset(r.symbol)
+            && !is_global_offset(r.value.symbol)
             && !is_register_allocated(r)
             && !is_field(r))
         {
@@ -2674,7 +2680,7 @@ static enum reg compile_mod(
     opc = is_signed(type) ? INSTR_IDIV : INSTR_DIV;
     if (r.kind == DIRECT
         && !is_register_allocated(r)
-        && !is_global_offset(r.symbol)
+        && !is_global_offset(r.value.symbol)
         && !is_field(r))
     {
         emit_m_(opc, location_of(r, size_of(r.type)));
@@ -2805,8 +2811,8 @@ static void store_copy_object(struct var var, struct var target)
     b = size_of(var.type);
     if (is_array(var.type)) {
         assert(target.kind == DIRECT);
-        assert(var.symbol);
-        assert(var.symbol->symtype == SYM_LITERAL);
+        assert(var.is_symbol);
+        assert(var.value.symbol->symtype == SYM_LITERAL);
         assert(type_equal(target.type, var.type));
         emit_mr(INSTR_LEA, location_of(var, 8), reg(SI, 8));
     } else {
@@ -3047,8 +3053,8 @@ static void compile_statement(struct statement stmt)
         break;
     case IR_VLA_ALLOC:
         assert(stmt.t.kind == DIRECT);
-        assert(stmt.t.symbol);
-        compile_vla_alloc(stmt.t.symbol, stmt.expr);
+        assert(stmt.t.is_symbol);
+        compile_vla_alloc(stmt.t.value.symbol, stmt.expr);
         break;
     case IR_ASM:
         compile__asm(array_get(&definition->asm_statements, stmt.asm_index));
@@ -3290,14 +3296,14 @@ static void compile_data_assign(struct var target, struct var val)
         assert(val.kind == IMMEDIATE);
         assert(is_integer(val.type));
         imm.width = target.field_width / 8;
-        imm.d.qword = val.imm.i;
+        imm.d.qword = val.value.imm.i;
     } else {
         imm.width = size_of(target.type);
         switch (val.kind) {
         case IMMEDIATE:
             assert(!is_array(target.type));
             assert(type_equal(target.type, val.type));
-            assert(!val.symbol || val.symbol->symtype == SYM_CONSTANT);
+            assert(!val.is_symbol || val.value.symbol->symtype == SYM_CONSTANT);
             imm.type = IMM_INT;
             if (is_long_double(val.type)) {
                 union {
@@ -3305,22 +3311,22 @@ static void compile_data_assign(struct var target, struct var val)
                     long arr[2];
                 } cast = {0};
                 imm.width = 8;
-                cast.val = get_long_double(val.imm);
+                cast.val = get_long_double(val.value.imm);
                 imm.d.qword = cast.arr[0];
                 emit_data(imm);
                 imm.d.qword = cast.arr[1] & 0xFFFF;
             } else {
-                imm.d.qword = val.imm.i;
+                imm.d.qword = val.value.imm.i;
             }
             break;
         case DIRECT:
-            assert(val.symbol->symtype == SYM_LITERAL);
+            assert(val.value.symbol->symtype == SYM_LITERAL);
             imm.type = IMM_STRING;
-            imm.d.string = val.symbol->value.string;
+            imm.d.string = val.value.symbol->value.string;
             break;
         default:
             assert(val.kind == ADDRESS);
-            assert(val.symbol->linkage != LINK_NONE);
+            assert(val.value.symbol->linkage != LINK_NONE);
             imm.type = IMM_ADDR;
             imm.d.addr = address_of(val);
             break;
@@ -3340,7 +3346,7 @@ static void compile_data(struct definition *def)
         st = array_get(&def->body->code, i);
         assert(st.st == IR_ASSIGN);
         assert(st.t.kind == DIRECT);
-        assert(st.t.symbol == def->symbol);
+        assert(st.t.value.symbol == def->symbol);
         assert(is_identity(st.expr));
         compile_data_assign(st.t, st.expr.l);
     }

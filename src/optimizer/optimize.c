@@ -62,22 +62,25 @@ static void initialize_dataflow(void)
     }
 }
 
-static int count_symbol(struct symbol *sym)
+static int count_symbol(struct var v)
 {
-    if (!sym)
-        return 0;
+    int len;
+    struct symbol *sym;
 
-    if (is_object(sym->type)) {
-        if (!sym->index) {
-            int len = array_len(&symbols);
-            if (len < 64) {
-                array_push_back(&symbols, sym);
-                sym->index = len + 1;
-                return 1;
-            }
+    if (!v.is_symbol
+        || !is_object(v.value.symbol->type))
+    {
+        return 0;
+    }
+
+    sym = (struct symbol *) v.value.symbol;
+    if (!sym->index) {
+        len = array_len(&symbols);
+        if (len < 64) {
+            array_push_back(&symbols, sym);
+            sym->index = len + 1;
+            return 1;
         }
-    } else {
-        assert(!sym->index);
     }
 
     return 0;
@@ -109,31 +112,31 @@ static int enumerate_used_symbols(struct block *block)
         assert(s->st != IR_ASM);
         switch (s->expr.op) {
         default:
-            n += count_symbol((struct symbol *) s->expr.r.symbol);
+            n += count_symbol(s->expr.r);
         case IR_OP_CAST:
         case IR_OP_NOT:
         case IR_OP_NEG:
         case IR_OP_CALL:
         case IR_OP_VA_ARG:
-            n += count_symbol((struct symbol *) s->expr.l.symbol);
+            n += count_symbol(s->expr.l);
             break;
         }
 
         if (s->st == IR_ASSIGN) {
-            n += count_symbol((struct symbol *) s->t.symbol);
+            n += count_symbol(s->t);
         }
     }
 
     if (block->has_return_value || block->jump[1]) {
         switch (block->expr.op) {
         default:
-            n += count_symbol((struct symbol *) block->expr.r.symbol);
+            n += count_symbol(block->expr.r);
         case IR_OP_CAST:
         case IR_OP_NOT:
         case IR_OP_NEG:
         case IR_OP_CALL:
         case IR_OP_VA_ARG:
-            n += count_symbol((struct symbol *) block->expr.l.symbol);
+            n += count_symbol(block->expr.l);
             break;
         }
     }

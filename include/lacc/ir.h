@@ -27,9 +27,13 @@ struct var {
     int field_offset : 8;
     unsigned int lvalue : 1;
 
-    Type type;
+    /*
+     * Set if symbol of value union is valid. Otherwise the var is an
+     * immediate.
+     */
+    unsigned int is_symbol : 1;
 
-    const struct symbol *symbol;
+    Type type;
 
     /*
      * Offset from symbol, which can only be positive. It is possible to
@@ -38,7 +42,10 @@ struct var {
      */
     size_t offset;
 
-    union value imm;
+    union {
+        const struct symbol *symbol;
+        union value imm;
+    } value;
 };
 
 enum kind {
@@ -61,7 +68,7 @@ enum kind {
     ADDRESS,
     /*
      * l-value or r-value reference to *(symbol + offset). Symbol
-     * must have pointer type. If symbol is NULL, the dereferenced
+     * must have pointer type. If not is_symbol, the dereferenced
      * pointer is an immediate value. Offset in bytes, not pointer
      * arithmetic.
      *
@@ -69,8 +76,7 @@ enum kind {
      */
     DEREF,
     /*
-     * r-value immediate, with the type specified. Symbol is NULL,
-     * or is of type SYM_CONSTANT (from enum).
+     * r-value immediate, with the type specified.
      */
     IMMEDIATE
 };

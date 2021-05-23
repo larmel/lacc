@@ -70,7 +70,7 @@ static int is_loadtime_constant(struct expression expr)
         if (!is_array(expr.type) && !is_function(expr.type))
             return 0;
     case ADDRESS:
-        return expr.l.symbol->linkage != LINK_NONE;
+        return expr.l.value.symbol->linkage != LINK_NONE;
     default:
         return 0;
     }
@@ -322,7 +322,8 @@ static struct block *initialize_struct_or_union(
     case '[':
         break;
     default:
-        block = read_initializer_element(def, block, target.symbol);
+        assert(target.is_symbol);
+        block = read_initializer_element(def, block, target.value.symbol);
         break;
     }
 
@@ -375,7 +376,7 @@ static int try_parse_index(size_t *index)
         }
 
         consume(']');
-        *index = num.imm.i;
+        *index = num.value.imm.i;
         return 1;
     }
 
@@ -433,7 +434,7 @@ static struct block *initialize_array(
     case '[':
         break;
     default:
-        block = read_initializer_element(def, block, target.symbol);
+        block = read_initializer_element(def, block, target.value.symbol);
         break;
     }
 
@@ -443,7 +444,7 @@ static struct block *initialize_array(
         && is_identity(block->expr)
         && is_array(block->expr.type)
         && block->expr.l.kind == DIRECT
-        && block->expr.l.symbol->symtype == SYM_LITERAL)
+        && block->expr.l.value.symbol->symtype == SYM_LITERAL)
     {
         target = eval_assign(def, values, target, block->expr);
         block->has_init_value = 0;
@@ -467,9 +468,9 @@ static struct block *initialize_array(
     }
 
     if (!size_of(type)) {
-        assert(is_array(target.symbol->type));
-        assert(!size_of(target.symbol->type));
-        set_array_length(target.symbol->type, c);
+        assert(is_array(target.value.symbol->type));
+        assert(!size_of(target.value.symbol->type));
+        set_array_length(target.value.symbol->type, c);
     }
 
     return block;
@@ -529,10 +530,10 @@ static struct block *initialize_member(
     } else {
         if (!block->has_init_value) {
             if (try_consume('{')) {
-                block = read_initializer_element(def, block, target.symbol);
+                block = read_initializer_element(def, block, target.value.symbol);
                 consume('}');
             } else {
-                block = read_initializer_element(def, block, target.symbol);
+                block = read_initializer_element(def, block, target.value.symbol);
             }
         }
 
@@ -565,14 +566,14 @@ static struct block *initialize_object(
     } else if (is_array(target.type)) {
         block = initialize_array(def, block, values, target, MEMBER);
     } else {
-        block = read_initializer_element(def, block, target.symbol);
+        block = read_initializer_element(def, block, target.value.symbol);
         assign_initializer_element(def, block, values, target);
     }
 
     return block;
 }
 
-static const struct var var__immediate_zero = {IMMEDIATE, 0, 0, 0, {T_INT}};
+static const struct var var__immediate_zero = {IMMEDIATE, 0, 0, 0, 0, {T_INT}};
 
 /*
  * Set var = 0, using simple assignment on members for composite types.
@@ -778,10 +779,9 @@ static int merge_assignments(struct statement *a, const struct statement *b)
     a->t.type = usual_arithmetic_conversion(a->t.type, b->t.type);
     a->t.field_width += b->t.field_width;
     a->expr.type = a->t.type;
-    a->expr.l.imm.i = ((a->expr.l.imm.i & m1) << a->t.field_offset)
-        | ((b->expr.l.imm.i & m2) << b->t.field_offset);
+    a->expr.l.value.imm.i = ((a->expr.l.value.imm.i & m1) << a->t.field_offset)
+        | ((b->expr.l.value.imm.i & m2) << b->t.field_offset);
     a->expr.l.type = a->t.type;
-    a->expr.l.symbol = NULL;
     if (!a->t.field_offset && a->t.field_width == size_of(a->t.type) * 8) {
         a->t.field_width = 0;
     }
@@ -917,7 +917,7 @@ static struct block *postprocess_object_initialization(
         next = st.t;
         assert(st.st == IR_ASSIGN);
         assert(st.expr.op != IR_OP_CALL);
-        assert(next.symbol == target.symbol);
+        assert(next.is_symbol && next.value.symbol == target.value.symbol);
         initialize_padding(def, block, prev, next);
         array_push_back(&block->code, st);
         prev.offset = next.offset;
@@ -956,7 +956,7 @@ INTERNAL struct block *initializer(
         array_concat(&block->code, &values->code);
         release_initializer_block(values);
     } else {
-        block = read_initializer_element(def, block, target.symbol);
+        block = read_initializer_element(def, block, sym);
         eval_assign(def, block, target, block->expr);
         block->has_init_value = 0;
     }

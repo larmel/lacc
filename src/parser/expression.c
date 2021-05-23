@@ -151,7 +151,7 @@ static struct block *parse__builtin_alloca(
     t1 = create_var(def, basic_type__unsigned_long);
     eval_assign(def, block, t1, block->expr);
 
-    sym = sym_create_temporary(type_create_vla(basic_type__char, t1.symbol));
+    sym = sym_create_temporary(type_create_vla(basic_type__char, t1.value.symbol));
     array_push_back(&def->locals, sym);
 
     block = declare_vla(def, block, sym);

@@ -64,13 +64,13 @@ static const char *escape(const struct symbol *sym)
 static char *vartostr(const struct var var)
 {
     int n = 0;
-    const char *name = var.symbol ? sym_name(var.symbol) : NULL;
+    const char *name = var.is_symbol ? sym_name(var.value.symbol) : NULL;
     char *buffer = get_buffer();
 
-    if (var.symbol && var.symbol->symtype == SYM_LITERAL) {
+    if (var.is_symbol && var.value.symbol->symtype == SYM_LITERAL) {
         if (var.kind == DIRECT) {
             n = sprintf(buffer, "\\\"%s\\\"",
-                str_raw(var.symbol->value.string));
+                str_raw(var.value.symbol->value.string));
         } else {
             assert(var.kind == ADDRESS);
             if (var.offset) {
@@ -92,19 +92,19 @@ static char *vartostr(const struct var var)
         case T_SHORT:
         case T_INT:
             if (is_unsigned(var.type)) {
-                n = sprintf(buffer, "%lu", var.imm.u);
+                n = sprintf(buffer, "%lu", var.value.imm.u);
             } else {
-                n = sprintf(buffer, "%ld", var.imm.i);
+                n = sprintf(buffer, "%ld", var.value.imm.i);
             }
             break;
         case T_FLOAT:
-            n = sprintf(buffer, "%ff", var.imm.f);
+            n = sprintf(buffer, "%ff", var.value.imm.f);
             break;
         case T_DOUBLE:
-            n = sprintf(buffer, "%f", var.imm.d);
+            n = sprintf(buffer, "%f", var.value.imm.d);
             break;
         case T_LDOUBLE:
-            n = sprintf(buffer, "%LfL", get_long_double(var.imm));
+            n = sprintf(buffer, "%LfL", get_long_double(var.value.imm));
             break;
         }
         break;
@@ -246,7 +246,7 @@ static void dot_print_node(struct block *node)
         case IR_VLA_ALLOC:
             fprintf(stream, " | vla_alloc %s:%s (",
                 vartostr(s.t),
-                vartostr(var_direct(s.t.symbol->value.vla_address)));
+                vartostr(var_direct(s.t.value.symbol->value.vla_address)));
             dot_print_expr(s.expr);
             fputs(")", stream);
             break;
