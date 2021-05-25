@@ -167,7 +167,7 @@ static struct token get__file__token(void)
  * Replace __FILE__ with file name, and __LINE__ with line number, by
  * mutating the replacement list on the fly.
  */
-const struct macro *macro_definition(String name)
+INTERNAL const struct macro *macro_definition(String name)
 {
     struct macro *ref;
 
@@ -634,18 +634,11 @@ INTERNAL int tok_cmp(struct token a, struct token b)
     if (a.token != b.token)
         return 1;
 
-    if (a.token == PARAM) {
-        return a.d.val.i != b.d.val.i;
-    } else if (a.token == NUMBER) {
-        if (!type_equal(a.type, b.type))
-            return 1;
-        return
-            (is_unsigned(a.type)) ?
-                a.d.val.u != b.d.val.u :
-                a.d.val.i != b.d.val.i;
-    } else {
-        return !str_eq(a.d.string, b.d.string);
+    if (a.token == PARAM || a.token == NUMBER) {
+        return !type_equal(a.type, b.type) || a.d.val.u != b.d.val.u;
     }
+
+    return !str_eq(a.d.string, b.d.string);
 }
 
 static char *str_write_escaped(char *ptr, const char *str, size_t len)

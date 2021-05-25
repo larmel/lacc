@@ -166,10 +166,11 @@ INTERNAL union value convert(union value val, Type from, Type to);
  * basic integer types.
  */
 struct token {
-    enum token_type token;
-    unsigned int leading_whitespace : 16;
+    int token : 8;
     unsigned int is_expandable : 1;
     unsigned int disable_expand : 1;
+    unsigned int : 6;
+    unsigned int leading_whitespace : 16;
     Type type;
     union {
         String string;

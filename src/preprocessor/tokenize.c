@@ -20,7 +20,7 @@
  * that can fit inline.
  */
 #define TOK(t, s) {(t), 0, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
-#define IDN(t, s) {(t), 0, 1, 0, {0}, {SHORT_STRING_INIT(s)}}
+#define IDN(t, s) {(t), 1, 0, 0, {0}, {SHORT_STRING_INIT(s)}}
 
 INTERNAL const struct token basic_token[] = {
 /* 0x00 */  TOK(END, "$"),              IDN(AUTO, "auto"),
