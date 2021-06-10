@@ -1530,9 +1530,17 @@ static struct expression eval_prepare_assign_bool(
 {
     struct var val;
 
-    if (!is_bool(expr.type)) {
+    if (is_bool(expr.type))
+        return expr;
+
+    val = eval(def, block, expr);
+    expr = eval_cmp_ne(def, block, var_int(0), val);
+    assert(is_int(expr.type));
+    if (is_identity(expr)) {
         val = eval(def, block, expr);
-        expr = eval_cmp_ne(def, block, imm_signed(basic_type__long, 0), val);
+        expr = eval_cast(def, block, val, basic_type__bool);
+    } else {
+        expr.type = basic_type__bool;
     }
 
     return expr;
