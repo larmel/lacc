@@ -11,20 +11,26 @@ Features
 Install
 -------
 Clone and build from source, and the binary will be placed in `bin/lacc`.
-Default include paths on Linux assume system headers being available at `/usr/include/x86_64-linux-gnu`, configurable by defining `SYSTEM_LIB_PATH`.
-BSD libc needs no special handling.
 
     git clone https://github.com/larmel/lacc.git
     cd lacc
     make
 
-Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain definitions that are inherently compiler specific, and are provided specifically for lacc under [include/stdlib/](include/stdlib).
-The compiler is looking for these files at a default include path configurable by defining `LACC_LIB_PATH`, which by default points to the bin directory under the local source tree.
-The install target copies the standard headers to `/usr/local/lib/lacc`, and produces an optimized binary with this as the default include path.
+Default include paths on Linux assume system headers being available at `/usr/include/x86_64-linux-gnu`, configurable by defining `SYSTEM_LIB_PATH` if you have another libc.
+BSD libc needs no special handling.
+
+Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain definitions that are inherently compiler specific, and are provided specifically for lacc under [lib/lacc/include/](lib/lacc/include).
+If you want to use `bin/lacc` directly without installing the headers, you can override the location by setting `LIBDIR` to point to the source location.
+Assuming the code is placed in '/home/lars/code/lacc', a standalone binary can be produced with:
+
+    make LIBDIR=/home/lars/code/lacc/lib
+
+Installation directory is configurable with `PREFIX`, by default pointing to `/usr/local`.
+The binary is put in `BINDIR` (`PREFIX`/bin), and compiler specific headers under `LIBDIR` (`PREFIX`/lib).
+Install will simply copy `bin/lacc` and the headers.
 
     make install
 
-The binary is placed in `/usr/local/bin`, which enables running `lacc` directly from terminal.
 Execute `make uninstall` to remove all the files that were copied.
 
 Usage
