@@ -854,7 +854,7 @@ static void define_builtin__func__(String name)
     static String func = SHORT_STRING_INIT("__func__");
 
     assert(current_scope_depth(&ns_ident) == 1);
-    if (context.standard >= STD_C99) {
+    if (!context.pedantic || context.standard >= STD_C99) {
         len = str_len(name);
         type = type_create_array(basic_type__char, len + 1);
         sym = sym_add(&ns_ident, func, type, SYM_LITERAL, LINK_INTERN);

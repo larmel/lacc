@@ -184,6 +184,8 @@ static int option(const char *arg)
         context.target = TARGET_IR_DOT;
     } else if (!strcmp("-nostdinc", arg)) {
         nostdinc = 1;
+    } else if (!strcmp("-pedantic", arg)) {
+        context.pedantic = 1;
     }
 
     return 0;
@@ -511,6 +513,7 @@ static int parse_program_arguments(int argc, char *argv[])
         {"-include:", &add_include_file},
         {"-print-file-name=", &print_file_name},
         {"-pipe", &option},
+        {"-pedantic", &option},
         {"-MD", &option},
         {"-MP", &option},
         {"-Wl,", &add_linker_flag},
