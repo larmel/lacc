@@ -662,26 +662,27 @@ static char *stringify_concat(
     size_t *pos,
     struct token tok)
 {
-    size_t len;
+    size_t len, max;
     const char *raw;
     char *ptr;
     String str;
 
     assert(tok.token != NUMBER);
+    assert(tok.token != PARAM);
     str = tok.d.string;
-    len = (tok.leading_whitespace != 0) + str_len(str) * 2;
-    if (*pos + len > *cap) {
-        *cap = *pos + len;
+    len = str_len(str);
+    max = (tok.leading_whitespace != 0) + len * 2 + 4;
+    if (*cap < *pos + max) {
+        *cap = *pos + max;
         buf = realloc(buf, *cap);
     }
 
+    ptr = buf + *pos;
     if (tok.leading_whitespace != 0) {
-        buf[(*pos)++] = ' ';
+        *ptr++ = ' ';
     }
 
-    len = str_len(str);
     raw = str_raw(str);
-    ptr = buf + *pos;
     switch (tok.token) {
     case PREP_STRING:
     case STRING:
@@ -703,6 +704,7 @@ static char *stringify_concat(
     }
 
     *pos += ptr - (buf + *pos);
+    assert(*cap >= *pos);
     return buf;
 }
 
@@ -717,7 +719,7 @@ static char *stringify_concat(
 INTERNAL struct token stringify(const TokenArray *list)
 {
     struct token str = {0}, t;
-    size_t cap, ptr;
+    size_t cap, len;
     char *buf;
     int i;
 
@@ -743,7 +745,7 @@ INTERNAL struct token stringify(const TokenArray *list)
             str.token = PREP_STRING;
             cap = array_len(list) * 8;
             buf = malloc(cap);
-            ptr = 0;
+            len = 0;
             for (i = 0; i < array_len(list); ++i) {
                 t = array_get(list, i);
                 if (t.token == NEWLINE) {
@@ -753,15 +755,15 @@ INTERNAL struct token stringify(const TokenArray *list)
                     if (i == 0) {
                         t.leading_whitespace = 0;
                     }
-                    buf = stringify_concat(buf, &cap, &ptr, t);
+                    buf = stringify_concat(buf, &cap, &len, t);
                 }
             }
-            if (ptr > 0 && buf[ptr - 1] == '\\') {
+            if (len > 0 && buf[len - 1] == '\\') {
                 error("Invalid string literal ending with '\\'.");
                 exit(1);
             }
             str.leading_whitespace = array_get(list, 0).leading_whitespace;
-            str.d.string = str_intern(buf, ptr);
+            str.d.string = str_intern(buf, len);
             free(buf);
             break;
         }
