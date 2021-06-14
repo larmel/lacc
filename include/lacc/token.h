@@ -65,8 +65,9 @@ enum token_type {
     RESTRICT,
     ALIGNOF,
     BOOL,
+    NORETURN,
 
-    STATIC_ASSERT = BOOL + 6,
+    STATIC_ASSERT = NORETURN + 5,
 
     COLON = ':',
     SEMICOLON = ';',

@@ -78,8 +78,8 @@ static struct block *parameter_list(
         base = declaration_specifiers(&info);
         if (info.storage_class) {
             error("Unexpected storage class in parameter list.");
-        } else if (info.is_inline) {
-            error("Parameter cannot be declared inline.");
+        } else if (info.is_inline || info.is_noreturn) {
+            error("Unexpected function specifier.");
         }
 
         block = parameter_declarator(def, block, base, &base, &name, &length);
@@ -763,6 +763,16 @@ INTERNAL Type declaration_specifiers(struct declaration_specifier_info *info)
                 info->is_inline = 1;
             }
             break;
+        case NORETURN:
+            next();
+            if (!info) {
+                error("Unexpected '_Noreturn' specifier.");
+            } else if (info->is_noreturn) {
+                error("Multiple '_Noreturn' specifiers.");
+            } else {
+                info->is_noreturn = 1;
+            }
+            break;
         case REGISTER:
             next();
             if (!info) {
@@ -1228,6 +1238,7 @@ INTERNAL struct block *declaration(
                     sym->inlined = 1;
                     sym->referenced |= info.storage_class == EXTERN;
                 }
+
                 return parent;
             }
         } else {

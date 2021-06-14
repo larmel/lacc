@@ -48,7 +48,7 @@ INTERNAL const struct token basic_token[] = {
             TOK(COMMA, ","),            TOK(MINUS, "-"),
             TOK(DOT, "."),              TOK(SLASH, "/"),
 /* 0x30 */  IDN(RESTRICT, "restrict"),  TOK(ALIGNOF, "_Alignof"),
-            TOK(BOOL, "_Bool"),         {0},
+            TOK(BOOL, "_Bool"),         IDN(NORETURN, "_Noreturn"),
             {0},                        {0},
             {0},                        {0},
 /* 0x38 */  IDN(STATIC_ASSERT, "_Static_assert"),     {0},
@@ -536,6 +536,7 @@ static struct token strtoident(const char *in, const char **endptr)
         if (S6('_', 'a', 's', 'm', '_', '_')) MATCH(ASM, 7);
         if (S4('B', 'o', 'o', 'l')) MATCH(BOOL, 5);
         if (S7('A', 'l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF, 8);
+        if (!strncmp(in, "Noreturn", 8) && E(8)) MATCH(NORETURN, 9);
         if (!strncmp(in, "Static_assert", 13) && E(13))
             MATCH(STATIC_ASSERT, 14);
         break;

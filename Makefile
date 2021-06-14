@@ -84,7 +84,8 @@ LIBS = \
 	lib/lacc/include/stdalign.h \
 	lib/lacc/include/stdarg.h \
 	lib/lacc/include/stdbool.h \
-	lib/lacc/include/stddef.h
+	lib/lacc/include/stddef.h \
+	lib/lacc/include/stdnoreturn.h
 
 TARGET = bin/selfhost/lacc
 
