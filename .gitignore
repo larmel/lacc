@@ -1,8 +1,6 @@
 bin
-creduce
-csmith
-demo/*/*
-test/*
-!test/*/
-!test/**/*.c
-!test/**/*.h
+demo/git
+demo/ioq3
+test/sqlite
+test/csmith
+test/creduce

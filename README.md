@@ -66,9 +66,9 @@ Some common linker flags are supported.
     -shared    Passed to linker as is.
     -rdynamic  Pass -export-dynamic to linker.
 
-As an example invocation, here is compiling [test/fact.c](test/fact.c) to object code, and then using the system linker to produce the final executable.
+As an example invocation, here is compiling [test/c89/fact.c](test/c89/fact.c) to object code, and then using the system linker to produce the final executable.
 
-    bin/lacc -c test/fact.c -o fact.o
+    bin/lacc -c test/c89/fact.c -o fact.o
     bin/lacc fact.o -o fact
 
 The program is part of the test suite, calculating 5! using recursion, and exiting with the answer.
@@ -176,10 +176,10 @@ Correctness
 -----------
 Testing is done by comparing the runtime output of programs compiled with lacc and the system compiler (cc).
 A collection of small standalone programs used for validation can be found under the [test/](test/) directory.
-Tests are executed using [check.sh](check.sh), which will validate preprocessing, assembly, and ELF outputs.
+Tests are executed using [check.sh](test/check.sh), which will validate preprocessing, assembly, and ELF outputs.
 
-    $ ./check.sh bin/lacc test/fact.c
-    [-E: Ok!] [-S: Ok!] [-c: Ok!] [-c -O1: Ok!] :: test/fact.c
+    $ test/check.sh bin/lacc test/c89/fact.c
+    [-E: Ok!] [-S: Ok!] [-c: Ok!] [-c -O1: Ok!] :: test/c89/fact.c
 
 A complete test of the compiler is done by going through all test cases on a self-hosted version of lacc.
 

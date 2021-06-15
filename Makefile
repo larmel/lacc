@@ -126,56 +126,36 @@ uninstall:
 	rm -rf $(LIBDIR)/lacc
 	rm $(BINDIR)/lacc
 
-test: test-c89 test-c99 test-c11 test-limits
-test-all: test test-undefined test-extensions test-asm test-linker test-sqlite
-
-test-c89: $(TARGET)
-	for file in $$(find test/ -maxdepth 1 -type f -iname '*.c') ; do \
-		./check.sh "$? -std=c89" "$$file" "$(CC) -std=c89 -w" ; \
-	done
-
-test-c99: $(TARGET)
-	for file in $$(find test/c99 -type f -iname '*.c') ; do \
-		./check.sh "$? -std=c99" "$$file" "$(CC) -std=c99 -w" ; \
-	done
-
-test-c11: $(TARGET)
-	for file in $$(find test/c11 -type f -iname '*.c') ; do \
-		./check.sh "$? -std=c11" "$$file" "$(CC) -std=c11 -w" ; \
-	done
-
-test-asm: $(TARGET)
-	for file in $$(find test/asm -type f -iname '*.c') ; do \
-		./check.sh "$?" "$$file" "$(CC) -w" ; \
-	done
-
-test-extensions: $(TARGET)
-	for file in $$(find test/extensions -type f -iname '*.c') ; do \
-		./check.sh "$?" "$$file" "$(CC) -w" ; \
-	done
-
-test-limits: $(TARGET)
-	for file in $$(find test/limits -type f -iname '*.c') ; do \
-		$? "$$file" -o "$$file"".out" && "./""$$file"".out" ; \
-		rm "$$file"".out" ; \
-	done
-
-test-undefined: $(TARGET)
-	for file in $$(find test/undefined -type f -iname '*.c') ; do \
-		$? "$$file" -o "$$file"".out" && "./""$$file"".out" ; \
-		rm "$$file"".out" ; \
-	done
-
-test-linker: $(TARGET)
-	./linker.sh $?
-
-test-sqlite: $(TARGET)
-	./sqlite.sh $? "$(CC)"
-
 clean:
 	rm -rf bin
-	rm -f test/*.out test/*.txt test/*.s
 
-.PHONY: install uninstall clean test test-c89 test-c99 test-c11 test-limits \
-	test-undefined test-extensions test-asm \
-	test-linker test-sqlite test-all
+test/c89 test/c99 test/c11: $(TARGET)
+	mkdir -p bin/$@
+	std=$$(echo $@ | cut -d '/' -f 2) ; \
+	for file in $$(find $@ -maxdepth 1 -type f -iname '*.c') ; do \
+		test/check.sh "$? -std=$$std" $$file "$(CC) -std=$$std -w" bin ; \
+	done
+
+test/asm test/extensions: $(TARGET)
+	mkdir -p bin/$@
+	for file in $$(find $@ -type f -iname '*.c') ; do \
+		test/check.sh $? $$file "$(CC) -w" bin ; \
+	done
+
+test/limits test/undefined: $(TARGET)
+	mkdir -p bin/$@
+	for file in $$(find $@ -type f -iname '*.c') ; do \
+		$? $$file -c -o bin/$$file.o ; \
+		$? bin/$$file.o -o bin/$$file.out && bin/$$file.out ; \
+	done
+
+test: test/c89 test/c99 test/c11 test/limits test/undefined
+
+test-all: $(TARGET) test test/extensions test/asm
+	test/linker.sh $(TARGET)
+	test/sqlite.sh $(TARGET)
+	test/csmith.sh
+
+.PHONY: install uninstall clean \
+	test test-all test/c89 test/c99 test/c11 \
+	test/asm test/extensions test/limits test/undefined

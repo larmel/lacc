@@ -14,6 +14,7 @@ fi
 lacc="$1"
 file="$2"
 comp="$3"
+bdir="$4"
 if [ -z "$file" ] || [ ! -f "$file" ]; then
 	echo "Usage: $0 <compiler> <file> [<reference compiler>]";
 	exit 1
@@ -23,51 +24,59 @@ if [ -z "$comp" ]; then
 	comp="gcc -std=c89 -Wno-psabi"
 fi
 
+if [ -z "$bdir" ]; then
+	bdir="."
+fi
+
 $comp -v 2>&1 >/dev/null | grep "enable-default-pie" > /dev/null
 if [ "$?" -eq "0" ]; then
 	lacc="${lacc} -fPIC"
 fi
 
-$comp $file -o ${file}.out
+i=`dirname ${file}`
+d=`dirname ${bdir}/${file}`
+f=`basename ${file} .c`
+mkdir -p ${d}
+$comp $file -o ${d}/${f}.out
 if [ "$?" -ne "0" ]; then
 	echo "${file}: ${red}Invalid input file!${reset}";
 	exit 1
 fi
 
-./${file}.out > ${file}.ans.txt; answer="$?"
+${d}/${f}.out > ${d}/${f}.ans.txt; answer="$?"
 
 check()
 {
-	$lacc $1 $file -o ${file}.s
+	$lacc $1 $file -o ${d}/${f}.s
 	if [ "$?" -ne "0" ]; then
 		echo "${red}Compilation failed!${reset}";
 		return 1
 	fi
 	if [ "$1" = "-E" ]; then
-		mv ${file}.s ${file}.i
-		$lacc -c ${file}.i -o ${file}.o
+		mv ${d}/${f}.s ${d}/${f}.i
+		$lacc -c ${d}/${f}.i -o ${d}/${f}.o
 		if [ "$?" -ne "0" ]; then
 			echo "${red}Compilation failed!${reset}";
 			return 1
 		fi
 	elif [ "$1" = "-S" ]; then
-		$comp -c ${file}.s -o ${file}.o
+		$comp -c ${d}/${f}.s -o ${d}/${f}.o
 		if [ "$?" -ne "0" ]; then
 			echo "${red}Assembly failed!${reset}";
 			return 1
 		fi
 	else
-		mv ${file}.s ${file}.o
+		mv ${d}/${f}.s ${d}/${f}.o
 	fi
-	$comp ${file}.o -o ${file}.out -lm
+	$comp ${d}/${f}.o -o ${d}/${f}.out -lm
 	if [ "$?" -ne "0" ]; then
 		echo "${red}Linking failed!${reset}";
 		return 1
 	fi
 
-	./${file}.out > ${file}.txt
+	${d}/${f}.out > ${d}/${f}.txt
 	result="$?"
-	difference=`diff ${file}.ans.txt ${file}.txt`
+	difference=`diff ${d}/${f}.ans.txt ${d}/${f}.txt`
 	diffres="$?"
 
 	if [ "$result" -eq "$answer" ] && [ "$diffres" -eq "0" ]; then
@@ -92,9 +101,9 @@ elf=$(check -c); result="$?"; retval=$((retval + result))
 opt=$(check "-c -O1"); result="$?"; retval=$((retval + result))
 echo "[-E: ${prp}] [-S: ${asm}] [-c: ${elf}] [-c -O1: ${opt}] :: ${file}"
 
-if [ $retval -eq 0 ] && [ -f "${file}.sh" ]
+if [ $retval -eq 0 ] && [ -f "${i}/${f}.sh" ]
 then
-	./${file}.sh "$lacc" "$file"
+	./${i}/${f}.sh "$lacc" "${i}/${f}" "${bdir}"
 	retval=$?
 	if [ $retval -ne 0 ]
 	then
@@ -102,5 +111,5 @@ then
 	fi
 fi
 
-rm -f ${file}.out ${file}.ans.txt ${file}.txt ${file}.s ${file}.i ${file}.o
+rm -f ${d}/${f}.out ${d}/${f}.ans.txt ${d}/${f}.txt ${d}/${f}.s ${d}/${f}.i ${d}/${f}.o
 exit $retval
