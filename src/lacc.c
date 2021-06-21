@@ -61,18 +61,6 @@
 # define LACC_LIB_PATH "/usr/local/lib/lacc"
 #endif
 
-/*
- * Configurable location of system headers. Default on Linux is GNU
- * libc. Can be overridden to point to for example musl.
- *
- * OpenBSD does not need a special path.
- */
-#ifndef SYSTEM_LIB_PATH
-# ifdef __linux__
-#  define SYSTEM_LIB_PATH "/usr/include/x86_64-linux-gnu"
-# endif
-#endif
-
 static enum lang {
     LANG_UNKNOWN,
     LANG_C,

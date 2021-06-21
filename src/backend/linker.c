@@ -61,7 +61,7 @@ static void init_linker(void)
     }
 
     add_option(&ld_args, "/usr/lib/crtbegin.o");
-#else
+#elif GLIBC
     if (!is_shared) {
         add_option(&ld_args, "-e");
         add_option(&ld_args, "_start");
@@ -76,6 +76,20 @@ static void init_linker(void)
 
     add_option(&ld_args, "/usr/lib/x86_64-linux-gnu/crti.o");
     add_option(&ld_args, "-L/usr/lib/x86_64-linux-gnu");
+#elif MUSL
+    if (!is_shared) {
+        add_option(&ld_args, "-e");
+        add_option(&ld_args, "_start");
+        add_option(&ld_args, "-dynamic-linker");
+        add_option(&ld_args, "/lib/ld-musl-x86_64.so.1");
+        if (context.pic) {
+            add_option(&ld_args, "/usr/lib/Scrt1.o");
+        } else {
+            add_option(&ld_args, "/usr/lib/crt1.o");
+        }
+    }
+
+    add_option(&ld_args, "/usr/lib/crti.o");
 #endif
     add_option(&ld_args, "-L/usr/local/lib");
     add_option(&ld_args, "-L/usr/lib");
@@ -120,8 +134,10 @@ INTERNAL int invoke_linker(void)
     add_option(&ld_args, "-lc");
 #if __OpenBSD__
     add_option(&ld_args, "/usr/lib/crtend.o");
-#else
+#elif GLIBC
     add_option(&ld_args, "/usr/lib/x86_64-linux-gnu/crtn.o");
+#elif MUSL
+    add_option(&ld_args, "/usr/lib/crtn.o");
 #endif
 
 #ifndef NDEBUG

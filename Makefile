@@ -89,14 +89,14 @@ LIBS = \
 
 TARGET = bin/selfhost/lacc
 
-bin/lacc: bin/configure.h $(SOURCES) $(HEADERS)
-	$(CC) $(CFLAGS) -Iinclude -include bin/configure.h -DAMALGAMATION src/lacc.c -o $@
+bin/lacc: bin/config.h $(SOURCES) $(HEADERS)
+	$(CC) $(CFLAGS) -Iinclude -include bin/config.h -DAMALGAMATION src/lacc.c -o $@
 
 bin/bootstrap/lacc: bin/lacc
 	mkdir -p $(@D)
 	for file in $(SOURCES) ; do \
 		target=$(@D)/$$(basename $$file .c).o ; \
-		$? -std=c89 -Iinclude -include bin/configure.h -c $$file -o $$target ; \
+		$? -std=c89 -Iinclude -include bin/config.h -c $$file -o $$target ; \
 	done
 	$(CC) $(@D)/*.o -o $@
 
@@ -105,14 +105,20 @@ bin/selfhost/lacc: bin/bootstrap/lacc
 	for file in $(SOURCES) ; do \
 		name=$$(basename $$file .c) ; \
 		target=$(@D)/$${name}.o ; \
-		$? -std=c89 -Iinclude -include bin/configure.h -c $$file -o $$target ; \
+		$? -std=c89 -Iinclude -include bin/config.h -c $$file -o $$target ; \
 		diff bin/bootstrap/$${name}.o $$target ; \
 	done
 	$(CC) $(@D)/*.o -o $@
 
-bin/configure.h: $(SOURCES) $(HEADERS)
+bin/config.h: $(SOURCES) $(HEADERS)
 	mkdir -p $(@D)
-	echo '#define LACC_LIB_PATH "$(LIBDIR)/lacc"' > $@
+	if ldd /bin/ls | grep "x86_64-linux-gnu" > /dev/null; then \
+		echo '#define GLIBC 1' > $@ ; \
+		echo '#define SYSTEM_LIB_PATH "/usr/include/x86_64-linux-gnu"' >> $@ ; \
+	elif ldd /bin/ls | grep "musl" > /dev/null ; then \
+		echo '#define MUSL 1' > $@ ; \
+	fi
+	echo '#define LACC_LIB_PATH "$(LIBDIR)/lacc"' >> $@
 	echo -n '#define LACC_GIT_REVISION "' >> $@
 	git rev-parse --short HEAD | tr -d "\n" >> $@
 	echo '"' >> $@

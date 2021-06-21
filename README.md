@@ -16,18 +16,13 @@ Clone and build from source, and the binary will be placed in `bin/lacc`.
     cd lacc
     make
 
-Default include paths on Linux assume system headers being available at `/usr/include/x86_64-linux-gnu`, configurable by defining `SYSTEM_LIB_PATH` if you have another libc.
-BSD libc needs no special handling.
+Some very basic probing of the environment is done in an attempt to detect which libc to use, which is mainly needed to determine default include path for system headers.
+Linker integration on Linux is currently supported for glibc and musl, and there is also support for OpenBSD.
 
-Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain definitions that are inherently compiler specific, and are provided specifically for lacc under [lib/lacc/include/](lib/lacc/include).
-If you want to use `bin/lacc` directly without installing the headers, you can override the location by setting `LIBDIR` to point to the source location.
-Assuming the code is placed in '/home/lars/code/lacc', a standalone binary can be produced with:
+Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain definitions that are inherently compiler specific, and are provided specifically for lacc under [lib/](lib/).
+If you want to use `bin/lacc` directly without installing the headers, you can override the location by setting `LIBDIR` to point to this folder directly.
 
-    make LIBDIR=/home/lars/code/lacc/lib
-
-Installation directory is configurable with `PREFIX`, by default pointing to `/usr/local`.
-The binary is put in `BINDIR` (`PREFIX`/bin), and compiler specific headers under `LIBDIR` (`PREFIX`/lib).
-Install will simply copy `bin/lacc` and the headers.
+The install target will copy the binary and headers to the usual locations, which can also be overridden with `PREFIX` or `BINDIR`.
 
     make install
 
