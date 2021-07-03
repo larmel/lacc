@@ -14,16 +14,16 @@ fi
 lacc="$1"
 if [ -z "$lacc" ]
 then
-	lacc=bin/lacc
-	command -v bin/lacc >/dev/null 2>&1 || {
-		echo "bin/lacc required, run 'make'."
+	lacc=../bin/lacc
+	command -v $lacc >/dev/null 2>&1 || {
+		echo "$lacc required, run 'make'."
 		exit 1
 	}
 fi
 
 # Default should be a.out in current directory
 rm -f a.out
-$lacc test/linker/foo.c test/linker/bar.c
+$lacc linker/foo.c linker/bar.c
 if [ $? -ne 0 ] || [ ! -e a.out ]
 then
 	echo "${red}Failed to produce default output a.out!${reset}";
@@ -31,11 +31,12 @@ then
 fi
 rm a.out
 
-mkdir -p bin/test/linker
+bin=../bin/test/linker
+mkdir -p $bin
 
 # Target is always the same
-cc test/linker/foo.c test/linker/bar.c -o bin/test/linker/a.out
-expected=$(bin/test/linker/a.out 1 2 3)
+cc linker/foo.c linker/bar.c -o $bin/a.out
+expected=$($bin/a.out 1 2 3)
 
 check()
 {
@@ -45,13 +46,13 @@ check()
 		return 1
 	fi
 
-	if [ ! -f "bin/test/linker/$1" ]
+	if [ ! -f "$bin/$1" ]
 	then
 		echo "${red}Did not create $1!${reset}";
 		return 1
 	fi
 
-	actual=$(LD_LIBRARY_PATH=bin/test/linker bin/test/linker/$1 1 2 3)
+	actual=$(LD_LIBRARY_PATH=$bin $bin/$1 1 2 3)
 
 	if [ "$expected" != "$actual" ]
 	then
@@ -63,15 +64,15 @@ check()
 	return 0
 }
 
-$lacc -fno-PIC test/linker/foo.c test/linker/bar.c -o bin/test/linker/a.out
+$lacc -fno-PIC linker/foo.c linker/bar.c -o $bin/a.out
 a=$(check "a.out"); result="$?"; retval=$((retval + result))
 
-$lacc -fPIC test/linker/foo.c test/linker/bar.c -o bin/test/linker/foo
+$lacc -fPIC linker/foo.c linker/bar.c -o $bin/foo
 b=$(check "foo"); result="$?"; retval=$((retval + result))
 
 # Shared library
-$lacc -shared -fPIC test/linker/foo.c -o bin/test/linker/libfoo.so
-$lacc test/linker/bar.c -lfoo -Lbin/test/linker -o bin/test/linker/a.out
+$lacc -shared -fPIC linker/foo.c -o $bin/libfoo.so
+$lacc linker/bar.c -lfoo -L$bin -o $bin/a.out
 c=$(check "a.out"); result="$?"; retval=$((retval + result))
 
 echo "[-fno-PIC: ${a}] [-fPIC: ${b}] [-shared: ${c}]"

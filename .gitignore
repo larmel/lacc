@@ -1,4 +1,6 @@
 bin
+config.h
+config.mak
 demo/git
 demo/ioq3
 test/sqlite

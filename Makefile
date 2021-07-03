@@ -1,11 +1,7 @@
 .POSIX:
 .SUFFIXES:
-PREFIX = /usr/local
-BINDIR = $(PREFIX)/bin
-LIBDIR = $(PREFIX)/lib
 
-CC = cc
-CFLAGS = -std=c89 -g -Wall -pedantic -Wno-missing-braces
+include config.mak
 
 SOURCES = \
 	src/lacc.c \
@@ -87,81 +83,24 @@ LIBS = \
 	lib/lacc/include/stddef.h \
 	lib/lacc/include/stdnoreturn.h
 
-TARGET = bin/selfhost/lacc
-
-bin/lacc: bin/config.h $(SOURCES) $(HEADERS)
-	$(CC) $(CFLAGS) -Iinclude -include bin/config.h -DAMALGAMATION src/lacc.c -o $@
-
-bin/bootstrap/lacc: bin/lacc
+bin/lacc: $(SOURCES) $(HEADERS) config.h config.mak
 	mkdir -p $(@D)
-	for file in $(SOURCES) ; do \
-		target=$(@D)/$$(basename $$file .c).o ; \
-		$? -std=c89 -Iinclude -include bin/config.h -c $$file -o $$target ; \
-	done
-	$(CC) $(@D)/*.o -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Iinclude -include config.h -DAMALGAMATION src/lacc.c -o $@
 
-bin/selfhost/lacc: bin/bootstrap/lacc
-	mkdir -p $(@D)
-	for file in $(SOURCES) ; do \
-		name=$$(basename $$file .c) ; \
-		target=$(@D)/$${name}.o ; \
-		$? -std=c89 -Iinclude -include bin/config.h -c $$file -o $$target ; \
-		diff bin/bootstrap/$${name}.o $$target ; \
-	done
-	$(CC) $(@D)/*.o -o $@
-
-bin/config.h: $(SOURCES) $(HEADERS)
-	mkdir -p $(@D)
-	if ldd /bin/ls | grep "x86_64-linux-gnu" > /dev/null; then \
-		echo '#define GLIBC 1' > $@ ; \
-		echo '#define SYSTEM_LIB_PATH "/usr/include/x86_64-linux-gnu"' >> $@ ; \
-	elif ldd /bin/ls | grep "musl" > /dev/null ; then \
-		echo '#define MUSL 1' > $@ ; \
-	fi
-	echo '#define LACC_LIB_PATH "$(LIBDIR)/lacc"' >> $@
-	echo -n '#define LACC_GIT_REVISION "' >> $@
-	git rev-parse --short HEAD | tr -d "\n" >> $@
-	echo '"' >> $@
-
-install: $(LIBS)
-	mkdir -p $(LIBDIR)/lacc/include $(BINDIR)
-	cp $(LIBS) $(LIBDIR)/lacc/include
-	cp bin/lacc $(BINDIR)/lacc
+install:
+	install -d -m 755 $(DESTDIR)$(BINDIR)
+	install -d -m 755 $(DESTDIR)$(LIBDIR)/lacc/include
+	install -m 755 bin/lacc $(DESTDIR)$(BINDIR)
+	install -m 644 $(LIBS) $(DESTDIR)$(LIBDIR)/lacc/include
 
 uninstall:
-	rm -rf $(LIBDIR)/lacc
-	rm $(BINDIR)/lacc
+	rm -rf $(DESTDIR)$(LIBDIR)/lacc
+	rm -f $(DESTDIR)$(BINDIR)/lacc
 
 clean:
 	rm -rf bin
 
-test/c89 test/c99 test/c11: $(TARGET)
-	mkdir -p bin/$@
-	std=$$(echo $@ | cut -d '/' -f 2) ; \
-	for file in $$(find $@ -maxdepth 1 -type f -iname '*.c') ; do \
-		test/check.sh "$? -std=$$std" $$file "$(CC) -std=$$std -w" bin ; \
-	done
+distclean: clean
+	rm -f config.h config.mak
 
-test/asm test/extensions: $(TARGET)
-	mkdir -p bin/$@
-	for file in $$(find $@ -type f -iname '*.c') ; do \
-		test/check.sh $? $$file "$(CC) -w" bin ; \
-	done
-
-test/limits test/undefined: $(TARGET)
-	mkdir -p bin/$@
-	for file in $$(find $@ -type f -iname '*.c') ; do \
-		$? $$file -c -o bin/$$file.o ; \
-		$? bin/$$file.o -o bin/$$file.out && bin/$$file.out ; \
-	done
-
-test: test/c89 test/c99 test/c11 test/limits test/undefined
-
-test-all: $(TARGET) test test/extensions test/asm
-	test/linker.sh $(TARGET)
-	test/sqlite.sh $(TARGET)
-	test/csmith.sh
-
-.PHONY: install uninstall clean \
-	test test-all test/c89 test/c99 test/c11 \
-	test/asm test/extensions test/limits test/undefined
+.PHONY: install uninstall clean distclean

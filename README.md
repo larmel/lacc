@@ -14,19 +14,21 @@ Clone and build from source, and the binary will be placed in `bin/lacc`.
 
     git clone https://github.com/larmel/lacc.git
     cd lacc
+    ./configure
     make
-
-Some very basic probing of the environment is done in an attempt to detect which libc to use, which is mainly needed to determine default include path for system headers.
-Linker integration on Linux is currently supported for glibc and musl, and there is also support for OpenBSD.
-
-Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain definitions that are inherently compiler specific, and are provided specifically for lacc under [lib/](lib/).
-If you want to use `bin/lacc` directly without installing the headers, you can override the location by setting `LIBDIR` to point to this folder directly.
-
-The install target will copy the binary and headers to the usual locations, which can also be overridden with `PREFIX` or `BINDIR`.
-
     make install
 
+Default configuration includes some basic probing of the environment to detect which machine and libc we are compiling for.
+Recognized platforms currently include Linux with glibc or musl, and OpenBSD.
+
+Certain standard library headers, such as `stddef.h` and `stdarg.h`, contain definitions that are inherently compiler specific, and are provided specifically for lacc under [lib/](lib/).
+If you want to use `bin/lacc` directly without installing the headers, you can override the location by setting `--libdir` to point to this folder directly.
+
+The `install` target will copy the binary and headers to the usual locations, or as configured with `--prefix` or `--bindir`.
+There is also an option to set `DESTDIR`.
 Execute `make uninstall` to remove all the files that were copied.
+
+See `./configure --help` for options to customize build and install parameters.
 
 Usage
 -----
@@ -178,10 +180,9 @@ Tests are executed using [check.sh](test/check.sh), which will validate preproce
 
 A complete test of the compiler is done by going through all test cases on a self-hosted version of lacc.
 
-    make test
+    make -C test
 
-This will first create a binary produced by cc, giving `bin/lacc`.
-Then we use `bin/lacc` to build `bin/bootstrap/lacc`, which in turn is used to build `bin/selfhost/lacc`.
+This will first use the already built `bin/lacc` to produce `bin/bootstrap/lacc`, which in turn is used to build `bin/selfhost/lacc`.
 Between the bootstrap and selfhost stages, the intermediate object files are compared for equality.
 If everything works correctly, these stages should produce identical binaries.
 The compiler is ''good'' when all tests pass on the selfhost binary.
@@ -193,7 +194,7 @@ In order to weed out bugs, we can use [csmith](https://embed.cs.utah.edu/csmith/
 
     ./csmith.sh
 
-The [csmith.sh](csmith.sh) script runs csmith to generate an infinite sequence of random programs until something fails the test harness.
+The [csmith.sh](test/csmith.sh) script runs csmith to generate an infinite sequence of random programs until something fails the test harness.
 It will typically run thousands of tests without failure.
 
 ![Still successful after running 4314 tests](doc/csmith.png)

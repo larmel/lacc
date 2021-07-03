@@ -16,9 +16,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define XSTR(s) STR(s)
-#define STR(s) #s
-
 static struct hash_table macro_hash_table;
 static int new_macro_added;
 
@@ -847,15 +844,15 @@ INTERNAL void register_builtin_definitions(enum cstd version)
     register_macro("__SIZEOF_POINTER__", "8");
     register_macro("__lacc__", "");
 
-#ifdef __linux__
-    register_macro("__linux__", XSTR(__linux__));
+#ifdef LINUX
+    register_macro("__linux__", "1");
     register_macro("__signed__", "signed");
 #endif
-#ifdef __unix__
-    register_macro("__unix__", XSTR(__unix__));
+#ifdef UNIX
+    register_macro("__unix__", "1");
 #endif
-#ifdef __OpenBSD__
-    register_macro("__OpenBSD__", XSTR(__OpenBSD__));
+#ifdef OpenBSD
+    register_macro("__OpenBSD__", "1");
     register_macro("_ANSI_LIBRARY", "1");
     if (version == STD_C89) {
         register_macro("__inline__", "");

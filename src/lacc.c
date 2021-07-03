@@ -53,12 +53,8 @@
 #include <stdio.h>
 #include <unistd.h>
 
-/*
- * Configurable location of where compiler is installed. Headers can be
- * found under include folder.
- */
-#ifndef LACC_LIB_PATH
-# define LACC_LIB_PATH "/usr/local/lib/lacc"
+#if !defined(LIB_PATH) || !defined(INCLUDE_PATHS)
+# error Missing required configuration
 #endif
 
 static enum lang {
@@ -95,9 +91,6 @@ static int help(const char *arg)
 static int version(const char *arg)
 {
     fprintf(stdout, "lacc version 0.0.1");
-#ifdef LACC_GIT_REVISION
-    fprintf(stdout, " (" LACC_GIT_REVISION ")");
-#endif
 #ifndef NDEBUG
     fprintf(stdout, " DEBUG");
 #endif
@@ -441,14 +434,20 @@ static int add_linker_path(const char *path)
     return 0;
 }
 
+/*
+ * Print full path of library, or just echo the name if not found.
+ *
+ * -print-file-name=include can be used to find location of compiler
+ * builtin headers.
+ */
 static int print_file_name(const char *name)
 {
     FILE *f;
     char *path;
 
     assert(name);
-    path = calloc(1, strlen(LACC_LIB_PATH) + strlen(name) + 2);
-    strcpy(path, LACC_LIB_PATH);
+    path = calloc(1, strlen(LIB_PATH) + strlen(name) + 2);
+    strcpy(path, LIB_PATH);
     strcat(path, "/");
     strcat(path, name);
     if ((f = fopen(path, "r")) != 0) {
@@ -606,16 +605,12 @@ static void add_include_search_paths(void)
     int i;
     const char *path;
 
-    if (!nostdinc) {
-        add_include_search_path("/usr/local/include");
-    }
+    static const char *paths[] = { INCLUDE_PATHS };
 
-    add_include_search_path(LACC_LIB_PATH "/include");
     if (!nostdinc) {
-#ifdef SYSTEM_LIB_PATH
-        add_include_search_path(SYSTEM_LIB_PATH);
-#endif
-        add_include_search_path("/usr/include");
+        for (i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+            add_include_search_path(paths[i]);
+        }
     }
 
     for (i = 0; i < array_len(&system_include_paths); ++i) {

@@ -14,25 +14,26 @@ fi
 lacc="$1"
 if [ -z "$lacc" ]
 then
-	lacc=bin/lacc
-	command -v bin/lacc >/dev/null 2>&1 || {
-		echo "bin/lacc required, run 'make'."
+	lacc=../bin/lacc
+	command -v $lacc >/dev/null 2>&1 || {
+		echo "$lacc required, run 'make'."
 		exit 1
 	}
 fi
 
-if [ ! -f test/sqlite/shell.c ] || [ ! -f test/sqlite/sqlite3.c ]
+if [ ! -f sqlite/shell.c ] || [ ! -f sqlite/sqlite3.c ]
 then
 	echo "Missing sqlite source, download and place in 'test/sqlite' folder."
 	exit 1
 fi
 
-mkdir -p bin/test/sqlite
+bin=../bin/test/sqlite
+mkdir -p $bin
 
 # Build with lacc
 valgrind --leak-check=full --show-leak-kinds=all \
-	$lacc -std=c89 -fPIC -g -v -o bin/test/sqlite/program \
-		test/sqlite/shell.c test/sqlite/sqlite3.c \
+	$lacc -std=c89 -fPIC -g -v -o $bin/program \
+		sqlite/shell.c sqlite/sqlite3.c \
 		-DSQLITE_DEBUG \
 		-DSQLITE_MEMDEBUG \
 		--dump-symbols \
@@ -49,7 +50,7 @@ fi
 rm shell.o sqlite3.o
 
 # Build with reference compiler
-cc test/sqlite/shell.c test/sqlite/sqlite3.c -o bin/test/sqlite/reference -lm -lpthread -ldl
+cc sqlite/shell.c sqlite/sqlite3.c -o $bin/reference -lm -lpthread -ldl
 
 # Test case
 input=$(cat <<EOF
@@ -60,8 +61,8 @@ select * from tbl1;
 EOF
 )
 
-expected=$(echo "$input" | bin/test/sqlite/reference)
-actual=$(echo "$input" | bin/test/sqlite/program)
+expected=$(echo "$input" | $bin/reference)
+actual=$(echo "$input" | $bin/program)
 
 if [ "$expected" != "$actual" ]
 then

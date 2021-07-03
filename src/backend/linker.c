@@ -47,7 +47,7 @@ INTERNAL void clear_linker_args(void)
 static void init_linker(void)
 {
     add_option(&ld_args, "/usr/bin/ld");
-#if __OpenBSD__
+#if OpenBSD
     if (!is_shared) {
         add_option(&ld_args, "-e");
         add_option(&ld_args, "__start");
