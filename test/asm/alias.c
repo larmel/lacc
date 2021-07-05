@@ -3,7 +3,7 @@
 void test1(void) {
 	int a = 2;
 	__asm__  (
-		"mov $3, %[t] \n"
+		"movl $3, %[t] \n"
 		: [t] "=rm" (a) 
 		:
 		:
