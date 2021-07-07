@@ -75,11 +75,11 @@ INTERNAL const struct token basic_token[] = {
             {0},                        {0},
             {0},                        {0},
             {0},                        {0},
-/* 0x68 */  TOK(ASM, "__asm__"),        {0},
-            {0},                        {0},
-            {0},                        {0},
-            {0},                        {0},
-/* 0x70 */  {0},                        {0},
+/* 0x68 */  TOK(ASM, "__asm"),          TOK(ASM, "__asm__"),
+            IDN(INLINE, "__inline"),    IDN(INLINE, "__inline__"),
+            IDN(SIGNED, "__signed"),    IDN(SIGNED, "__signed__"),
+            IDN(RESTRICT, "__restrict"),IDN(RESTRICT, "__restrict__"),
+/* 0x70 */  IDN(VOLATILE, "__volatile"),IDN(VOLATILE, "__volatile__"),
             {0},                        {0},
             {NUMBER},                   {IDENTIFIER, 1},
             {STRING},                   {PARAM},
@@ -523,8 +523,8 @@ static struct token strtostr(const char *in, const char **endptr)
     } while (0)
 
 /*
- * Parse string as keyword or identifier. First character should be
- * alphabetic or underscore.
+ * Parse string as keyword or identifier, with first character being
+ * alphabetic.
  */
 static struct token strtoident(const char *in, const char **endptr)
 {
@@ -532,14 +532,6 @@ static struct token strtoident(const char *in, const char **endptr)
     struct token ident = {IDENTIFIER};
 
     switch (*in++) {
-    case '_':
-        if (S6('_', 'a', 's', 'm', '_', '_')) MATCH(ASM, 7);
-        if (S4('B', 'o', 'o', 'l')) MATCH(BOOL, 5);
-        if (S7('A', 'l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF, 8);
-        if (!strncmp(in, "Noreturn", 8) && E(8)) MATCH(NORETURN, 9);
-        if (!strncmp(in, "Static_assert", 13) && E(13))
-            MATCH(STATIC_ASSERT, 14);
-        break;
     case 'a':
         if (S3('u', 't', 'o')) MATCH(AUTO, 4);
         break;
@@ -629,6 +621,81 @@ static struct token strtoident(const char *in, const char **endptr)
         if (S4('h', 'i', 'l', 'e')) MATCH(WHILE, 5);
     default:
         break;
+    }
+
+    in--;
+    while (isident(*in)) {
+        in++;
+    }
+
+    ident.d.string = str_intern(start, in - start);
+    ident.is_expandable = 1;
+    *endptr = in;
+    return ident;
+}
+
+/*
+ * Parse keywords or identifiers starting with underscore.
+ *
+ * Extension keywords do not have their own enum value, so refer to
+ * offsets from ASM to get to the correct token.
+ */
+static struct token strtoex(const char *in, const char **endptr)
+{
+    const char *start = in;
+    struct token ident = {IDENTIFIER};
+
+    assert(*in == '_');
+    in++;
+    switch (*in++) {
+    case '_':
+        switch (*in++) {
+        case 'a':
+            if (M2('s', 'm')) {
+                if (E(2)) MATCH(ASM, 5);
+                if (M(2, '_') && M(3, '_') && E(4)) MATCH(ASM + 1, 7);
+            }
+            break;
+        case 'i':
+            if (M5('n', 'l', 'i', 'n', 'e')) {
+                if (E(5)) MATCH(ASM + 2, 8);
+                if (M(5, '_') && M(6, '_') && E(7)) MATCH(ASM + 3, 10);
+            }
+            break;
+        case 's':
+            if (M5('i', 'g', 'n', 'e', 'd')) {
+                if (E(5)) MATCH(ASM + 4, 8);
+                if (M(5, '_') && M(6, '_') && E(7)) MATCH(ASM + 5, 10);
+            }
+            break;
+        case 'r':
+            if (M7('e', 's', 't', 'r', 'i', 'c', 't')) {
+                if (E(7)) MATCH(ASM + 6, 10);
+                if (M(7, '_') && M(8, '_') && E(9)) MATCH(ASM + 7, 12);
+            }
+            break;
+        case 'v':
+            if (M7('o', 'l', 'a', 't', 'i', 'l', 'e')) {
+                if (E(7)) MATCH(ASM + 8, 10);
+                if (M(7, '_') && M(8, '_') && E(9)) MATCH(ASM + 9, 12);
+            }
+            break;
+        }
+        break;
+    case 'A':
+        if (S6('l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF, 8);
+        break;
+    case 'B':
+        if (S3('o', 'o', 'l')) MATCH(BOOL, 5);
+        break;
+    case 'N':
+        if (S7('o', 'r', 'e', 't', 'u', 'r', 'n')) MATCH(NORETURN, 9);
+        break;
+    case 'S':
+        if (!strncmp(in, "tatic_assert", 12) && E(12))
+            MATCH(STATIC_ASSERT, 14);
+        break;
+    default: break;
     }
 
     in--;
@@ -739,7 +806,7 @@ INTERNAL struct token tokenize(const char *in, const char **endptr)
     ws = skip_spaces(in, endptr);
     in = *endptr;
 
-    if (isalpha(*in) || *in == '_') {
+    if (isalpha(*in)) {
         tok = strtoident(in, endptr);
     } else if (*in == '\0') {
         tok = basic_token[END];
@@ -749,6 +816,8 @@ INTERNAL struct token tokenize(const char *in, const char **endptr)
         tok = strtostr(in, endptr);
     } else if (*in == '\'') {
         tok = strtochar(in, endptr);
+    } else if (*in == '_') {
+        tok = strtoex(in, endptr);
     } else {
         tok = strtoop(in, endptr);
     }

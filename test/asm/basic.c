@@ -18,7 +18,7 @@ void test1(int a) {
 void test2(int a) {
 	int *p = &a;
 	int b = 2;
-	__asm__ (
+	__asm (
 		"movl $5, %0 \n"
 		"movl $6, %1 \n"
 		: "=m" (*p), "=m" (b)
