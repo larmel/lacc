@@ -115,8 +115,37 @@ static struct block *parse__builtin_alloca(
     return block;
 }
 
+/*
+ * Construct the type definition for va_list:
+ *
+ *   typedef struct {
+ *       unsigned int gp_offset;
+ *       unsigned int fp_offset;
+ *       void *overflow_arg_area;
+ *       void *reg_save_area;
+ *   } __builtin_va_list[1];
+ *
+ */
+static void define__builtin_va_list(void)
+{
+    Type t, v;
+
+    v = type_create_pointer(basic_type__void);
+
+    t = type_create(T_STRUCT);
+    type_add_member(t, str_c("gp_offset"), basic_type__unsigned_int);
+    type_add_member(t, str_c("fp_offset"), basic_type__unsigned_int);
+    type_add_member(t, str_c("overflow_arg_area"), v);
+    type_add_member(t, str_c("reg_save_area"), v);
+    type_seal(t);
+
+    t = type_create_array(t, 1);
+    sym_add(&ns_ident, str_c("__builtin_va_list"), t, SYM_TYPEDEF, LINK_NONE);
+}
+
 INTERNAL void register_builtins(void)
 {
+    define__builtin_va_list();
     sym_create_builtin(str_c("__builtin_alloca"), parse__builtin_alloca);
     sym_create_builtin(str_c("__builtin_va_start"), parse__builtin_va_start);
     sym_create_builtin(str_c("__builtin_va_arg"), parse__builtin_va_arg);

@@ -582,13 +582,6 @@ static void register_argument_definitions(void)
 static void register_builtin_declarations(void)
 {
     inject_line("void *memcpy(void *dest, const void *src, unsigned long n);");
-    inject_line(
-        "typedef struct {"
-        "   unsigned int gp_offset;"
-        "   unsigned int fp_offset;"
-        "   void *overflow_arg_area;"
-        "   void *reg_save_area;"
-        "} __builtin_va_list[1];");
 
     register_builtins();
 }
