@@ -107,6 +107,16 @@ INTERNAL struct symbol *sym_create_label(void);
 INTERNAL struct symbol *sym_create_string(String str);
 
 /*
+ * Create symbol for builtins, which are associated with special
+ * functions for translation once encountered in the source.
+ *
+ * Builtin symbols have symtype SYM_BUILTIN.
+ */
+INTERNAL struct symbol *sym_create_builtin(
+    String name,
+    struct block *(*handler)(struct definition *, struct block *));
+
+/*
  * Release memory used for a temporary symbol, allowing it to be reused
  * in a different function.
  */

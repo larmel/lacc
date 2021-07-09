@@ -37,6 +37,7 @@
 # include "backend/compile.h"
 # include "backend/linker.h"
 # include "optimizer/optimize.h"
+# include "parser/expression.h"
 # include "parser/parse.h"
 # include "parser/symtab.h"
 # include "parser/typetree.h"
@@ -583,10 +584,12 @@ static void register_argument_definitions(void)
  */
 static void register_builtin_declarations(void)
 {
+    String
+        builtin_alloca = str_c("__builtin_alloca"),
+        builtin_va_start = str_c("__builtin_va_start"),
+        builtin_va_arg = str_c("__builtin_va_arg");
+
     inject_line("void *memcpy(void *dest, const void *src, unsigned long n);");
-    inject_line("void __builtin_alloca(unsigned long);");
-    inject_line("void __builtin_va_start(void);");
-    inject_line("void __builtin_va_arg(void);");
     inject_line(
         "typedef struct {"
         "   unsigned int gp_offset;"
@@ -594,6 +597,10 @@ static void register_builtin_declarations(void)
         "   void *overflow_arg_area;"
         "   void *reg_save_area;"
         "} __builtin_va_list[1];");
+
+    sym_create_builtin(builtin_alloca, parse__builtin_alloca);
+    sym_create_builtin(builtin_va_start, parse__builtin_va_start);
+    sym_create_builtin(builtin_va_arg, parse__builtin_va_arg);
 }
 
 /*
@@ -628,7 +635,6 @@ static int process_file(struct input_file file)
     const struct symbol *sym;
 
     preprocess_reset();
-    expression_parse_init();
     set_input_file(file.name);
     register_builtin_definitions(context.standard);
     register_argument_definitions();

@@ -23,18 +23,6 @@ typedef array_of(struct expression) ExprArray;
 static array_of(ExprArray *) args;
 static int max_depth;
 
-static String
-    str__builtin_va_start,
-    str__builtin_va_arg,
-    str__builtin_alloca;
-
-INTERNAL void expression_parse_init(void)
-{
-    str__builtin_va_start = str_c("__builtin_va_start");
-    str__builtin_va_arg = str_c("__builtin_va_arg");
-    str__builtin_alloca = str_c("__builtin_alloca");
-}
-
 INTERNAL void expression_parse_finalize(void)
 {
     int i;
@@ -69,7 +57,7 @@ static const struct symbol *find_symbol(String name)
  * of calling va_start(arg, s). Return type depends on second input
  * argument.
  */
-static struct block *parse__builtin_va_start(
+INTERNAL struct block *parse__builtin_va_start(
     struct definition *def,
     struct block *block)
 {
@@ -105,7 +93,7 @@ static struct block *parse__builtin_va_start(
  * Parse call to builtin symbol __builtin_va_arg, which is the result of
  * calling va_arg(arg, T). Return type depends on second input argument.
  */
-static struct block *parse__builtin_va_arg(
+INTERNAL struct block *parse__builtin_va_arg(
     struct definition *def,
     struct block *block)
 {
@@ -137,7 +125,7 @@ static struct block *parse__builtin_va_arg(
  *     char sym[len];
  *     void *ptr = (void *) sym;
  */
-static struct block *parse__builtin_alloca(
+INTERNAL struct block *parse__builtin_alloca(
     struct definition *def,
     struct block *block)
 {
@@ -182,12 +170,8 @@ static struct block *primary_expression(
     switch (tok->token) {
     case IDENTIFIER:
         sym = find_symbol(tok->d.string);
-        if (str_eq(str__builtin_va_start, sym->name)) {
-            block = parse__builtin_va_start(def, block);
-        } else if (str_eq(str__builtin_va_arg, sym->name)) {
-            block = parse__builtin_va_arg(def, block);
-        } else if (str_eq(str__builtin_alloca, sym->name)) {
-            block = parse__builtin_alloca(def, block);
+        if (sym->symtype == SYM_BUILTIN) {
+            block = sym->value.handler(def, block);
         } else {
             block->expr = as_expr(var_direct(sym));
         }

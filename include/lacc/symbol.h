@@ -11,6 +11,7 @@
 #include <stdio.h>
 
 struct block;
+struct definition;
 
 enum symtype {
     SYM_DEFINITION = 0,
@@ -20,7 +21,8 @@ enum symtype {
     SYM_LITERAL,
     SYM_CONSTANT,
     SYM_LABEL,
-    SYM_TAG
+    SYM_TAG,
+    SYM_BUILTIN
 };
 
 /* Visibility of external declarations, LINK_NONE for other symbols. */
@@ -94,6 +96,12 @@ struct symbol {
          * total size of the array.
          */
         const struct symbol *vla_address;
+
+        /*
+         * Translation rule for intrinsic builtin functionality, such as
+         * va_arg or alloca.
+         */
+        struct block *(*handler)(struct definition *, struct block *);
     } value;
 };
 
