@@ -27,6 +27,7 @@ SOURCES = \
 	src/preprocessor/directive.c \
 	src/preprocessor/preprocess.c \
 	src/preprocessor/macro.c \
+	src/parser/builtin.c \
 	src/parser/typetree.c \
 	src/parser/symtab.c \
 	src/parser/parse.c \
@@ -65,6 +66,7 @@ HEADERS = \
 	src/preprocessor/directive.h \
 	src/preprocessor/preprocess.h \
 	src/preprocessor/macro.h \
+	src/parser/builtin.h \
 	src/parser/typetree.h \
 	src/parser/symtab.h \
 	src/parser/parse.h \

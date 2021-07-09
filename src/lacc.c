@@ -31,13 +31,14 @@
 # include "parser/expression.c"
 # include "parser/declaration.c"
 # include "parser/eval.c"
+# include "parser/builtin.c"
 #else
 # define INTERNAL
 # define EXTERNAL extern
 # include "backend/compile.h"
 # include "backend/linker.h"
 # include "optimizer/optimize.h"
-# include "parser/expression.h"
+# include "parser/builtin.h"
 # include "parser/parse.h"
 # include "parser/symtab.h"
 # include "parser/typetree.h"
@@ -578,17 +579,8 @@ static void register_argument_definitions(void)
     }
 }
 
-/*
- * Register compiler internal builtin symbols, that are assumed to
- * exists by standard library headers.
- */
 static void register_builtin_declarations(void)
 {
-    String
-        builtin_alloca = str_c("__builtin_alloca"),
-        builtin_va_start = str_c("__builtin_va_start"),
-        builtin_va_arg = str_c("__builtin_va_arg");
-
     inject_line("void *memcpy(void *dest, const void *src, unsigned long n);");
     inject_line(
         "typedef struct {"
@@ -598,9 +590,7 @@ static void register_builtin_declarations(void)
         "   void *reg_save_area;"
         "} __builtin_va_list[1];");
 
-    sym_create_builtin(builtin_alloca, parse__builtin_alloca);
-    sym_create_builtin(builtin_va_start, parse__builtin_va_start);
-    sym_create_builtin(builtin_va_arg, parse__builtin_va_arg);
+    register_builtins();
 }
 
 /*
