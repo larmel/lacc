@@ -143,10 +143,45 @@ static void define__builtin_va_list(void)
     sym_add(&ns_ident, str_c("__builtin_va_list"), t, SYM_TYPEDEF, LINK_NONE);
 }
 
+/* Save memcpy reference for backend. */
+INTERNAL const struct symbol *decl_memcpy = NULL;
+
+/*
+ * Code generation uses memcpy when dealing with large blocks of data,
+ * so we need a declaration visible in the symbol table.
+ *
+ *   void *memcpy(void *dest, const void *src, unsigned long n);
+ *
+ * If the compiler is invoked with -nostdinc, then it should not be
+ * included, and backend will use other means to copy.
+ */
+static void declare_memcpy(void)
+{
+    Type t, dest, src;
+
+    if (context.nostdinc)
+        return;
+
+    dest = type_create_pointer(basic_type__void);
+    src = type_set_const(basic_type__void);
+    src = type_create_pointer(src);
+
+    t = type_create_function(dest);
+    type_add_member(t, str_c("dest"), dest);
+    type_add_member(t, str_c("src"), src);
+    type_add_member(t, str_c("n"), basic_type__unsigned_long);
+    type_seal(t);
+
+    decl_memcpy =
+        sym_add(&ns_ident, str_c("memcpy"), t, SYM_DECLARATION, LINK_EXTERN);
+}
+
 INTERNAL void register_builtins(void)
 {
     define__builtin_va_list();
     sym_create_builtin(str_c("__builtin_alloca"), parse__builtin_alloca);
     sym_create_builtin(str_c("__builtin_va_start"), parse__builtin_va_start);
     sym_create_builtin(str_c("__builtin_va_arg"), parse__builtin_va_arg);
+
+    declare_memcpy();
 }

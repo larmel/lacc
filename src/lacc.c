@@ -75,7 +75,6 @@ struct input_file {
 static const char *program, *output_name;
 static int optimization_level;
 static int dump_symbols, dump_types;
-static int nostdinc;
 
 static array_of(struct input_file) input_files;
 static array_of(char *) predefined_macros;
@@ -166,7 +165,7 @@ static int option(const char *arg)
     } else if (!strcmp("-dot", arg)) {
         context.target = TARGET_IR_DOT;
     } else if (!strcmp("-nostdinc", arg)) {
-        nostdinc = 1;
+        context.nostdinc = 1;
     } else if (!strcmp("-pedantic", arg)) {
         context.pedantic = 1;
     }
@@ -579,13 +578,6 @@ static void register_argument_definitions(void)
     }
 }
 
-static void register_builtin_declarations(void)
-{
-    inject_line("void *memcpy(void *dest, const void *src, unsigned long n);");
-
-    register_builtins();
-}
-
 /*
  * Add default search paths last, with lowest priority. These are
  * searched after anything specified with -I, and in the order listed.
@@ -597,7 +589,7 @@ static void add_include_search_paths(void)
 
     static const char *paths[] = { INCLUDE_PATHS };
 
-    if (!nostdinc) {
+    if (!context.nostdinc) {
         for (i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
             add_include_search_path(paths[i]);
         }
@@ -636,7 +628,7 @@ static int process_file(struct input_file file)
         preprocess(output);
     } else {
         set_compile_target(output, file.name);
-        register_builtin_declarations();
+        register_builtins();
         push_optimization(optimization_level);
 
         while ((def = parse()) != NULL) {

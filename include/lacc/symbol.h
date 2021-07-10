@@ -106,7 +106,7 @@ struct symbol {
 };
 
 /* Holds the declaration for memcpy, which is needed for codegen. */
-INTERNAL  const struct symbol *decl_memcpy;
+EXTERNAL const struct symbol *decl_memcpy;
 
 /* Get the full name, including numeric value to disambiguate. */
 INTERNAL const char *sym_name(const struct symbol *sym);

@@ -75,9 +75,6 @@ static Type get_string_type(size_t len)
     return handle.type;
 }
 
-/* Save memcpy reference for backend. */
-INTERNAL const struct symbol *decl_memcpy = NULL;
-
 /*
  * Keep track of all function declarations globally, in order to coerce
  * forward declarations made in inner scope.
@@ -127,8 +124,6 @@ INTERNAL void symtab_clear(void)
 {
     int i;
     struct symbol *sym;
-
-    decl_memcpy = NULL;
 
     for (i = 0; i < array_len(&ns_label.symbols); ++i) {
         sym = array_get(&ns_label.symbols, i);
@@ -393,7 +388,6 @@ INTERNAL struct symbol *sym_add(
     enum linkage linkage)
 {
     static int n;
-    static String smemcpy = SHORT_STRING_INIT("memcpy");
 
     int depth;
     struct symbol *sym;
@@ -423,10 +417,6 @@ INTERNAL struct symbol *sym_add(
     sym->type = type;
     sym->symtype = symtype;
     sym->linkage = linkage;
-    if (!decl_memcpy && str_eq(smemcpy, sym->name)) {
-        decl_memcpy = sym;
-    }
-
     if (linkage == LINK_INTERN && sym->depth) {
         sym->n = ++n;
     }

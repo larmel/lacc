@@ -809,7 +809,7 @@ static void emit_memcpy(size_t bytes)
     size_t w;
     struct address source, dest;
 
-    if (bytes <= 64) {
+    if (bytes <= 64 || !decl_memcpy) {
         for (i = 0; i < bytes; i += w) {
             source = address(i, SI, 0, 0);
             dest = address(i, DI, 0, 0);
@@ -3394,7 +3394,7 @@ INTERNAL void set_compile_target(FILE *stream, const char *file)
 
 INTERNAL int compile(struct definition *def)
 {
-    assert(decl_memcpy);
+    assert(decl_memcpy || context.nostdinc);
     assert(def->symbol);
     assert(x87_stack == 0);
 

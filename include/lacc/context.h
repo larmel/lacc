@@ -30,6 +30,7 @@ INTERNAL struct context {
     unsigned int no_common : 1;      /* Don't use COMMON symbols. */
     unsigned int no_sse : 1;         /* Don't use SSE instructions. */
     unsigned int pedantic : 1;
+    unsigned int nostdinc : 1;
     enum target target;
     enum cstd standard;
 } context;
