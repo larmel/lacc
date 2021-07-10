@@ -6,10 +6,33 @@
 #include "declaration.h"
 #include "eval.h"
 #include "expression.h"
+#include "parse.h"
 #include "symtab.h"
 #include "typetree.h"
 #include <lacc/context.h>
 #include <lacc/token.h>
+
+/*
+ * Return 1 iff expression is a constant.
+ *
+ * No actual evaluation is performed.
+ */
+static struct block *parse__builtin_constant_p(
+    struct definition *def,
+    struct block *block)
+{
+    struct var v;
+    struct block *head, *tail;
+
+    head = cfg_block_init(NULL);
+    consume('(');
+    tail = assignment_expression(NULL, head);
+    consume(')');
+
+    v = var_int(tail == head && is_immediate(tail->expr));
+    block->expr = as_expr(v);
+    return block;
+}
 
 /*
  * Parse call to builtin symbol __builtin_va_start, which is the result
@@ -182,6 +205,7 @@ INTERNAL void register_builtins(void)
     sym_create_builtin(str_c("__builtin_alloca"), parse__builtin_alloca);
     sym_create_builtin(str_c("__builtin_va_start"), parse__builtin_va_start);
     sym_create_builtin(str_c("__builtin_va_arg"), parse__builtin_va_arg);
+    sym_create_builtin(str_c("__builtin_constant_p"), parse__builtin_constant_p);
 
     declare_memcpy();
 }
