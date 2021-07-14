@@ -13,12 +13,13 @@ on:
 
 jobs:
   image:
-    name: build ${{ matrix.c_standard }}
+    name: build ${{ matrix.c_standard }} O${{ matrix.optimization }} 
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        c_standard: [c89, c99, c11]
+        c_standard: ["c89", "c99", "c11"]
+        optimization: ["0", "1", "2", "s", "3"]
     steps:
       - name: "Checkout Code"
         uses: actions/checkout@v2
@@ -30,7 +31,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y \
           build-essential gcc-multilib
       - name: "Configure"
-        run: ./configure -std=${{ matrix.c_standard }} -O2 
+        run: ./configure -std=${{ matrix.c_standard }} -O${{ matrix.optimization }} 
       - name: "Make"
         run: make -j$(nproc) 
       - name: "Install"
