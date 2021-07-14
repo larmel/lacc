@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         c_standard: ["c89", "c99", "c11"]
-        optimization: ["0", "1", "2", "s", "3"]
+        optimization: ["g", "0", "1", "2", "s", "3"]
     steps:
       - name: "Checkout Code"
         uses: actions/checkout@v2
