@@ -1,0 +1,39 @@
+name: lacc
+
+on:
+  push:
+    branches:
+    - '*'
+    paths-ignore:
+      - '**/README.md'
+  pull_request:
+    branches:
+    - '*'
+  workflow_dispatch:
+
+jobs:
+  image:
+    name: build ${{ matrix.c_standard }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        c_standard: [c89, c99, c11]
+    steps:
+      - name: "Checkout Code"
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+      - name: "Install deps."
+        run:  |
+          sudo apt-get update && sudo apt-get install -y \
+          build-essential gcc-multilib
+      - name: "Configure"
+        run: ./configure -std=${{ matrix.c_standard }} -O2 
+      - name: "Make"
+        run: make -j$(nproc) 
+      - name: "Install"
+        run: sudo make install -j$(nproc)
+      - name: "Test"
+        run: make -C test
