@@ -491,15 +491,49 @@ static struct token strtostr(const char *in, const char **endptr)
  * Valid identifier character, except in the first position which does
  * not allow numbers.
  */
-#define isident(c) (isalnum(c) || (c) == '_')
+#define isident(c) is_ident[(int) c]
+
+static const char is_ident[256] = {
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 0, 0, 0, 0, 0, 0,
+
+    0, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 0, 0, 0, 0, 1,
+    0, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 0, 0, 0, 0, 0,
+};
+
+static struct token strtoident(const char *in, const char **endptr)
+{
+    struct token tok = {IDENTIFIER, 1};
+    const char *start = in;
+
+    assert(isident(*in));
+    do {
+        in++;
+    } while (isident(*in));
+
+    *endptr = in;
+    tok.d.string = str_intern(start, in - start);
+    return tok;
+}
 
 /*
  * Macros to make state state machine implementation of identifier and
  * operator tokenization simpler.
  */
-#define E(i) !isident(in[i])
+#define E(i) (!isident(in[i]))
 #define M(i, c) (in[i] == (c))
-
 #define M1(a) (M(0, a))
 #define M2(a, b) (M(0, a) && M(1, b))
 #define M3(a, b, c) (M2(a, b) && M(2, c))
@@ -507,321 +541,263 @@ static struct token strtostr(const char *in, const char **endptr)
 #define M5(a, b, c, d, e) (M4(a, b, c, d) && M(4, e))
 #define M6(a, b, c, d, e, f) (M5(a, b, c, d, e) && M(5, f))
 #define M7(a, b, c, d, e, f, g) (M6(a, b, c, d, e, f) && M(6, g))
+#define T(t, l) (*endptr = start + l, basic_token[t])
 
-#define S1(a) (M1(a) && E(1))
-#define S2(a, b) (M2(a, b) && E(2))
-#define S3(a, b, c) (M3(a, b, c) && E(3))
-#define S4(a, b, c, d) (M4(a, b, c, d) && E(4))
-#define S5(a, b, c, d, e) (M5(a, b, c, d, e) && E(5))
-#define S6(a, b, c, d, e, f) (M6(a, b, c, d, e, f) && E(6))
-#define S7(a, b, c, d, e, f, g) (M7(a, b, c, d, e, f, g) && E(7))
-
-#define MATCH(id, len) \
-    do { \
-        *endptr = start + len; \
-        return basic_token[id]; \
-    } while (0)
-
-/*
- * Parse string as keyword or identifier, with first character being
- * alphabetic.
- */
-static struct token strtoident(const char *in, const char **endptr)
+static struct token tokenize_internal(const char *in, const char **endptr)
 {
+    int c;
     const char *start = in;
-    struct token ident = {IDENTIFIER};
 
-    switch (*in++) {
+    c = *in++;
+    switch (c) {
+    case '\0':
+        return basic_token[END];
     case 'a':
-        if (S3('u', 't', 'o')) MATCH(AUTO, 4);
+        if (M3('u', 't', 'o') && E(3)) return T(AUTO, 4);
         break;
     case 'b':
-        if (S4('r', 'e', 'a', 'k')) MATCH(BREAK, 5);
+        if (M4('r', 'e', 'a', 'k') && E(4)) return T(BREAK, 5);
         break;
     case 'c':
-        if (S3('a', 's', 'e')) MATCH(CASE, 4);
-        if (S3('h', 'a', 'r')) MATCH(CHAR, 4);
+        if (M3('a', 's', 'e') && E(3)) return T(CASE, 4);
+        if (M3('h', 'a', 'r') && E(3)) return T(CHAR, 4);
         if (M2('o', 'n')) {
             in += 2;
-            if (S2('s', 't')) MATCH(CONST, 5);
-            if (S5('t', 'i', 'n', 'u', 'e')) MATCH(CONTINUE, 8);
+            if (M2('s', 't') && E(2)) return T(CONST, 5);
+            if (M5('t', 'i', 'n', 'u', 'e') && E(5)) return T(CONTINUE, 8);
         }
         break;
     case 'd':
-        if (S6('e', 'f', 'a', 'u', 'l', 't')) MATCH(DEFAULT, 7);
-        if (*in++ == 'o') {
-            if (S4('u', 'b', 'l', 'e')) MATCH(DOUBLE, 6);
-            if (E(0)) MATCH(DO, 2);
+        if (M6('e', 'f', 'a', 'u', 'l', 't') && E(6)) return T(DEFAULT, 7);
+        if (*in == 'o') {
+            in++;
+            if (E(0)) return T(DO, 2);
+            if (M4('u', 'b', 'l', 'e') && E(4)) return T(DOUBLE, 6);
         }
         break;
     case 'e':
-        if (S3('l', 's', 'e')) MATCH(ELSE, 4);
-        if (S3('n', 'u', 'm')) MATCH(ENUM, 4);
-        if (S5('x', 't', 'e', 'r', 'n')) MATCH(EXTERN, 6);
+        if (M3('l', 's', 'e') && E(3)) return T(ELSE, 4);
+        if (M3('n', 'u', 'm') && E(3)) return T(ENUM, 4);
+        if (M5('x', 't', 'e', 'r', 'n') && E(5)) return T(EXTERN, 6);
         break;
     case 'f':
-        if (S4('l', 'o', 'a', 't')) MATCH(FLOAT, 5);
-        if (S2('o', 'r')) MATCH(FOR, 3);
+        if (M4('l', 'o', 'a', 't') && E(4)) return T(FLOAT, 5);
+        if (M2('o', 'r') && E(2)) return T(FOR, 3);
         break;
     case 'g':
-        if (S3('o', 't', 'o')) MATCH(GOTO, 4);
+        if (M3('o', 't', 'o') && E(3)) return T(GOTO, 4);
         break;
     case 'i':
-        if (S1('f')) MATCH(IF, 2);
-        if (*in++ == 'n') {
-            if (S1('t')) MATCH(INT, 3);
+        if (M1('f') && E(1)) return T(IF, 2);
+        if (*in == 'n') {
+            in++;
+            if (M1('t') && E(1)) return T(INT, 3);
             if (context.standard >= STD_C99) {
-                if (S4('l', 'i', 'n', 'e')) MATCH(INLINE, 6);
+                if (M4('l', 'i', 'n', 'e') && E(4)) return T(INLINE, 6);
             }
         }
         break;
     case 'l':
-        if (S3('o', 'n', 'g')) MATCH(LONG, 4);
+        if (M3('o', 'n', 'g') && E(3)) return T(LONG, 4);
         break;
     case 'r':
-        if (*in++ == 'e') {
-            if (S6('g', 'i', 's', 't', 'e', 'r')) MATCH(REGISTER, 8);
-            if (S4('t', 'u', 'r', 'n')) MATCH(RETURN, 6);
+        if (*in == 'e') {
+            in++;
+            if (M6('g', 'i', 's', 't', 'e', 'r') && E(6))
+                return T(REGISTER, 8);
+            if (M4('t', 'u', 'r', 'n') && E(4)) return T(RETURN, 6);
             if (context.standard >= STD_C99) {
-                if (S6('s', 't', 'r', 'i', 'c', 't')) MATCH(RESTRICT, 8);
+                if (M6('s', 't', 'r', 'i', 'c', 't') && E(6))
+                    return T(RESTRICT, 8);
             }
         }
         break;
     case 's':
-        if (S4('h', 'o', 'r', 't')) MATCH(SHORT, 5);
-        if (S5('w', 'i', 't', 'c', 'h')) MATCH(SWITCH, 6);
+        if (M4('h', 'o', 'r', 't') && E(4)) return T(SHORT, 5);
+        if (M5('w', 'i', 't', 'c', 'h') && E(5)) return T(SWITCH, 6);
         switch (*in++) {
         case 'i':
-            if (S4('g', 'n', 'e', 'd')) MATCH(SIGNED, 6);
-            if (S4('z', 'e', 'o', 'f')) MATCH(SIZEOF, 6);
+            if (M4('g', 'n', 'e', 'd') && E(4)) return T(SIGNED, 6);
+            if (M4('z', 'e', 'o', 'f') && E(4)) return T(SIZEOF, 6);
             break;
         case 't':
-            if (S4('a', 't', 'i', 'c')) MATCH(STATIC, 6);
-            if (S4('r', 'u', 'c', 't')) MATCH(STRUCT, 6);
+            if (M4('a', 't', 'i', 'c') && E(4)) return T(STATIC, 6);
+            if (M4('r', 'u', 'c', 't') && E(4)) return T(STRUCT, 6);
             break;
-        default: break;
         }
         break;
     case 't':
-        if (S6('y', 'p', 'e', 'd', 'e', 'f')) MATCH(TYPEDEF, 7);
+        if (M6('y', 'p', 'e', 'd', 'e', 'f') && E(6)) return T(TYPEDEF, 7);
         break;
     case 'u':
-        if (*in++ == 'n') {
-            if (S3('i', 'o', 'n')) MATCH(UNION, 5);
-            if (S6('s', 'i', 'g', 'n', 'e', 'd')) MATCH(UNSIGNED, 8);
+        if (*in == 'n') {
+            in++;
+            if (M3('i', 'o', 'n') && E(3)) return T(UNION, 5);
+            if (M6('s', 'i', 'g', 'n', 'e', 'd') && E(6))
+                return T(UNSIGNED, 8);
         }
         break;
     case 'v':
-        if (*in++ == 'o') {
-            if (S2('i', 'd')) MATCH(VOID, 4);
-            if (S6('l', 'a', 't', 'i', 'l', 'e')) MATCH(VOLATILE, 8);
+        if (*in == 'o') {
+            in++;
+            if (M2('i', 'd') && E(2)) return T(VOID, 4);
+            if (M6('l', 'a', 't', 'i', 'l', 'e') && E(6))
+                return T(VOLATILE, 8);
         }
         break;
     case 'w':
-        if (S4('h', 'i', 'l', 'e')) MATCH(WHILE, 5);
-    default:
+        if (M4('h', 'i', 'l', 'e') && E(4)) return T(WHILE, 5);
         break;
-    }
-
-    in--;
-    while (isident(*in)) {
-        in++;
-    }
-
-    ident.d.string = str_intern(start, in - start);
-    ident.is_expandable = 1;
-    *endptr = in;
-    return ident;
-}
-
-/*
- * Parse keywords or identifiers starting with underscore.
- *
- * Extension keywords do not have their own enum value, so refer to
- * offsets from ASM to get to the correct token.
- */
-static struct token strtoex(const char *in, const char **endptr)
-{
-    const char *start = in;
-    struct token ident = {IDENTIFIER};
-
-    assert(*in == '_');
-    in++;
-    switch (*in++) {
     case '_':
         switch (*in++) {
-        case 'a':
-            if (M2('s', 'm')) {
-                if (E(2)) MATCH(ASM, 5);
-                if (M(2, '_') && M(3, '_') && E(4)) MATCH(ASM + 1, 7);
+        case '_':
+            switch (*in++) {
+            case 'a':
+                if (M2('s', 'm')) {
+                    if (E(2)) return T(ASM, 5);
+                    if (in[2] == '_' && in[3] == '_' && E(4))
+                        return T(ASM + 1, 7);
+                }
+                break;
+            case 'i':
+                if (M5('n', 'l', 'i', 'n', 'e')) {
+                    if (E(5)) return T(ASM + 2, 8);
+                    if (in[5] == '_' && in[6] == '_' && E(7))
+                        return T(ASM + 3, 10);
+                }
+                break;
+            case 's':
+                if (M5('i', 'g', 'n', 'e', 'd')) {
+                    if (E(5)) return T(ASM + 4, 8);
+                    if (in[5] == '_' && in[6] == '_' && E(7))
+                        return T(ASM + 5, 10);
+                }
+                break;
+            case 'r':
+                if (M7('e', 's', 't', 'r', 'i', 'c', 't')) {
+                    if (E(7)) return T(ASM + 6, 10);
+                    if (in[7] == '_' && in[8] == '_' && E(9))
+                        return T(ASM + 7, 12);
+                }
+                break;
+            case 'v':
+                if (M7('o', 'l', 'a', 't', 'i', 'l', 'e')) {
+                    if (E(7)) return T(ASM + 8, 10);
+                    if (in[7] == '_' && in[8] == '_' && E(9))
+                        return T(ASM + 9, 12);
+                }
+                break;
             }
             break;
-        case 'i':
-            if (M5('n', 'l', 'i', 'n', 'e')) {
-                if (E(5)) MATCH(ASM + 2, 8);
-                if (M(5, '_') && M(6, '_') && E(7)) MATCH(ASM + 3, 10);
-            }
+        case 'A':
+            if (M6('l', 'i', 'g', 'n', 'o', 'f') && E(6))
+                return T(ALIGNOF, 8);
             break;
-        case 's':
-            if (M5('i', 'g', 'n', 'e', 'd')) {
-                if (E(5)) MATCH(ASM + 4, 8);
-                if (M(5, '_') && M(6, '_') && E(7)) MATCH(ASM + 5, 10);
-            }
+        case 'B':
+            if (M3('o', 'o', 'l') && E(3)) return T(BOOL, 5);
             break;
-        case 'r':
-            if (M7('e', 's', 't', 'r', 'i', 'c', 't')) {
-                if (E(7)) MATCH(ASM + 6, 10);
-                if (M(7, '_') && M(8, '_') && E(9)) MATCH(ASM + 7, 12);
-            }
+        case 'N':
+            if (M7('o', 'r', 'e', 't', 'u', 'r', 'n') && E(7))
+                return T(NORETURN, 9);
             break;
-        case 'v':
-            if (M7('o', 'l', 'a', 't', 'i', 'l', 'e')) {
-                if (E(7)) MATCH(ASM + 8, 10);
-                if (M(7, '_') && M(8, '_') && E(9)) MATCH(ASM + 9, 12);
-            }
+        case 'S':
+            if (!strncmp(in, "tatic_assert", 12) && E(12))
+                return T(STATIC_ASSERT, 14);
             break;
         }
         break;
-    case 'A':
-        if (S6('l', 'i', 'g', 'n', 'o', 'f')) MATCH(ALIGNOF, 8);
-        break;
-    case 'B':
-        if (S3('o', 'o', 'l')) MATCH(BOOL, 5);
-        break;
-    case 'N':
-        if (S7('o', 'r', 'e', 't', 'u', 'r', 'n')) MATCH(NORETURN, 9);
-        break;
-    case 'S':
-        if (!strncmp(in, "tatic_assert", 12) && E(12))
-            MATCH(STATIC_ASSERT, 14);
-        break;
-    default: break;
-    }
-
-    in--;
-    while (isident(*in)) {
-        in++;
-    }
-
-    ident.d.string = str_intern(start, in - start);
-    ident.is_expandable = 1;
-    *endptr = in;
-    return ident;
-}
-
-static struct token strtoop(const char *in, const char **endptr)
-{
-    const char *start = in;
-    struct token t;
-
-    switch (*in++) {
     case '*':
-        if (*in == '=') MATCH(MUL_ASSIGN, 2);
-        break;
+        return (*in == '=') ? T(MUL_ASSIGN, 2) : T('*', 1);
     case '/':
-        if (*in == '=') MATCH(DIV_ASSIGN, 2);
-        break;
+        return (*in == '=') ? T(DIV_ASSIGN, 2) : T('/', 1);
     case '%':
-        if (*in == '=') MATCH(MOD_ASSIGN, 2);
-        break;
+        return (*in == '=') ? T(MOD_ASSIGN, 2) : T('%', 1);
     case '+':
-        if (*in == '+') MATCH(INCREMENT, 2);
-        if (*in == '=') MATCH(PLUS_ASSIGN, 2);
-        break;
+        return (*in == '+') ? T(INCREMENT, 2)
+            : (*in == '=') ? T(PLUS_ASSIGN, 2) : T('+', 1);
     case '-':
-        if (*in == '>') MATCH(ARROW, 2);
-        if (*in == '-') MATCH(DECREMENT, 2);
-        if (*in == '=') MATCH(MINUS_ASSIGN, 2);
-        break;
+        return (*in == '>') ? T(ARROW, 2)
+            : (*in == '-') ? T(DECREMENT, 2)
+            : (*in == '=') ? T(MINUS_ASSIGN, 2) : T('-', 1);
     case '<':
-        if (*in == '=') MATCH(LEQ, 2);
-        if (*in++ == '<') {
-            if (*in == '=') MATCH(LSHIFT_ASSIGN, 3);
-            MATCH(LSHIFT, 2);
-        }
-        break;
+        if (*in == '<')
+            return (in[1] == '=') ? T(LSHIFT_ASSIGN, 3) : T(LSHIFT, 2);
+        return (*in == '=') ? T(LEQ, 2) : T('<', 1);
     case '>':
-        if (*in == '=') MATCH(GEQ, 2);
-        if (*in++ == '>') {
-            if (*in == '=') MATCH(RSHIFT_ASSIGN, 3);
-            MATCH(RSHIFT, 2);
+        if (*in == '>')
+            return (in[1] == '=') ? T(RSHIFT_ASSIGN, 3) : T(RSHIFT, 2);
+        return (*in == '=') ? T(GEQ, 2) : T('>', 1);
+    case '&':
+        return (*in == '=') ? T(AND_ASSIGN, 2)
+            : (*in == '&') ? T(LOGICAL_AND, 2) : T('&', 1);
+    case '^':
+        return (*in == '=') ? T(XOR_ASSIGN, 2) : T('^', 1);
+    case '|':
+        return (*in == '=') ? T(OR_ASSIGN, 2)
+            : (*in == '|') ? T(LOGICAL_OR, 2) : T('|', 1);
+    case '=':
+        return (*in == '=') ? T(EQ, 2) : T('=', 1);
+    case '!':
+        return (*in == '=') ? T(NEQ, 2) : T('!', 1);
+    case '#':
+        return (*in == '#') ? T(TOKEN_PASTE, 2) : T('#', 1);
+    case '(':
+    case ')':
+    case '{':
+    case '}':
+    case '[':
+    case ']':
+    case ',':
+    case ';':
+    case ':':
+    case '?':
+    case '~':
+    case '\\':
+    case '$':
+    case '@':
+    case '`':
+        return T(c, 1);
+    case '.':
+        if (!isdigit(*in)) {
+            return (*in == '.' && in[1] == '.') ? T(DOTS, 3) : T('.', 1);
+        }
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case '8':
+    case '9':
+        return stringtonum(start, endptr);
+    case '\'':
+        return strtochar(start, endptr);
+    case '\"':
+        return strtostr(start, endptr);
+    default:
+        if (!isident(c)) {
+            error("Invalid identifier. %s", start);
+            exit(1);
         }
         break;
-    case '&':
-        if (*in == '=') MATCH(AND_ASSIGN, 2);
-        if (*in == '&') MATCH(LOGICAL_AND, 2);
-        break;
-    case '^':
-        if (*in == '=') MATCH(XOR_ASSIGN, 2);
-        break;
-    case '|':
-        if (*in == '=') MATCH(OR_ASSIGN, 2);
-        if (*in == '|') MATCH(LOGICAL_OR, 2);
-        break;
-    case '.':
-        if (*in++ == '.' && *in == '.') MATCH(DOTS, 3);
-        break;
-    case '=':
-        if (*in == '=') MATCH(EQ, 2);
-        break;
-    case '!':
-        if (*in == '=') MATCH(NEQ, 2);
-        break;
-    case '#':
-        if (*in == '#') MATCH(TOKEN_PASTE, 2);
-        break;
-    default:
-        break;
     }
 
-    *endptr = start + 1;
-    t = basic_token[(int) *start];
-    if (t.token == END) {
-        error("Unknown token '%c'", (int) *start);
-        exit(1);
-    }
-
-    return t;
-}
-
-static int skip_spaces(const char *in, const char **endptr)
-{
-    const char *start = in;
-
-    while (isspace(*in))
-        in++;
-
-    *endptr = in;
-    return in - start;
+    return strtoident(start, endptr);
 }
 
 INTERNAL struct token tokenize(const char *in, const char **endptr)
 {
-    int ws;
+    int ws = 0;
     struct token tok;
 
-    assert(in);
-    assert(endptr);
-
-    ws = skip_spaces(in, endptr);
-    in = *endptr;
-
-    if (isalpha(*in)) {
-        tok = strtoident(in, endptr);
-    } else if (*in == '\0') {
-        tok = basic_token[END];
-    } else if (isdigit(*in) || (*in == '.' && isdigit(in[1]))) {
-        tok = stringtonum(in, endptr);
-    } else if (*in == '"') {
-        tok = strtostr(in, endptr);
-    } else if (*in == '\'') {
-        tok = strtochar(in, endptr);
-    } else if (*in == '_') {
-        tok = strtoex(in, endptr);
-    } else {
-        tok = strtoop(in, endptr);
+    while (isspace(*in)) {
+        in++;
+        ws++;
     }
 
+    tok = tokenize_internal(in, endptr);
     tok.leading_whitespace = ws;
     return tok;
 }
