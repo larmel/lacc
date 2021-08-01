@@ -3148,7 +3148,10 @@ static void compile_return(Type func, struct expression expr)
  * object, branchhing to the correct next block. All scalar expressions
  * are allowed.
  */
-static void compile_block(struct block *block, Type type)
+static void compile_block(
+    struct definition *def,
+    struct block *block,
+    Type type)
 {
     int i, w;
     enum reg ax;
@@ -3163,8 +3166,8 @@ static void compile_block(struct block *block, Type type)
 
     block->color = BLACK;
     enter_context(block->label);
-    for (i = 0; i < array_len(&block->code); ++i) {
-        st = array_get(&block->code, i);
+    for (i = block->head; i < block->head + block->count; ++i) {
+        st = array_get(&def->statements, i);
         compile_statement(st);
     }
 
@@ -3190,7 +3193,7 @@ static void compile_block(struct block *block, Type type)
         if (block->jump[0]->color == BLACK) {
             emit_i_(INSTR_JMP, addr(block->jump[0]->label));
         } else {
-            compile_block(block->jump[0], type);
+            compile_block(def, block->jump[0], type);
         }
     } else {
         assert(block->jump[0]);
@@ -3278,10 +3281,10 @@ static void compile_block(struct block *block, Type type)
         if (block->jump[1]->color == BLACK) {
             emit_i_(INSTR_JMP, br1);
         } else {
-            compile_block(block->jump[1], type);
+            compile_block(def, block->jump[1], type);
         }
 
-        compile_block(block->jump[0], type);
+        compile_block(def, block->jump[0], type);
     }
 }
 
@@ -3342,8 +3345,8 @@ static void compile_data(struct definition *def)
     struct statement st;
 
     enter_context(def->symbol);
-    for (i = 0; i < array_len(&def->body->code); ++i) {
-        st = array_get(&def->body->code, i);
+    for (i = def->body->head; i < def->body->head + def->body->count; ++i) {
+        st = array_get(&def->statements, i);
         assert(st.st == IR_ASSIGN);
         assert(st.t.kind == DIRECT);
         assert(st.t.value.symbol == def->symbol);
@@ -3363,7 +3366,7 @@ static void compile_function(struct definition *def)
     enter(def);
 
     /* Recursively assemble body. */
-    compile_block(def->body, def->symbol->type);
+    compile_block(def, def->body, def->symbol->type);
 }
 
 INTERNAL void set_compile_target(FILE *stream, const char *file)

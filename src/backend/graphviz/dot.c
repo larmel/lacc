@@ -209,7 +209,7 @@ static void dot_print_expr(struct expression expr)
     }
 }
 
-static void dot_print_node(struct block *node)
+static void dot_print_node(struct definition *def, struct block *node)
 {
     int i;
     struct statement s;
@@ -221,8 +221,8 @@ static void dot_print_node(struct block *node)
     fprintf(stream, "\t%s [label=\"{ %s",
         sanitize(node->label), escape(node->label));
 
-    for (i = 0; i < array_len(&node->code); ++i) {
-        s = array_get(&node->code, i);
+    for (i = node->head; i < node->head + node->count; ++i) {
+        s = array_get(&def->statements, i);
         switch (s.st) {
         case IR_ASSIGN:
             fprintf(stream, " | %s [", vartostr(s.t));
@@ -268,8 +268,8 @@ static void dot_print_node(struct block *node)
         dot_print_expr(node->expr);
         fprintf(stream, " goto %s", escape(node->jump[1]->label));
         fprintf(stream, " }\"];\n");
-        dot_print_node(node->jump[0]);
-        dot_print_node(node->jump[1]);
+        dot_print_node(def, node->jump[0]);
+        dot_print_node(def, node->jump[1]);
         fprintf(stream, "\t%s:s -> %s:n;\n",
             sanitize(node->label), sanitize(node->jump[0]->label));
         fprintf(stream, "\t%s:s -> %s:n;\n",
@@ -278,7 +278,7 @@ static void dot_print_node(struct block *node)
         assert(node->jump[0]);
         assert(!node->jump[1]);
         fprintf(stream, " }\"];\n");
-        dot_print_node(node->jump[0]);
+        dot_print_node(def, node->jump[0]);
         fprintf(stream, "\t%s:s -> %s:n;\n",
             sanitize(node->label), sanitize(node->jump[0]->label));
     }
@@ -303,6 +303,6 @@ INTERNAL void dotgen(struct definition *def)
         fprintf(stream, "\tlabelloc=\"t\"\n");
     }
 
-    dot_print_node(def->body);
+    dot_print_node(def, def->body);
     fprintf(stream, "}\n");
 }

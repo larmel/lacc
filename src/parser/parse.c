@@ -69,16 +69,16 @@ static array_of(struct block *) expressions;
  */
 static array_of(struct block *) blocks;
 
+/*
+ * Highwater mark for number of statements and number of blocks in
+ * definition, when starting on a code path which should result in no
+ * evaluation.
+ */
+static array_of(int) restore_list_count;
+
 static void recycle_block(struct block *block)
 {
-    struct expression expr = {0};
-
-    array_empty(&block->code);
-    block->label = NULL;
-    block->expr = expr;
-    block->has_return_value = 0;
-    block->jump[0] = block->jump[1] = NULL;
-    block->color = WHITE;
+    memset(block, 0, sizeof(*block));
     array_push_back(&blocks, block);
 }
 
@@ -115,6 +115,7 @@ static void cfg_empty(struct definition *def)
     array_empty(&def->locals);
     array_empty(&def->labels);
     array_empty(&def->nodes);
+    array_empty(&def->statements);
     array_empty(&def->asm_statements);
 }
 
@@ -160,6 +161,34 @@ INTERNAL struct definition *cfg_init(void)
     }
 
     return def;
+}
+
+INTERNAL struct block *begin_throwaway_block(struct definition *def)
+{
+    if (def) {
+        array_push_back(&restore_list_count, array_len(&def->statements));
+        array_push_back(&restore_list_count, array_len(&def->nodes));
+    }
+
+    return cfg_block_init(def);
+}
+
+INTERNAL void restore_block(struct definition *def)
+{
+    int i, n;
+    struct block *block;
+
+    if (!def)
+        return;
+
+    assert(array_len(&restore_list_count) >= 2);
+    n = array_pop_back(&restore_list_count);
+    for (i = 0; i < array_len(&def->nodes) - n; ++i) {
+        block = array_pop_back(&def->nodes);
+        recycle_block(block);
+    }
+
+    def->statements.length = array_pop_back(&restore_list_count);
 }
 
 INTERNAL void cfg_discard(struct definition *def)
@@ -263,7 +292,6 @@ INTERNAL void parse_finalize(void)
 
     for (i = 0; i < array_len(&expressions); ++i) {
         block = array_get(&expressions, i);
-        array_clear(&block->code);
         free(block);
     }
 
@@ -274,13 +302,13 @@ INTERNAL void parse_finalize(void)
         array_clear(&def->locals);
         array_clear(&def->labels);
         array_clear(&def->nodes);
+        array_clear(&def->statements);
         array_clear(&def->asm_statements);
         free(def);
     }
 
     for (i = 0; i < array_len(&blocks); ++i) {
         block = array_get(&blocks, i);
-        array_clear(&block->code);
         free(block);
     }
 
@@ -289,6 +317,7 @@ INTERNAL void parse_finalize(void)
     array_clear(&prototypes);
     array_clear(&inline_definitions);
     array_clear(&blocks);
+    array_clear(&restore_list_count);
 
     initializer_finalize();
     expression_parse_finalize();

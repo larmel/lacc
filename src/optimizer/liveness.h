@@ -7,7 +7,9 @@
  * Compute liveness of each variable on every edge, before and after
  * every ir operation.
  */
-INTERNAL int live_variable_analysis(struct block *block);
+INTERNAL int live_variable_analysis(
+    struct definition *def,
+    struct block *block);
 
 /*
  * Determine whether a variable may be read after a given statement.

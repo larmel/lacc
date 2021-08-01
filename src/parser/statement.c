@@ -357,6 +357,13 @@ static struct block *switch_statement(
     return next;
 }
 
+struct write_back_tuple {
+    struct var variable;
+    struct var value;
+};
+
+static array_of(struct write_back_tuple) write_back;
+
 /*
  * Parse operands to __asm__ expressions.
  *
@@ -367,11 +374,12 @@ static struct block *switch_statement(
 static struct asm_operand asm_operand(
     struct definition *def,
     struct block **block,
-    struct block *writeback)
+    int is_output)
 {
     struct asm_operand op = {0};
     struct var var, tmp;
     int force_register;
+    struct write_back_tuple wb;
     const char *str;
 
     if (try_consume('[')) {
@@ -390,7 +398,7 @@ static struct asm_operand asm_operand(
 
     var = eval(def, *block, (*block)->expr);
     if (str[0] == '=' || str[0] == '+') {
-        if (!writeback) {
+        if (!is_output) {
             error("Input operand cannot be writeable.");
             exit(1);
         }
@@ -398,7 +406,7 @@ static struct asm_operand asm_operand(
             error("Output operand must be lvalue.");
             exit(1);
         }
-    } else if (writeback) {
+    } else if (is_output) {
         error("Output operand constraint must begin with '=' or '+'.");
         exit(1);
     } else {
@@ -410,11 +418,13 @@ static struct asm_operand asm_operand(
     if (force_register && (var.kind != DIRECT || !is_temporary(var.value.symbol))) {
         tmp = create_var(def, var.type);
         op.variable = tmp;
-        if (!writeback || str[0] == '+') {
+        if (!is_output || str[0] == '+') {
             eval_assign(def, *block, tmp, as_expr(var));
         }
-        if (writeback) {
-            eval_assign(def, writeback, var, as_expr(tmp));
+        if (is_output) {
+            wb.variable = var;
+            wb.value = tmp;
+            array_push_back(&write_back, wb);
         }
     } else if (var.kind == DEREF && !is_temporary(var.value.symbol)) {
         var = eval_addr(def, *block, var);
@@ -456,10 +466,9 @@ static struct block *asm_statement(
     struct asm_operand op;
     struct asm_statement st = {0};
     struct symbol *sym;
-    struct block *writeback;
-    int is_volatile, is_goto;
+    struct write_back_tuple wb;
+    int i, is_volatile, is_goto;
 
-    writeback = cfg_block_init(def);
     asm_statement_qualifiers(&is_volatile, &is_goto);
     consume('(');
     consume(STRING);
@@ -467,7 +476,7 @@ static struct block *asm_statement(
 
     consume(':');
     while (!is_goto && peek() != ':') {
-        op = asm_operand(def, &block, writeback);
+        op = asm_operand(def, &block, 1);
         array_push_back(&st.operands, op);
         if (!try_consume(','))
             break;
@@ -477,7 +486,7 @@ static struct block *asm_statement(
         goto end;
 
     while (peek() != ':' && peek() != ')') {
-        op = asm_operand(def, &block, NULL);
+        op = asm_operand(def, &block, 0);
         array_push_back(&st.operands, op);
         if (!try_consume(','))
             break;
@@ -514,10 +523,14 @@ static struct block *asm_statement(
 
 end:
     consume(')');
-    array_push_back(&def->asm_statements, st);
-    ir_asm(block, array_len(&def->asm_statements) - 1);
-    block->jump[0] = writeback;
-    return writeback;
+    ir_asm(def, block, st);
+    for (i = 0; i < array_len(&write_back); ++i) {
+        wb = array_get(&write_back, i);
+        eval_assign(def, block, wb.variable, as_expr(wb.value));
+    }
+
+    array_clear(&write_back);
+    return block;
 }
 
 INTERNAL struct block *statement(

@@ -74,7 +74,7 @@ static struct block *parse__builtin_va_start(
     }
 
     consume(')');
-    eval__builtin_va_start(block, block->expr);
+    eval__builtin_va_start(def, block, block->expr);
     return block;
 }
 

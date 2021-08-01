@@ -4,7 +4,10 @@
 #include <lacc/ir.h>
 
 /* Add asm statement to current block. */
-INTERNAL void ir_asm(struct block *block, int index);
+INTERNAL void ir_asm(
+    struct definition *def,
+    struct block *block,
+    struct asm_statement st);
 
 /* Convert function, array, or field to rvalue. */
 INTERNAL struct var rvalue(
@@ -181,11 +184,10 @@ INTERNAL struct var eval_copy(
  */
 INTERNAL struct expression eval_unary_plus(struct var val);
 
-/* Evaluate operands of (a) ? b : c, and return result type. */
-INTERNAL Type eval_conditional(
-    struct definition *def,
-    struct block *left,
-    struct block *right);
+/* Evaluate result type of (a) ? b : c. */
+INTERNAL Type eval_conditional_type(
+    struct var lval,
+    struct var rval);
 
 /* Prepare parameter expression. */
 INTERNAL struct expression eval_prepare_arg(
@@ -204,7 +206,10 @@ INTERNAL struct expression eval_prepare_vararg(
  * Push given parameter in preparation of a function call. Invoke in
  * left to right order, as argument appear in parameter list.
  */
-INTERNAL void eval_push_param(struct block *block, struct expression arg);
+INTERNAL void eval_push_param(
+    struct definition *def,
+    struct block *block,
+    struct expression arg);
 
 /*
  * Evaluate return (expr).
@@ -244,26 +249,9 @@ INTERNAL struct expression eval_vla_size(
     struct block *block,
     Type type);
 
-/*
- * Evaluate left->expr || right->expr, where right_top is a pointer to
- * the top of the block chain ending up with right. Returns the next
- * block of execution.
- */
-INTERNAL struct block *eval_logical_or(
-    struct definition *def,
-    struct block *left,
-    struct block *right_top,
-    struct block *right);
-
-/* Evaluate left->expr && right->expr. */
-INTERNAL struct block *eval_logical_and(
-    struct definition *def,
-    struct block *left,
-    struct block *right_top,
-    struct block *right);
-
 /* Evaluate va_start builtin function. */
 INTERNAL void eval__builtin_va_start(
+    struct definition *def,
     struct block *block,
     struct expression arg);
 

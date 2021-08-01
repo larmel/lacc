@@ -203,7 +203,7 @@ static struct block *postfix(
             }
             consume(')');
             for (i = 0; i < array_len(args); ++i) {
-                eval_push_param(block, array_get(args, i));
+                eval_push_param(def, block, array_get(args, i));
             }
             value = eval(def, block, root);
             block->expr = eval_call(def, block, value);
@@ -392,9 +392,10 @@ static struct block *unary_expression(
             default: goto exprsize;
             }
         } else {
-exprsize:   head = cfg_block_init(def);
+exprsize:   head = begin_throwaway_block(def);
             tail = unary_expression(def, head);
             type = tail->expr.type;
+            restore_block(def);
         }
         if (is_complete(type)) {
             if (is_vla(type)) {
@@ -731,13 +732,51 @@ static struct block *logical_and_expression(
     struct definition *def,
     struct block *block)
 {
-    struct block *top, *right;
+    int b;
+    struct var value;
+    struct block *left, *top, *right, *t, *f;
 
     block = inclusive_or_expression(def, block);
-    if (try_consume(LOGICAL_AND)) {
-        top = cfg_block_init(def);
-        right = logical_and_expression(def, top);
-        block = eval_logical_and(def, block, top, right);
+    if (!try_consume(LOGICAL_AND))
+        return block;
+
+    left = scalar(def, block, "Left operand of logical and");
+    top = cfg_block_init(def);
+    right = logical_and_expression(def, top);
+    right = scalar(def, right, "Right operand of logical and");
+
+    b = immediate_bool(left->expr);
+    if (b == 1) {
+        left->jump[0] = top;
+        block = right;
+        if (!is_comparison(block->expr)) {
+            value = eval(def, block, block->expr);
+            block->expr = eval_cmp_ne(def, block, value, var_int(0));
+        }
+    } else if (b == 0) {
+        if (top == right && !top->count) {
+            block = left;
+        } else {
+            block = cfg_block_init(def);
+            left->jump[0] = block;
+        }
+        block->expr = as_expr(var_int(0));
+    } else {
+        t = cfg_block_init(def);
+        f = cfg_block_init(def);
+        block = cfg_block_init(def);
+        left->jump[0] = f;
+        left->jump[1] = top;
+        right->jump[0] = f;
+        right->jump[1] = t;
+        t->jump[0] = block;
+        f->jump[0] = block;
+        value = create_var(def, basic_type__int);
+        value.lvalue = 1;
+        eval_assign(def, t, value, as_expr(var_int(1)));
+        eval_assign(def, f, value, as_expr(var_int(0)));
+        value.lvalue = 0;
+        block->expr = as_expr(value);
     }
 
     return block;
@@ -747,13 +786,51 @@ static struct block *logical_or_expression(
     struct definition *def,
     struct block *block)
 {
-    struct block *top, *right;
+    int b;
+    struct var value;
+    struct block *left, *top, *right, *t, *f;
 
     block = logical_and_expression(def, block);
-    if (try_consume(LOGICAL_OR)) {
-        top = cfg_block_init(def);
-        right = logical_or_expression(def, top);
-        block = eval_logical_or(def, block, top, right);
+    if (!try_consume(LOGICAL_OR))
+        return block;
+
+    left = scalar(def, block, "Left operand of logical or");
+    top = cfg_block_init(def);
+    right = logical_or_expression(def, top);
+    right = scalar(def, right, "Right operand of logical or");
+
+    b = immediate_bool(left->expr);
+    if (b == 1) {
+        if (top == right && !top->count) {
+            block = left;
+        } else {
+            block = cfg_block_init(def);
+            left->jump[0] = block;
+        }
+        block->expr = as_expr(var_int(1));
+    } else if (b == 0) {
+        left->jump[0] = top;
+        block = right;
+        if (!is_comparison(block->expr)) {
+            value = eval(def, block, block->expr);
+            block->expr = eval_cmp_ne(def, block, value, var_int(0));
+        }
+    } else {
+        t = cfg_block_init(def);
+        f = cfg_block_init(def);
+        block = cfg_block_init(def);
+        left->jump[0] = top;
+        left->jump[1] = t;
+        right->jump[0] = f;
+        right->jump[1] = t;
+        t->jump[0] = block;
+        f->jump[0] = block;
+        value = create_var(def, basic_type__int);
+        value.lvalue = 1;
+        eval_assign(def, t, value, as_expr(var_int(1)));
+        eval_assign(def, f, value, as_expr(var_int(0)));
+        value.lvalue = 0;
+        block->expr = as_expr(value);
     }
 
     return block;
@@ -764,32 +841,37 @@ INTERNAL struct block *conditional_expression(
     struct block *block)
 {
     int b;
-    struct var temp;
-    struct block *left, *right;
+    struct var lval, rval, temp;
+    struct block *left, *right, *extra;
     Type type;
 
     block = logical_or_expression(def, block);
-    if (!try_consume('?')) {
+    if (!try_consume('?'))
         return block;
-    }
 
     block = scalar(def, block, "Conditional");
     if (is_immediate(block->expr)) {
         b = immediate_bool(block->expr);
         if (b == 1) {
             left = block = expression(def, block);
+            lval = rvalue(def, left, eval(def, left, left->expr));
             consume(':');
-            right = cfg_block_init(def);
+            right = begin_throwaway_block(def);
             right = conditional_expression(def, right);
+            rval = rvalue(def, right, eval(def, right, right->expr));
+            restore_block(def);
         } else {
             assert(b == 0);
-            left = cfg_block_init(def);
+            left = begin_throwaway_block(def);
             left = expression(def, left);
+            lval = rvalue(def, left, eval(def, left, left->expr));
+            restore_block(def);
             consume(':');
             right = block = conditional_expression(def, block);
+            rval = rvalue(def, right, eval(def, right, right->expr));
         }
 
-        type = eval_conditional(def, left, right);
+        type = eval_conditional_type(lval, rval);
         if (is_void(type)) {
             block->expr = as_expr(var_void());
         } else {
@@ -803,17 +885,25 @@ INTERNAL struct block *conditional_expression(
         block->jump[1] = left;
         block = cfg_block_init(def);
         left = expression(def, left);
-        left->jump[0] = block;
+        lval = rvalue(def, left, eval(def, left, left->expr));
         consume(':');
         right = conditional_expression(def, right);
-        right->jump[0] = block;
-        type = eval_conditional(def, left, right);
+        rval = rvalue(def, right, eval(def, right, right->expr));
+        type = eval_conditional_type(lval, rval);
         if (is_void(type)) {
+            left->jump[0] = block;
+            right->jump[0] = block;
             block->expr = as_expr(var_void());
         } else {
             temp = create_var(def, type);
-            left->expr = as_expr(eval_assign(def, left, temp, left->expr));
-            right->expr = as_expr(eval_assign(def, right, temp, right->expr));
+            eval_assign(def, right, temp, as_expr(rval));
+            right->expr = as_expr(temp);
+            extra = cfg_block_init(def);
+            left->jump[0] = extra;
+            eval_assign(def, extra, temp, as_expr(lval));
+            extra->expr = as_expr(temp);
+            extra->jump[0] = block;
+            right->jump[0] = block;
             block->expr = as_expr(temp);
         }
     }

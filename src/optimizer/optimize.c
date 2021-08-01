@@ -45,20 +45,21 @@ static int serialize_basic_blocks(struct block *block)
 }
 
 /* Initialize liveness information in each block. */
-static void initialize_dataflow(void)
+static void initialize_dataflow(struct definition *def)
 {
+    int i;
     struct block *block;
     struct statement *st;
-    int i, j;
 
     for (i = 0; i < array_len(&blocklist); ++i) {
         block = array_get(&blocklist, i);
         block->in = 0;
         block->out = 0;
-        for (j = 0; j < array_len(&block->code); ++j) {
-            st = &array_get(&block->code, j);
-            st->out = 0;
-        }
+    }
+
+    for (i = 0; i < array_len(&def->statements); ++i) {
+        st = &array_get(&def->statements, i);
+        st->out = 0;
     }
 }
 
@@ -102,13 +103,15 @@ static void reset_symbol_indexes(void)
  * Assign numbers from [1 .. N] to all symbols referenced by operations
  * in the basic block.
  */
-static int enumerate_used_symbols(struct block *block)
+static int enumerate_used_symbols(
+    struct definition *def,
+    struct block *block)
 {
-    int i, n;
+    int i, n = 0;
     struct statement *s;
 
-    for (i = 0, n = 0; i < array_len(&block->code); ++i) {
-        s = &array_get(&block->code, i);
+    for (i = block->head; i < block->head + block->count; ++i) {
+        s = &array_get(&def->statements, i);
         assert(s->st != IR_ASM);
         switch (s->expr.op) {
         default:
@@ -144,14 +147,14 @@ static int enumerate_used_symbols(struct block *block)
     return n;
 }
 
-static int color_white(struct block *block)
+static int color_white(struct definition *def, struct block *block)
 {
     block->color = WHITE;
     return 0;
 }
 
 /* Forward jumps through blocks with no instructions. */
-static int skip_empty_blocks(struct block *block)
+static int skip_empty_blocks(struct definition *def, struct block *block)
 {
     int i;
     struct block *next;
@@ -159,7 +162,7 @@ static int skip_empty_blocks(struct block *block)
     for (i = 0; i < 2 && block->jump[i]; ++i) {
         do {
             next = block->jump[i];
-            if (!array_len(&next->code) && next->jump[0] && !next->jump[1]) {
+            if (!next->count && next->jump[0] && !next->jump[1]) {
                 block->jump[i] = next->jump[0];
             } else break;
         } while (1);
@@ -172,14 +175,16 @@ static int skip_empty_blocks(struct block *block)
  * Traverse all reachable nodes in a graph, invoking callback on each
  * basic block.
  */
-static int traverse(int (*callback)(struct block *))
+static int traverse(
+    struct definition *def,
+    int (*callback)(struct definition *def, struct block *))
 {
     int i, n;
     struct block *block;
 
     for (i = 0, n = 0; i < array_len(&blocklist); ++i) {
         block = array_get(&blocklist, i);
-        n += callback(block);
+        n += callback(def, block);
     }
 
     return n;
@@ -189,12 +194,14 @@ static int traverse(int (*callback)(struct block *))
  * Solve generic dataflow problem iteratively, going through each basic
  * block until visit function returns 0 for all nodes.
  */
-static void execute_iterative_dataflow(int (*callback)(struct block *))
+static void execute_iterative_dataflow(
+    struct definition *def,
+    int (*callback)(struct definition *def, struct block *))
 {
     int changes;
 
     do {
-        changes = traverse(callback);
+        changes = traverse(def, callback);
     } while (changes);
 }
 
@@ -218,15 +225,15 @@ static void print_liveness_statement(unsigned long live)
     printf("}\n");
 }
 
-int print_liveness(struct block *block)
+int print_liveness(struct definition *def, struct block *block)
 {
     int i;
     struct statement *st;
 
     printf("%s:\n", sym_name(block->label));
     print_liveness_statement(block->in);
-    for (i = 0; i < array_len(&block->code); ++i) {
-        st = &array_get(&block->code, i);
+    for (i = block->head; i < block->head + block->count; ++i) {
+        st = &array_get(&def->statements, i);
         print_liveness_statement(st->out);
     }
 
@@ -267,24 +274,24 @@ INTERNAL void optimize(struct definition *def)
     array_empty(&blocklist);
     array_empty(&symbols);
     serialize_basic_blocks(def->body);
-    traverse(&skip_empty_blocks);
-    syms = traverse(&enumerate_used_symbols);
+    traverse(def, &skip_empty_blocks);
+    syms = traverse(def, &enumerate_used_symbols);
 
     if (syms < 64) {
-        initialize_dataflow();
+        initialize_dataflow(def);
         do {
             n = 0;
-            execute_iterative_dataflow(&live_variable_analysis);
+            execute_iterative_dataflow(def, &live_variable_analysis);
 
             /*traverse(&print_liveness);*/
-            n += traverse(&dead_store_elimination);
-            n += traverse(&merge_chained_assignment);
+            n += traverse(def, &dead_store_elimination);
+            n += traverse(def, &merge_chained_assignment);
             /*if (n) printf("Did %d changes!\n", n);*/
         } while (n);
     }
 
     reset_symbol_indexes();
-    traverse(&color_white);
+    traverse(def, &color_white);
 }
 
 INTERNAL void pop_optimization(void)

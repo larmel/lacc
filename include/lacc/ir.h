@@ -123,6 +123,15 @@ struct expression {
 #define is_immediate(e) (is_identity(e) && (e).l.kind == IMMEDIATE)
 #define is_comparison(e) ((e).op >= IR_OP_EQ)
 
+enum sttype {
+    IR_EXPR,      /* (expr)              */
+    IR_PARAM,     /* param (expr)        */
+    IR_VA_START,  /* va_start(expr)      */
+    IR_ASSIGN,    /* t = expr            */
+    IR_VLA_ALLOC, /* vla_alloc t, (expr) */
+    IR_ASM        /* */
+};
+
 /*
  * Three-address code, specifying a target (t), left and right operand
  * (l and r, in expr), and the operation type.
@@ -135,18 +144,16 @@ struct expression {
  * in bytes to be allocated to VLA t.
  */
 struct statement {
-    enum sttype {
-        IR_EXPR,      /* (expr)              */
-        IR_PARAM,     /* param (expr)        */
-        IR_VA_START,  /* va_start(expr)      */
-        IR_ASSIGN,    /* t = expr            */
-        IR_VLA_ALLOC, /* vla_alloc t, (expr) */
-        IR_ASM        /* */
-    } st;
-    int asm_index;
+    char st;
+    short asm_index;
     unsigned long out;
     struct var t;
     struct expression expr;
+};
+
+enum color {
+    WHITE,
+    BLACK
 };
 
 /*
@@ -157,8 +164,11 @@ struct statement {
 struct block {
     const struct symbol *label;
 
-    /* Contiguous block of three-address code operations. */
-    array_of(struct statement) code;
+    /*
+     * Contiguous block of three-address code operations, referring
+     * as pointers to first and last index in definition list.
+     */
+    int head, count;
 
     /*
      * Value to evaluate in branch conditions, or return value. Also
@@ -176,25 +186,22 @@ struct block {
      */
     struct block *jump[2];
 
+    /* Used to mark nodes as visited during graph traversal. */
+    int color : 8;
+
     /*
      * Toggle last statement was return, meaning expr is valid. There
      * are cases where we reach end of control in a non-void function,
      * but not wanting to return a value. For example when exit has been
      * called.
      */
-    char has_return_value;
+    unsigned int has_return_value : 1;
 
     /*
      * Flag to mark block as having parsed and evaluated next element
      * for initialization.
      */
-    char has_init_value;
-
-    /* Used to mark nodes as visited during graph traversal. */
-    enum color {
-        WHITE,
-        BLACK
-    } color;
+    unsigned int has_init_value : 1;
 
     /* Liveness at the start and end of the block. */
     unsigned long in;
@@ -281,6 +288,12 @@ struct definition {
      * everything at the end.
      */
     array_of(struct block *) nodes;
+
+    /*
+     * All statements are stored in the definition, and blocks only
+     * refer to this list.
+     */
+    array_of(struct statement) statements;
 
     /* Inline assembly stored more or less as-is from parsing. */
     array_of(struct asm_statement) asm_statements;

@@ -236,7 +236,24 @@ static struct expression create_binary_expression(
     return expr;
 }
 
+static void append_statement(
+    struct definition *def,
+    struct block *block,
+    struct statement stmt)
+{
+    int i = array_len(&def->statements);
+
+    assert(!block->count || (block->head + block->count == i));
+    array_push_back(&def->statements, stmt);
+    if (!block->count) {
+        block->head = i;
+    }
+
+    block->count++;
+}
+
 static void ir_assign(
+    struct definition *def,
     struct block *block,
     struct var t,
     struct expression expr)
@@ -246,25 +263,31 @@ static void ir_assign(
     assert(block);
     stmt.t = t;
     stmt.expr = expr;
-    array_push_back(&block->code, stmt);
+    append_statement(def, block, stmt);
 }
 
-static void ir_expr(struct block *block, struct expression expr)
+static void ir_expr(
+    struct definition *def,
+    struct block *block,
+    struct expression expr)
 {
     struct statement stmt = {IR_EXPR};
 
     assert(block);
     stmt.expr = expr;
-    array_push_back(&block->code, stmt);
+    append_statement(def, block, stmt);
 }
 
-INTERNAL void ir_asm(struct block *block, int index)
+INTERNAL void ir_asm(
+    struct definition *def,
+    struct block *block,
+    struct asm_statement st)
 {
     struct statement stmt = {IR_ASM};
 
-    assert(block);
-    stmt.asm_index = index;
-    array_push_back(&block->code, stmt);
+    stmt.asm_index = array_len(&def->asm_statements);
+    array_push_back(&def->asm_statements, st);
+    append_statement(def, block, stmt);
 }
 
 /*
@@ -285,10 +308,10 @@ INTERNAL struct expression eval_expression_statement(
 
     if (has_side_effects(expr)) {
         if (!is_struct_or_union(expr.type)) {
-            ir_expr(block, expr);
+            ir_expr(def, block, expr);
         } else {
             res = create_var(def, expr.type);
-            ir_assign(block, res, expr);
+            ir_assign(def, block, res, expr);
         }
     }
 
@@ -305,11 +328,11 @@ INTERNAL struct var eval(
     if (is_identity(expr)) {
         res = expr.l;
     } else if (is_void(expr.type)) {
-        ir_expr(block, expr);
+        ir_expr(def, block, expr);
         res = var_void();
     } else {
         res = create_var(def, expr.type);
-        ir_assign(block, res, expr);
+        ir_assign(def, block, res, expr);
         res.lvalue = 0;
     }
 
@@ -1479,6 +1502,7 @@ INTERNAL struct var eval_deref(
  *
  */
 static struct var eval_assign_string_literal(
+    struct definition *def,
     struct block *block,
     struct var target,
     struct expression expr)
@@ -1499,7 +1523,7 @@ static struct var eval_assign_string_literal(
         assert(size_of(target.value.symbol->type) == 0);
         set_array_length(target.value.symbol->type, size_of(expr.type));
         target.type = expr.type;
-        ir_assign(block, target, expr);
+        ir_assign(def, block, target, expr);
     } else {
         if (size_of(expr.type) == size_of(target.type) + 1) {
             expr.type = target.type;
@@ -1511,7 +1535,7 @@ static struct var eval_assign_string_literal(
 
         type = target.type;
         target.type = expr.type;
-        ir_assign(block, target, expr);
+        ir_assign(def, block, target, expr);
         target.type = type;
     }
 
@@ -1597,7 +1621,7 @@ static struct var assign_field(
         expr = eval_cast(def, block, eval(def, block, expr), type);
     }
 
-    ir_assign(block, target, expr);
+    ir_assign(def, block, target, expr);
     if (is_immediate(expr)) {
         target = expr.l;
     } else {
@@ -1742,7 +1766,7 @@ INTERNAL struct var eval_assign(
     }
 
     if (is_array(target.type)) {
-        return eval_assign_string_literal(block, target, expr);
+        return eval_assign_string_literal(def, block, target, expr);
     }
 
     if (is_field(target)) {
@@ -1750,7 +1774,7 @@ INTERNAL struct var eval_assign(
     }
 
     expr = eval_prepare_assign(def, block, expr, target.type);
-    ir_assign(block, target, expr);
+    ir_assign(def, block, target, expr);
     if (is_immediate(expr)) {
         target = expr.l;
     } else {
@@ -1800,22 +1824,14 @@ INTERNAL struct expression eval_return(
     return block->expr;
 }
 
-INTERNAL Type eval_conditional(
-    struct definition *def,
-    struct block *left,
-    struct block *right)
+INTERNAL Type eval_conditional_type(
+    struct var lval,
+    struct var rval)
 {
-    struct var lval, rval;
     Type t1, t2, p1, p2, type;
-
-    lval = rvalue(def, left, eval(def, left, left->expr));
-    rval = rvalue(def, right, eval(def, right, right->expr));
 
     t1 = lval.type;
     t2 = rval.type;
-    left->expr = as_expr(lval);
-    right->expr = as_expr(rval);
-
     if (is_arithmetic(t1) && is_arithmetic(t2)) {
         type = usual_arithmetic_conversion(t1, t2);
     } else if (is_pointer(t1) && is_pointer(t2)) {
@@ -1850,64 +1866,6 @@ INTERNAL Type eval_conditional(
     return type;
 }
 
-/*
- * Connect basic blocks in a logical OR or AND operation.
- *
- * left:      Left hand side of the expression, left->expr holds the
- *            value to be compared.
- * right_top: First block of the right hand side expression. This should
- *            be jump target on AND if left->expr is false.
- * right:     Last block of the right hand side expression. The value to
- *            compare is in right->expr.
- *
- * Result is integer type, assigned in true and false branches to
- * numeric constant 1 or 0.
- */
-static struct block *eval_logical_expression(
-    struct definition *def,
-    int is_and,
-    struct block *left,
-    struct block *right_top,
-    struct block *right)
-{
-    int b;
-    struct var res;
-    struct block
-        *t = cfg_block_init(def),
-        *f = cfg_block_init(def),
-        *r = cfg_block_init(def);
-
-    if (is_and) {
-        left->jump[0] = f;
-        left->jump[1] = right_top;
-    } else {
-        left->jump[0] = right_top;
-        left->jump[1] = t;
-    }
-
-    b = immediate_bool(right->expr);
-    if (b == 1) {
-        right->jump[0] = t;
-    } else if (b == 0) {
-        right->jump[0] = f;
-    } else {
-        assert(b == -1);
-        right->jump[0] = f;
-        right->jump[1] = t;
-    }
-
-    res = create_var(def, basic_type__int);
-    res.lvalue = 1;
-    eval_assign(def, t, res, as_expr(var_int(1)));
-    eval_assign(def, f, res, as_expr(var_int(0)));
-    res.lvalue = 0;
-
-    t->jump[0] = r;
-    f->jump[0] = r;
-    r->expr = as_expr(res);
-    return r;
-}
-
 INTERNAL void eval_vla_alloc(
     struct definition *def,
     struct block *block,
@@ -1921,7 +1879,7 @@ INTERNAL void eval_vla_alloc(
 
     stmt.t = var_direct(sym);
     stmt.expr = block->expr;
-    array_push_back(&block->code, stmt);
+    append_statement(def, block, stmt);
 }
 
 INTERNAL struct expression eval_vla_size(
@@ -1957,91 +1915,20 @@ INTERNAL struct expression eval_vla_size(
     return expr;
 }
 
-static int is_logical_immediate(
-    struct block *left,
-    struct block *top,
-    struct block *bottom)
-{
-    return top == bottom
-        && !array_len(&top->code)
-        && is_identity(top->expr) && top->expr.l.kind == IMMEDIATE
-        && is_identity(left->expr) && left->expr.l.kind == IMMEDIATE;
-}
-
-INTERNAL struct block *eval_logical_or(
+INTERNAL void eval_push_param(
     struct definition *def,
-    struct block *left,
-    struct block *right_top,
-    struct block *right)
-{
-    int res, b;
-    struct var value;
-
-    left = scalar(def, left, "Left operand of logical or");
-    right = scalar(def, right, "Right operand of logical or");
-
-    b = immediate_bool(left->expr);
-    if (is_logical_immediate(left, right_top, right)) {
-        res = b == 1 || immediate_bool(right->expr) == 1;
-        left->expr = as_expr(var_int(res));
-    } else if (b == 1) {
-        left->expr = as_expr(var_int(1));
-    } else if (b == 0) {
-        left->jump[0] = right_top;
-        left = right;
-        if (!is_comparison(left->expr)) {
-            value = eval(def, left, left->expr);
-            left->expr = eval_cmp_ne(def, left, value, var_int(0));
-        }
-    } else {
-        left = eval_logical_expression(def, 0, left, right_top, right);
-    }
-
-    return left;
-}
-
-INTERNAL struct block *eval_logical_and(
-    struct definition *def,
-    struct block *left,
-    struct block *right_top,
-    struct block *right)
-{
-    int res, b;
-    struct var value;
-
-    left = scalar(def, left, "Left operand of logical and");
-    right = scalar(def, right, "Right operand of logical and");
-
-    b = immediate_bool(left->expr);
-    if (is_logical_immediate(left, right_top, right)) {
-        res = b == 1 && immediate_bool(right->expr) == 1;
-        left->expr = as_expr(var_int(res));
-    } else if (b == 0) {
-        left->expr = as_expr(var_int(0));
-    } else if (b == 1) {
-        left->jump[0] = right_top;
-        left = right;
-        if (!is_comparison(left->expr)) {
-            value = eval(def, left, left->expr);
-            left->expr = eval_cmp_ne(def, left, value, var_int(0));
-        }
-    } else {
-        left = eval_logical_expression(def, 1, left, right_top, right);
-    }
-
-    return left;
-}
-
-INTERNAL void eval_push_param(struct block *block, struct expression expr)
+    struct block *block,
+    struct expression expr)
 {
     struct statement stmt = {IR_PARAM};
 
     assert(block);
     stmt.expr = expr;
-    array_push_back(&block->code, stmt);
+    append_statement(def, block, stmt);
 }
 
 INTERNAL void eval__builtin_va_start(
+    struct definition *def,
     struct block *block,
     struct expression arg)
 {
@@ -2049,5 +1936,5 @@ INTERNAL void eval__builtin_va_start(
 
     assert(block);
     stmt.expr = arg;
-    array_push_back(&block->code, stmt);
+    append_statement(def, block, stmt);
 }

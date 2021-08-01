@@ -130,7 +130,7 @@ static unsigned long uses(const struct statement *s)
     return r;
 }
 
-static unsigned long def(const struct statement *s)
+static unsigned long defs(const struct statement *s)
 {
     switch (s->st) {
     case IR_ASSIGN:
@@ -142,11 +142,13 @@ static unsigned long def(const struct statement *s)
     }
 }
 
-INTERNAL int live_variable_analysis(struct block *block)
+INTERNAL int live_variable_analysis(
+    struct definition *def,
+    struct block *block)
 {
     int i;
     unsigned long top;
-    struct statement *prev, *next;
+    struct statement *prev, *next, *st;
 
     top = block->in;
 
@@ -161,20 +163,22 @@ INTERNAL int live_variable_analysis(struct block *block)
     }
 
     /* Go through all statements. Extra edge for branch and return. */
-    if (array_len(&block->code)) {
-        prev = &array_back(&block->code);
+    if (block->count) {
+        i = block->head + block->count - 1;
+        prev = &array_get(&def->statements, i);
         prev->out = block->out;
         if (block->jump[1] || block->has_return_value) {
             prev->out |= use(&block->expr);
         }
 
-        for (i = array_len(&block->code) - 2; i >= 0; --i) {
+        while (--i >= block->head) {
+            st = &array_get(&def->statements, i);
             next = prev;
-            prev = &array_get(&block->code, i);
-            prev->out = (next->out & ~def(next)) | uses(next);
+            prev = st;
+            prev->out = (next->out & ~defs(next)) | uses(next);
         }
 
-        block->in = (prev->out & ~def(prev)) | uses(prev);
+        block->in = (prev->out & ~defs(prev)) | uses(prev);
     } else {
         block->in = block->out;
         if (block->jump[1] || block->has_return_value) {

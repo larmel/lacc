@@ -12,50 +12,55 @@
 
 #include <assert.h>
 
+typedef array_of(struct statement) InitializerList;
+
 /*
- * Introduce separate blocks to hold list of assignment operations for
- * each initializer. This is appended at the end after all expressions
- * inside initializers are evaluated.
+ * Keep separate lists of assignment operations for each initializer.
+ * This is appended at the end after all expressions inside initializers
+ * are evaluated.
  *
  * Padding initialization is handled only after the whole initializer is
  * read, as postprocessing of the statements in these blocks.
  *
  * Since initializers can be nested with compound literals, we need
- * arbitrary many blocks. Re-use for memory efficiency.
+ * arbitrary many lists. Re-use for memory efficiency.
  */
-static array_of(struct block *) inititializer_blocks;
+static array_of(InitializerList) inititializer_lists;
 
-static struct block *get_initializer_block(void)
+static InitializerList get_initializer_list(void)
 {
-    struct block *block;
+    InitializerList list = {0};
 
-    if (array_len(&inititializer_blocks)) {
-        block = array_pop_back(&inititializer_blocks);
-    } else {
-        block = cfg_block_init(NULL);
+    if (array_len(&inititializer_lists)) {
+        list = array_pop_back(&inititializer_lists);
     }
 
-    return block;
+    return list;
 }
 
-static void release_initializer_block(struct block *block)
+static void release_initializer_block(InitializerList list)
 {
-    assert(!block->label);
-    assert(!block->has_init_value);
-
-    array_empty(&block->code);
-    array_push_back(&inititializer_blocks, block);
+    array_empty(&list);
+    array_push_back(&inititializer_lists, list);
 }
 
 INTERNAL void initializer_finalize(void)
 {
-    array_clear(&inititializer_blocks);
+    int i;
+    InitializerList *list;
+
+    for (i = 0; i < array_len(&inititializer_lists); ++i) {
+        list = &array_get(&inititializer_lists, i);
+        array_clear(list);
+    }
+
+    array_clear(&inititializer_lists);
 }
 
 static struct block *initialize_member(
     struct definition *def,
     struct block *block,
-    struct block *values,
+    InitializerList *values,
     struct var target);
 
 static int is_loadtime_constant(struct expression expr)
@@ -92,7 +97,7 @@ static struct block *read_initializer_element(
     const struct block *top;
 
     assert(!block->has_init_value);
-    ops = array_len(&block->code);
+    ops = block->count;
     top = block;
     block = assignment_expression(def, block);
     if (is_void(block->expr.type)) {
@@ -102,7 +107,7 @@ static struct block *read_initializer_element(
 
     if (sym->linkage != LINK_NONE) {
         if (block != top
-            || array_len(&block->code) - ops > 0
+            || block->count - ops > 0
             || !is_identity(block->expr)
             || !is_loadtime_constant(block->expr))
         {
@@ -194,13 +199,13 @@ static const struct member *get_named_member(
 static struct block *initialize_union(
     struct definition *def,
     struct block *block,
-    struct block *values,
+    InitializerList *values,
     struct var target,
     enum current_object_state state)
 {
     int done;
     size_t filled;
-    struct block *init;
+    InitializerList init;
     const struct member *member;
     Type type;
     String name;
@@ -208,7 +213,7 @@ static struct block *initialize_union(
     done = 0;
     filled = target.offset;
     type = target.type;
-    init = get_initializer_block();
+    init = get_initializer_list();
     assert(is_union(type));
     assert(nmembers(type) > 0);
 
@@ -225,12 +230,12 @@ static struct block *initialize_union(
             member = get_member(type, 0);
             target = access_member(target, member, filled);
         } else break;
-        array_empty(&init->code);
-        block = initialize_member(def, block, init, target);
+        array_empty(&init);
+        block = initialize_member(def, block, &init, target);
         done = 1;
     } while (next_element(state));
 
-    array_concat(&values->code, &init->code);
+    array_concat(values, &init);
     release_initializer_block(init);
     return block;
 }
@@ -245,7 +250,7 @@ static struct block *initialize_union(
 static struct block *initialize_struct(
     struct definition *def,
     struct block *block,
-    struct block *values,
+    InitializerList *values,
     struct var target,
     enum current_object_state state)
 {
@@ -298,6 +303,32 @@ static struct block *initialize_struct(
 }
 
 /*
+ * Add assignment operation to initializer list.
+ *
+ * Assignment evaluation can generate a cast statement, which needs to
+ * be added to the normal block.
+ */
+static struct var assign_initializer_element(
+    struct definition *def,
+    struct block *block,
+    InitializerList *values,
+    struct var target)
+{
+    struct var t;
+    struct statement st;
+    assert(target.kind == DIRECT);
+    assert(block->has_init_value);
+
+    t = eval_assign(def, block, target, block->expr);
+    st = array_pop_back(&def->statements);
+    assert(st.st == IR_ASSIGN);
+    array_push_back(values, st);
+    block->has_init_value = 0;
+    block->count--;
+    return t;
+}
+
+/*
  * Read initializer for struct or union. Make sure to read first element
  * if possible, to catch assignments of aggregate values initializing
  * the whole object at once.
@@ -309,7 +340,7 @@ static struct block *initialize_struct(
 static struct block *initialize_struct_or_union(
     struct definition *def,
     struct block *block,
-    struct block *values,
+    InitializerList *values,
     struct var target,
     enum current_object_state state)
 {
@@ -330,8 +361,7 @@ static struct block *initialize_struct_or_union(
     if (block->has_init_value
         && is_compatible_unqualified(target.type, block->expr.type))
     {
-        eval_assign(def, values, target, block->expr);
-        block->has_init_value = 0;
+        assign_initializer_element(def, block, values, target);
     } else if (is_union(target.type)) {
         block = initialize_union(def, block, values, target, state);
     } else {
@@ -406,7 +436,7 @@ static int try_parse_index(size_t *index)
 static struct block *initialize_array(
     struct definition *def,
     struct block *block,
-    struct block *values,
+    InitializerList *values,
     struct var target,
     enum current_object_state state)
 {
@@ -446,8 +476,7 @@ static struct block *initialize_array(
         && block->expr.l.kind == DIRECT
         && block->expr.l.value.symbol->symtype == SYM_LITERAL)
     {
-        target = eval_assign(def, values, target, block->expr);
-        block->has_init_value = 0;
+        target = assign_initializer_element(def, block, values, target);
     } else {
         target.type = elem;
         while (1) {
@@ -476,33 +505,10 @@ static struct block *initialize_array(
     return block;
 }
 
-/*
- * Add assignment operation to initializer values block.
- *
- * Assignment evaluation can generate a cast statement, which needs to
- * be added to the normal block.
- */
-static void assign_initializer_element(
-    struct definition *def,
-    struct block *block,
-    struct block *values,
-    struct var target)
-{
-    struct statement st;
-    assert(target.kind == DIRECT);
-    assert(block->has_init_value);
-
-    eval_assign(def, block, target, block->expr);
-    st = array_pop_back(&block->code);
-    assert(st.st == IR_ASSIGN);
-    array_push_back(&values->code, st);
-    block->has_init_value = 0;
-}
-
 static struct block *initialize_member(
     struct definition *def,
     struct block *block,
-    struct block *values,
+    InitializerList *values,
     struct var target)
 {
     assert(target.kind == DIRECT);
@@ -546,7 +552,7 @@ static struct block *initialize_member(
 static struct block *initialize_object(
     struct definition *def,
     struct block *block,
-    struct block *values,
+    InitializerList *values,
     struct var target)
 {
     assert(target.kind == DIRECT);
@@ -585,15 +591,15 @@ static const struct var var__immediate_zero = {IMMEDIATE, 0, 0, 0, 0, {T_INT}};
  */
 static void zero_initialize(
     struct definition *def,
-    struct block *values,
+    InitializerList *values,
     struct var target)
 {
     int i;
     size_t size;
     struct var var;
+    struct statement stmt = {IR_ASSIGN};
 
     assert(target.kind == DIRECT);
-    assert(!values->has_init_value);
     size = size_of(target.type);
     switch (type_of(target.type)) {
     case T_STRUCT:
@@ -621,7 +627,9 @@ static void zero_initialize(
     case T_POINTER:
         var = var__immediate_zero;
         var.type = target.type;
-        eval_assign(def, values, target, as_expr(var));
+        stmt.expr = as_expr(var);
+        stmt.t = target;
+        array_push_back(values, stmt);
         break;
     default:
         error("Cannot zero-initialize object of type '%t'.", target.type);
@@ -631,7 +639,7 @@ static void zero_initialize(
 
 static void zero_initialize_bytes(
     struct definition *def,
-    struct block *values,
+    InitializerList *values,
     struct var target,
     size_t bytes)
 {
@@ -681,7 +689,7 @@ static void zero_initialize_bytes(
  */
 static void initialize_padding(
     struct definition *def,
-    struct block *block,
+    InitializerList *block,
     struct var prev,
     struct var next)
 {
@@ -796,20 +804,18 @@ static int merge_assignments(struct statement *a, const struct statement *b)
  * since it can enforce more restrictions on the IR. Static or global
  * variables will always be assigned as whole bytes.
  */
-static void normalize_field_assignment(
-    struct definition *def,
-    struct block *block)
+static void normalize_field_assignment(InitializerList *block)
 {
     int i;
     struct statement *a, *b;
 
-    assert(array_len(&block->code) > 1);
-    a = &array_get(&block->code, 0);
+    assert(array_len(block) > 1);
+    a = &array_get(block, 0);
 
-    for (i = 1; i < array_len(&block->code); ++i) {
-        b = &array_get(&block->code, i);
+    for (i = 1; i < array_len(block); ++i) {
+        b = &array_get(block, i);
         if (merge_assignments(a, b)) {
-            array_erase(&block->code, i);
+            array_erase(block, i);
             i--;
         } else {
             a = b;
@@ -826,15 +832,15 @@ static void normalize_field_assignment(
  * Some additional constrants are put on field assignments; the first
  * assignment to a field on a new offset must have field_offset 0.
  */
-static size_t validate_contiguous_initialization(struct block *block)
+static size_t validate_contiguous_initialization(InitializerList *block)
 {
     int i;
     size_t bits = 0;
     struct statement st;
     struct var field, prev;
 
-    for (i = 0; i < array_len(&block->code); ++i) {
-        st = array_get(&block->code, i);
+    for (i = 0; i < array_len(block); ++i) {
+        st = array_get(block, i);
         assert(st.st == IR_ASSIGN);
         field = st.t;
 
@@ -861,13 +867,13 @@ static size_t validate_contiguous_initialization(struct block *block)
  * Reorder initializer assignments to increasing offsets, and remove
  * duplicate assignments to the same element.
  */
-static void sort_and_trim(struct block *values)
+static void sort_and_trim(InitializerList *values)
 {
     int i, j;
     struct statement *code, tmp;
 
-    code = &array_get(&values->code, 0);
-    for (i = 1; i < array_len(&values->code); ++i) {
+    code = &array_get(values, 0);
+    for (i = 1; i < array_len(values); ++i) {
         j = i - 1;
         while (j >= 0 && code[j].t.offset > code[j + 1].t.offset) {
             tmp = code[j];
@@ -884,7 +890,7 @@ static void sort_and_trim(struct block *values)
             && code[j].t.field_offset == code[j + 1].t.field_offset)
         {
             assert(code[j].t.field_width == code[j + 1].t.field_width);
-            array_erase(&values->code, j);
+            array_erase(values, j);
             i -= 1;
         }
     }
@@ -897,29 +903,29 @@ static void sort_and_trim(struct block *values)
  * The input block contains a list of assignments to the same variable,
  * possibly sparsely covering the full size of the type.
  */
-static struct block *postprocess_object_initialization(
+static void postprocess_object_initialization(
     struct definition *def,
-    struct block *values,
+    InitializerList *values,
     struct var target)
 {
     int i, has_field;
     struct statement st;
     struct var prev, next;
-    struct block *block;
+    InitializerList block;
 
     assert(!target.offset);
     sort_and_trim(values);
-    block = get_initializer_block();
+    block = get_initializer_list();
     prev = target;
 
-    for (i = 0, has_field = 0; i < array_len(&values->code); ++i) {
-        st = array_get(&values->code, i);
+    for (i = 0, has_field = 0; i < array_len(values); ++i) {
+        st = array_get(values, i);
         next = st.t;
         assert(st.st == IR_ASSIGN);
         assert(st.expr.op != IR_OP_CALL);
         assert(next.is_symbol && next.value.symbol == target.value.symbol);
-        initialize_padding(def, block, prev, next);
-        array_push_back(&block->code, st);
+        initialize_padding(def, &block, prev, next);
+        array_push_back(&block, st);
         prev.offset = next.offset;
         prev.field_offset = next.field_offset + next.field_width;
         if (!next.field_width) {
@@ -931,14 +937,14 @@ static struct block *postprocess_object_initialization(
 
     next.offset = size_of(target.type);
     next.field_offset = 0;
-    initialize_padding(def, block, prev, next);
+    initialize_padding(def, &block, prev, next);
     if (has_field) {
-        normalize_field_assignment(def, block);
+        normalize_field_assignment(&block);
     }
 
-    release_initializer_block(values);
-    assert(validate_contiguous_initialization(block) == size_of(target.type));
-    return block;
+    release_initializer_block(*values);
+    *values = block;
+    assert(validate_contiguous_initialization(&block) == size_of(target.type));
 }
 
 INTERNAL struct block *initializer(
@@ -946,14 +952,15 @@ INTERNAL struct block *initializer(
     struct block *block,
     const struct symbol *sym)
 {
-    struct block *values;
+    InitializerList values;
     struct var target = var_direct(sym);
 
     if (peek() == '{' || is_array(sym->type)) {
-        values = get_initializer_block();
-        block = initialize_object(def, block, values, target);
-        values = postprocess_object_initialization(def, values, target);
-        array_concat(&block->code, &values->code);
+        values = get_initializer_list();
+        block = initialize_object(def, block, &values, target);
+        postprocess_object_initialization(def, &values, target);
+        array_concat(&def->statements, &values);
+        block->count += array_len(&values);
         release_initializer_block(values);
     } else {
         block = read_initializer_element(def, block, sym);

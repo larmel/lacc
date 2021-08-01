@@ -16,12 +16,16 @@
  *   b = a + 1
  *
  */
-INTERNAL int merge_chained_assignment(struct block *block);
+INTERNAL int merge_chained_assignment(
+    struct definition *def,
+    struct block *block);
 
 /*
  * Remove assignments to variables that are never read, as determined by
  * liveness analysis.
  */
-INTERNAL int dead_store_elimination(struct block *block);
+INTERNAL int dead_store_elimination(
+    struct definition *def,
+    struct block *block);
 
 #endif

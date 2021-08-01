@@ -68,9 +68,11 @@ static struct block *parameter_list(
     struct declaration_specifier_info info;
 
     *func = type_create_function(base);
-    block = current_scope_depth(&ns_ident) == 1
-        ? parent
-        : cfg_block_init(def);
+    if (current_scope_depth(&ns_ident) != 1) {
+        block = begin_throwaway_block(def);
+    } else {
+        block = parent;
+    }
 
     while (peek() != ')') {
         name = str_empty();
@@ -115,7 +117,13 @@ static struct block *parameter_list(
         }
     }
 
-    return current_scope_depth(&ns_ident) == 1 ? block : parent;
+    if (current_scope_depth(&ns_ident) != 1) {
+        restore_block(def);
+    } else {
+        parent = block;
+    }
+
+    return parent;
 }
 
 /*
