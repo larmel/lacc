@@ -1,0 +1,34 @@
+name: Test
+
+on: push
+
+jobs:
+  ubuntu:
+    name: Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Build and install
+        run: |
+          ./configure
+          make
+          sudo make install
+      - name: Test
+        run: make -C test
+  alpine:
+    name: Alpine
+    runs-on: ubuntu-latest
+    container: docker://alpine:latest
+    steps:
+      - name: Setup
+        run: apk add gcc libc-dev git make ncurses
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Build and install
+        run: |
+          ./configure
+          make
+          make install
+      - name: Test
+        run: make -C test
