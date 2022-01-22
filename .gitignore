@@ -6,3 +6,9 @@ demo/ioq3
 test/sqlite
 test/csmith
 test/creduce
+
+.vscode
+*.xcodeproj
+
+# Mac OS
+**/.DS_Store

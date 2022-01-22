@@ -1,6 +1,8 @@
 .POSIX:
 .SUFFIXES:
 
+include ../config.mak
+
 CC = cc
 TARGET = ../bin/selfhost/lacc
 BIN = ../bin/test
@@ -11,18 +13,18 @@ extra: sqlite csmith
 
 ../bin/bootstrap/lacc: ../bin/lacc
 	mkdir -p $(@D)
-	for file in $$(find ../src -type f -iname '*.c') ; do \
+	for file in $(SOURCES) ; do \
 		target=$(@D)/$$(basename $$file .c).o ; \
-		$? -std=c89 -I../include -include ../config.h -c $$file -o $$target ; \
+		$? -std=c89 -I../include -include ../config.h -c ../$$file -o $$target ; \
 	done
 	$(CC) $(@D)/*.o -o $@
 
 ../bin/selfhost/lacc: ../bin/bootstrap/lacc
 	mkdir -p $(@D)
-	for file in $$(find ../src -type f -iname '*.c') ; do \
+	for file in $(SOURCES) ; do \
 		name=$$(basename $$file .c) ; \
 		target=$(@D)/$${name}.o ; \
-		$? -std=c89 -I../include -include ../config.h -c $$file -o $$target ; \
+		$? -std=c89 -I../include -include ../config.h -c ../$$file -o $$target ; \
 		diff ../bin/bootstrap/$${name}.o $$target ; \
 	done
 	$(CC) $(@D)/*.o -o $@

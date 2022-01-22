@@ -2,14 +2,12 @@
 # define INTERNAL
 # define EXTERNAL extern
 #endif
-#include "compile.h"
 #include "assembler.h"
-#include "graphviz/dot.h"
-#include "x86_64/abi.h"
-#include "x86_64/assemble.h"
-#include "x86_64/dwarf.h"
-#include "x86_64/elf.h"
-#include "x86_64/encoding.h"
+#include "abi.h"
+#include "assemble.h"
+#include "dwarf.h"
+#include "elf.h"
+#include "encoding.h"
 #include <lacc/context.h>
 
 #include <assert.h>
@@ -3373,18 +3371,15 @@ INTERNAL void set_compile_target(FILE *stream, const char *file)
 {
     switch (context.target) {
     default: assert(0);
-    case TARGET_IR_DOT:
-        dot_init(stream);
-        break;
-    case TARGET_x86_64_ASM:
+    case TARGET_ASM:
         asm_init(stream, file);
         enter_context = asm_symbol;
         emit_instruction = asm_text;
         emit_data = asm_data;
         flush_backend = asm_flush;
         break;
-    case TARGET_x86_64_OBJ:
-    case TARGET_x86_64_EXE:
+    case TARGET_OBJ:
+    case TARGET_EXE:
         elf_init(stream, file);
         enter_context = elf_symbol;
         emit_instruction = elf_text;
@@ -3403,16 +3398,13 @@ INTERNAL int compile(struct definition *def)
 
     definition = def;
     switch (context.target) {
-    case TARGET_IR_DOT:
-        dotgen(def);
-    case TARGET_PREPROCESS:
-        break;
-    case TARGET_x86_64_ASM:
-    case TARGET_x86_64_OBJ:
-    case TARGET_x86_64_EXE:
+    default: assert(0);
+    case TARGET_ASM:
+    case TARGET_OBJ:
+    case TARGET_EXE:
         if (is_function(def->symbol->type)) {
             compile_function(def);
-            if (context.target != TARGET_x86_64_ASM) {
+            if (context.target != TARGET_ASM) {
                 elf_flush_text_displacements();
             }
         } else {
@@ -3428,9 +3420,9 @@ INTERNAL int compile(struct definition *def)
 INTERNAL int declare(const struct symbol *sym)
 {
     switch (context.target) {
-    case TARGET_x86_64_ASM:
-    case TARGET_x86_64_OBJ:
-    case TARGET_x86_64_EXE:
+    case TARGET_ASM:
+    case TARGET_OBJ:
+    case TARGET_EXE:
         return enter_context(sym);
     default:
         return 0;

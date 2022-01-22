@@ -834,7 +834,6 @@ INTERNAL void register_builtin_definitions(enum cstd version)
     register_macro("__LINE__", "0");
     register_macro("__DATE__", get__date__(ts));
     register_macro("__TIME__", get__time__(ts));
-    register_macro("__x86_64__", "1");
     register_macro("__LP64__", "1");
     register_macro("__SIZE_TYPE__", "unsigned long");
     register_macro("__WCHAR_TYPE__", "signed int");
@@ -844,6 +843,12 @@ INTERNAL void register_builtin_definitions(enum cstd version)
     register_macro("__SIZEOF_POINTER__", "8");
     register_macro("__lacc__", "");
 
+#ifdef x86_64
+    register_macro("__x86_64__", "1");
+#endif
+#ifdef ARM64
+    register_macro("__arm64__", "1");
+#endif
 #ifdef LINUX
     register_macro("__linux__", "1");
 #endif

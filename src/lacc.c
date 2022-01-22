@@ -5,14 +5,19 @@
 # include "util/argparse.c"
 # include "util/hash.c"
 # include "util/string.c"
-# include "backend/x86_64/encoding.c"
-# include "backend/x86_64/dwarf.c"
-# include "backend/x86_64/elf.c"
-# include "backend/x86_64/abi.c"
-# include "backend/x86_64/assemble.c"
-# include "backend/assembler.c"
-# include "backend/compile.c"
-# include "backend/graphviz/dot.c"
+# ifdef x86_64
+#  include "backend/x86_64/encoding.c"
+#  include "backend/x86_64/dwarf.c"
+#  include "backend/x86_64/elf.c"
+#  include "backend/x86_64/abi.c"
+#  include "backend/x86_64/assemble.c"
+#  include "backend/x86_64/assembler.c"
+#  include "backend/x86_64/compile.c"
+# endif
+# ifdef ARM64
+#  include "backend/arm64/compile.c"
+# endif
+# include "backend/dot.c"
 # include "backend/linker.c"
 # include "optimizer/transform.c"
 # include "optimizer/liveness.c"
@@ -36,6 +41,7 @@
 # define INTERNAL
 # define EXTERNAL extern
 # include "backend/compile.h"
+# include "backend/dot.h"
 # include "backend/linker.h"
 # include "optimizer/optimize.h"
 # include "parser/builtin.h"
@@ -105,10 +111,10 @@ static int flag(const char *arg)
     assert(strlen(arg) == 2);
     switch (arg[1]) {
     case 'c':
-        context.target = TARGET_x86_64_OBJ;
+        context.target = TARGET_OBJ;
         break;
     case 'S':
-        context.target = TARGET_x86_64_ASM;
+        context.target = TARGET_ASM;
         break;
     case 'E':
         context.target = TARGET_PREPROCESS;
@@ -249,11 +255,11 @@ static char *change_file_suffix(const char *file, enum target target)
     case TARGET_IR_DOT:
         suffix = ".dot";
         break;
-    case TARGET_x86_64_ASM:
+    case TARGET_ASM:
         suffix = ".s";
         break;
-    case TARGET_x86_64_OBJ:
-    case TARGET_x86_64_EXE:
+    case TARGET_OBJ:
+    case TARGET_EXE:
         suffix = ".o";
         break;
     }
@@ -297,7 +303,7 @@ static int add_input_file(const char *name)
      * preserved.
      */
     if (file.language != LANG_UNKNOWN) {
-        ptr = change_file_suffix(name, TARGET_x86_64_OBJ);
+        ptr = change_file_suffix(name, TARGET_OBJ);
         add_linker_arg(ptr);
         free(ptr);
     } else {
@@ -517,7 +523,7 @@ static int parse_program_arguments(int argc, char *argv[])
 
     program = argv[0];
     context.standard = STD_C99;
-    context.target = TARGET_x86_64_EXE;
+    context.target = TARGET_EXE;
     context.pic = 1;
 
     if ((i = parse_args(optv, argc, argv)) != 0) {
@@ -531,7 +537,7 @@ static int parse_program_arguments(int argc, char *argv[])
             case TARGET_PREPROCESS:
                 file->language = LANG_C;
                 break;
-            case TARGET_x86_64_EXE:
+            case TARGET_EXE:
                 array_erase(&input_files, i);
                 i--;
                 k++;
@@ -544,12 +550,12 @@ static int parse_program_arguments(int argc, char *argv[])
     }
 
     n = array_len(&input_files);
-    if (n == 0 && (k == 0 || context.target != TARGET_x86_64_EXE)) {
+    if (n == 0 && (k == 0 || context.target != TARGET_EXE)) {
         fprintf(stderr, "%s\n", "No input files.");
         return 1;
     }
 
-    if (output_name && context.target != TARGET_x86_64_EXE) {
+    if (output_name && context.target != TARGET_EXE) {
         if (n > 1) {
             fprintf(stderr, "%s\n", "Cannot set -o with multiple inputs.");
             return 1;
@@ -640,6 +646,9 @@ static int process_file(struct input_file file)
 
             optimize(def);
             compile(def);
+            if (context.target == TARGET_IR_DOT) {
+                dotgen(output, def);
+            }
         }
 
         while ((sym = yield_declaration(&ns_ident)) != NULL) {
@@ -681,7 +690,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (context.target == TARGET_x86_64_EXE) {
+    if (context.target == TARGET_EXE) {
         ret = invoke_linker();
     }
 

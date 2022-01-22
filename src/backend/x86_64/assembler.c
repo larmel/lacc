@@ -3,8 +3,7 @@
 # define EXTERNAL extern
 #endif
 #include "assembler.h"
-#include "compile.h"
-#include "x86_64/encoding.h"
+#include "encoding.h"
 #include <lacc/context.h>
 
 #include <assert.h>
@@ -35,6 +34,8 @@ struct asm_token {
 
 static array_of(struct asm_operand) operands;
 static array_of(struct block *) targets;
+
+INTERNAL enum instr_optype allocation(struct var var, union operand *op);
 
 static void skip_whitespace(const char *line, const char **endptr)
 {

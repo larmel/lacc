@@ -5,13 +5,10 @@
 
 #include <stdio.h>
 
-/* Set output target. */
-INTERNAL void dot_init(FILE *output);
-
 /*
  * Output internal control flow graph intermediate representation in dot
  * format, which can be compiled for rendering.
  */
-INTERNAL void dotgen(struct definition *def);
+INTERNAL void dotgen(FILE *stream, struct definition *def);
 
 #endif
