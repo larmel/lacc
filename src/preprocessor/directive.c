@@ -24,6 +24,7 @@ INTERNAL struct token
     ident__elif = IDENT("elif"),
     ident__endif = IDENT("endif"),
     ident__error = IDENT("error"),
+    ident__warning = IDENT("warning"),
     ident__line = IDENT("line"),
     ident__pragma = IDENT("pragma"),
     ident__Pragma = IDENT("_" "Pragma"),
@@ -800,12 +801,18 @@ INTERNAL void preprocess_directive(TokenArray *array)
             preprocess_include(array);
         } else if (!tok_cmp(*line, ident__line)) {
             preprocess_line_directive(line + 1);
-        } else if (!tok_cmp(*line, ident__error)) {
+        } else if (!tok_cmp(*line, ident__error) || !tok_cmp(*line, ident__warning)) {
             array->data++;
             array->length--;
             s = stringify(array).d.string;
-            error("%s", str_raw(s));
-            exit(1);
+            array->data--;
+            array->length++;
+            if (!tok_cmp(*line, ident__error)) {
+                error("%s", str_raw(s));
+                exit(1);
+            } else {
+                warning("%s", str_raw(s));
+            }
         } else {
             s = line->d.string;
             error("Unsupported preprocessor directive '%s'.", str_raw(s));
