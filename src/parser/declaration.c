@@ -1011,7 +1011,7 @@ static struct block *init_declarator(
     enum linkage linkage)
 {
     Type type;
-    String name = SHORT_STRING_INIT("");
+    String name = SHORT_STRING_INIT(""), asm_name = SHORT_STRING_INIT("");
     struct symbol *sym;
     const struct member *param;
 
@@ -1046,13 +1046,24 @@ static struct block *init_declarator(
         }
     }
 
-    if (is_function(type) && !is_complete(type) && peek() != ';') {
+    if (linkage != LINK_NONE && peek() == ASM) {
+        next();
+        consume('(');
+        consume(STRING);
+        asm_name = access_token(0)->d.string;
+        consume(')');
+    } else if (is_function(type) && !is_complete(type) && peek() != ';') {
         push_scope(&ns_ident);
         parent = parameter_declaration_list(def, parent, type);
         pop_scope(&ns_ident);
     }
 
     sym = sym_add(&ns_ident, name, type, symtype, linkage);
+    if (str_len(asm_name)) {
+        sym->name = asm_name;
+        sym->n = 0;
+    }
+
     switch (current_scope_depth(&ns_ident)) {
     case 0: break;
     case 1: /* Parameters from old-style function definitions. */
