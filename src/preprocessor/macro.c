@@ -849,6 +849,10 @@ INTERNAL void register_builtin_definitions(enum cstd version)
 #ifdef ARM64
     register_macro("__arm64__", "1");
 #endif
+#ifdef OSX
+    /* MacOS libc specifically requires __GNUC__ >= 4, so we fake it. */
+    register_macro("__GNUC__", "4");
+#endif
 #ifdef LINUX
     register_macro("__linux__", "1");
 #endif
