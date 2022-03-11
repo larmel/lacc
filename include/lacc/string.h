@@ -31,7 +31,7 @@
 typedef union {
     struct {
         char buf[SHORT_STRING_LEN];
-        char cap;
+        signed char cap;
     } small;
     struct {
         const char *ptr;
